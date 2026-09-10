@@ -1,6 +1,7 @@
 use crate::navigation::Direction;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
+    System,
     Move(Direction),
     Activate,
     SelectAndActivate(usize),
@@ -19,6 +20,7 @@ mod sdl {
                 repeat: false,
                 ..
             } => match key {
+                Keycode::F1 | Keycode::Power => Some(Action::System),
                 Keycode::PageUp => Some(Action::Page(false)),
                 Keycode::PageDown => Some(Action::Page(true)),
                 Keycode::Left => Some(Action::Move(Direction::Left)),
@@ -48,6 +50,9 @@ mod sdl {
     }
 
     fn pointer(layout: &Layout, x: f64, y: f64, count: usize) -> Option<Action> {
+        if layout.footer.contains(x, y) {
+            return Some(Action::System);
+        }
         if layout.previous.contains(x, y) {
             return Some(Action::Page(false));
         }

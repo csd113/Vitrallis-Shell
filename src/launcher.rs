@@ -9,6 +9,7 @@ pub enum Phase {
 
 #[derive(Debug)]
 pub struct Launcher {
+    pub settings: crate::settings::Settings,
     pub apps: Vec<AppEntry>,
     pub selected: usize,
     pub phase: Phase,
@@ -29,6 +30,7 @@ impl Launcher {
             }
         }
         Ok(Self {
+            settings: crate::settings::Settings::default(),
             selected: 0,
             phase: Phase::Ready,
             error: None,
@@ -83,7 +85,7 @@ impl Launcher {
                 self.status = format!("OPENING {}", self.apps[self.selected].name);
                 return Some(self.selected);
             }
-            Action::Activate | Action::SelectAndActivate(_) => {}
+            Action::Activate | Action::SelectAndActivate(_) | Action::System => {}
         }
         None
     }

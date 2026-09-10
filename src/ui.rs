@@ -79,6 +79,13 @@ fn event_loop(
     platform: &impl Platform,
     smoke: bool,
 ) -> Result<(), String> {
+    let mut worker = match crate::platform::system::Worker::start(*platform) {
+        Ok(worker) => Some(worker),
+        Err(error) => {
+            state.settings.message = error;
+            None
+        }
+    };
     let mut events = sdl.event_pump()?;
     let mut child = NativeProcess::default();
     let mut pointer = PointerInput::default();
@@ -91,6 +98,7 @@ fn event_loop(
         inject_activation(sdl, canvas)?;
     }
     loop {
+        dirty |= refresh_system(&mut worker, &mut state.settings);
         if dirty {
             render(canvas, layout, &state, icons)?;
             canvas.present();
@@ -98,34 +106,32 @@ fn event_loop(
         }
         let event = wait_event(&mut events, state.phase, next_poll, smoke);
         if let Some(event) = event {
-            if matches!(
-                event,
-                Event::Quit { .. }
-                    | Event::Window {
-                        win_event: WindowEvent::Close,
-                        ..
-                    }
-            ) {
+            if closing(&event) {
                 return Ok(());
             }
+            dirty |= exposed(&event);
             if matches!(
                 event,
                 Event::Window {
-                    win_event: WindowEvent::Exposed | WindowEvent::Shown | WindowEvent::Restored,
+                    win_event: WindowEvent::FocusLost,
                     ..
                 }
             ) {
+                state.settings.cancel();
+                pointer.clear();
                 dirty = true;
             }
             if Instant::now() >= accept_after {
-                let action = pointer.action(&event, layout, state.visible_count());
+                let (action, system_changed) =
+                    translate_action(&event, layout, &mut state, &mut pointer, &mut worker);
+                dirty |= system_changed;
                 let activating = state.phase == Phase::Ready
                     && matches!(
                         action,
                         Some(Action::Activate | Action::SelectAndActivate(_))
                     );
                 dirty |= handle_action(action, canvas, layout, &mut state, icons, &mut child)?;
-                if activating {
+                if activating || system_changed {
                     pointer.clear();
                     accept_after = Instant::now() + Duration::from_millis(400);
                 }
@@ -173,6 +179,94 @@ fn event_loop(
             return Err("smoke test timed out".into());
         }
     }
+}
+
+const fn closing(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::Quit { .. }
+            | Event::Window {
+                win_event: WindowEvent::Close,
+                ..
+            }
+    )
+}
+const fn exposed(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::Window {
+            win_event: WindowEvent::Exposed | WindowEvent::Shown | WindowEvent::Restored,
+            ..
+        }
+    )
+}
+fn translate_action(
+    event: &Event,
+    layout: &Layout,
+    state: &mut Launcher,
+    pointer: &mut PointerInput,
+    worker: &mut Option<crate::platform::system::Worker>,
+) -> (Option<Action>, bool) {
+    let count = if state.settings.open {
+        if state.settings.confirmation.is_some() {
+            2
+        } else {
+            6
+        }
+    } else {
+        state.visible_count()
+    };
+    let action = pointer.action(event, layout, count);
+    if system_action(action, worker, &mut state.settings) {
+        (None, true)
+    } else {
+        (action, false)
+    }
+}
+
+fn refresh_system(
+    worker: &mut Option<crate::platform::system::Worker>,
+    settings: &mut crate::settings::Settings,
+) -> bool {
+    let mut dirty = settings.expire();
+    if let Some(worker) = worker {
+        if let Some(update) = worker.update() {
+            settings.status = update.status;
+            if let Some(result) = update.result {
+                settings.message =
+                    result.map_or_else(|error| error, |()| "CONTROL APPLIED - ESC:BACK".into());
+            }
+            dirty = true;
+        }
+        settings.pending = worker.pending;
+        if worker.stale() && settings.status != crate::platform::system::Status::default() {
+            settings.status = crate::platform::system::Status::default();
+            settings.message = "SYSTEM STATUS STALE".into();
+            dirty = true;
+        }
+    }
+    dirty
+}
+fn system_action(
+    action: Option<Action>,
+    worker: &mut Option<crate::platform::system::Worker>,
+    settings: &mut crate::settings::Settings,
+) -> bool {
+    let Some(action) = action else {
+        return false;
+    };
+    if !settings.open && action != Action::System {
+        return false;
+    }
+    if let Some(command) = settings.input(action) {
+        let result = worker
+            .as_mut()
+            .ok_or_else(|| "system worker unavailable".into())
+            .and_then(|worker| worker.submit(command));
+        settings.message = result.map_or_else(|error| error, |()| "APPLYING...".into());
+        settings.pending = worker.as_ref().is_some_and(|worker| worker.pending);
+    }
+    true
 }
 
 fn handle_action(
@@ -240,16 +334,14 @@ fn wait_event(
     events: &mut sdl2::EventPump,
     phase: Phase,
     next_poll: Instant,
-    smoke: bool,
+    _smoke: bool,
 ) -> Option<Event> {
     if phase == Phase::Running {
         let wait = next_poll
             .saturating_duration_since(Instant::now())
             .as_millis();
         events.wait_event_timeout(u32::try_from(wait).unwrap_or(250).clamp(1, 250))
-    } else if smoke {
-        events.wait_event_timeout(250)
     } else {
-        Some(events.wait_event())
+        events.wait_event_timeout(250)
     }
 }

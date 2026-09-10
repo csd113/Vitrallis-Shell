@@ -16,7 +16,7 @@ cargo run --locked -- --demo
 SDL_VIDEODRIVER=dummy cargo run --locked -- --smoke-test
 ```
 
-`--pocketchip` selects fullscreen and a 480×272 default. Default desktop size is 800×480. `--size WIDTHxHEIGHT` changes the proportional layout. `--screenshot NEW.bmp` writes the initial frame and exits, refusing to overwrite an existing file.
+`--pocketchip` selects the PocketCHIP system backend, fullscreen and a 480×272 default. Default desktop size is 800×480. `--size WIDTHxHEIGHT` changes the proportional layout. `--screenshot NEW.bmp` writes the initial frame and exits, refusing to overwrite an existing file.
 
 Discovery first reads `~/.pocket-home/config.json`. Only when it is absent does it read the default asset configuration. Asset lookup checks `/usr/share/pocket-home/`, then `../../assets/` relative to the launcher's working directory, then that working directory. Explicit `--app-config` and `--assets` override these locations. A broken user config is reported rather than silently replaced or merged with defaults. All `Apps` pages contribute their `items` in configured order; settings/library entries are excluded. Source metadata is never written.
 
@@ -28,8 +28,12 @@ The launcher polls and reaps its direct child, retains focus selection, and requ
 
 `AppEntry` contains a stable ID, display name, icon and availability diagnostic. `AppManifest` contains optional runtime, absolute entry, arguments, cwd and per-child environment. An absent runtime executes the entry directly; a runtime receives the entry as its first argument. Existing PocketHome `name`/`icon`/`shell` entries need no changes. Optional `args`, `cwd`, and `env` fields are Vitrallis extensions. Discovery preserves the pinned JUCE command tokenizer's double-quote grouping and literal argument quotes; it does not silently interpret shell syntax. Use an explicit shell command only when intended by metadata.
 
-`src/discovery/` is separate from platform window policy. `src/config.rs` centralizes filesystem conventions, including the reserved future `$XDG_DATA_HOME/vitrallis/apps` (fallback `~/.local/share/vitrallis/apps`) directory. Native package discovery, Store, installer, system settings and status features are not implemented.
+`src/discovery/` is separate from platform window policy. `src/config.rs` centralizes filesystem conventions, including the reserved future `$XDG_DATA_HOME/vitrallis/apps` (fallback `~/.local/share/vitrallis/apps`) directory. Native package discovery, Store and installer are not implemented.
 
 PNG and bounded uncompressed BMP icons are decoded once, retaining aspect ratio. Missing icons use Marshmallow's default asset when available; broken/unsupported images use a built-in placeholder and log a warning. SVG/JPEG parity and full Unicode/font parity remain future work. No reference artwork is bundled. `serde_json` handles metadata and `png` handles the actual shipped icons; the lockfile keeps a single compression implementation version compatible with the strict Clippy checks.
 
 See [the Step 2 compatibility report](docs/compatibility-step2.md) for evidence and remaining differences, and [device validation](docs/device-validation.md) for deferred hardware checks.
+
+F1 or a tap on the footer opens the system panel. Arrows select, Enter/tap activates, and Escape/Home/F1 or the footer returns. Brightness and volume have bounded steps; reboot/shutdown require a separate confirmation with Cancel selected initially. SDL Power opens the panel; this does not install a physical button or WM binding.
+
+The status line shows battery percentage (`B`), charging (`C`), usable external power (`P`), Wi-Fi connection (`W`) and local 24-hour time. `?`/`--` means unavailable; Bluetooth is unavailable because the reference only supplies a fixture UI. Desktop mode exposes time and no hardware controls. PocketCHIP uses optional installed `i2cget`, `nmcli`, `amixer`, and `systemctl`, plus its backlight sysfs node; no packages, permissions, or session files are installed. All hardware work runs off the UI thread, full refresh is ten seconds after the preceding refresh, and commands have bounded output and a two-second timeout. See [system audit and validation](docs/system-status.md) for exact mechanisms, assumptions, test evidence, and remaining parity gaps.

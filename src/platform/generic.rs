@@ -2,7 +2,7 @@ use super::Platform;
 use crate::app::{AppEntry, AppManifest};
 use std::path::Path;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Generic;
 impl Platform for Generic {
     fn fullscreen(&self) -> bool {
@@ -41,7 +41,7 @@ pub fn demo_apps(executable: &Path) -> Vec<AppEntry> {
 }
 
 #[cfg(test)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Mock;
 #[cfg(test)]
 impl Platform for Mock {
@@ -50,5 +50,34 @@ impl Platform for Mock {
     }
     fn resolution(&self) -> (u16, u16) {
         (480, 272)
+    }
+}
+
+impl super::system::System for Generic {
+    fn refresh(&mut self) -> super::system::Status {
+        super::system::Status {
+            clock: super::command::clock(),
+            ..super::system::Status::default()
+        }
+    }
+    fn control(
+        &mut self,
+        _: super::system::Control,
+        _: &mut super::system::Status,
+    ) -> Result<(), String> {
+        Err("hardware controls unavailable on generic platform".into())
+    }
+}
+#[cfg(test)]
+impl super::system::System for Mock {
+    fn refresh(&mut self) -> super::system::Status {
+        super::system::Status::default()
+    }
+    fn control(
+        &mut self,
+        _: super::system::Control,
+        _: &mut super::system::Status,
+    ) -> Result<(), String> {
+        Err("unsupported".into())
     }
 }

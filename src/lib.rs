@@ -9,6 +9,7 @@ mod navigation;
 mod platform;
 mod process;
 mod renderer;
+mod settings;
 mod ui;
 
 /// Run the launcher or its bounded demo child.
@@ -28,7 +29,7 @@ pub fn run() -> Result<(), String> {
     }
     if args == ["--help"] {
         println!(
-            "vitrallis [--pocketchip] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--screenshot NEW.bmp] [--smoke-test]\nDefault: PocketHome metadata in a desktop window. --demo enables fixtures. Arrows select; Enter/tap opens; Escape/Home clears status. Close window to quit.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
+            "vitrallis [--pocketchip] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--screenshot NEW.bmp] [--smoke-test]\nDefault: PocketHome metadata in a desktop window. --demo enables fixtures. Arrows select; Enter/tap opens; F1/footer opens system controls; Escape/Home goes back. Close window to quit.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
         );
         return Ok(());
     }

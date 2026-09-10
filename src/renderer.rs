@@ -158,15 +158,26 @@ pub fn render(
     canvas.clear();
     text(
         canvas,
-        &format!(
-            "VITRALLIS {}/{}",
-            state.page_start() / layout.tiles.len() + 1,
-            state.page_count()
-        ),
-        layout.title,
+        &if state.settings.open {
+            "VITRALLIS SYSTEM".into()
+        } else {
+            format!(
+                "VITRALLIS {}/{}",
+                state.page_start() / layout.tiles.len() + 1,
+                state.page_count()
+            )
+        },
+        Rect {
+            h: layout.title.h / 2,
+            ..layout.title
+        },
         layout.text_scale,
         Color::RGB(93, 218, 201),
     )?;
+    system_status(canvas, layout, &state.settings.status)?;
+    if state.settings.open {
+        return system_panel(canvas, layout, &state.settings);
+    }
     for (bounds, label, enabled) in [
         (layout.previous, "<", state.page_start() > 0),
         (
@@ -207,12 +218,93 @@ pub fn render(
     error_dialog(canvas, layout, state)?;
     text(
         canvas,
-        &state.status,
+        &format!("F1/TAP:SYSTEM | {}", state.status),
         layout.footer,
         layout.text_scale,
         Color::RGB(173, 194, 210),
     )?;
     Ok(())
+}
+
+fn system_status(
+    canvas: &mut Screen,
+    layout: &Layout,
+    status: &crate::platform::system::Status,
+) -> Result<(), String> {
+    use crate::platform::system::Wifi;
+    let flag = |value: Option<bool>| value.map_or("?", |v| if v { "Y" } else { "N" });
+    let battery = status
+        .battery
+        .map_or_else(|| "--".into(), |v| v.value().to_string());
+    let wifi = match status.wifi {
+        Some(Wifi::Off) => "OFF",
+        Some(Wifi::Connected) => "ON",
+        Some(Wifi::Connecting) => "...",
+        Some(Wifi::Disconnected) => "NO",
+        None => "?",
+    };
+    text(
+        canvas,
+        &format!(
+            "B:{battery} C:{} P:{} W:{wifi} BT:{} {}",
+            flag(status.charging),
+            flag(status.external_power),
+            flag(status.bluetooth),
+            status.clock.as_deref().unwrap_or("--:--")
+        ),
+        Rect {
+            x: layout.previous.x + layout.previous.w,
+            y: layout.title.h / 2,
+            w: layout.next.x - layout.previous.x - layout.previous.w,
+            h: layout.title.h / 2,
+        },
+        layout.text_scale,
+        Color::RGB(173, 194, 210),
+    )
+}
+fn system_panel(
+    canvas: &mut Screen,
+    layout: &Layout,
+    settings: &crate::settings::Settings,
+) -> Result<(), String> {
+    for (index, (label, tile)) in settings.labels().iter().zip(&layout.tiles).enumerate() {
+        fill(
+            canvas,
+            *tile,
+            if index == settings.selected {
+                Color::RGB(44, 82, 99)
+            } else {
+                Color::RGB(25, 40, 55)
+            },
+        )?;
+        if index == settings.selected {
+            canvas.set_draw_color(Color::RGB(93, 218, 201));
+            canvas.draw_rect(rect(*tile)?)?;
+        }
+        text(
+            canvas,
+            label,
+            *tile,
+            layout.text_scale,
+            if settings.available(index) {
+                Color::RGB(235, 242, 249)
+            } else {
+                Color::RGB(110, 128, 140)
+            },
+        )?;
+    }
+    let message = if settings.message.is_empty() {
+        "ESC / F1 / TAP HERE: BACK"
+    } else {
+        &settings.message
+    };
+    text(
+        canvas,
+        message,
+        layout.footer,
+        layout.text_scale,
+        Color::RGB(173, 194, 210),
+    )
 }
 
 fn render_tile(
@@ -436,6 +528,66 @@ mod png_tests {
         assert!(decode_icon(b"broken asset").is_err());
         bytes.extend(vec![0; 1024 * 1024]);
         assert!(decode_icon(&bytes).is_err());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod system_tests {
+    use super::*;
+    use crate::{
+        input::Action,
+        platform::system::{Percent, Status, Wifi},
+    };
+
+    #[test]
+    fn system_panels_render_at_device_and_scaled_sizes() -> Result<(), String> {
+        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        let sdl = sdl2::init()?;
+        let video = sdl.video()?;
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let qa = std::env::var_os("VITRALLIS_QA_DIR").map(std::path::PathBuf::from);
+        let output = qa.as_ref().unwrap_or(&scratch.0);
+        for (w, h) in [(480, 272), (800, 480), (1280, 720)] {
+            let window = video
+                .window("system QA", w, h)
+                .hidden()
+                .build()
+                .map_err(|e| e.to_string())?;
+            let mut canvas = window
+                .into_canvas()
+                .software()
+                .build()
+                .map_err(|e| e.to_string())?;
+            let layout = Layout::home(
+                u16::try_from(w).map_err(|e| e.to_string())?,
+                u16::try_from(h).map_err(|e| e.to_string())?,
+            )?;
+            let mut state = Launcher::new(Vec::new(), 3, 6)?;
+            state.settings.status = Status {
+                battery: Some(Percent::new(73)?),
+                charging: Some(true),
+                external_power: Some(true),
+                wifi: Some(Wifi::Connected),
+                brightness: Some(Percent::new(44)?),
+                volume: Some(Percent::new(90)?),
+                clock: Some("12:34".into()),
+                power_controls: true,
+                ..Status::default()
+            };
+            state.settings.input(Action::System);
+            render(&mut canvas, &layout, &state, &[])?;
+            screenshot(&canvas, &output.join(format!("system-{w}x{h}.bmp")))?;
+            state.settings.input(Action::SelectAndActivate(5));
+            render(&mut canvas, &layout, &state, &[])?;
+            screenshot(&canvas, &output.join(format!("confirm-{w}x{h}.bmp")))?;
+            assert_eq!(state.settings.selected, 0);
+            state.settings.cancel();
+            state.settings.status = Status::default();
+            state.settings.input(Action::System);
+            render(&mut canvas, &layout, &state, &[])?;
+            screenshot(&canvas, &output.join(format!("unavailable-{w}x{h}.bmp")))?;
+        }
         Ok(())
     }
 }
