@@ -1,0 +1,27 @@
+[package]
+name = "vitrallis-shell"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "A small portable graphical launcher for embedded Linux"
+repository = "https://github.com/csd113/Vitrallis-Shell"
+license = "LicenseRef-Proprietary"
+keywords = ["launcher", "embedded", "sdl2"]
+categories = ["gui"]
+publish = false
+
+[[bin]]
+name = "vitrallis"
+path = "src/main.rs"
+
+[dependencies]
+sdl2 = { version = "0.38", features = ["use-pkgconfig"] }
+font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[lints.rust]
+unsafe_code = "forbid"
