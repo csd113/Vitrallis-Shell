@@ -26,6 +26,7 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
             state.status = "NO APPS - CHECK CONFIG / LOG".into();
         }
     }
+    sdl2::hint::set("SDL_VIDEO_ALLOW_SCREENSAVER", "1");
     let sdl = sdl2::init().map_err(|e| format!("SDL init: {e}"))?;
     let video = sdl.video().map_err(|e| format!("SDL video: {e}"))?;
     sdl.mouse().show_cursor(state.preferences.show_cursor);
@@ -57,12 +58,6 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         screenshot(&canvas, path)?;
         return Ok(());
     }
-    eprintln!(
-        "level=info event=ready width={} height={} apps={}",
-        layout.width,
-        layout.height,
-        state.apps.len()
-    );
     event_loop(&sdl, &mut canvas, &layout, state, platform, config)
 }
 
@@ -82,28 +77,37 @@ fn event_loop(
     let mut child = ProcessSet::<crate::process::NativeProcess>::default();
     let mut pointer = PointerInput::default();
     let mut accept_after = Instant::now();
-    let mut dirty = true;
+    let mut dirty = false;
+    let mut next_frame = Instant::now();
     let mut last_wait_error = None;
     let mut next_poll = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(10);
     if smoke {
         inject_activation(sdl, canvas)?;
     }
+    present_initial(canvas, layout, &state, &textures)?;
     loop {
         dirty |= refresh_system(&mut worker, &mut state.settings);
-        if dirty {
+        if let crate::settings::TimezoneState::Authentication(index) = state.settings.timezone {
+            state.settings.timezone = crate::settings::TimezoneState::Idle;
+            open_timezone(&mut state, &mut child, index);
+            dirty = true;
+        }
+        dirty |= refresh_focus(&mut child, &mut state);
+        if dirty && Instant::now() >= next_frame {
             state.running = child.running_ids();
             render(canvas, layout, &state, &textures)?;
             canvas.present();
             dirty = false;
+            next_frame = Instant::now() + Duration::from_millis(16);
         }
-        let event = wait_event(&mut events, state.phase, next_poll, smoke);
+        let event = wait_event(&mut events, state.phase, next_poll, dirty);
         if let Some(event) = event {
             if closing(&event) {
                 return Ok(());
             }
             dirty |= exposed(&event);
-            dirty |= window_focus(&event, &mut state, &mut pointer);
+            dirty |= window_focus(&event, &mut state, &mut pointer, &mut accept_after);
             if Instant::now() >= accept_after {
                 let (action, system_changed) =
                     translate_action(&event, layout, &mut state, &mut pointer, &mut worker);
@@ -114,7 +118,8 @@ fn event_loop(
                         Some(Action::Activate | Action::SelectAndActivate(_))
                     );
                 dirty |= handle_action(action, canvas, layout, &mut state, &textures, &mut child)?;
-                if activating || system_changed {
+                dirty |= open_requested(&mut state, &mut child);
+                if activating && state.phase == Phase::Running {
                     pointer.clear();
                     accept_after = Instant::now() + Duration::from_millis(400);
                 }
@@ -122,30 +127,25 @@ fn event_loop(
                 pointer.clear();
             }
         }
-        let result = if child.has_children() && Instant::now() >= next_poll {
-            next_poll = Instant::now() + Duration::from_millis(250);
-            child.poll()
-        } else {
-            Ok(None)
-        };
+        let result = poll_children(&mut child, &mut next_poll);
         match result {
             Ok(Some(status)) => {
                 eprintln!("level=info event=app_exited status={status:?}");
-                let raise = child.exited_active && state.phase == Phase::Running;
-                if child.exited_active {
-                    state.finished(if status.success() {
-                        "APP CLOSED - READY".into()
-                    } else {
-                        format!("APP EXITED: {status}")
-                    });
-                }
-                if state.phase == Phase::Ready && reload_catalog(config, &mut state) {
+                refresh_utility(&mut state, &mut worker, child.exited_active);
+                let raise = app_exited(&mut state, status, child.exited_active);
+                let catalog_changed =
+                    state.phase == Phase::Ready && reload_catalog(config, &mut state);
+                if catalog_changed {
                     textures = artwork(&creator, &state);
                     sdl.mouse().show_cursor(state.preferences.show_cursor);
                 }
                 last_wait_error = None;
-                pointer.clear();
-                accept_after = Instant::now() + Duration::from_millis(400);
+                if child.exited_active {
+                    accept_after = Instant::now();
+                }
+                if catalog_changed {
+                    pointer.clear();
+                }
                 if raise && platform.raise_after_exit() {
                     canvas.window_mut().raise();
                 }
@@ -171,13 +171,104 @@ fn event_loop(
     }
 }
 
-fn window_focus(event: &Event, state: &mut Launcher, pointer: &mut PointerInput) -> bool {
+fn poll_children(
+    child: &mut ProcessSet,
+    next_poll: &mut Instant,
+) -> Result<Option<std::process::ExitStatus>, String> {
+    if child.has_children() && Instant::now() >= *next_poll {
+        *next_poll = Instant::now() + Duration::from_millis(250);
+        child.poll()
+    } else {
+        Ok(None)
+    }
+}
+
+fn refresh_utility(
+    state: &mut Launcher,
+    worker: &mut Option<crate::platform::system::Worker>,
+    active: bool,
+) {
+    if active && state.settings.network == crate::settings::NetworkState::TimezoneOpen {
+        submit_setting(
+            Some(crate::settings::Request::Control(
+                crate::platform::system::Control::ReadTimezone,
+            )),
+            worker,
+            &mut state.settings,
+        );
+    }
+}
+
+fn app_exited(state: &mut Launcher, status: std::process::ExitStatus, active: bool) -> bool {
+    let raise = active && state.phase == Phase::Running;
+    if active {
+        state.finished(if status.success() {
+            "APP CLOSED - READY".into()
+        } else {
+            format!("APP EXITED: {status}")
+        });
+    }
+    if active && state.settings.network == crate::settings::NetworkState::Open {
+        state.settings.network = crate::settings::NetworkState::Idle;
+        state.settings.show();
+    }
+    if active
+        && matches!(
+            state.settings.network,
+            crate::settings::NetworkState::CalibrationOpen
+                | crate::settings::NetworkState::TimezoneOpen
+        )
+    {
+        state.settings.network = crate::settings::NetworkState::Idle;
+        state.settings.show();
+        state.settings.page(crate::settings::Page::Device);
+    }
+    raise
+}
+
+fn present_initial(
+    canvas: &mut Screen,
+    layout: &Layout,
+    state: &Launcher,
+    textures: &[Option<Texture<'_>>],
+) -> Result<(), String> {
+    render(canvas, layout, state, textures)?;
+    canvas.present();
+    canvas.window_mut().raise();
+    eprintln!(
+        "level=info event=ready width={} height={} apps={}",
+        layout.width,
+        layout.height,
+        state.apps.len()
+    );
+    Ok(())
+}
+
+fn refresh_focus(child: &mut impl Processes, state: &mut Launcher) -> bool {
+    match child.poll_focus() {
+        Ok(Some(crate::platform::FocusResult::Focused)) => state.status = "APP OPENED".into(),
+        Err(error) => state.failed(error),
+        Ok(Some(crate::platform::FocusResult::Missing)) => {
+            state.finished("Still starting - select the app to retry".into());
+        }
+        Ok(None) => return false,
+    }
+    true
+}
+
+fn window_focus(
+    event: &Event,
+    state: &mut Launcher,
+    pointer: &mut PointerInput,
+    accept_after: &mut Instant,
+) -> bool {
     match event {
         Event::Window {
             win_event: WindowEvent::FocusLost,
             ..
         } => {
-            state.settings.cancel();
+            state.opening = None;
+            state.settings.lost_focus();
             pointer.clear();
             true
         }
@@ -187,6 +278,7 @@ fn window_focus(event: &Event, state: &mut Launcher, pointer: &mut PointerInput)
         } => {
             state.returned_home();
             pointer.clear();
+            *accept_after = Instant::now();
             true
         }
         _ => false,
@@ -249,17 +341,18 @@ fn translate_action(
     pointer: &mut PointerInput,
     worker: &mut Option<crate::platform::system::Worker>,
 ) -> (Option<Action>, bool) {
-    let count = if state.settings.open {
-        if state.settings.confirmation.is_some() {
-            2
-        } else {
-            6
-        }
-    } else {
-        state.visible_count()
-    };
-    let action = pointer.action(event, layout, count);
-    if system_action(action, worker, &mut state.settings) {
+    state.settings.network_available = state
+        .apps
+        .iter()
+        .any(|app| app.is_system_settings() && app.unavailable.is_none());
+    if state.settings.open {
+        let request = state.settings.event(event, layout);
+        submit_setting(request, worker, &mut state.settings);
+        return (None, true);
+    }
+    let action = pointer.action(event, layout, state.visible_count());
+    if action == Some(Action::System) {
+        state.settings.show();
         (None, true)
     } else {
         (action, false)
@@ -275,8 +368,24 @@ fn refresh_system(
         if let Some(update) = worker.update() {
             settings.status = update.status;
             if let Some(result) = update.result {
-                settings.message =
-                    result.map_or_else(|error| error, |()| "CONTROL APPLIED - ESC:BACK".into());
+                settings.applying = None;
+                let previous = std::mem::take(&mut settings.timezone);
+                if let crate::settings::TimezoneState::Applying(index) = previous
+                    && result.is_err()
+                {
+                    settings.timezone = crate::settings::TimezoneState::Authentication(index);
+                }
+                let reading = matches!(previous, crate::settings::TimezoneState::Reading);
+                settings.message = result.map_or_else(
+                    |error| error,
+                    |()| {
+                        if reading {
+                            "Time zone refreshed".into()
+                        } else {
+                            "Saved".into()
+                        }
+                    },
+                );
             }
             dirty = true;
         }
@@ -287,28 +396,146 @@ fn refresh_system(
             dirty = true;
         }
     }
+    if worker.as_ref().is_some_and(|worker| !worker.pending) {
+        for index in 0..2 {
+            if let Some(value) = settings.queued[index].take() {
+                let command = if index == 0 {
+                    crate::platform::system::Control::Brightness(value)
+                } else {
+                    crate::platform::system::Control::Volume(value)
+                };
+                submit_setting(
+                    Some(crate::settings::Request::Control(command)),
+                    worker,
+                    settings,
+                );
+                dirty = true;
+                break;
+            }
+        }
+    }
     dirty
 }
-fn system_action(
-    action: Option<Action>,
+fn submit_setting(
+    request: Option<crate::settings::Request>,
     worker: &mut Option<crate::platform::system::Worker>,
     settings: &mut crate::settings::Settings,
-) -> bool {
-    let Some(action) = action else {
-        return false;
+) {
+    match request {
+        Some(crate::settings::Request::Calibration) => {
+            settings.network = crate::settings::NetworkState::CalibrationRequested;
+        }
+        Some(crate::settings::Request::Network) => {
+            settings.network = crate::settings::NetworkState::Requested;
+        }
+        Some(crate::settings::Request::Control(command)) => {
+            use crate::platform::system::Control;
+            let slider = match command {
+                Control::Brightness(value) => Some((0, value)),
+                Control::Volume(value) => Some((1, value)),
+                Control::Power(_)
+                | Control::ScreenTimeout(_)
+                | Control::Timezone(_)
+                | Control::ReadTimezone => None,
+            };
+            if let Some((index, value)) = slider
+                && worker.as_ref().is_some_and(|worker| worker.pending)
+            {
+                settings.queued[index] = Some(value);
+                return;
+            }
+            let result = worker
+                .as_mut()
+                .ok_or_else(|| "System controls unavailable".into())
+                .and_then(|worker| worker.submit(command));
+            if result.is_ok() {
+                match command {
+                    Control::Timezone(index) => {
+                        settings.timezone = crate::settings::TimezoneState::Applying(index);
+                    }
+                    Control::ReadTimezone => {
+                        settings.timezone = crate::settings::TimezoneState::Reading;
+                    }
+                    _ => {}
+                }
+                settings.applying = match command {
+                    Control::Brightness(value) => Some((0, value)),
+                    Control::Volume(value) => Some((1, value)),
+                    Control::Power(_)
+                    | Control::ScreenTimeout(_)
+                    | Control::Timezone(_)
+                    | Control::ReadTimezone => None,
+                };
+            }
+            settings.message = result.map_or_else(|error| error, |()| "Applying...".into());
+            settings.pending = worker.as_ref().is_some_and(|worker| worker.pending);
+        }
+        None => {}
+    }
+}
+fn open_timezone(state: &mut Launcher, child: &mut impl Processes, index: usize) {
+    let result = state
+        .settings
+        .status
+        .timezones
+        .get(index)
+        .ok_or_else(|| "Time zone unavailable".to_owned())
+        .and_then(|zone| crate::platform::pocketchip::timezone_app(zone))
+        .and_then(|app| child.start(&app));
+    match result {
+        Ok(()) => {
+            state.settings.cancel();
+            state.settings.network = crate::settings::NetworkState::TimezoneOpen;
+            state.opening = Some("Time zone authentication".into());
+            state.started();
+        }
+        Err(error) => state.settings.message = error,
+    }
+}
+fn open_calibration(state: &mut Launcher, child: &mut impl Processes) {
+    state.settings.network = crate::settings::NetworkState::Idle;
+    let app = crate::app::AppEntry {
+        id: "vitrallis-touch-calibration".into(),
+        name: "Touch calibration".into(),
+        icon: None,
+        unavailable: None,
+        manifest: crate::app::AppManifest {
+            entry: "/usr/local/bin/pocketchip-calibration".into(),
+            ..crate::app::AppManifest::default()
+        },
     };
-    if !settings.open && action != Action::System {
-        return false;
+    match child.start(&app) {
+        Ok(()) => {
+            state.settings.cancel();
+            state.settings.network = crate::settings::NetworkState::CalibrationOpen;
+            state.opening = Some(app.name);
+            state.started();
+        }
+        Err(error) => state.settings.message = error,
     }
-    if let Some(command) = settings.input(action) {
-        let result = worker
-            .as_mut()
-            .ok_or_else(|| "system worker unavailable".into())
-            .and_then(|worker| worker.submit(command));
-        settings.message = result.map_or_else(|error| error, |()| "APPLYING...".into());
-        settings.pending = worker.as_ref().is_some_and(|worker| worker.pending);
+}
+fn open_network(state: &mut Launcher, child: &mut impl Processes) {
+    state.settings.network = crate::settings::NetworkState::Idle;
+    let Some(mut app) = state
+        .apps
+        .iter()
+        .find(|app| app.is_system_settings())
+        .cloned()
+    else {
+        state.settings.message = "Wi-Fi connection manager unavailable".into();
+        return;
+    };
+    app.id = "vitrallis-network-manager".into();
+    app.name = "Wi-Fi networks".into();
+    match child.start(&app) {
+        Ok(()) => {
+            state.settings.cancel();
+            state.settings.network = crate::settings::NetworkState::Open;
+            state.opening = Some(app.name.clone());
+            state.started();
+        }
+        Err(error) => state.settings.message = error,
     }
-    true
 }
 
 fn handle_action(
@@ -326,30 +553,40 @@ fn handle_action(
         action = Action::SelectAndActivate(state.page_start() + index);
     }
     if state.phase == Phase::Running
+        && state.opening.is_none()
         && (matches!(action, Action::Activate)
             || matches!(action, Action::SelectAndActivate(index) if index == state.selected))
     {
-        state.status = child
-            .focus()
-            .map_or_else(|error| error, |()| "APP RESUMED".into());
-        return Ok(true);
+        // Route both activation paths through ProcessSet::start, which checks
+        // for an exit before deciding whether to resume or launch again.
+        state.returned_home();
     }
-    let before = (state.selected, state.phase, state.error.is_some());
+    let before = (
+        state.selected,
+        state.phase,
+        state.error.is_some(),
+        state.settings.open,
+    );
     let was_ready = state.phase == Phase::Ready;
     if let Some(index) = state.input(action) {
         // Present transition feedback before process creation.
         render(canvas, layout, state, icons)?;
         canvas.present();
+        state.settings.network = crate::settings::NetworkState::Idle;
         process::activate(state, child, index);
     }
-    Ok(
-        before != (state.selected, state.phase, state.error.is_some())
-            || was_ready
-                && matches!(
-                    action,
-                    Action::Back | Action::Activate | Action::SelectAndActivate(_)
-                ),
-    )
+    Ok(before
+        != (
+            state.selected,
+            state.phase,
+            state.error.is_some(),
+            state.settings.open,
+        )
+        || was_ready
+            && matches!(
+                action,
+                Action::Back | Action::Activate | Action::SelectAndActivate(_)
+            ))
 }
 
 fn inject_activation(sdl: &sdl2::Sdl, canvas: &Screen) -> Result<(), String> {
@@ -385,8 +622,11 @@ fn wait_event(
     events: &mut sdl2::EventPump,
     phase: Phase,
     next_poll: Instant,
-    _smoke: bool,
+    dirty: bool,
 ) -> Option<Event> {
+    if dirty {
+        return events.wait_event_timeout(16);
+    }
     if phase == Phase::Running {
         let wait = next_poll
             .saturating_duration_since(Instant::now())
@@ -394,5 +634,173 @@ fn wait_event(
         events.wait_event_timeout(u32::try_from(wait).unwrap_or(250).clamp(1, 250))
     } else {
         events.wait_event_timeout(250)
+    }
+}
+
+fn open_requested(state: &mut Launcher, child: &mut impl Processes) -> bool {
+    match state.settings.network {
+        crate::settings::NetworkState::Requested => open_network(state, child),
+        crate::settings::NetworkState::CalibrationRequested => open_calibration(state, child),
+        _ => return false,
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdl2::mouse::MouseButton;
+    #[test]
+    fn pending_slider_input_coalesces_to_the_latest_value() -> Result<(), String> {
+        use crate::platform::system::{Control, Percent, Status, System, Worker};
+        use crate::settings::{Request, Settings};
+        use std::sync::mpsc;
+        #[derive(Clone)]
+        struct Backend(mpsc::Sender<Control>);
+        impl System for Backend {
+            fn refresh(&mut self) -> Status {
+                Status::default()
+            }
+            fn control(&mut self, command: Control, _: &mut Status) -> Result<(), String> {
+                self.0.send(command).map_err(|error| error.to_string())
+            }
+        }
+        let (send, received) = mpsc::channel();
+        let mut worker = Some(Worker::start(Backend(send))?);
+        let mut settings = Settings::default();
+        for value in [20, 30, 80] {
+            submit_setting(
+                Some(Request::Control(Control::Brightness(Percent::new(value)?))),
+                &mut worker,
+                &mut settings,
+            );
+        }
+        assert_eq!(settings.value(0), Some(Percent::new(80)?));
+        assert_eq!(
+            received
+                .recv_timeout(Duration::from_secs(3))
+                .map_err(|error| error.to_string())?,
+            Control::Brightness(Percent::new(20)?)
+        );
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while worker.as_ref().is_some_and(|worker| worker.pending)
+            || settings.queued.iter().any(Option::is_some)
+        {
+            refresh_system(&mut worker, &mut settings);
+            if Instant::now() >= deadline {
+                return Err("slider worker timeout".into());
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            received
+                .recv_timeout(Duration::from_secs(3))
+                .map_err(|error| error.to_string())?,
+            Control::Brightness(Percent::new(80)?)
+        );
+        assert!(received.try_recv().is_err());
+        Ok(())
+    }
+    #[test]
+    fn loading_survives_spawn_and_missing_window_is_nonfatal() -> Result<(), String> {
+        struct Missing;
+        impl Processes for Missing {
+            fn start(&mut self, _: &crate::app::AppEntry) -> Result<(), String> {
+                Ok(())
+            }
+            fn poll(&mut self) -> Result<Option<std::process::ExitStatus>, String> {
+                Ok(None)
+            }
+            fn poll_focus(&mut self) -> Result<Option<crate::platform::FocusResult>, String> {
+                Ok(Some(crate::platform::FocusResult::Missing))
+            }
+        }
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let mut state = Launcher::new(apps, 3, 6)?;
+        state.input(Action::Activate);
+        state.started();
+        assert!(state.opening.is_some());
+        refresh_focus(&mut Missing, &mut state);
+        assert!(state.error.is_none());
+        assert!(state.opening.is_none());
+        assert_eq!(state.phase, Phase::Ready);
+        Ok(())
+    }
+    #[test]
+    fn late_focus_loss_preserves_network_return_but_cancels_power_confirmation()
+    -> Result<(), String> {
+        use std::os::unix::process::ExitStatusExt;
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let mut state = Launcher::new(apps, 3, 6)?;
+        state.started();
+        state.settings.network = crate::settings::NetworkState::Open;
+        app_exited(&mut state, std::process::ExitStatus::from_raw(0), true);
+        let mut pointer = PointerInput::default();
+        let mut accept_after = Instant::now();
+        let event = Event::Window {
+            timestamp: 0,
+            window_id: 1,
+            win_event: WindowEvent::FocusLost,
+        };
+        window_focus(&event, &mut state, &mut pointer, &mut accept_after);
+        assert!(state.settings.open);
+        assert_eq!(state.settings.network, crate::settings::NetworkState::Idle);
+        state.settings.status.power_controls = true;
+        state.settings.input(Action::SelectAndActivate(4));
+        assert!(state.settings.confirmation.is_some());
+        window_focus(&event, &mut state, &mut pointer, &mut accept_after);
+        assert!(state.settings.open);
+        assert!(state.settings.confirmation.is_none());
+        assert_eq!(state.settings.selected, 0);
+        Ok(())
+    }
+    #[test]
+    fn focus_return_accepts_fresh_input_without_accepting_stale_release() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let mut state = Launcher::new(apps, 3, 6)?;
+        state.started();
+        let mut pointer = PointerInput::default();
+        let mut accept_after = Instant::now() + Duration::from_millis(400);
+        let focus = Event::Window {
+            timestamp: 0,
+            window_id: 1,
+            win_event: WindowEvent::FocusGained,
+        };
+        assert!(window_focus(
+            &focus,
+            &mut state,
+            &mut pointer,
+            &mut accept_after
+        ));
+        assert!(Instant::now() >= accept_after);
+        let release = Event::MouseButtonUp {
+            timestamp: 0,
+            window_id: 1,
+            which: 0,
+            mouse_btn: MouseButton::Left,
+            clicks: 1,
+            x: 80,
+            y: 80,
+        };
+        assert_eq!(
+            pointer.action(&release, &layout, state.visible_count()),
+            None
+        );
+        let press = Event::MouseButtonDown {
+            timestamp: 0,
+            window_id: 1,
+            which: 0,
+            mouse_btn: MouseButton::Left,
+            clicks: 1,
+            x: 80,
+            y: 80,
+        };
+        assert_eq!(pointer.action(&press, &layout, state.visible_count()), None);
+        let action = pointer
+            .action(&release, &layout, state.visible_count())
+            .ok_or("lost first tap after app return")?;
+        assert_eq!(state.input(action), Some(0));
+        Ok(())
     }
 }

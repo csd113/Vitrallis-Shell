@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -40,6 +41,22 @@ class Session(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 s.supervise(Path(temp).resolve())
             awesome.assert_not_called()
+
+    def test_hardlinked_log_and_dangling_marker_are_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            outside = root / 'outside'
+            outside.write_bytes(b'preserve')
+            log = root / 'session.log'
+            os.link(outside, log)
+            with self.assertRaisesRegex(ValueError, 'hardlink'):
+                s.log_chunk(log, b'bad')
+            self.assertEqual(outside.read_bytes(), b'preserve')
+            (root / '.installation-pending').symlink_to(root / 'missing')
+            with patch.object(s, 'awesome') as awesome:
+                with self.assertRaisesRegex(ValueError, 'symlink'):
+                    s.supervise(root)
+                awesome.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 use super::Platform;
+mod display;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PocketChip;
@@ -8,6 +9,16 @@ impl Platform for PocketChip {
     }
     fn resolution(&self) -> (u16, u16) {
         (480, 272)
+    }
+    fn prepare_app(&self, app: &mut crate::app::AppEntry) {
+        // LXTerminal normally relays new windows to an existing server. Keep
+        // Terminal and the Wi-Fi manager in their own supervised process groups.
+        if app.manifest.runtime.is_none()
+            && app.manifest.entry == std::path::Path::new("/usr/bin/lxterminal")
+            && !app.manifest.args.iter().any(|arg| arg == "--no-remote")
+        {
+            app.manifest.args.insert(0, "--no-remote".into());
+        }
     }
 }
 
@@ -68,10 +79,43 @@ impl Hardware for Native {
     }
 }
 impl System for PocketChip {
+    fn initialize(&mut self) {
+        if let Err(error) = display::restore() {
+            eprintln!("level=warn event=screen_timeout_restore message={error:?}");
+        }
+    }
     fn refresh(&mut self) -> Status {
         snapshot(&Native)
     }
     fn control(&mut self, control: Control, status: &mut Status) -> Result<(), String> {
+        if control == Control::ReadTimezone {
+            let actual =
+                Native.command("timedatectl", &["show", "--property=Timezone", "--value"])?;
+            if !display::valid_zone(actual.trim()) {
+                return Err("Invalid time zone readback".into());
+            }
+            status.timezone = Some(actual.trim().into());
+            status.clock = command::clock();
+            return Ok(());
+        }
+        if let Control::Timezone(index) = control {
+            let zone = status
+                .timezones
+                .get(index)
+                .filter(|zone| display::valid_zone(zone))
+                .ok_or("Time zone unavailable")?;
+            Native
+                .command("timedatectl", &["--no-ask-password", "set-timezone", zone])
+                .map_err(|_| "Time zone change denied or unavailable".to_owned())?;
+            let actual =
+                Native.command("timedatectl", &["show", "--property=Timezone", "--value"])?;
+            if actual.trim() != zone {
+                return Err("Time zone readback did not match".into());
+            }
+            status.timezone = Some(actual.trim().into());
+            status.clock = command::clock();
+            return Ok(());
+        }
         apply(&Native, control)?;
         match control {
             Control::Brightness(_) => {
@@ -86,7 +130,8 @@ impl System for PocketChip {
                 status.volume = Some(volume);
                 status.muted = muted;
             }
-            Control::Power(_) => {}
+            Control::Power(_) | Control::Timezone(_) | Control::ReadTimezone => {}
+            Control::ScreenTimeout(_) => status.screen_timeout = display::timeout(&Native),
         }
         Ok(())
     }
@@ -128,11 +173,11 @@ fn brightness(io: &impl Hardware) -> Result<(u8, u8), String> {
 }
 fn brightness_percent(io: &impl Hardware) -> Option<Percent> {
     let (level, _) = brightness(io).ok()?;
-    Percent::new(u8::try_from(u16::from(level - 1) * 100 / 9).ok()?).ok()
+    Percent::new(level * 10).ok()
 }
 
 fn brightness_level(percent: Percent) -> u8 {
-    1 + u8::try_from((u16::from(percent.value()) * 9 + 50) / 100).unwrap_or(9)
+    (percent.snapped().value() / 10).max(1)
 }
 fn audio(value: &str) -> Result<(Percent, Option<bool>), String> {
     let mut level = None;
@@ -194,12 +239,29 @@ fn snapshot(io: &impl Hardware) -> Status {
         Err(_) => None,
     };
     Status {
+        ip: ["wlan0", "usb0"].into_iter().find_map(|device| {
+            io.command(
+                "ip",
+                &["-o", "-4", "addr", "show", "dev", device, "scope", "global"],
+            )
+            .ok()
+            .and_then(|text| display::ip(&text))
+        }),
+        screen_timeout: display::timeout(io),
+        timezone: io
+            .command("timedatectl", &["show", "--property=Timezone", "--value"])
+            .ok()
+            .map(|text| text.trim().to_owned())
+            .filter(|zone| display::valid_zone(zone)),
+        timezones: display::zones(),
+        calibration: Path::new("/usr/local/bin/pocketchip-calibration").is_file(),
         battery,
         charging,
         external_power,
         wifi,
         bluetooth: None,
         brightness: brightness_percent(io),
+        brightness_minimum: Percent::new(10).ok(),
         volume: audio.map(|v| v.0),
         muted: audio.and_then(|v| v.1),
         clock: command::clock(),
@@ -252,6 +314,10 @@ fn battery_status(io: &impl Hardware) -> (Option<Percent>, Option<bool>, Option<
 }
 fn apply(io: &impl Hardware, control: Control) -> Result<(), String> {
     match control {
+        Control::ScreenTimeout(seconds) => display::apply(io, seconds),
+        Control::Timezone(_) | Control::ReadTimezone => {
+            Err("Time zone requires an available selection".into())
+        }
         Control::Brightness(value) => {
             brightness(io)?;
             io.write(BRIGHTNESS, &format!("{}\n", brightness_level(value)))
@@ -353,16 +419,16 @@ mod tests {
         }
         fn command(&self, name: &str, args: &[&str]) -> Result<String, String> {
             self.writes.borrow_mut().push(format!("{name} {args:?}"));
-            if name == "i2cget" {
-                if let Some(registers) = self.registers {
-                    let index = match args.get(4) {
-                        Some(&"0x00") => 0,
-                        Some(&"0x01") => 1,
-                        Some(&"0xb9") => 2,
-                        _ => return Err("unexpected register".into()),
-                    };
-                    return Ok(format!("0x{:02x}", registers[index]));
-                }
+            if name == "i2cget"
+                && let Some(registers) = self.registers
+            {
+                let index = match args.get(4) {
+                    Some(&"0x00") => 0,
+                    Some(&"0x01") => 1,
+                    Some(&"0xb9") => 2,
+                    _ => return Err("unexpected register".into()),
+                };
+                return Ok(format!("0x{:02x}", registers[index]));
             }
             Err("unavailable".into())
         }
@@ -397,6 +463,10 @@ mod tests {
             writes: RefCell::default(),
             registers: None,
         };
+        assert_eq!(brightness_percent(&io), Some(Percent::new(50)?));
+        for value in (10..=100).step_by(10) {
+            assert_eq!(brightness_level(Percent::new(value)?), value / 10);
+        }
         for value in 0..=100 {
             let value = Percent::new(value)?;
             assert!((1..=10).contains(&brightness_level(value)));
@@ -458,5 +528,94 @@ mod tests {
             io.writes.borrow()[0],
             "systemctl [\"--no-ask-password\", \"poweroff\"]"
         );
+    }
+}
+
+#[cfg(test)]
+mod terminal_tests {
+    use super::*;
+    #[test]
+    fn terminal_windows_keep_separate_owners_and_preserve_the_network_command() {
+        let mut app = crate::platform::generic::demo_apps(Path::new("/vitrallis")).remove(0);
+        app.manifest.entry = "/usr/bin/lxterminal".into();
+        app.manifest.args = vec!["-e".into(), "nmtui".into()];
+        let original = app.clone();
+        crate::platform::generic::Generic.prepare_app(&mut app);
+        assert_eq!(app, original);
+        PocketChip.prepare_app(&mut app);
+        PocketChip.prepare_app(&mut app);
+        assert_eq!(app.manifest.args, ["--no-remote", "-e", "nmtui"]);
+        assert_eq!(app.id, original.id);
+        app.manifest.entry = "/usr/bin/another-terminal".into();
+        app.manifest.args = original.manifest.args;
+        PocketChip.prepare_app(&mut app);
+        assert_eq!(app.manifest.args, ["-e", "nmtui"]);
+    }
+}
+
+/// A supervised terminal owns authentication; no password enters the launcher.
+pub fn timezone_app(zone: &str) -> Result<crate::app::AppEntry, String> {
+    if !display::valid_zone(zone) {
+        return Err("Invalid time zone".into());
+    }
+    let binary = std::env::current_exe().map_err(|e| e.to_string())?;
+    let binary = binary.to_str().ok_or("Non-UTF-8 executable path")?;
+    // LXTerminal parses --command with GLib shell quoting. Quote both arguments.
+    let quote = |text: &str| format!("'{}'", text.replace('\'', "'\\''"));
+    Ok(crate::app::AppEntry {
+        id: "vitrallis-timezone-authentication".into(),
+        name: "Time zone authentication".into(),
+        icon: None,
+        unavailable: None,
+        manifest: crate::app::AppManifest {
+            entry: "/usr/bin/lxterminal".into(),
+            args: vec![
+                "--no-remote".into(),
+                "--title=Time zone".into(),
+                format!("--command={} --set-timezone {}", quote(binary), quote(zone)).into(),
+            ],
+            ..crate::app::AppManifest::default()
+        },
+    })
+}
+pub fn authenticate_timezone(zone: &str) -> Result<(), String> {
+    if !display::valid_zone(zone) || !display::zones().iter().any(|candidate| candidate == zone) {
+        return Err("Time zone is not in the installed zone database".into());
+    }
+    println!(
+        "Set device time zone to {zone}\nEnter your device password if prompted.\nCtrl+C cancels.\n"
+    );
+    let status = std::process::Command::new("/usr/bin/sudo")
+        .args([
+            "--",
+            "/usr/bin/timedatectl",
+            "--no-ask-password",
+            "set-timezone",
+            zone,
+        ])
+        .status()
+        .map_err(|e| e.to_string())?;
+    let actual = Native.command("timedatectl", &["show", "--property=Timezone", "--value"])?;
+    let accepted = status.success() && actual.trim() == zone;
+    println!(
+        "{}\nCurrent time zone: {}\n\nPress Enter to return to System Settings.",
+        if accepted {
+            "Time zone saved."
+        } else {
+            "Time zone was not changed."
+        },
+        actual.trim()
+    );
+    // Read only the acknowledgement, never an authentication secret.
+    let mut input = String::new();
+    std::io::BufRead::read_line(
+        &mut std::io::BufReader::new(std::io::stdin().take(1024)),
+        &mut input,
+    )
+    .map_err(|e| e.to_string())?;
+    if accepted {
+        Ok(())
+    } else {
+        Err("Time zone change cancelled or denied".into())
     }
 }

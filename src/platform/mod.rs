@@ -8,6 +8,7 @@ pub mod system;
 pub trait Platform: system::System + Copy {
     fn fullscreen(&self) -> bool;
     fn resolution(&self) -> (u16, u16);
+    fn prepare_app(&self, _app: &mut crate::app::AppEntry) {}
     fn raise_after_exit(&self) -> bool {
         true
     }
@@ -17,10 +18,14 @@ pub trait Platform: system::System + Copy {
 pub enum AppWindow {
     Bitcoin,
     Store,
+    Calibration,
 }
 
 impl AppWindow {
     pub fn for_entry(entry: &std::path::Path) -> Option<Self> {
+        if entry == std::path::Path::new("/usr/local/bin/pocketchip-calibration") {
+            return Some(Self::Calibration);
+        }
         let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
         if entry == home.join(".local/share/pocket-bitcoin/launch") {
             Some(Self::Bitcoin)
@@ -32,7 +37,18 @@ impl AppWindow {
     }
 }
 
-pub fn focus_application(pid: u32, hint: Option<AppWindow>) -> Result<(), String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FocusResult {
+    Focused,
+    Missing,
+}
+
+pub fn focus_application(pid: u32, hint: Option<AppWindow>) -> Result<FocusResult, String> {
+    // The inspected calibrator uses an override-redirect surface and grabs its
+    // own input. It has no Awesome client to raise or wait for.
+    if matches!(hint, Some(AppWindow::Calibration)) {
+        return Ok(FocusResult::Focused);
+    }
     if std::env::var_os("VITRALLIS_SESSION").as_deref() != Some(std::ffi::OsStr::new("1")) {
         return Err("use the window manager to return to the running app".into());
     }
@@ -46,7 +62,7 @@ pub fn focus_application(pid: u32, hint: Option<AppWindow>) -> Result<(), String
             "c.class=='Tk' and c.name:match('^Bitcoin CAD v%d+%.%d+%.%d+$')"
         }
         Some(AppWindow::Store) => "c.class=='Tk' and c.name=='Update Apps'",
-        None => "false",
+        None | Some(AppWindow::Calibration) => "false",
     };
     let code = format!(
         "for _,c in ipairs(client.get()) do \
@@ -61,8 +77,8 @@ pub fn focus_application(pid: u32, hint: Option<AppWindow>) -> Result<(), String
     );
     let result = command::run("/usr/bin/awesome-client", &[&code])?;
     if result.contains("\"focused\"") {
-        Ok(())
+        Ok(FocusResult::Focused)
     } else {
-        Err("running app has no window yet; try again shortly".into())
+        Ok(FocusResult::Missing)
     }
 }

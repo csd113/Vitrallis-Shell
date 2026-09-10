@@ -1,8 +1,60 @@
 diff --git a/deployment.py b/deployment.py
-index 30118ed..d73165a 100644
+index 30118ed..d8a96cb 100644
 --- a/deployment.py
 +++ b/deployment.py
-@@ -56,6 +56,10 @@ def deploy(home, target, name, icon, files, validate_only=False):
+@@ -9,6 +9,8 @@ def safe(path):
+     path = Path(path)
+     if any(p.is_symlink() for p in (path,) + tuple(path.parents)):
+         raise ValueError('Refusing symlink path: ' + str(path))
++    if path.exists() and path.stat().st_nlink != 1:
++        raise ValueError('Refusing hardlink path: ' + str(path))
+     if path.exists() and not path.is_file():
+         raise ValueError('Expected a regular file: ' + str(path))
+
+@@ -18,7 +20,13 @@ def deploy(home, target, name, icon, files, validate_only=False):
+     config_path = home / '.pocket-home/config.json'
+     safe(config_path)
+     original = config_path.read_bytes()
++    if len(original) > 1024 * 1024:
++        raise ValueError('PocketHome config exceeds 1 MiB')
+     config = json.loads(original)
++    if not isinstance(config, dict) or not isinstance(config.get('pages'), list):
++        raise ValueError('Invalid PocketHome document')
++    if not all(isinstance(p, dict) for p in config['pages']):
++        raise ValueError('Invalid PocketHome page')
+     pages = [p for p in config['pages'] if p.get('name') == 'Apps']
+     if len(pages) != 1 or not isinstance(pages[0].get('items'), list):
+         raise ValueError('Expected exactly one PocketHome Apps page')
+@@ -28,6 +36,10 @@ def deploy(home, target, name, icon, files, validate_only=False):
+     matches = [i for i in items if i.get('name') == name]
+     if len(matches) > 1:
+         raise ValueError('Duplicate Home menu entries: ' + name)
++    if not name or any(ord(c) < 32 or ord(c) == 127 for c in name):
++        raise ValueError('Invalid application name')
++    if not isinstance(icon, str) or Path(icon).name != icon or icon in ('', '.', '..'):
++        raise ValueError('Invalid icon filename')
+     entry = dict(name=name, icon=str(target / icon), shell=shlex.quote(str(target / 'launch')))
+     if matches:
+         matches[0].update(entry)
+@@ -35,7 +47,7 @@ def deploy(home, target, name, icon, files, validate_only=False):
+         items.append(entry)
+     writes = {}
+     for filename, value in files.items():
+-        if Path(filename).name != filename:
++        if not isinstance(filename, str) or Path(filename).name != filename or filename in ('', '.', '..'):
+             raise ValueError('Invalid installer filename')
+         if filename.endswith('.py'):
+             compile(value[0], filename, 'exec')
+@@ -47,7 +59,7 @@ def deploy(home, target, name, icon, files, validate_only=False):
+         raise ValueError('Unsupported installation path')
+     for directory in (home / '.local/share/applications', home / 'Desktop'):
+         writes[directory / (target.name + '.desktop')] = (desktop.encode(), 0o755)
+-    writes[config_path] = ((json.dumps(config, indent=2) + '\n').encode(), 0o644)
++    writes[config_path] = ((json.dumps(config, indent=2) + '\n').encode(), config_path.stat().st_mode & 0o777)
+     previous = {}
+     for path in writes:
+         safe(path)
+@@ -56,17 +68,25 @@ def deploy(home, target, name, icon, files, validate_only=False):
          return
      backup = config_path.with_name('config.json.before-app-install-' + str(time.time_ns()))
      atomic(backup, original)
@@ -13,17 +65,34 @@ index 30118ed..d73165a 100644
      changed = []
      try:
          for path, (content, mode) in writes.items():
-@@ -74,3 +78,5 @@ def deploy(home, target, name, icon, files, validate_only=False):
+             safe(path)
+-            if path == config_path and path.read_bytes() != original:
+-                raise ValueError('Menu changed during installation; retry')
++            old = previous[path]
++            if (path.read_bytes() if path.exists() else None) != (old[0] if old else None):
++                raise ValueError('File changed during installation; retry')
+             path.parent.mkdir(parents=True, exist_ok=True)
+             changed.append(path)
+             atomic(path, content, mode)
+     except BaseException:
+         for path in reversed(changed):
++            safe(path)
++            if not path.exists() or path.read_bytes() != writes[path][0]:
++                continue
+             old = previous[path]
+             if old is None:
+                 if path.exists():
+@@ -74,3 +94,5 @@ def deploy(home, target, name, icon, files, validate_only=False):
              else:
                  atomic(path, *old)
          raise
 +
 +    marker.unlink()
 diff --git a/test_deployment.py b/test_deployment.py
-index efda2f6..3536729 100644
+index efda2f6..f9f89f0 100644
 --- a/test_deployment.py
 +++ b/test_deployment.py
-@@ -72,3 +72,42 @@ class Deployment(unittest.TestCase):
+@@ -72,3 +72,90 @@ class Deployment(unittest.TestCase):
          with self.assertRaises(ValueError):
              self.install()
          self.assertFalse(self.target.exists())
@@ -66,6 +135,54 @@ index efda2f6..3536729 100644
 +        self.install()
 +        self.assertTrue((self.target / 'launch').is_file())
 +        self.assertEqual(u.installed(self.app), 'v1.0.0')
++
++    def test_private_menu_permissions_are_preserved(self):
++        self.config.chmod(0o600)
++        self.install()
++        self.assertEqual(self.config.stat().st_mode & 0o777, 0o600)
++
++    def test_malformed_documents_fail_before_mutation(self):
++        for value in ([], None, {'pages': [None]}):
++            self.config.write_text(json.dumps(value))
++            with self.assertRaises(ValueError):
++                self.install()
++            self.assertFalse(self.target.exists())
++
++    def test_hardlinked_menu_is_preserved(self):
++        import os
++        outside = self.home / 'outside'
++        os.link(self.config, outside)
++        original = outside.read_bytes()
++        with self.assertRaisesRegex(ValueError, 'hardlink'):
++            self.install()
++        self.assertEqual(outside.read_bytes(), original)
++
++    def test_dangling_marker_requires_repair(self):
++        self.target.mkdir(parents=True)
++        (self.target / '.installation-pending').symlink_to(self.target / 'missing')
++        self.assertEqual(u.installed(self.app), 'incomplete / repair')
++
++    def test_invalid_bundle_paths_and_labels_are_rejected(self):
++        for filename in ('../outside', '..', '', '/outside'):
++            with self.assertRaises(ValueError):
++                deploy(self.home, self.target, 'App', 'icon.png', {filename: (b'x', 0o644)})
++        with self.assertRaises(ValueError):
++            deploy(self.home, self.target, 'App\nExec=bad', 'icon.png', {})
++        self.assertFalse(self.target.exists())
++
++    def test_failure_after_atomic_rename_rolls_back(self):
++        real = u.atomic
++        failed = []
++        def write(path, *args):
++            real(path, *args)
++            if path == self.app['path'] and not failed:
++                failed.append(True)
++                raise OSError('directory fsync failure')
++        with patch.object(u, 'atomic', side_effect=write):
++            with self.assertRaises(OSError):
++                self.install()
++        self.assertFalse(self.app['path'].exists())
++        self.assertTrue((self.target / '.installation-pending').exists())
 diff --git a/test_self_update.py b/test_self_update.py
 index 7771a79..10c7b35 100644
 --- a/test_self_update.py
@@ -112,11 +229,11 @@ index 67dfa23..465c4f6 100644
          subprocess.run([sys.executable, '-c', script], cwd=Path(u.__file__).parent,
 -                       check=True, timeout=5, capture_output=True)
 +                       check=True, timeout=60, capture_output=True)
- 
+
  
  class Selection(unittest.TestCase):
 diff --git a/update_apps.py b/update_apps.py
-index 575abf6..1321f53 100644
+index 575abf6..f72d8ac 100644
 --- a/update_apps.py
 +++ b/update_apps.py
 @@ -29,9 +29,9 @@ APPS = [dict(name='Bitcoin CAD', repo='csd113/PocketChip-Bitcoin-Display',
@@ -129,15 +246,16 @@ index 575abf6..1321f53 100644
 -             known={}, self_update=True)]
 +             known={}, self_update=True, vitrallis_managed=True)]
  LIMIT = 2 * 1024 * 1024
+
  
- 
-@@ -88,7 +88,24 @@ def source_version(data):
+@@ -88,7 +88,25 @@ def source_version(data):
      return None
- 
+
  
 +def incomplete(app):
 +    root = app['path'].parent
-+    if (root / '.installation-pending').exists():
++    marker = root / '.installation-pending'
++    if marker.is_symlink() or marker.exists():
 +        return True
 +    if current(app) is None:
 +        return False
@@ -156,8 +274,8 @@ index 575abf6..1321f53 100644
      data = current(app)
      if data is None:
          return 'not installed'
-@@ -109,6 +126,10 @@ def installed(app):
- 
+@@ -109,6 +127,10 @@ def installed(app):
+
  
  def check_self(app):
 +    # A remote self-update would silently remove the local crash-safety patch.
@@ -167,17 +285,17 @@ index 575abf6..1321f53 100644
      commit = revision(api(app['repo'] + '/commits/' + app['branch'])['sha'])
      tree = api(app['repo'] + '/git/trees/' + commit)
      if tree.get('truncated'):
-@@ -203,7 +224,8 @@ def check(app):
+@@ -203,7 +225,8 @@ def check(app):
          raise ValueError('Download checksum failed')
      compile(data, app['source'], 'exec')
      return dict(commit=commit, version=source_version(data) or commit[:8],
 -                data=data, old=sha(old) if old is not None else None, needed=data != old)
 +                data=data, old=sha(old) if old is not None else None,
 +                needed=data != old or incomplete(app))
- 
+
  
  def atomic(path, content, mode=0o600):
-@@ -280,7 +302,7 @@ def install(app, result):
+@@ -280,7 +303,7 @@ def install(app, result):
      if (sha(old) if old is not None else None) != result['old']:
          raise ValueError('App changed. Check for updates again.')
      compile(result['data'], app['source'], 'exec')
@@ -186,7 +304,7 @@ index 575abf6..1321f53 100644
          from deployment import deploy
          source = Path(__file__).resolve().parent
          files = {app['source']: (result['data'], 0o644),
-@@ -476,7 +498,7 @@ class Window:
+@@ -476,7 +499,7 @@ class Window:
                  if action == 'check':
                      result = check(app)
                      self.results[index] = result

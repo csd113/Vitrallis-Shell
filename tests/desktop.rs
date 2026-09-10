@@ -146,3 +146,36 @@ fn existing_background_color_and_wallpaper_render_without_config_mutation()
     }
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn fifo_catalog_is_rejected_without_blocking() -> Result<(), Box<dyn std::error::Error>> {
+    use std::time::{Duration, Instant};
+    let root = std::env::temp_dir().join(format!("vitrallis-fifo-test-{}", std::process::id()));
+    std::fs::create_dir(&root)?;
+    let scratch = Scratch(root);
+    let fifo = scratch.0.join("config.json");
+    assert!(Command::new("mkfifo").arg(&fifo).status()?.success());
+    let mut child = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+        .arg("--app-config")
+        .arg(&fifo)
+        .arg("--list-apps")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while child.try_wait()?.is_none() {
+        if Instant::now() >= deadline {
+            child.kill()?;
+            child.wait()?;
+            return Err("FIFO blocked catalogue discovery".into());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let output = child.wait_with_output()?;
+    assert!(output.status.success());
+    let catalog: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    assert!(catalog["apps"].as_array().is_some_and(Vec::is_empty));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("regular file"));
+    Ok(())
+}

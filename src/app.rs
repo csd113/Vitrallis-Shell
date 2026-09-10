@@ -21,6 +21,11 @@ pub struct AppEntry {
 }
 
 impl AppEntry {
+    pub fn is_system_settings(&self) -> bool {
+        // Preserve the generated Wi-Fi entry ID so catalogue identity is stable.
+        self.id == "vitrallis-wifi-settings"
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.id.is_empty()
             || !self

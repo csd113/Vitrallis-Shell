@@ -30,13 +30,13 @@ pub fn integrate(catalog: &mut Catalog, home: &Path) {
             && app.manifest.runtime.is_none()
             && app.manifest.args.is_empty()
     }) {
-        app.name = "Store".into();
+        app.name = "App Center".into();
         return;
     }
     let available = entry.is_file() && root.join("update_apps.py").is_file();
     catalog.apps.push(AppEntry {
         id: "vitrallis-pocketchip-store".into(),
-        name: "Store".into(),
+        name: "App Center".into(),
         icon: Some(root.join("update-apps.png")),
         manifest: AppManifest {
             entry,
@@ -56,7 +56,7 @@ mod tests {
         integrate(&mut catalog, Path::new("/nonexistent/vitrallis-test"));
         assert_eq!(catalog.apps.len(), 1);
         assert!(catalog.apps[0].unavailable.is_some());
-        assert_eq!(catalog.apps[0].name, "Store");
+        assert_eq!(catalog.apps[0].name, "App Center");
         integrate(&mut catalog, Path::new("/nonexistent/vitrallis-test"));
         assert_eq!(catalog.apps.len(), 1);
         assert!(catalog.apps[0].manifest.args.is_empty());

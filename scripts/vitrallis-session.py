@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import selectors
 import signal
+import stat
 import subprocess
 import sys
 
@@ -52,24 +53,34 @@ def awesome(code):
 def regular(path):
     if any(p.is_symlink() for p in (path,) + tuple(path.parents)):
         raise ValueError('Refusing symlink: ' + str(path))
+    if path.exists() and path.stat().st_nlink != 1:
+        raise ValueError('Refusing hardlink: ' + str(path))
     if path.exists() and not path.is_file():
         raise ValueError('Expected regular file: ' + str(path))
 
 
 def log_chunk(path, data):
+    if len(data) > LIMIT:
+        raise ValueError('Log chunk exceeds limit')
     regular(path)
     previous = path.with_suffix('.log.1')
     regular(previous)
     if path.exists() and path.stat().st_size + len(data) > LIMIT:
         os.replace(path, previous)
-    with path.open('ab') as stream:
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    with os.fdopen(fd, 'ab') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError('Expected a regular log file with one link')
         stream.write(data)
 
 
 def supervise(base):
     binary = base / 'vitrallis'
     regular(binary)
-    if (base / '.installation-pending').exists():
+    marker = base / '.installation-pending'
+    regular(marker)
+    if marker.exists():
         raise RuntimeError('Vitrallis installation incomplete; rerun installer')
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise RuntimeError('Missing executable: ' + str(binary))

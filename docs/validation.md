@@ -1,4 +1,4 @@
-> Historical Step 1 results. Current Step 2 evidence is in [compatibility-step2.md](compatibility-step2.md).
+> Historical Step 1 results. Current release evidence is in [release-candidate.md](release-candidate.md).
 
 # Step 1 validation report
 

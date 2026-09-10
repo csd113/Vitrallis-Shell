@@ -75,6 +75,12 @@ class StorePatch(unittest.TestCase):
             self.apply()
         self.assertEqual(outside.read_bytes(), self.old)
 
+    def test_dangling_marker_prevents_false_idempotent_success(self):
+        self.apply()
+        (self.target / '.installation-pending').symlink_to(self.root / 'missing')
+        with self.assertRaisesRegex(ValueError, 'symlink'):
+            self.apply()
+
 
 if __name__ == '__main__':
     unittest.main()

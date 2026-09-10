@@ -55,18 +55,17 @@ impl Preferences {
         let Some(clock) = clock else {
             return "--:--".into();
         };
-        if self.ampm {
-            if let Some((hours, minutes)) = clock.split_once(':') {
-                if let Ok(hour) = hours.parse::<u8>() {
-                    if hour < 24 && minutes.parse::<u8>().is_ok_and(|m| m < 60) {
-                        return format!(
-                            "{}:{minutes}{}",
-                            (hour + 11) % 12 + 1,
-                            if hour < 12 { "AM" } else { "PM" }
-                        );
-                    }
-                }
-            }
+        if self.ampm
+            && let Some((hours, minutes)) = clock.split_once(':')
+            && let Ok(hour) = hours.parse::<u8>()
+            && hour < 24
+            && minutes.parse::<u8>().is_ok_and(|m| m < 60)
+        {
+            return format!(
+                "{}:{minutes}{}",
+                (hour + 11) % 12 + 1,
+                if hour < 12 { "AM" } else { "PM" }
+            );
         }
         clock.into()
     }

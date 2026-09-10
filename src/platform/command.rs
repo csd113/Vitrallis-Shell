@@ -8,7 +8,13 @@ use std::{
 };
 
 pub fn run(program: &str, args: &[&str]) -> Result<String, String> {
-    let mut child = Command::new(program)
+    let mut command = Command::new(program);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
         .args(args)
         .env("LC_ALL", "C")
         .stdin(Stdio::null())
@@ -40,6 +46,7 @@ pub fn run(program: &str, args: &[&str]) -> Result<String, String> {
             Ok(Some(status)) => break status,
             Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
             result => {
+                crate::process::cleanup_group(child.id());
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(format!("{program}: timeout or wait failure ({result:?})"));
@@ -47,11 +54,15 @@ pub fn run(program: &str, args: &[&str]) -> Result<String, String> {
         }
     };
     if !status.success() {
+        crate::process::cleanup_group(child.id());
         return Err(format!("{program}: {status}"));
     }
     let bytes = receive
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .map_err(|_| "command output timed out".to_owned())?
+        .map_err(|_| {
+            crate::process::cleanup_group(child.id());
+            "command output timed out".to_owned()
+        })?
         .map_err(|e| e.to_string())?;
     if bytes.len() > 8192 {
         return Err("command output exceeds 8 KiB".into());
@@ -77,5 +88,17 @@ mod tests {
         assert!(run("/bin/sh", &["-c", "exit 7"]).is_err());
         assert!(run("/bin/sh", &["-c", "printf '%09000d' 0"]).is_err());
         assert!(run("/bin/sh", &["-c", "exec sleep 5"]).is_err());
+    }
+    #[test]
+    fn descendants_holding_output_are_cleaned_on_timeout() -> Result<(), String> {
+        let started = Instant::now();
+        // The shell exits immediately, but its descendant retains the output
+        // pipe. The command deadline must cover both process and pipe lifetime.
+        let result = run("/bin/sh", &["-c", "sleep 30 &"]);
+        assert!(result.is_err_and(|error| error.contains("output timed out")));
+        if started.elapsed() > Duration::from_secs(5) {
+            return Err("inherited output pipe blocked command cleanup".into());
+        }
+        Ok(())
     }
 }

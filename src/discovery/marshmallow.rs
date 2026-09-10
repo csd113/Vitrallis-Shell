@@ -31,6 +31,12 @@ impl Discovery for Marshmallow<'_> {
             "level=info event=discovery_source path={:?}",
             path.to_string_lossy()
         );
+        if !std::fs::metadata(&path)
+            .map_err(|e| format!("config {}: {e}", path.display()))?
+            .is_file()
+        {
+            return Err("app config must be a regular file".into());
+        }
         let file =
             std::fs::File::open(&path).map_err(|e| format!("config {}: {e}", path.display()))?;
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
@@ -90,10 +96,11 @@ fn parse(text: &str, paths: &Paths) -> Result<Catalog, String> {
     }
     if let Some(command) = root.get("wifiCommand") {
         let item =
-            serde_json::json!({"name": "Wi-Fi Settings", "shell": command, "icon": "wifiOff.png"});
+            serde_json::json!({"name": "System Settings", "shell": command, "icon": "wifiOff.png"});
         match entry(&item, paths) {
             Ok(mut app) => {
                 app.id = "vitrallis-wifi-settings".into();
+                app.icon = None;
                 catalog.apps.push(app);
             }
             Err(error) => catalog.diagnostics.push(format!("Wi-Fi settings: {error}")),

@@ -16,18 +16,20 @@ pub struct Launcher {
     pub selected: usize,
     pub phase: Phase,
     pub status: String,
+    pub opening: Option<String>,
     pub error: Option<String>,
     columns: usize,
     capacity: usize,
 }
 impl Launcher {
     pub fn new(apps: Vec<AppEntry>, columns: usize, capacity: usize) -> Result<Self, String> {
-        if columns == 0 || capacity == 0 || capacity % columns != 0 {
+        if columns == 0 || capacity == 0 || !capacity.is_multiple_of(columns) {
             return Err("invalid grid capacity".into());
         }
-        for (i, app) in apps.iter().enumerate() {
+        let mut ids = std::collections::BTreeSet::new();
+        for app in &apps {
             app.validate()?;
-            if apps[..i].iter().any(|a| a.id == app.id) {
+            if !ids.insert(app.id.as_str()) {
                 return Err(format!("duplicate app id {}", app.id));
             }
         }
@@ -38,6 +40,7 @@ impl Launcher {
             selected: 0,
             phase: Phase::Ready,
             error: None,
+            opening: None,
             status: if apps.is_empty() {
                 "NO APPS - CHECK CONFIG / LOG"
             } else {
@@ -85,6 +88,11 @@ impl Launcher {
                 return self.input(Action::Activate);
             }
             Action::Activate if !self.apps.is_empty() => {
+                if self.apps[self.selected].is_system_settings() {
+                    self.settings.show();
+                    return None;
+                }
+                self.opening = Some(self.apps[self.selected].name.clone());
                 self.phase = Phase::Launching;
                 self.status = format!("OPENING {}", self.apps[self.selected].name);
                 return Some(self.selected);
@@ -110,17 +118,20 @@ impl Launcher {
         self.status = "APP RUNNING - ENTER: RESUME".into();
     }
     pub fn returned_home(&mut self) {
+        self.opening = None;
         if self.phase == Phase::Running {
             self.phase = Phase::Ready;
             self.status = "SELECT AN APP - RUNNING APPS MARKED *".into();
         }
     }
     pub fn failed(&mut self, message: String) {
+        self.opening = None;
         self.phase = Phase::Ready;
         self.status = "LAUNCH FAILED - ENTER / TAP: DISMISS".into();
         self.error = Some(message);
     }
     pub fn finished(&mut self, message: String) {
+        self.opening = None;
         self.error = None;
         self.phase = Phase::Ready;
         self.status = message;
@@ -169,6 +180,20 @@ mod tests {
         assert!(state.input(Action::Activate).is_none());
         state.reload(apps)?;
         assert!(state.input(Action::Activate).is_some());
+        Ok(())
+    }
+    #[test]
+    fn system_settings_tile_opens_the_same_screen_without_spawning() -> Result<(), String> {
+        let mut apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        apps[0].id = "vitrallis-wifi-settings".into();
+        apps[0].name = "System Settings".into();
+        let mut state = Launcher::new(apps, 3, 6)?;
+        assert_eq!(state.input(Action::Activate), None);
+        assert!(state.settings.open);
+        assert_eq!(state.phase, Phase::Ready);
+        state.settings.input(Action::Back);
+        state.settings.input(Action::System);
+        assert!(state.settings.open);
         Ok(())
     }
     #[test]

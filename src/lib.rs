@@ -28,10 +28,20 @@ pub fn run() -> Result<(), String> {
     if args.first().is_some_and(|s| s == "--demo-child") {
         return demo_child(&args);
     }
+    if args.first().is_some_and(|s| s == "--set-timezone") {
+        if args.len() != 2 {
+            return Err("Time zone helper requires one zone".into());
+        }
+        return platform::pocketchip::authenticate_timezone(&args[1]);
+    }
     if args == ["--help"] {
         println!(
-            "vitrallis [--pocketchip] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--screenshot NEW.bmp] [--smoke-test]\nDefault: PocketHome metadata in a desktop window. --demo enables fixtures. Arrows select; Enter/tap opens; F1/footer opens system controls; Escape/Home goes back. Close window to quit.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
+            "vitrallis [--pocketchip] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--screenshot NEW.bmp] [--smoke-test]\nDefault: PocketHome metadata in a desktop window. --demo enables fixtures. Arrows select; Enter/tap opens; settings tile/footer opens system controls; Escape/Home goes back. Close window to quit.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
         );
+        return Ok(());
+    }
+    if args == ["--version"] {
+        println!("vitrallis {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
     let config = config::Config::parse(args.into_iter())?;

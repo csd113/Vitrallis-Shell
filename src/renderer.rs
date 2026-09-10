@@ -1,3 +1,4 @@
+mod system;
 use crate::{
     app::AppEntry,
     launcher::Launcher,
@@ -63,11 +64,37 @@ pub fn icons<'a>(
     creator: &'a TextureCreator<WindowContext>,
     apps: &[AppEntry],
 ) -> Vec<Option<Texture<'a>>> {
+    // Bound the retained artwork on a 512 MiB device even when a small JSON
+    // catalogue refers to thousands of maximum-size images.
+    let mut remaining = 16 * 1024 * 1024;
     apps.iter()
         .map(|app| {
-            let path = app.icon.as_ref()?;
-            match load_image(creator, path) {
-                Ok(texture) => Some(texture),
+            if remaining == 0 {
+                return None;
+            }
+            let result = if app.is_system_settings() {
+                decode_icon(include_bytes!("../assets/system/gear.png")).and_then(|surface| {
+                    creator
+                        .create_texture_from_surface(&surface)
+                        .map_err(|e| e.to_string())
+                })
+            } else {
+                load_image(creator, app.icon.as_ref()?)
+            };
+            match result {
+                Ok(mut texture) => {
+                    texture.set_scale_mode(sdl2::render::ScaleMode::Linear);
+                    let size = texture.query();
+                    let bytes = size.width * size.height * 4;
+                    if bytes > remaining {
+                        remaining = 0;
+                        eprintln!("level=warn event=artwork_budget_exhausted");
+                        None
+                    } else {
+                        remaining -= bytes;
+                        Some(texture)
+                    }
+                }
                 Err(error) => {
                     eprintln!(
                         "level=warn event=icon_fallback app={} message={error:?}",
@@ -116,6 +143,21 @@ pub fn artwork<'a>(
             })
             .ok()
     }));
+    for bytes in system::ASSETS {
+        textures.push(
+            decode_icon(bytes)
+                .and_then(|surface| {
+                    creator
+                        .create_texture_from_surface(&surface)
+                        .map_err(|e| e.to_string())
+                })
+                .map(|mut texture| {
+                    texture.set_scale_mode(sdl2::render::ScaleMode::Linear);
+                    texture
+                })
+                .ok(),
+        );
+    }
     textures
 }
 
@@ -181,7 +223,7 @@ pub fn render(
     text(
         canvas,
         &if state.settings.open {
-            "VITRALLIS SYSTEM".into()
+            format!("SYSTEM SETTINGS {}", env!("CARGO_PKG_VERSION"))
         } else {
             format!(
                 "VITRALLIS {}/{}",
@@ -196,9 +238,16 @@ pub fn render(
         layout.text_scale,
         Color::RGB(93, 218, 201),
     )?;
-    system_status(canvas, layout, &state.settings.status, &state.preferences)?;
+    let system_icons = icons.get(state.apps.len() + 1..).unwrap_or(&[]);
+    system::status(
+        canvas,
+        layout,
+        &state.settings.status,
+        &state.preferences,
+        system_icons,
+    )?;
     if state.settings.open {
-        return system_panel(canvas, layout, &state.settings);
+        return system::panel(canvas, layout, &state.settings, system_icons);
     }
     for (bounds, label, enabled) in [
         (layout.previous, "<", state.page_start() > 0),
@@ -238,10 +287,21 @@ pub fn render(
             icons.get(index).and_then(Option::as_ref),
         )?;
     }
+    loading_dialog(canvas, layout, state)?;
     error_dialog(canvas, layout, state)?;
     text(
         canvas,
-        &format!("F1/TAP:SYSTEM | {}", state.status),
+        if state.opening.is_some() {
+            "OPENING APP - PLEASE WAIT"
+        } else if state
+            .apps
+            .get(state.selected)
+            .is_some_and(|app| app.name == "App Center")
+        {
+            "APP CENTER - FREE APPS AND UPDATES"
+        } else {
+            &state.status
+        },
         layout.footer,
         layout.text_scale,
         Color::RGB(173, 194, 210),
@@ -249,85 +309,39 @@ pub fn render(
     Ok(())
 }
 
-fn system_status(
-    canvas: &mut Screen,
-    layout: &Layout,
-    status: &crate::platform::system::Status,
-    preferences: &crate::preferences::Preferences,
-) -> Result<(), String> {
-    use crate::platform::system::Wifi;
-    let flag = |value: Option<bool>| value.map_or("?", |v| if v { "Y" } else { "N" });
-    let battery = status
-        .battery
-        .map_or_else(|| "--".into(), |v| v.value().to_string());
-    let wifi = match status.wifi {
-        Some(Wifi::Off) => "OFF",
-        Some(Wifi::Connected) => "ON",
-        Some(Wifi::Connecting) => "...",
-        Some(Wifi::Disconnected) => "NO",
-        None => "?",
+fn loading_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
+    let Some(name) = &state.opening else {
+        return Ok(());
     };
+    let bounds = Rect {
+        x: layout.title.x + 12,
+        y: i32::from(layout.height) / 2 - 40 * layout.text_scale,
+        w: layout.title.w - 24,
+        h: 80 * layout.text_scale,
+    };
+    fill(canvas, bounds, Color::RGB(23, 39, 53))?;
+    canvas.set_draw_color(Color::RGB(93, 218, 201));
+    canvas.draw_rect(rect(bounds)?)?;
     text(
         canvas,
-        &format!(
-            "B:{battery} C:{} P:{} W:{wifi} BT:{} {}",
-            flag(status.charging),
-            flag(status.external_power),
-            flag(status.bluetooth),
-            preferences.clock(status.clock.as_deref())
-        ),
+        &format!("Opening {name}..."),
         Rect {
-            x: layout.previous.x + layout.previous.w,
-            y: layout.title.h / 2,
-            w: layout.next.x - layout.previous.x - layout.previous.w,
-            h: layout.title.h / 2,
+            h: bounds.h / 2,
+            ..bounds
         },
         layout.text_scale,
-        Color::RGB(173, 194, 210),
-    )
-}
-fn system_panel(
-    canvas: &mut Screen,
-    layout: &Layout,
-    settings: &crate::settings::Settings,
-) -> Result<(), String> {
-    for (index, (label, tile)) in settings.labels().iter().zip(&layout.tiles).enumerate() {
-        fill(
-            canvas,
-            *tile,
-            if index == settings.selected {
-                Color::RGB(44, 82, 99)
-            } else {
-                Color::RGB(25, 40, 55)
-            },
-        )?;
-        if index == settings.selected {
-            canvas.set_draw_color(Color::RGB(93, 218, 201));
-            canvas.draw_rect(rect(*tile)?)?;
-        }
-        text(
-            canvas,
-            label,
-            *tile,
-            layout.text_scale,
-            if settings.available(index) {
-                Color::RGB(235, 242, 249)
-            } else {
-                Color::RGB(110, 128, 140)
-            },
-        )?;
-    }
-    let message = if settings.message.is_empty() {
-        "ESC / F1 / TAP HERE: BACK"
-    } else {
-        &settings.message
-    };
+        Color::RGB(232, 241, 247),
+    )?;
     text(
         canvas,
-        message,
-        layout.footer,
+        "Please wait",
+        Rect {
+            y: bounds.y + bounds.h / 2,
+            h: bounds.h / 2,
+            ..bounds
+        },
         layout.text_scale,
-        Color::RGB(173, 194, 210),
+        Color::RGB(93, 218, 201),
     )
 }
 
@@ -400,7 +414,7 @@ fn render_tile(
             Color::RGB(219, 243, 240),
         )?;
     }
-    if app.unavailable.is_some() {
+    if app.unavailable.is_some() && !app.is_system_settings() {
         text(
             canvas,
             "!",
@@ -611,13 +625,29 @@ mod system_tests {
                 brightness: Some(Percent::new(44)?),
                 volume: Some(Percent::new(90)?),
                 clock: Some("12:34".into()),
+                ip: Some(std::net::Ipv4Addr::new(10, 0, 0, 137)),
+                screen_timeout: Some(600),
+                timezone: Some("America/Vancouver".into()),
+                timezones: vec!["America/Vancouver".into(), "UTC".into()],
+                calibration: true,
                 power_controls: true,
                 ..Status::default()
             };
+            state.settings.network_available = true;
             state.settings.input(Action::System);
-            render(&mut canvas, &layout, &state, &[])?;
+            let creator = canvas.texture_creator();
+            let textures = artwork(&creator, &state);
+            render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("system-{w}x{h}.bmp")))?;
             state.settings.input(Action::SelectAndActivate(5));
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(&canvas, &output.join(format!("device-{w}x{h}.bmp")))?;
+            state.settings.input(Action::SelectAndActivate(1));
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(&canvas, &output.join(format!("zones-{w}x{h}.bmp")))?;
+            state.settings.input(Action::Back);
+            state.settings.input(Action::Back);
+            state.settings.input(Action::SelectAndActivate(4));
             render(&mut canvas, &layout, &state, &[])?;
             screenshot(&canvas, &output.join(format!("confirm-{w}x{h}.bmp")))?;
             assert_eq!(state.settings.selected, 0);
@@ -626,6 +656,10 @@ mod system_tests {
             state.settings.input(Action::System);
             render(&mut canvas, &layout, &state, &[])?;
             screenshot(&canvas, &output.join(format!("unavailable-{w}x{h}.bmp")))?;
+            state.settings.cancel();
+            state.opening = Some("Bitcoin CAD".into());
+            render(&mut canvas, &layout, &state, &[])?;
+            screenshot(&canvas, &output.join(format!("loading-{w}x{h}.bmp")))?;
         }
         Ok(())
     }

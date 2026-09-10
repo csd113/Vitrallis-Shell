@@ -1,3 +1,5 @@
+> Historical Step 3 record. Current candidate changes and validation are in [release-candidate.md](release-candidate.md).
+
 # Engineering report
 
 1. **Gaps found:** Store entry/discovery refresh, interrupted-install state, kernel battery support, Home routing, activation-click loss, running-app resume, concurrent child ownership, existing wallpaper/clock/cursor preferences, reversible session installation and bounded supervision logs.

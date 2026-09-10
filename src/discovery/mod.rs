@@ -5,6 +5,7 @@ mod store;
 use crate::{
     app::AppEntry,
     config::{Config, Paths},
+    platform::Platform,
 };
 
 #[derive(Debug, Default)]
@@ -54,12 +55,16 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
         },
         Err(error) => return Err(error),
     };
-    if config.pocketchip {
-        if let Some(home) = std::env::var_os("HOME")
+    if config.pocketchip
+        && let Some(home) = std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
             .filter(|path| path.is_absolute())
-        {
-            store::integrate(&mut catalog, &home);
+    {
+        store::integrate(&mut catalog, &home);
+    }
+    if config.pocketchip {
+        for app in &mut catalog.apps {
+            crate::platform::pocketchip::PocketChip.prepare_app(app);
         }
     }
     for diagnostic in &catalog.diagnostics {

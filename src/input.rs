@@ -20,7 +20,7 @@ mod sdl {
                 repeat: false,
                 ..
             } => match key {
-                Keycode::F1 | Keycode::Power => Some(Action::System),
+                Keycode::Power => Some(Action::System),
                 Keycode::PageUp => Some(Action::Page(false)),
                 Keycode::PageDown => Some(Action::Page(true)),
                 Keycode::Left => Some(Action::Move(Direction::Left)),
@@ -81,6 +81,14 @@ mod sdl {
                 *repeat = true;
             }
             assert!(action(&key, &layout, 6).is_none());
+            if let Event::KeyDown {
+                keycode, repeat, ..
+            } = &mut key
+            {
+                *repeat = false;
+                *keycode = Some(Keycode::F1);
+            }
+            assert_eq!(action(&key, &layout, 6), None);
             let touch = Event::FingerUp {
                 timestamp: 0,
                 touch_id: 1,

@@ -1,4 +1,4 @@
-> Historical Step 2 notes. Current USB hardware work and evidence are in [compatibility-step3.md](compatibility-step3.md); installation and recovery are in [session.md](session.md).
+> Historical Step 2 notes. Current results are in [release-candidate.md](release-candidate.md); installation and recovery are in [session.md](session.md).
 
 # Deferred device validation (Step 2)
 

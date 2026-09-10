@@ -1,20 +1,29 @@
-use crate::app::AppEntry;
+use crate::{app::AppEntry, platform::FocusResult};
 use std::{
     io,
     process::{Child, Command, ExitStatus, Stdio},
+    sync::mpsc,
+    time::{Duration, Instant},
 };
 
 pub fn command(app: &AppEntry) -> Result<Command, String> {
     app.validate()?;
     let m = &app.manifest;
-    if let Some(parent) = m.entry.parent() {
-        if parent
+    if let Some(parent) = m.entry.parent()
+        && parent
             .join(".installation-pending")
-            .try_exists()
+            .symlink_metadata()
+            .map(|_| true)
+            .or_else(|error| {
+                if error.kind() == io::ErrorKind::NotFound {
+                    Ok(false)
+                } else {
+                    Err(error)
+                }
+            })
             .map_err(|error| format!("cannot check installation state: {error}"))?
-        {
-            return Err("installation incomplete; use Store to repair this app".into());
-        }
+    {
+        return Err("installation incomplete; use App Center to repair this app".into());
     }
     let mut command = Command::new(m.runtime.as_ref().unwrap_or(&m.entry));
     if m.runtime.is_some() {
@@ -39,9 +48,15 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
 
 pub trait Processes {
     fn start(&mut self, app: &AppEntry) -> Result<(), String>;
+    fn waits_for_window(&self) -> bool {
+        false
+    }
     fn poll(&mut self) -> Result<Option<ExitStatus>, String>;
     fn focus(&mut self) -> Result<(), String> {
         Err("application focus is unavailable".into())
+    }
+    fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
+        Ok(None)
     }
 }
 
@@ -52,9 +67,18 @@ pub struct ProcessSet<P = NativeProcess> {
     members: Vec<(String, P)>,
     active: Option<String>,
     pub exited_active: bool,
+    resume: Option<Resume>,
+}
+#[derive(Debug)]
+struct Resume {
+    app: AppEntry,
+    deadline: Instant,
+    next_attempt: Instant,
+    relaunch_on_exit: bool,
+    last_error: Option<String>,
 }
 impl<P> ProcessSet<P> {
-    pub fn has_children(&self) -> bool {
+    pub const fn has_children(&self) -> bool {
         !self.members.is_empty()
     }
     pub fn running_ids(&self) -> Vec<String> {
@@ -63,20 +87,62 @@ impl<P> ProcessSet<P> {
 }
 impl<P: Processes + Default> Processes for ProcessSet<P> {
     fn start(&mut self, app: &AppEntry) -> Result<(), String> {
-        if let Some((_, process)) = self.members.iter_mut().find(|(id, _)| id == &app.id) {
-            process.focus()?;
-        } else {
-            let mut process = P::default();
-            process.start(app)?;
-            self.members.push((app.id.clone(), process));
+        if let Some(index) = self.members.iter().position(|(id, _)| id == &app.id) {
+            // A window can close before the next scheduled child poll. Reap it
+            // now so activation does not try to resume an already exited app.
+            if self.members[index].1.poll()?.is_none() {
+                self.members[index].1.focus()?;
+                self.active = Some(app.id.clone());
+                self.resume = Some(Resume {
+                    app: app.clone(),
+                    deadline: Instant::now() + Duration::from_secs(30),
+                    next_attempt: Instant::now() + Duration::from_millis(250),
+                    relaunch_on_exit: true,
+                    last_error: None,
+                });
+                return Ok(());
+            }
+            self.members.remove(index);
         }
+        self.resume = None;
+        let mut process = P::default();
+        process.start(app)?;
+        if process.waits_for_window() {
+            process.focus()?;
+            self.resume = Some(Resume {
+                app: app.clone(),
+                deadline: Instant::now() + Duration::from_secs(30),
+                next_attempt: Instant::now() + Duration::from_millis(250),
+                relaunch_on_exit: false,
+                last_error: None,
+            });
+        }
+        self.members.push((app.id.clone(), process));
         self.active = Some(app.id.clone());
         Ok(())
     }
     fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
+        let mut failure = None;
         for index in 0..self.members.len() {
-            if let Some(status) = self.members[index].1.poll()? {
+            // A pending activation owns its exit/restart transition. Do not reap
+            // it here and lose the user's request between window close and exit.
+            if self.resume.as_ref().is_some_and(|resume| {
+                resume.relaunch_on_exit && resume.app.id == self.members[index].0
+            }) {
+                continue;
+            }
+            let result = self.members[index].1.poll();
+            if let Err(error) = result {
+                failure = Some(error);
+            } else if let Ok(Some(status)) = result {
                 let (id, _) = self.members.remove(index);
+                if self
+                    .resume
+                    .as_ref()
+                    .is_some_and(|resume| resume.app.id == id)
+                {
+                    self.resume = None;
+                }
                 self.exited_active = self.active.as_ref() == Some(&id);
                 if self.exited_active {
                     self.active = None;
@@ -84,7 +150,7 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
                 return Ok(Some(status));
             }
         }
-        Ok(None)
+        failure.map_or(Ok(None), Err)
     }
     fn focus(&mut self) -> Result<(), String> {
         self.members
@@ -94,21 +160,93 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
             .1
             .focus()
     }
+    fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
+        let Some(resume) = &self.resume else {
+            return Ok(None);
+        };
+        let Some(index) = self.members.iter().position(|(id, _)| id == &resume.app.id) else {
+            self.resume = None;
+            return Ok(None);
+        };
+        if resume.relaunch_on_exit && self.members[index].1.poll()?.is_some() {
+            self.members.remove(index);
+            let Some(resume) = self.resume.take() else {
+                return Ok(None);
+            };
+            // Only spawn after the former child has been reaped and its group
+            // cleaned. A disappearing window alone never authorizes a duplicate.
+            self.start(&resume.app)?;
+            return Ok(Some(FocusResult::Focused));
+        }
+        match self.members[index].1.poll_focus() {
+            Ok(Some(FocusResult::Focused)) => {
+                self.resume = None;
+                Ok(Some(FocusResult::Focused))
+            }
+            result => {
+                let Some(resume) = &mut self.resume else {
+                    return Ok(None);
+                };
+                match result {
+                    Err(error) => resume.last_error = Some(error),
+                    Ok(Some(_)) => resume.last_error = None,
+                    Ok(None) => {}
+                }
+                if Instant::now() >= resume.deadline {
+                    let error = resume.last_error.take();
+                    self.resume = None;
+                    return error.map_or(Ok(Some(FocusResult::Missing)), Err);
+                }
+                if Instant::now() >= resume.next_attempt {
+                    self.members[index].1.focus()?;
+                    if let Some(resume) = &mut self.resume {
+                        resume.next_attempt = Instant::now() + Duration::from_millis(250);
+                    }
+                }
+                Ok(None)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct NativeProcess {
     child: Option<Child>,
     window_hint: Option<crate::platform::AppWindow>,
+    focus_result: Option<mpsc::Receiver<Result<FocusResult, String>>>,
 }
 impl Processes for NativeProcess {
+    fn waits_for_window(&self) -> bool {
+        std::env::var_os("VITRALLIS_SESSION").as_deref() == Some(std::ffi::OsStr::new("1"))
+            && !matches!(
+                self.window_hint,
+                Some(crate::platform::AppWindow::Calibration)
+            )
+    }
     fn focus(&mut self) -> Result<(), String> {
         let child = self.child.as_ref().ok_or("no running app")?;
-        let result = crate::platform::focus_application(child.id(), self.window_hint);
-        eprintln!(
-            "level=info event=app_resume pid={} result={result:?}",
-            child.id()
-        );
+        if self.focus_result.is_some() {
+            return Ok(());
+        }
+        let pid = child.id();
+        let hint = self.window_hint;
+        self.focus_result = Some(request_focus(move || {
+            let result = crate::platform::focus_application(pid, hint);
+            eprintln!("level=info event=app_resume pid={pid} result={result:?}");
+            result
+        })?);
+        Ok(())
+    }
+    fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
+        let Some(result) = &self.focus_result else {
+            return Ok(None);
+        };
+        let result = match result.try_recv() {
+            Ok(result) => result.map(Some),
+            Err(mpsc::TryRecvError::Empty) => return Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => Err("focus worker stopped".into()),
+        };
+        self.focus_result = None;
         result
     }
     fn start(&mut self, app: &AppEntry) -> Result<(), String> {
@@ -158,6 +296,19 @@ impl Processes for NativeProcess {
         Ok(status)
     }
 }
+
+fn request_focus(
+    operation: impl FnOnce() -> Result<FocusResult, String> + Send + 'static,
+) -> Result<mpsc::Receiver<Result<FocusResult, String>>, String> {
+    let (send, receive) = mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("app-focus".into())
+        .spawn(move || {
+            let _ = send.send(operation());
+        })
+        .map_err(|error| format!("focus worker: {error}"))?;
+    Ok(receive)
+}
 impl Drop for NativeProcess {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
@@ -171,10 +322,10 @@ impl Drop for NativeProcess {
                 Err(error) => eprintln!("level=error event=child_wait message={error:?}"),
             }
             cleanup_group(child.id());
-            if let Err(error) = child.kill() {
-                if error.kind() != io::ErrorKind::InvalidInput {
-                    eprintln!("level=error event=child_kill message={error:?}");
-                }
+            if let Err(error) = child.kill()
+                && error.kind() != io::ErrorKind::InvalidInput
+            {
+                eprintln!("level=error event=child_kill message={error:?}");
             }
             if let Err(error) = child.wait() {
                 eprintln!("level=error event=child_reap message={error:?}");
@@ -186,7 +337,7 @@ impl Drop for NativeProcess {
 // Apps must remain in their launcher-created group. Daemons that call setsid
 // escape this scope and require a later session supervisor. The OS reaps orphaned
 // descendants; this launcher always waits for its own direct child.
-fn cleanup_group(pid: u32) {
+pub fn cleanup_group(pid: u32) {
     #[cfg(unix)]
     {
         match Command::new(crate::config::KILL_HELPER)
@@ -270,6 +421,44 @@ mod tests {
         entry.manifest.entry = scratch.0.join("launch");
         std::fs::write(scratch.0.join(".installation-pending"), "repair required")?;
         assert!(command(&entry).is_err_and(|error| error.contains("incomplete")));
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(scratch.0.join(".installation-pending"))?;
+            std::os::unix::fs::symlink(
+                scratch.0.join("missing"),
+                scratch.0.join(".installation-pending"),
+            )?;
+            assert!(command(&entry).is_err_and(|error| error.contains("incomplete")));
+        }
+        Ok(())
+    }
+    #[test]
+    fn slow_focus_is_nonblocking_and_reports_failure() -> Result<(), String> {
+        let (release, wait) = mpsc::channel();
+        let receive = request_focus(move || {
+            wait.recv_timeout(Duration::from_secs(5))
+                .map_err(|error| error.to_string())?;
+            Err("window manager unavailable".into())
+        })?;
+        let mut process = NativeProcess {
+            focus_result: Some(receive),
+            child: None,
+            window_hint: None,
+        };
+        assert_eq!(process.poll_focus()?, None);
+        release.send(()).map_err(|error| error.to_string())?;
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Err(error) = process.poll_focus() {
+                assert_eq!(error, "window manager unavailable");
+                assert!(process.focus_result.is_none());
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err("focus worker timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
         Ok(())
     }
     #[test]
@@ -288,6 +477,9 @@ mod tests {
             fn focus(&mut self) -> Result<(), String> {
                 self.focuses += 1;
                 Ok(())
+            }
+            fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
+                Ok(Some(FocusResult::Focused))
             }
             fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
                 use std::os::unix::process::ExitStatusExt;
@@ -308,6 +500,15 @@ mod tests {
         processes.start(&state.apps[0])?;
         assert_eq!(processes.members[0].1.starts, 1);
         assert_eq!(processes.members[0].1.focuses, 1);
+        processes.poll_focus()?;
+        processes.members[0].1.exited = true;
+        // Activation arriving before the scheduled exit poll starts a fresh
+        // process rather than dispatching focus to a dead window.
+        processes.start(&state.apps[0])?;
+        assert!(!processes.members[1].1.exited);
+        assert_eq!(processes.members[1].1.starts, 1);
+        assert_eq!(processes.members[1].1.focuses, 0);
+        processes.members.swap(0, 1);
         processes.members[1].1.exited = true;
         assert!(processes.poll()?.is_some());
         assert!(!processes.exited_active);
@@ -316,6 +517,108 @@ mod tests {
         assert!(processes.poll()?.is_some());
         assert!(processes.exited_active);
         assert!(!processes.has_children());
+        Ok(())
+    }
+    #[derive(Default)]
+    struct ClosingWindow {
+        focus_error: Option<String>,
+        exited: bool,
+        window_ready: bool,
+        starts: usize,
+        focuses: usize,
+    }
+    impl Processes for ClosingWindow {
+        fn start(&mut self, _: &AppEntry) -> Result<(), String> {
+            self.starts += 1;
+            Ok(())
+        }
+        fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
+            use std::os::unix::process::ExitStatusExt;
+            Ok(self.exited.then(|| ExitStatus::from_raw(0)))
+        }
+        fn focus(&mut self) -> Result<(), String> {
+            self.focuses += 1;
+            Ok(())
+        }
+        fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
+            if let Some(error) = self.focus_error.take() {
+                return Err(error);
+            }
+            Ok(Some(if self.window_ready {
+                FocusResult::Focused
+            } else {
+                FocusResult::Missing
+            }))
+        }
+    }
+    #[test]
+    fn reopen_waits_for_closing_process_then_spawns_exactly_once() -> Result<(), String> {
+        let mut processes = ProcessSet::<ClosingWindow>::default();
+        processes.start(&app())?;
+        processes.start(&app())?;
+        assert_eq!(processes.poll_focus()?, None); // Window gone; process still exits asynchronously.
+        assert_eq!(processes.members.len(), 1);
+        assert_eq!(processes.members[0].1.starts, 1);
+        processes.members[0].1.exited = true;
+        assert_eq!(processes.poll()?, None); // Preserve the pending activation.
+        assert_eq!(processes.poll_focus()?, Some(FocusResult::Focused));
+        assert_eq!(processes.members.len(), 1);
+        assert!(!processes.members[0].1.exited);
+        assert_eq!(processes.members[0].1.starts, 1);
+        assert_eq!(processes.members[0].1.focuses, 0);
+        assert_eq!(processes.poll_focus()?, None);
+        Ok(())
+    }
+    #[test]
+    fn delayed_window_resumes_without_restarting_and_absent_window_is_bounded() -> Result<(), String>
+    {
+        let mut processes = ProcessSet::<ClosingWindow>::default();
+        processes.start(&app())?;
+        processes.start(&app())?;
+        assert_eq!(processes.poll_focus()?, None);
+        processes.members[0].1.window_ready = true;
+        assert_eq!(processes.poll_focus()?, Some(FocusResult::Focused));
+        assert_eq!(processes.members[0].1.starts, 1);
+        processes.members[0].1.window_ready = false;
+        processes.start(&app())?;
+        processes.resume.as_mut().ok_or("missing resume")?.deadline = Instant::now();
+        assert_eq!(processes.poll_focus()?, Some(FocusResult::Missing));
+        assert_eq!(processes.members.len(), 1);
+        assert_eq!(processes.members[0].1.starts, 1);
+        assert!(processes.resume.is_none());
+        Ok(())
+    }
+    #[test]
+    fn recovered_focus_helper_does_not_turn_a_missing_window_into_an_error() -> Result<(), String> {
+        let mut processes = ProcessSet::<ClosingWindow>::default();
+        processes.start(&app())?;
+        processes.start(&app())?;
+        processes.members[0].1.focus_error = Some("temporary transport failure".into());
+        assert_eq!(processes.poll_focus()?, None);
+        processes
+            .resume
+            .as_mut()
+            .ok_or("missing activation")?
+            .deadline = Instant::now();
+        assert_eq!(processes.poll_focus()?, Some(FocusResult::Missing));
+        assert_eq!(processes.members.len(), 1);
+        Ok(())
+    }
+    #[test]
+    fn startup_exit_is_reaped_without_automatic_restart() -> Result<(), String> {
+        let mut processes = ProcessSet::<ClosingWindow>::default();
+        processes.start(&app())?;
+        processes.start(&app())?;
+        processes
+            .resume
+            .as_mut()
+            .ok_or("missing activation")?
+            .relaunch_on_exit = false;
+        processes.members[0].1.exited = true;
+        assert!(processes.poll()?.is_some());
+        assert!(processes.resume.is_none());
+        assert!(!processes.has_children());
+        assert_eq!(processes.poll_focus()?, None);
         Ok(())
     }
     #[test]
@@ -361,6 +664,38 @@ mod tests {
         assert!(process.child.is_none());
         assert_eq!(state.input(crate::input::Action::Activate), None); // Dismiss the error.
         assert_eq!(state.input(crate::input::Action::Activate), Some(0));
+        Ok(())
+    }
+    #[test]
+    fn wait_error_does_not_prevent_reaping_other_children() -> Result<(), String> {
+        #[derive(Default)]
+        struct Fake(bool);
+        impl Processes for Fake {
+            fn start(&mut self, _: &AppEntry) -> Result<(), String> {
+                Ok(())
+            }
+            fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
+                use std::os::unix::process::ExitStatusExt;
+                if self.0 {
+                    Err("injected wait failure".into())
+                } else {
+                    Ok(Some(ExitStatus::from_raw(0)))
+                }
+            }
+        }
+        let mut processes = ProcessSet {
+            members: vec![
+                ("failed".into(), Fake(true)),
+                ("exited".into(), Fake(false)),
+            ],
+            active: Some("exited".into()),
+            exited_active: false,
+            resume: None,
+        };
+        assert!(processes.poll()?.is_some());
+        assert!(processes.exited_active);
+        assert_eq!(processes.running_ids(), ["failed"]);
+        assert!(processes.poll().is_err());
         Ok(())
     }
 }

@@ -1,5 +1,8 @@
 import importlib.util
 import json
+import fcntl
+import os
+import struct
 from pathlib import Path
 import tempfile
 import unittest
@@ -23,7 +26,10 @@ class Installer(unittest.TestCase):
         self.source.mkdir()
         (self.source / 'vitrallis-session.py').write_text('# reviewed script')
         self.binary = self.source / 'binary'
-        self.binary.write_bytes(b'\x7fELF\x01\x01\x01' + b'\0' * 11 + b'\x28\x00')
+        header = bytearray(84)
+        header[:7] = b'\x7fELF\x01\x01\x01'
+        struct.pack_into('<HHIIIIIHHH', header, 16, 2, 40, 1, 0, 52, 0, 0x05000400, 52, 32, 1)
+        self.binary.write_bytes(header)
         self.target = self.home / '.local/share/vitrallis'
 
     def install(self):
@@ -99,6 +105,73 @@ class Installer(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.install()
         self.assertEqual(self.binary.read_bytes(), b'wrong architecture')
+
+    def test_failure_after_rename_is_rolled_back(self):
+        real = m.atomic
+        failed = []
+        def write(path, *args):
+            real(path, *args)
+            if path == self.target / 'vitrallis' and not failed:
+                failed.append(True)
+                raise OSError('directory fsync failure')
+        with patch.object(m, 'atomic', side_effect=write):
+            with self.assertRaises(OSError):
+                self.install()
+        self.assertFalse((self.target / 'vitrallis').exists())
+        self.assertTrue((self.target / '.installation-pending').exists())
+        self.install()
+
+    def test_concurrent_installer_is_rejected(self):
+        with (self.config.parent / 'vitrallis-install.lock').open('a+') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                self.install()
+        self.assertFalse(self.target.exists())
+
+    def test_malformed_config_and_marker_fail_before_installation(self):
+        for value in ([], None, 'text', 42):
+            self.config.write_text(json.dumps(value))
+            with self.assertRaises(ValueError):
+                self.install()
+            self.assertFalse(self.target.exists())
+        self.config.write_text(json.dumps(self.original))
+        self.install()
+        (self.target / '.installation-pending').write_text('{"vitrallis": 42}')
+        with self.assertRaisesRegex(ValueError, 'recovery marker'):
+            self.install()
+
+    def test_hardlinked_file_is_rejected(self):
+        outside = self.home / 'outside'
+        os.link(self.config, outside)
+        original = outside.read_bytes()
+        with self.assertRaisesRegex(ValueError, 'hardlink'):
+            self.install()
+        self.assertEqual(outside.read_bytes(), original)
+        self.assertFalse(self.target.exists())
+
+    def test_concurrent_menu_edit_is_preserved_during_rollback(self):
+        real = m.atomic
+        def edit(path, *args):
+            if path == self.target / 'installed.json':
+                self.config.write_text('concurrent user edit')
+                raise OSError('injected receipt failure')
+            real(path, *args)
+        with patch.object(m, 'atomic', side_effect=edit):
+            with self.assertRaises(OSError):
+                self.install()
+        self.assertEqual(self.config.read_text(), 'concurrent user edit')
+        self.assertTrue((self.target / '.installation-pending').exists())
+
+
+class BoundedInputs(unittest.TestCase):
+    def test_read_limit_is_enforced_without_truncating_input(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp).resolve() / 'source'
+            path.write_bytes(b'abcd')
+            with self.assertRaisesRegex(ValueError, 'size limit'):
+                m.read_file(path, limit=3)
+            self.assertEqual(m.read_file(path, limit=4), b'abcd')
+            self.assertEqual(path.read_bytes(), b'abcd')
 
 
 if __name__ == '__main__':

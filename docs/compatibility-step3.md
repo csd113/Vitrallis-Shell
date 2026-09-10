@@ -1,3 +1,5 @@
+> Historical Step 3 record. Current candidate changes and validation are in [release-candidate.md](release-candidate.md).
+
 # PocketCHIP compatibility and store integration
 
 Work began 2026-09-10. This pass supersedes the earlier restriction on device access. The physical PocketCHIP is connected over USB Ethernet (`192.168.81.1`) and USB serial (`ttyGS0`). It is Debian 13, ARMv7 hard float, Linux 6.12.94, SDL 2.32.4, Awesome 4.x, 480×272. The LAN address was confirmed to have the same SSH host key as USB. Password SSH is disabled; initial access used the supplied login over USB serial. A temporary USB-source-restricted SSH key was added after preserving `authorized_keys`; the exact temporary key was removed during final cleanup, preserving all other authorized-key bytes.
