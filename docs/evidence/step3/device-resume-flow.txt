@@ -1,0 +1,6 @@
+initial string "Vitrallis"
+launched string "Bitcoin CAD v1.1.0"
+home string "Vitrallis"
+first tap string "Bitcoin CAD v1.1.0"
+one second string "Bitcoin CAD v1.1.0"
+closed string "Vitrallis"

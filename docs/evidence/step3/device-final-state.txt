@@ -1,0 +1,16 @@
+a509b383d72457c7bb9b0336df461fba610be4d148681c31378b3bb6a7495e5d  /usr/bin/pocket-home
+baec55ceb8710f64dce1ae541af9a60658f83ce30430de6901525dadb7be509c  /usr/lib/pocket-home-marshmallow/pocket-home
+fbb781bffd4ad28b212a3f4e77c902eb41c7078261e0b1cdeae35a926b30d8a9  /home/chip/.config/awesome/rc.lua
+3ac58fb2bb475159999175cf4ac9ef7ab8ffe84371104399b2912a265aa78395  /home/chip/.local/share/vitrallis/vitrallis
+87902ae5671fea88af84e1e3ed56214f2b2c3dab9c97153eb38e1ed8273f749e  /home/chip/.local/share/pocket-bitcoin/bitcoin.py
+600 23677 /home/chip/.local/share/vitrallis/session.log
+stat: cannot statx '/home/chip/.local/share/vitrallis/session.log.1': No such file or directory
+7
+Simple mixer control 'Power Amplifier',0
+  Capabilities: volume volume-joined
+  Playback channels: Mono
+  Capture channels: Mono
+  Limits: 0 - 63
+  Mono: 47 [75%] [-16.00dB]
+   string "pocket-home"
+inactive

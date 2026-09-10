@@ -7,6 +7,7 @@ mod launcher;
 mod layout;
 mod navigation;
 mod platform;
+mod preferences;
 mod process;
 mod renderer;
 mod settings;

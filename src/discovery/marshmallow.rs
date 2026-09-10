@@ -51,7 +51,10 @@ fn parse(text: &str, paths: &Paths) -> Result<Catalog, String> {
     let root: Value = serde_json::from_str(&without_trailing_commas(text))
         .map_err(|e| format!("invalid JSON: {e}"))?;
     let pages = root["pages"].as_array().ok_or("missing pages array")?;
-    let mut catalog = Catalog::default();
+    let mut catalog = Catalog {
+        preferences: crate::preferences::Preferences::parse(&root, paths),
+        ..Catalog::default()
+    };
     let mut ids = BTreeMap::<String, usize>::new();
     for (page_index, page) in pages
         .iter()
@@ -83,6 +86,17 @@ fn parse(text: &str, paths: &Paths) -> Result<Catalog, String> {
                     .diagnostics
                     .push(format!("page {page_index} item {index}: {error}")),
             }
+        }
+    }
+    if let Some(command) = root.get("wifiCommand") {
+        let item =
+            serde_json::json!({"name": "Wi-Fi Settings", "shell": command, "icon": "wifiOff.png"});
+        match entry(&item, paths) {
+            Ok(mut app) => {
+                app.id = "vitrallis-wifi-settings".into();
+                catalog.apps.push(app);
+            }
+            Err(error) => catalog.diagnostics.push(format!("Wi-Fi settings: {error}")),
         }
     }
     Ok(catalog)

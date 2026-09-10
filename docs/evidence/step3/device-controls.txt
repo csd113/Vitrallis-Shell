@@ -1,0 +1,7 @@
+before brightness 7 volume 47
+brightness down 6
+brightness up 7
+volume down 41
+volume up 47
+reboot confirmation cancelled, boot 8bd58ade-6c1e-4630-8a51-1da96b68758b
+restored brightness 7 volume 47

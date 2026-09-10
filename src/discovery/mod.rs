@@ -1,6 +1,7 @@
 //! Discovery backends return normalized entries without touching the session or
 //! modifying source metadata. A native package directory can implement this trait.
 mod marshmallow;
+mod store;
 use crate::{
     app::AppEntry,
     config::{Config, Paths},
@@ -8,6 +9,7 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub struct Catalog {
+    pub preferences: crate::preferences::Preferences,
     pub apps: Vec<AppEntry>,
     pub diagnostics: Vec<String>,
 }
@@ -16,12 +18,21 @@ pub trait Discovery {
 }
 
 pub fn load(config: &Config) -> Result<Catalog, String> {
+    load_with_policy(config, true)
+}
+
+pub fn refresh(config: &Config) -> Result<Catalog, String> {
+    load_with_policy(config, false)
+}
+
+fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, String> {
     if config.demo || config.mode == crate::config::Mode::Smoke {
         return Ok(Catalog {
             apps: crate::platform::generic::demo_apps(
                 &std::env::current_exe().map_err(|e| e.to_string())?,
             ),
             diagnostics: vec![],
+            preferences: crate::preferences::Preferences::default(),
         });
     }
     let paths = Paths::from_config(config)?;
@@ -34,10 +45,23 @@ pub fn load(config: &Config) -> Result<Catalog, String> {
         explicit_config: config.catalog_path.is_some(),
     };
     // A broken catalog leaves a usable empty launcher, with a visible diagnostic.
-    let catalog = backend.discover().unwrap_or_else(|error| Catalog {
-        apps: vec![],
-        diagnostics: vec![error],
-    });
+    let mut catalog = match backend.discover() {
+        Ok(catalog) => catalog,
+        Err(error) if tolerate_invalid => Catalog {
+            apps: vec![],
+            diagnostics: vec![error],
+            preferences: crate::preferences::Preferences::default(),
+        },
+        Err(error) => return Err(error),
+    };
+    if config.pocketchip {
+        if let Some(home) = std::env::var_os("HOME")
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute())
+        {
+            store::integrate(&mut catalog, &home);
+        }
+    }
     for diagnostic in &catalog.diagnostics {
         eprintln!("level=warn event=discovery message={diagnostic:?}");
     }

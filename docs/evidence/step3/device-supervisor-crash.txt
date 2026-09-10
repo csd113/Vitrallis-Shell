@@ -1,0 +1,14 @@
+ActiveState=deactivating
+SubState=stop-post
+   string "false"
+   string "pocket-home"
+  829   595 /usr/libexec/gvfsd-fuse /run/user/1000/gvfs -f
+  858     1 /usr/lib/pocket-home-marshmallow/pocket-home
+  859     1 /bin/bash /usr/sbin/pocketchip-load
+  924   858 [cat] <defunct>
+ 1302   554 -bash
+ 4587  4575 sshd-session: chip@notty
+ 4591  4587 bash -c XDG_RUNTIME_DIR=/run/user/1000 systemctl --user kill --kill-whom=main --signal=SIGKILL vitrallis-session; sleep 1; XDG_RUNTIME_DIR=/run/user/1000 systemctl --user show vitrallis-session -p ActiveState -p SubState; DISPLAY=:0 XAUTHORITY=/home/chip/.Xauthority DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus awesome-client "return tostring(vitrallis_saved_keys == nil), client.focus.name"; ps -u chip -o pid,ppid,args | tail -10
+ 4612   595 /usr/bin/python3 /home/chip/.local/share/vitrallis-validation/vitrallis-session.py restore
+ 4631  4591 ps -u chip -o pid,ppid,args
+ 4632  4591 tail -10

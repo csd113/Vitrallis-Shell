@@ -1,0 +1,5 @@
+   string "Bitcoin CAD v1.1.0"
+level=info event=discovery_paths config=Some("/home/chip/.pocket-home/config.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.pocket-home/config.json"
+level=info event=launch_request app=pockethome-e06baa2941b4c13c name="Bitcoin CAD" runtime=None entry="/home/chip/.local/share/pocket-bitcoin/launch" args=[] cwd=None environment_keys=[]
+level=info event=app_started app=pockethome-e06baa2941b4c13c pid=7968

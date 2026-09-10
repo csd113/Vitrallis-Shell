@@ -9,6 +9,8 @@ pub enum Phase {
 
 #[derive(Debug)]
 pub struct Launcher {
+    pub running: Vec<String>,
+    pub preferences: crate::preferences::Preferences,
     pub settings: crate::settings::Settings,
     pub apps: Vec<AppEntry>,
     pub selected: usize,
@@ -30,6 +32,8 @@ impl Launcher {
             }
         }
         Ok(Self {
+            running: Vec::new(),
+            preferences: crate::preferences::Preferences::default(),
             settings: crate::settings::Settings::default(),
             selected: 0,
             phase: Phase::Ready,
@@ -103,7 +107,13 @@ impl Launcher {
     }
     pub fn started(&mut self) {
         self.phase = Phase::Running;
-        self.status = "APP RUNNING - WAITING FOR EXIT".into();
+        self.status = "APP RUNNING - ENTER: RESUME".into();
+    }
+    pub fn returned_home(&mut self) {
+        if self.phase == Phase::Running {
+            self.phase = Phase::Ready;
+            self.status = "SELECT AN APP - RUNNING APPS MARKED *".into();
+        }
     }
     pub fn failed(&mut self, message: String) {
         self.phase = Phase::Ready;
@@ -115,11 +125,52 @@ impl Launcher {
         self.phase = Phase::Ready;
         self.status = message;
     }
+    /// Commit a validated replacement only while idle, retaining selection by ID.
+    pub fn reload(&mut self, apps: Vec<AppEntry>) -> Result<bool, String> {
+        if self.phase != Phase::Ready {
+            return Err("cannot reload while an app is running".into());
+        }
+        let replacement = Self::new(apps, self.columns, self.capacity)?;
+        if self.apps == replacement.apps {
+            return Ok(false);
+        }
+        let selected = self
+            .apps
+            .get(self.selected)
+            .and_then(|old| replacement.apps.iter().position(|app| app.id == old.id));
+        self.selected =
+            selected.unwrap_or_else(|| self.selected.min(replacement.apps.len().saturating_sub(1)));
+        self.apps = replacement.apps;
+        Ok(true)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reload_preserves_identity_and_rejects_invalid_replacements() -> Result<(), String> {
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let mut state = Launcher::new(apps.clone(), 3, 6)?;
+        state.selected = 1;
+        let mut reordered = apps.clone();
+        reordered.reverse();
+        state.reload(reordered)?;
+        assert_eq!(state.apps[state.selected].id, apps[1].id);
+        let mut invalid = apps.clone();
+        invalid[0].name.clear();
+        assert!(state.reload(invalid).is_err());
+        assert_eq!(state.apps.len(), apps.len());
+        state.started();
+        assert!(state.reload(vec![]).is_err());
+        state.finished("closed".into());
+        state.reload(vec![])?;
+        assert_eq!(state.selected, 0);
+        assert!(state.input(Action::Activate).is_none());
+        state.reload(apps)?;
+        assert!(state.input(Action::Activate).is_some());
+        Ok(())
+    }
     #[test]
     fn activation_is_guarded_and_recovers() -> Result<(), String> {
         use crate::platform::Platform;

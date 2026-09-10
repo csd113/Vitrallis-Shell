@@ -1,0 +1,15 @@
+   string "Vitrallis;pocket-home"
+level=info event=launch_request app=pockethome-6e0a327be92cd22b name="Store" runtime=None entry="/home/chip/.local/share/pocket-update-apps/launch" args=[] cwd=None environment_keys=[]
+level=info event=app_started app=pockethome-6e0a327be92cd22b pid=18736
+level=info event=app_resume pid=18263 result=Ok(())
+level=info event=child_reaped pid=18263 status=ExitStatus(unix_wait_status(0))
+level=info event=group_cleanup pgid=18263 helper_status=exit status: 1 (nonzero_can_mean_group_already_gone)
+level=info event=app_exited status=ExitStatus(unix_wait_status(0))
+level=info event=discovery_paths config=Some("/home/chip/.pocket-home/config.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.pocket-home/config.json"
+level=info event=app_resume pid=18736 result=Ok(())
+level=info event=child_reaped pid=18736 status=ExitStatus(unix_wait_status(0))
+level=info event=group_cleanup pgid=18736 helper_status=exit status: 1 (nonzero_can_mean_group_already_gone)
+level=info event=app_exited status=ExitStatus(unix_wait_status(0))
+level=info event=discovery_paths config=Some("/home/chip/.pocket-home/config.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.pocket-home/config.json"

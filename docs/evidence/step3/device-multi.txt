@@ -1,0 +1,15 @@
+initial string "Vitrallis"
+Bitcoin string "Bitcoin CAD v1.1.0"
+Home string "Vitrallis"
+Store while Bitcoin remains string "Update Apps"
+Home again string "Vitrallis"
+Resume Bitcoin once string "Bitcoin CAD v1.1.0"
+Bitcoin exited string "Vitrallis"
+Resume Store string "Update Apps"
+Traceback (most recent call last):
+  File "/Users/connordawkins/Documents/GitHub/Vitrallis-Shell/target/hardware-multi.py", line 32, in <module>
+    print('Store exited',wait_for('Vitrallis'),flush=True)
+                         ~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/connordawkins/Documents/GitHub/Vitrallis-Shell/target/hardware-multi.py", line 15, in wait_for
+    raise RuntimeError('Window not focused: '+text+'; last '+name)
+RuntimeError: Window not focused: Vitrallis; last string "Update Apps"

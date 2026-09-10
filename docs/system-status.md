@@ -1,5 +1,7 @@
 # PocketCHIP system integration and validation
 
+Historical Step 2 record. The [Step 3 hardware compatibility report](compatibility-step3.md) supersedes the hardware-access restrictions and results below.
+
 Implemented on 2026-09-10 against the static Marshmallow reference at [dccbd38dc233f3f45ebd6ea130d6a787268e23f5](https://github.com/o-marshmallow/PocketCHIP-pocket-home/tree/dccbd38dc233f3f45ebd6ea130d6a787268e23f5). The reference checkout is outside this repository. No hardware was accessed, packages installed, permissions changed, session files modified, or commits created. This extends the deliberately limited Step 1 audit.
 
 ## Audited mechanisms

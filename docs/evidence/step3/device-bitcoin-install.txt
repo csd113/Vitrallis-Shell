@@ -1,0 +1,5 @@
+total 36
+-rw-r--r-- 1 chip chip  7424 Sep 10 09:20 bitcoin.png
+-rw-r--r-- 1 chip chip 24091 Sep 10 09:20 bitcoin.py
+-rwxr-xr-x 1 chip chip   532 Sep 10 09:20 launch
+87902ae5671fea88af84e1e3ed56214f2b2c3dab9c97153eb38e1ed8273f749e  /home/chip/.local/share/pocket-bitcoin/bitcoin.py

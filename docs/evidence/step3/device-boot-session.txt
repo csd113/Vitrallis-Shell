@@ -1,0 +1,14 @@
+ 09:59:24 up 1 min,  2 users,  load average: 3.99, 1.58, 0.58
+active
+  PID STAT COMMAND
+  566 Ss   /usr/lib/systemd/systemd --user
+  572 S    (sd-pam)
+  611 Ssl  /usr/bin/gnome-keyring-daemon --foreground --components=pkcs11,secrets --control-directory=/run/user/1000/keyring
+  622 Ss   /usr/bin/dbus-daemon --session --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  624 S+   /bin/sh /usr/bin/startx
+  642 S+   xinit /etc/X11/xinit/xinitrc -- /etc/X11/xinit/xserverrc :0 vt7 -keeptty -auth /tmp/serverauth.KtS6ZpRff2
+  704 S    sshd-session: chip@notty
+  709 Ss   bash -c uptime; systemctl is-active greetd; ps -u chip -o pid,stat,args; DISPLAY=:0 XAUTHORITY=/home/chip/.Xauthority DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus awesome-client "return client.focus.name"
+  726 R    ps -u chip -o pid,stat,args
+Error org.freedesktop.DBus.Error.ServiceUnknown: The name org.awesomewm.awful was not provided by any .service files
+E: dbus-send failed.

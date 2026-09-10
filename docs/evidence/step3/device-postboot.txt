@@ -1,0 +1,6 @@
+422dbf67-1fde-40d5-b071-768279081983
+Error org.freedesktop.DBus.Error.ServiceUnknown: The name org.awesomewm.awful was not provided by any .service files
+E: dbus-send failed.
+a509b383d72457c7bb9b0336df461fba610be4d148681c31378b3bb6a7495e5d  /usr/bin/pocket-home
+baec55ceb8710f64dce1ae541af9a60658f83ce30430de6901525dadb7be509c  /usr/lib/pocket-home-marshmallow/pocket-home
+fbb781bffd4ad28b212a3f4e77c902eb41c7078261e0b1cdeae35a926b30d8a9  /home/chip/.config/awesome/rc.lua

@@ -1,0 +1,2 @@
+Before UI reboot 8bd58ade-6c1e-4630-8a51-1da96b68758b
+Connection to 192.168.81.1 closed by remote host.

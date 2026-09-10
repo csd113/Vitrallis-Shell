@@ -24,12 +24,18 @@ const BRIGHTNESS: &str = "/sys/class/backlight/backlight/brightness";
 const MAX_BRIGHTNESS: &str = "/sys/class/backlight/backlight/max_brightness";
 
 trait Hardware {
+    fn kernel_battery(&self) -> bool {
+        false
+    }
     fn read(&self, path: &str) -> Result<String, String>;
     fn write(&self, path: &str, value: &str) -> Result<(), String>;
     fn command(&self, name: &str, args: &[&str]) -> Result<String, String>;
 }
 struct Native;
 impl Hardware for Native {
+    fn kernel_battery(&self) -> bool {
+        Path::new("/sys/class/power_supply/axp20x-battery").exists()
+    }
     fn read(&self, path: &str) -> Result<String, String> {
         let mut value = String::new();
         File::open(path)
@@ -170,11 +176,7 @@ fn wifi(radio: &str, state: &str) -> Option<Wifi> {
     }
 }
 fn snapshot(io: &impl Hardware) -> Status {
-    let power = register(io, "0x00");
-    let charge = register(io, "0x01");
-    let battery = register(io, "0xb9")
-        .and_then(|v| Percent::new(v).ok())
-        .filter(|_| charge.is_some_and(|v| v & 0x20 != 0));
+    let (battery, charging, external_power) = battery_status(io);
     let audio = io
         .command("amixer", &["sget", "Power Amplifier"])
         .ok()
@@ -193,8 +195,8 @@ fn snapshot(io: &impl Hardware) -> Status {
     };
     Status {
         battery,
-        charging: charge.map(|v| v & 0x60 == 0x60),
-        external_power: power.map(|v| v & 0x50 != 0),
+        charging,
+        external_power,
         wifi,
         bluetooth: None,
         brightness: brightness_percent(io),
@@ -203,6 +205,50 @@ fn snapshot(io: &impl Hardware) -> Status {
         clock: command::clock(),
         power_controls: cfg!(target_os = "linux"),
     }
+}
+fn battery_status(io: &impl Hardware) -> (Option<Percent>, Option<bool>, Option<bool>) {
+    if io.kernel_battery() {
+        // A bound kernel driver owns the PMIC. Malformed sysfs data must never
+        // trigger forced I2C access behind that driver's back.
+        let read = |name| io.read(name).ok();
+        let present = read("/sys/class/power_supply/axp20x-battery/present");
+        let battery = (present.as_deref().map(str::trim) == Some("1"))
+            .then(|| read("/sys/class/power_supply/axp20x-battery/capacity"))
+            .flatten()
+            .and_then(|v| v.trim().parse().ok())
+            .and_then(|v| Percent::new(v).ok());
+        let charging =
+            read("/sys/class/power_supply/axp20x-battery/status").and_then(|v| match v.trim() {
+                "Charging" => Some(true),
+                "Discharging" | "Not charging" | "Full" => Some(false),
+                _ => None,
+            });
+        let online = |path| {
+            read(path).and_then(|v| match v.trim() {
+                "0" => Some(false),
+                "1" => Some(true),
+                _ => None,
+            })
+        };
+        let usb = online("/sys/class/power_supply/axp20x-usb/online");
+        let ac = online("/sys/class/power_supply/axp20x-ac/online");
+        let power = match (usb, ac) {
+            (Some(true), _) | (_, Some(true)) => Some(true),
+            (Some(false), Some(false)) => Some(false),
+            _ => None,
+        };
+        return (battery, charging, power);
+    }
+    let power = register(io, "0x00");
+    let charge = register(io, "0x01");
+    let battery = register(io, "0xb9")
+        .and_then(|v| Percent::new(v).ok())
+        .filter(|_| charge.is_some_and(|v| v & 0x20 != 0));
+    (
+        battery,
+        charge.map(|v| v & 0x60 == 0x60),
+        power.map(|v| v & 0x50 != 0),
+    )
 }
 fn apply(io: &impl Hardware, control: Control) -> Result<(), String> {
     match control {
@@ -236,6 +282,55 @@ fn apply(io: &impl Hardware, control: Control) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn kernel_battery_uses_sysfs_and_never_falls_back_to_i2c() -> Result<(), String> {
+        struct Kernel {
+            capacity: &'static str,
+            present: &'static str,
+            status: &'static str,
+        }
+        impl Hardware for Kernel {
+            fn kernel_battery(&self) -> bool {
+                true
+            }
+            fn read(&self, path: &str) -> Result<String, String> {
+                let value = match path {
+                    "/sys/class/power_supply/axp20x-battery/capacity" => self.capacity,
+                    "/sys/class/power_supply/axp20x-battery/present" => self.present,
+                    "/sys/class/power_supply/axp20x-battery/status" => self.status,
+                    "/sys/class/power_supply/axp20x-usb/online" => "1",
+                    "/sys/class/power_supply/axp20x-ac/online" => "0",
+                    _ => return Err("missing".into()),
+                };
+                Ok(value.into())
+            }
+            fn write(&self, _: &str, _: &str) -> Result<(), String> {
+                panic!("battery reads must not write")
+            }
+            fn command(&self, _: &str, _: &[&str]) -> Result<String, String> {
+                panic!("kernel battery must never use forced I2C")
+            }
+        }
+        let mut io = Kernel {
+            capacity: "95\n",
+            present: "1",
+            status: "Charging\n",
+        };
+        assert_eq!(
+            battery_status(&io),
+            (Some(Percent::new(95)?), Some(true), Some(true))
+        );
+        io.capacity = "101";
+        assert_eq!(battery_status(&io).0, None);
+        io.capacity = "95";
+        io.present = "0";
+        assert_eq!(battery_status(&io).0, None);
+        io.status = "broken";
+        assert_eq!(battery_status(&io).1, None);
+        io.status = "Full";
+        assert_eq!(battery_status(&io).1, Some(false));
+        Ok(())
+    }
     use std::cell::RefCell;
     struct Fake {
         current: &'static str,

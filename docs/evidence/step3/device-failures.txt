@@ -1,0 +1,29 @@
+480 272 32 1920
+Missing command: visible launch failure; launcher alive True
+480 272 32 1920
+Nonzero child: reaped; launcher alive True
+480 272 32 1920
+Store network failure: refused loopback proxy; captured UI
+Store failure returned cleanly to Vitrallis; child reaped
+level=info event=discovery_paths config=Some("/home/chip/.local/share/vitrallis-validation/failure-catalog.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.local/share/vitrallis-validation/failure-catalog.json"
+level=warn event=discovery message="Missing test: command not found or not executable: /nonexistent/vitrallis-test"
+level=info event=ready width=480 height=272 apps=3
+level=error event=launch_failed message="Missing test: command not found or not executable: /nonexistent/vitrallis-test"
+level=info event=launch_request app=pockethome-8b84741c246310de name="Crash test" runtime=None entry="/bin/false" args=[] cwd=None environment_keys=[]
+level=info event=app_started app=pockethome-8b84741c246310de pid=17110
+level=info event=child_reaped pid=17110 status=ExitStatus(unix_wait_status(256))
+level=info event=group_cleanup pgid=17110 helper_status=exit status: 1 (nonzero_can_mean_group_already_gone)
+level=info event=app_exited status=ExitStatus(unix_wait_status(256))
+level=info event=discovery_paths config=Some("/home/chip/.local/share/vitrallis-validation/failure-catalog.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.local/share/vitrallis-validation/failure-catalog.json"
+level=warn event=discovery message="Missing test: command not found or not executable: /nonexistent/vitrallis-test"
+level=info event=launch_request app=pockethome-c7d813d915cd1662 name="Store" runtime=None entry="/home/chip/.local/share/pocket-update-apps/launch" args=[] cwd=None environment_keys=["HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"]
+level=info event=app_started app=pockethome-c7d813d915cd1662 pid=17121
+level=info event=child_reaped pid=17121 status=ExitStatus(unix_wait_status(0))
+level=info event=group_cleanup pgid=17121 helper_status=exit status: 1 (nonzero_can_mean_group_already_gone)
+level=info event=app_exited status=ExitStatus(unix_wait_status(0))
+level=info event=discovery_paths config=Some("/home/chip/.local/share/vitrallis-validation/failure-catalog.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.local/share/vitrallis-validation/failure-catalog.json"
+level=warn event=discovery message="Missing test: command not found or not executable: /nonexistent/vitrallis-test"
+

@@ -1,0 +1,13 @@
+cold boot 831f3c72-0183-4158-9c6a-72e952b7f3f9
+focused ['pocket-home']
+focused ['Vitrallis']
+focused ['Bitcoin CAD v1.1.0']
+focused ['Vitrallis']
+focused ['pocket-home']
+restored Home keys ['yes']
+session final deactivating 3
+Traceback (most recent call last):
+  File "/home/chip/.local/share/vitrallis-validation/device-cold-final.py", line 35, in <module>
+    if r.stdout.strip() != 'inactive': raise RuntimeError('Session did not stop')
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Session did not stop

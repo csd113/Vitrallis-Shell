@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
 /// Runtime-independent launch definition. An absent runtime executes entry directly;
 /// a runtime executes entry as its first argument (Python is only one possibility).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AppManifest {
     pub runtime: Option<PathBuf>,
     pub entry: PathBuf,
@@ -11,7 +11,7 @@ pub struct AppManifest {
     pub env: BTreeMap<OsString, OsString>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppEntry {
     pub id: String,
     pub name: String,

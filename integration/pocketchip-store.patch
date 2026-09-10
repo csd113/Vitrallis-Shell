@@ -1,0 +1,197 @@
+diff --git a/deployment.py b/deployment.py
+index 30118ed..d73165a 100644
+--- a/deployment.py
++++ b/deployment.py
+@@ -56,6 +56,10 @@ def deploy(home, target, name, icon, files, validate_only=False):
+         return
+     backup = config_path.with_name('config.json.before-app-install-' + str(time.time_ns()))
+     atomic(backup, original)
++    marker = target / '.installation-pending'
++    safe(marker)
++    target.mkdir(parents=True, exist_ok=True)
++    atomic(marker, b'Installation incomplete. Reinstall to repair.\n')
+     changed = []
+     try:
+         for path, (content, mode) in writes.items():
+@@ -74,3 +78,5 @@ def deploy(home, target, name, icon, files, validate_only=False):
+             else:
+                 atomic(path, *old)
+         raise
++
++    marker.unlink()
+diff --git a/test_deployment.py b/test_deployment.py
+index efda2f6..3536729 100644
+--- a/test_deployment.py
++++ b/test_deployment.py
+@@ -72,3 +72,42 @@ class Deployment(unittest.TestCase):
+         with self.assertRaises(ValueError):
+             self.install()
+         self.assertFalse(self.target.exists())
++
++    def test_interruption_is_visible_and_reinstall_repairs(self):
++        import os
++        import subprocess
++        import sys
++        script = """
++from pathlib import Path
++import os
++import update_apps as u
++from deployment import deploy
++home = Path(os.environ['TEST_HOME'])
++real = u.atomic
++def interrupted(path, data, mode=0o600):
++    real(path, data, mode)
++    if path.name == 'bitcoin.py':
++        os._exit(91)
++u.atomic = interrupted
++deploy(home, home / '.local/share/pocket-bitcoin', 'Bitcoin CAD', 'bitcoin.png',
++       {'bitcoin.py': (b"VERSION = '1.0.0'\\n", 0o644)})
++"""
++        env = dict(os.environ, TEST_HOME=str(self.home),
++                   PYTHONPATH=str(Path(u.__file__).parent) + os.pathsep + os.environ.get('PYTHONPATH', ''))
++        result = subprocess.run([sys.executable, '-c', script], env=env, check=False)
++        self.assertEqual(result.returncode, 91)
++        self.assertEqual(u.installed(self.app), 'incomplete / repair')
++        self.result['old'] = u.sha(self.app['path'].read_bytes())
++        self.install()
++        self.assertFalse((self.target / '.installation-pending').exists())
++        self.assertEqual(u.installed(self.app), 'v1.0.0')
++        self.assertTrue((self.target / 'launch').is_file())
++
++    def test_missing_launcher_is_repaired(self):
++        self.install()
++        (self.target / 'launch').unlink()
++        self.assertEqual(u.installed(self.app), 'incomplete / repair')
++        self.result['old'] = u.sha(self.app['path'].read_bytes())
++        self.install()
++        self.assertTrue((self.target / 'launch').is_file())
++        self.assertEqual(u.installed(self.app), 'v1.0.0')
+diff --git a/test_self_update.py b/test_self_update.py
+index 7771a79..10c7b35 100644
+--- a/test_self_update.py
++++ b/test_self_update.py
+@@ -12,7 +12,7 @@ class SelfUpdate(unittest.TestCase):
+         self.temp = tempfile.TemporaryDirectory()
+         self.addCleanup(self.temp.cleanup)
+         self.root = Path(self.temp.name).resolve()
+-        self.app = dict(u.APPS[-1], path=self.root / 'update_apps.py')
++        self.app = dict(u.APPS[-1], path=self.root / 'update_apps.py', vitrallis_managed=False)
+         self.files = {name: (b"VERSION = '1.2.0'\n" if name.endswith('.py') else b'new file\n')
+                       for name in u.SELF_FILES}
+         self.old = {}
+diff --git a/test_update_apps.py b/test_update_apps.py
+index 67dfa23..465c4f6 100644
+--- a/test_update_apps.py
++++ b/test_update_apps.py
+@@ -14,6 +14,9 @@ class Updates(unittest.TestCase):
+         self.root = Path(self.temp.name).resolve()
+         self.path = self.root / 'bitcoin.py'
+         self.path.write_bytes(b'print("old")\n')
++        (self.root / 'launch').write_text('#!/bin/sh\n')
++        (self.root / 'launch').chmod(0o755)
++        (self.root / 'bitcoin.png').write_bytes(b'fixture icon')
+         self.app = dict(name='Test', repo='owner/repo', branch='main', source='bitcoin.py',
+                         path=self.path, known={})
+         self.data = b'print("new")\n'
+@@ -199,16 +202,20 @@ class CloseApps(unittest.TestCase):
+         import sys
+         script = '''
+ import queue
++import signal
+ import update_apps as u
++# Bound the lock-sensitive operation independently of slow ARM/Tk imports.
++signal.alarm(2)
+ window = object.__new__(u.Window)
+ window.events = queue.Queue()
+ window.show_requested = False
+ with window.events.mutex:
+     window.request_show()
+ assert window.show_requested
++signal.alarm(0)
+ '''
+         subprocess.run([sys.executable, '-c', script], cwd=Path(u.__file__).parent,
+-                       check=True, timeout=5, capture_output=True)
++                       check=True, timeout=60, capture_output=True)
+ 
+ 
+ class Selection(unittest.TestCase):
+diff --git a/update_apps.py b/update_apps.py
+index 575abf6..1321f53 100644
+--- a/update_apps.py
++++ b/update_apps.py
+@@ -29,9 +29,9 @@ APPS = [dict(name='Bitcoin CAD', repo='csd113/PocketChip-Bitcoin-Display',
+              path=HOME / '.local/share/pocket-bitcoin/bitcoin.py',
+              known={'14d91cc19782ced7716132a0563161bdb8cd9b86c3ceffb8053ee9409b158ccd':
+                     'cd1f1d7a2a5fed4c4441abcb78c1c924fb4b6f16'}),
+-        dict(name='App Updater (self)', repo='csd113/Pocketchip-update-apps',
++        dict(name='App Updater (manual)', repo='csd113/Pocketchip-update-apps',
+              branch='main', source='update_apps.py', path=DATA / 'update_apps.py',
+-             known={}, self_update=True)]
++             known={}, self_update=True, vitrallis_managed=True)]
+ LIMIT = 2 * 1024 * 1024
+ 
+ 
+@@ -88,7 +88,24 @@ def source_version(data):
+     return None
+ 
+ 
++def incomplete(app):
++    root = app['path'].parent
++    if (root / '.installation-pending').exists():
++        return True
++    if current(app) is None:
++        return False
++    from deployment import safe
++    for name in ('launch', 'bitcoin.png'):
++        path = root / name
++        safe(path)
++        if not path.is_file() or (name == 'launch' and not os.access(path, os.X_OK)):
++            return True
++    return False
++
++
+ def installed(app):
++    if not app.get('self_update') and incomplete(app):
++        return 'incomplete / repair'
+     data = current(app)
+     if data is None:
+         return 'not installed'
+@@ -109,6 +126,10 @@ def installed(app):
+ 
+ 
+ def check_self(app):
++    # A remote self-update would silently remove the local crash-safety patch.
++    # Keep its installed state visible; upgrades use the reviewed integration installer.
++    if app.get('vitrallis_managed'):
++        return dict(needed=False, version='manual update')
+     commit = revision(api(app['repo'] + '/commits/' + app['branch'])['sha'])
+     tree = api(app['repo'] + '/git/trees/' + commit)
+     if tree.get('truncated'):
+@@ -203,7 +224,8 @@ def check(app):
+         raise ValueError('Download checksum failed')
+     compile(data, app['source'], 'exec')
+     return dict(commit=commit, version=source_version(data) or commit[:8],
+-                data=data, old=sha(old) if old is not None else None, needed=data != old)
++                data=data, old=sha(old) if old is not None else None,
++                needed=data != old or incomplete(app))
+ 
+ 
+ def atomic(path, content, mode=0o600):
+@@ -280,7 +302,7 @@ def install(app, result):
+     if (sha(old) if old is not None else None) != result['old']:
+         raise ValueError('App changed. Check for updates again.')
+     compile(result['data'], app['source'], 'exec')
+-    if old is None:
++    if old is None or incomplete(app):
+         from deployment import deploy
+         source = Path(__file__).resolve().parent
+         files = {app['source']: (result['data'], 0o644),
+@@ -476,7 +498,7 @@ class Window:
+                 if action == 'check':
+                     result = check(app)
+                     self.results[index] = result
+-                    version = installed(app) if result['needed'] else result['version']
++                    version = installed(app)
+                     self.events.put(('row', index, version, result['version']))
+                     count += int(result['needed'])
+                 elif index in selected and index in self.results and self.results[index]['needed']:

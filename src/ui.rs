@@ -4,8 +4,8 @@ use crate::{
     launcher::{Launcher, Phase},
     layout::Layout,
     platform::Platform,
-    process::{self, NativeProcess, Processes},
-    renderer::{Screen, icons, render, screenshot},
+    process::{self, ProcessSet, Processes},
+    renderer::{Screen, artwork, render, screenshot},
 };
 use sdl2::{
     event::{Event, WindowEvent},
@@ -19,6 +19,7 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     let layout = Layout::home(width, height)?;
     let catalog = crate::discovery::load(config)?;
     let mut state = Launcher::new(catalog.apps, layout.columns, layout.tiles.len())?;
+    state.preferences = catalog.preferences;
     if !catalog.diagnostics.is_empty() {
         state.status = format!("{} APP WARNINGS - SEE LOG", catalog.diagnostics.len());
         if state.apps.is_empty() {
@@ -27,8 +28,12 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     }
     let sdl = sdl2::init().map_err(|e| format!("SDL init: {e}"))?;
     let video = sdl.video().map_err(|e| format!("SDL video: {e}"))?;
+    sdl.mouse().show_cursor(state.preferences.show_cursor);
     sdl2::hint::set("SDL_TOUCH_MOUSE_EVENTS", "0");
     sdl2::hint::set("SDL_MOUSE_TOUCH_EVENTS", "0");
+    // A touch used to focus the launcher must also deliver its matching press.
+    // SDL otherwise consumes the first click after window activation.
+    sdl2::hint::set("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
     let mut builder = video.window("Vitrallis", u32::from(width), u32::from(height));
     builder.position_centered();
     if platform.fullscreen() {
@@ -45,29 +50,20 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         u16::try_from(actual_w).map_err(|_| "window too wide")?,
         u16::try_from(actual_h).map_err(|_| "window too tall")?,
     )?;
-    let creator = canvas.texture_creator();
-    let icons = icons(&creator, &state.apps);
-    render(&mut canvas, &layout, &state, &icons)?;
     if let Some(path) = &config.screenshot {
+        let creator = canvas.texture_creator();
+        let textures = artwork(&creator, &state);
+        render(&mut canvas, &layout, &state, &textures)?;
         screenshot(&canvas, path)?;
         return Ok(());
     }
-    canvas.present();
     eprintln!(
         "level=info event=ready width={} height={} apps={}",
         layout.width,
         layout.height,
         state.apps.len()
     );
-    event_loop(
-        &sdl,
-        &mut canvas,
-        &layout,
-        state,
-        &icons,
-        platform,
-        config.mode == crate::config::Mode::Smoke,
-    )
+    event_loop(&sdl, &mut canvas, &layout, state, platform, config)
 }
 
 fn event_loop(
@@ -75,22 +71,18 @@ fn event_loop(
     canvas: &mut Screen,
     layout: &Layout,
     mut state: Launcher,
-    icons: &[Option<Texture<'_>>],
     platform: &impl Platform,
-    smoke: bool,
+    config: &Config,
 ) -> Result<(), String> {
-    let mut worker = match crate::platform::system::Worker::start(*platform) {
-        Ok(worker) => Some(worker),
-        Err(error) => {
-            state.settings.message = error;
-            None
-        }
-    };
+    let smoke = config.mode == crate::config::Mode::Smoke;
+    let creator = canvas.texture_creator();
+    let mut textures = artwork(&creator, &state);
+    let mut worker = system_worker(platform, &mut state);
     let mut events = sdl.event_pump()?;
-    let mut child = NativeProcess::default();
+    let mut child = ProcessSet::<crate::process::NativeProcess>::default();
     let mut pointer = PointerInput::default();
     let mut accept_after = Instant::now();
-    let mut dirty = false;
+    let mut dirty = true;
     let mut last_wait_error = None;
     let mut next_poll = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -100,7 +92,8 @@ fn event_loop(
     loop {
         dirty |= refresh_system(&mut worker, &mut state.settings);
         if dirty {
-            render(canvas, layout, &state, icons)?;
+            state.running = child.running_ids();
+            render(canvas, layout, &state, &textures)?;
             canvas.present();
             dirty = false;
         }
@@ -110,17 +103,7 @@ fn event_loop(
                 return Ok(());
             }
             dirty |= exposed(&event);
-            if matches!(
-                event,
-                Event::Window {
-                    win_event: WindowEvent::FocusLost,
-                    ..
-                }
-            ) {
-                state.settings.cancel();
-                pointer.clear();
-                dirty = true;
-            }
+            dirty |= window_focus(&event, &mut state, &mut pointer);
             if Instant::now() >= accept_after {
                 let (action, system_changed) =
                     translate_action(&event, layout, &mut state, &mut pointer, &mut worker);
@@ -130,7 +113,7 @@ fn event_loop(
                         action,
                         Some(Action::Activate | Action::SelectAndActivate(_))
                     );
-                dirty |= handle_action(action, canvas, layout, &mut state, icons, &mut child)?;
+                dirty |= handle_action(action, canvas, layout, &mut state, &textures, &mut child)?;
                 if activating || system_changed {
                     pointer.clear();
                     accept_after = Instant::now() + Duration::from_millis(400);
@@ -139,7 +122,7 @@ fn event_loop(
                 pointer.clear();
             }
         }
-        let result = if state.phase == Phase::Running && Instant::now() >= next_poll {
+        let result = if child.has_children() && Instant::now() >= next_poll {
             next_poll = Instant::now() + Duration::from_millis(250);
             child.poll()
         } else {
@@ -148,20 +131,27 @@ fn event_loop(
         match result {
             Ok(Some(status)) => {
                 eprintln!("level=info event=app_exited status={status:?}");
-                state.finished(if status.success() {
-                    "APP CLOSED - READY".into()
-                } else {
-                    format!("APP EXITED: {status}")
-                });
+                let raise = child.exited_active && state.phase == Phase::Running;
+                if child.exited_active {
+                    state.finished(if status.success() {
+                        "APP CLOSED - READY".into()
+                    } else {
+                        format!("APP EXITED: {status}")
+                    });
+                }
+                if state.phase == Phase::Ready && reload_catalog(config, &mut state) {
+                    textures = artwork(&creator, &state);
+                    sdl.mouse().show_cursor(state.preferences.show_cursor);
+                }
                 last_wait_error = None;
                 pointer.clear();
                 accept_after = Instant::now() + Duration::from_millis(400);
-                if platform.raise_after_exit() {
+                if raise && platform.raise_after_exit() {
                     canvas.window_mut().raise();
                 }
                 dirty = true;
                 if smoke {
-                    return finish_smoke(canvas, layout, &state, icons, status);
+                    return finish_smoke(canvas, layout, &state, &textures, status);
                 }
             }
             Ok(None) => {}
@@ -179,6 +169,58 @@ fn event_loop(
             return Err("smoke test timed out".into());
         }
     }
+}
+
+fn window_focus(event: &Event, state: &mut Launcher, pointer: &mut PointerInput) -> bool {
+    match event {
+        Event::Window {
+            win_event: WindowEvent::FocusLost,
+            ..
+        } => {
+            state.settings.cancel();
+            pointer.clear();
+            true
+        }
+        Event::Window {
+            win_event: WindowEvent::FocusGained,
+            ..
+        } => {
+            state.returned_home();
+            pointer.clear();
+            true
+        }
+        _ => false,
+    }
+}
+
+fn system_worker(
+    platform: &impl Platform,
+    state: &mut Launcher,
+) -> Option<crate::platform::system::Worker> {
+    match crate::platform::system::Worker::start(*platform) {
+        Ok(worker) => Some(worker),
+        Err(error) => {
+            state.settings.message = error;
+            None
+        }
+    }
+}
+
+fn reload_catalog(config: &Config, state: &mut Launcher) -> bool {
+    let result = crate::discovery::refresh(config).and_then(|catalog| {
+        if catalog.apps.is_empty() && !catalog.diagnostics.is_empty() {
+            return Err("catalogue unavailable; keeping previous apps".into());
+        }
+        let changed = state.reload(catalog.apps)?;
+        let appearance_changed = state.preferences != catalog.preferences;
+        state.preferences = catalog.preferences;
+        Ok(changed || appearance_changed)
+    });
+    result.unwrap_or_else(|error| {
+        eprintln!("level=warn event=reload_failed message={error:?}");
+        state.status = error;
+        false
+    })
 }
 
 const fn closing(event: &Event) -> bool {
@@ -282,6 +324,15 @@ fn handle_action(
     };
     if let Action::SelectAndActivate(index) = action {
         action = Action::SelectAndActivate(state.page_start() + index);
+    }
+    if state.phase == Phase::Running
+        && (matches!(action, Action::Activate)
+            || matches!(action, Action::SelectAndActivate(index) if index == state.selected))
+    {
+        state.status = child
+            .focus()
+            .map_or_else(|error| error, |()| "APP RESUMED".into());
+        return Ok(true);
     }
     let before = (state.selected, state.phase, state.error.is_some());
     let was_ready = state.phase == Phase::Ready;

@@ -1,0 +1,2 @@
+   string "pocket-home"
+ 10:00:19 up 2 min,  2 users,  load average: 2.62, 1.63, 0.65

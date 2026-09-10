@@ -1,3 +1,5 @@
+> Historical Step 2 notes. Current USB hardware work and evidence are in [compatibility-step3.md](compatibility-step3.md); installation and recovery are in [session.md](session.md).
+
 # Deferred device validation (Step 2)
 
 The user deferred device access for Step 2. Use the current [compatibility report](compatibility-step2.md) and README for implemented behavior. The older build notes below remain guidance, not executed commands. Before live testing, compare `--list-apps` with the installed Marshmallow Apps pages, including order, paths, args and icons. Exercise every page with keyboard and physical touch, representative installed apps, and repeated launch/exit cycles while measuring processes, RSS and idle CPU. Verify Marshmallow normally launches afterward and its files/startup remain unchanged.

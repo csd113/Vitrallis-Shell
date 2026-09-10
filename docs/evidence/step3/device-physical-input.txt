@@ -1,0 +1,30 @@
+level=info event=discovery_paths config=Some("/home/chip/.pocket-home/config.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.pocket-home/config.json"
+level=info event=ready width=480 height=272 apps=5
+level=info event=launch_request app=pockethome-e06baa2941b4c13c name="Bitcoin CAD" runtime=None entry="/home/chip/.local/share/pocket-bitcoin/launch" args=[] cwd=None environment_keys=[]
+level=info event=app_started app=pockethome-e06baa2941b4c13c pid=2866
+level=info event=child_reaped pid=2866 status=ExitStatus(unix_wait_status(0))
+level=info event=group_cleanup pgid=2866 helper_status=exit status: 1 (nonzero_can_mean_group_already_gone)
+level=info event=app_exited status=ExitStatus(unix_wait_status(0))
+level=info event=discovery_paths config=Some("/home/chip/.pocket-home/config.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.pocket-home/config.json"
+  595     1 /usr/lib/systemd/systemd --user
+  600   595 (sd-pam)
+  639   595 /usr/bin/gnome-keyring-daemon --foreground --components=pkcs11,secrets --control-directory=/run/user/1000/keyring
+  644   595 /usr/bin/dbus-daemon --session --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only
+  646   565 /bin/sh /usr/bin/startx
+  664   646 xinit /etc/X11/xinit/xinitrc -- /etc/X11/xinit/xserverrc :0 vt7 -keeptty -auth /tmp/serverauth.kmoK9vsvo6
+  737   664 x-window-manager
+  798   737 /usr/bin/ssh-agent x-window-manager
+  803   595 /usr/libexec/gvfsd
+  829   595 /usr/libexec/gvfsd-fuse /run/user/1000/gvfs -f
+  858     1 /usr/lib/pocket-home-marshmallow/pocket-home
+  859     1 /bin/bash /usr/sbin/pocketchip-load
+  924   858 [cat] <defunct>
+ 1302   554 -bash
+ 2323     1 /home/chip/.local/share/vitrallis-validation/vitrallis --pocketchip
+ 3299  3285 sshd-session: chip@notty
+ 3309  3299 bash -c cat ~/.local/share/vitrallis-validation/first-run.log; ps -u chip -o pid,ppid,args | tail -20
+ 3311  3309 ps -u chip -o pid,ppid,args
+ 3312  3309 tail -20
+ 3313   859 sleep 5

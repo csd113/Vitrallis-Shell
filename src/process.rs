@@ -7,6 +7,15 @@ use std::{
 pub fn command(app: &AppEntry) -> Result<Command, String> {
     app.validate()?;
     let m = &app.manifest;
+    if let Some(parent) = m.entry.parent() {
+        if parent
+            .join(".installation-pending")
+            .try_exists()
+            .map_err(|error| format!("cannot check installation state: {error}"))?
+        {
+            return Err("installation incomplete; use Store to repair this app".into());
+        }
+    }
     let mut command = Command::new(m.runtime.as_ref().unwrap_or(&m.entry));
     if m.runtime.is_some() {
         command.arg(&m.entry);
@@ -31,13 +40,77 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
 pub trait Processes {
     fn start(&mut self, app: &AppEntry) -> Result<(), String>;
     fn poll(&mut self) -> Result<Option<ExitStatus>, String>;
+    fn focus(&mut self) -> Result<(), String> {
+        Err("application focus is unavailable".into())
+    }
+}
+
+/// Each application keeps its own existing process owner. Window focus never
+/// transfers process ownership, and dropping the set cleans every owned child.
+#[derive(Debug, Default)]
+pub struct ProcessSet<P = NativeProcess> {
+    members: Vec<(String, P)>,
+    active: Option<String>,
+    pub exited_active: bool,
+}
+impl<P> ProcessSet<P> {
+    pub fn has_children(&self) -> bool {
+        !self.members.is_empty()
+    }
+    pub fn running_ids(&self) -> Vec<String> {
+        self.members.iter().map(|(id, _)| id.clone()).collect()
+    }
+}
+impl<P: Processes + Default> Processes for ProcessSet<P> {
+    fn start(&mut self, app: &AppEntry) -> Result<(), String> {
+        if let Some((_, process)) = self.members.iter_mut().find(|(id, _)| id == &app.id) {
+            process.focus()?;
+        } else {
+            let mut process = P::default();
+            process.start(app)?;
+            self.members.push((app.id.clone(), process));
+        }
+        self.active = Some(app.id.clone());
+        Ok(())
+    }
+    fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
+        for index in 0..self.members.len() {
+            if let Some(status) = self.members[index].1.poll()? {
+                let (id, _) = self.members.remove(index);
+                self.exited_active = self.active.as_ref() == Some(&id);
+                if self.exited_active {
+                    self.active = None;
+                }
+                return Ok(Some(status));
+            }
+        }
+        Ok(None)
+    }
+    fn focus(&mut self) -> Result<(), String> {
+        self.members
+            .iter_mut()
+            .find(|(id, _)| Some(id) == self.active.as_ref())
+            .ok_or("no active app")?
+            .1
+            .focus()
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct NativeProcess {
     child: Option<Child>,
+    window_hint: Option<crate::platform::AppWindow>,
 }
 impl Processes for NativeProcess {
+    fn focus(&mut self) -> Result<(), String> {
+        let child = self.child.as_ref().ok_or("no running app")?;
+        let result = crate::platform::focus_application(child.id(), self.window_hint);
+        eprintln!(
+            "level=info event=app_resume pid={} result={result:?}",
+            child.id()
+        );
+        result
+    }
     fn start(&mut self, app: &AppEntry) -> Result<(), String> {
         if self.child.is_some() {
             return Err("a child is already running".into());
@@ -64,6 +137,7 @@ impl Processes for NativeProcess {
             child.id()
         );
         self.child = Some(child);
+        self.window_hint = crate::platform::AppWindow::for_entry(&app.manifest.entry);
         Ok(())
     }
     fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
@@ -187,6 +261,61 @@ mod tests {
         assert_eq!(cmd.get_program(), "/bin/sh");
         assert_eq!(cmd.get_args().collect::<Vec<_>>(), app.manifest.args);
         assert_eq!(cmd.get_current_dir(), app.manifest.cwd.as_deref());
+        Ok(())
+    }
+    #[test]
+    fn incomplete_installation_never_spawns() -> Result<(), Box<dyn std::error::Error>> {
+        let scratch = crate::test_support::Scratch::new()?;
+        let mut entry = app();
+        entry.manifest.entry = scratch.0.join("launch");
+        std::fs::write(scratch.0.join(".installation-pending"), "repair required")?;
+        assert!(command(&entry).is_err_and(|error| error.contains("incomplete")));
+        Ok(())
+    }
+    #[test]
+    fn home_allows_another_app_and_resume_does_not_spawn_a_duplicate() -> Result<(), String> {
+        #[derive(Default)]
+        struct Fake {
+            starts: usize,
+            focuses: usize,
+            exited: bool,
+        }
+        impl Processes for Fake {
+            fn start(&mut self, _: &AppEntry) -> Result<(), String> {
+                self.starts += 1;
+                Ok(())
+            }
+            fn focus(&mut self) -> Result<(), String> {
+                self.focuses += 1;
+                Ok(())
+            }
+            fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
+                use std::os::unix::process::ExitStatusExt;
+                Ok(self.exited.then(|| ExitStatus::from_raw(0)))
+            }
+        }
+        let first = app();
+        let mut second = first.clone();
+        second.id = "second".into();
+        let mut state = crate::launcher::Launcher::new(vec![first, second], 2, 2)?;
+        let mut processes = ProcessSet::<Fake>::default();
+        state.input(crate::input::Action::Activate);
+        activate(&mut state, &mut processes, 0);
+        state.returned_home();
+        state.input(crate::input::Action::SelectAndActivate(1));
+        activate(&mut state, &mut processes, 1);
+        assert_eq!(processes.running_ids(), ["test", "second"]);
+        processes.start(&state.apps[0])?;
+        assert_eq!(processes.members[0].1.starts, 1);
+        assert_eq!(processes.members[0].1.focuses, 1);
+        processes.members[1].1.exited = true;
+        assert!(processes.poll()?.is_some());
+        assert!(!processes.exited_active);
+        assert_eq!(processes.running_ids(), ["test"]);
+        processes.members[0].1.exited = true;
+        assert!(processes.poll()?.is_some());
+        assert!(processes.exited_active);
+        assert!(!processes.has_children());
         Ok(())
     }
     #[test]

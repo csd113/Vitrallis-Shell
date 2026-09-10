@@ -101,3 +101,48 @@ fn imported_catalog_is_read_only_and_missing_icons_render_safely()
     assert_eq!(std::fs::read(&config)?, data);
     Ok(())
 }
+
+#[test]
+fn existing_background_color_and_wallpaper_render_without_config_mutation()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root =
+        std::env::temp_dir().join(format!("vitrallis-wallpaper-test-{}", std::process::id()));
+    std::fs::create_dir(&root)?;
+    let scratch = Scratch(root);
+    let config = scratch.0.join("config.json");
+    let file = std::fs::File::create(scratch.0.join("wallpaper.png"))?;
+    let mut encoder = png::Encoder::new(file, 1, 1);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.write_header()?.write_image_data(&[10, 20, 30])?;
+    for (name, background, expected) in [
+        ("color", "FF0080", [128, 0, 255]),
+        ("wallpaper", "wallpaper.png", [30, 20, 10]),
+    ] {
+        let content = serde_json::to_vec(&serde_json::json!({
+            "pages": [{"name": "Apps", "items": []}], "background": background,
+            "showclock": "no"
+        }))?;
+        std::fs::write(&config, &content)?;
+        let screenshot = scratch.0.join(format!("{name}.bmp"));
+        let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+            .env("SDL_VIDEODRIVER", "dummy")
+            .arg("--app-config")
+            .arg(&config)
+            .arg("--assets")
+            .arg(&scratch.0)
+            .args(["--size", "480x272", "--screenshot"])
+            .arg(&screenshot)
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let bytes = std::fs::read(screenshot)?;
+        let offset = usize::try_from(u32::from_le_bytes(bytes[10..14].try_into()?))?;
+        assert_eq!(&bytes[offset..offset + 3], expected);
+        assert_eq!(std::fs::read(&config)?, content);
+    }
+    Ok(())
+}

@@ -66,28 +66,7 @@ pub fn icons<'a>(
     apps.iter()
         .map(|app| {
             let path = app.icon.as_ref()?;
-            // Bound file size, decoded dimensions, and PNG decoder allocations.
-            let load = || -> Result<Texture<'a>, String> {
-                if !std::fs::metadata(path)
-                    .map_err(|e| e.to_string())?
-                    .is_file()
-                {
-                    return Err("expected a regular file".into());
-                }
-                let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-                if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-                    return Err("icon must be a regular image file".into());
-                }
-                let mut bytes = Vec::new();
-                file.take(1024 * 1024 + 1)
-                    .read_to_end(&mut bytes)
-                    .map_err(|e| e.to_string())?;
-                let surface = decode_icon(&bytes)?;
-                creator
-                    .create_texture_from_surface(&surface)
-                    .map_err(|e| e.to_string())
-            };
-            match load() {
+            match load_image(creator, path) {
                 Ok(texture) => Some(texture),
                 Err(error) => {
                     eprintln!(
@@ -99,6 +78,45 @@ pub fn icons<'a>(
             }
         })
         .collect()
+}
+
+fn load_image<'a>(
+    creator: &'a TextureCreator<WindowContext>,
+    path: &std::path::Path,
+) -> Result<Texture<'a>, String> {
+    if !std::fs::metadata(path)
+        .map_err(|e| e.to_string())?
+        .is_file()
+    {
+        return Err("expected a regular file".into());
+    }
+    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+        return Err("icon must be a regular image file".into());
+    }
+    let mut bytes = Vec::new();
+    file.take(1024 * 1024 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    let surface = decode_icon(&bytes)?;
+    creator
+        .create_texture_from_surface(&surface)
+        .map_err(|e| e.to_string())
+}
+
+pub fn artwork<'a>(
+    creator: &'a TextureCreator<WindowContext>,
+    state: &Launcher,
+) -> Vec<Option<Texture<'a>>> {
+    let mut textures = icons(creator, &state.apps);
+    textures.push(state.preferences.wallpaper.as_ref().and_then(|path| {
+        load_image(creator, path)
+            .map_err(|error| {
+                eprintln!("level=warn event=wallpaper_fallback message={error:?}");
+            })
+            .ok()
+    }));
+    textures
 }
 
 fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
@@ -154,8 +172,12 @@ pub fn render(
     state: &Launcher,
     icons: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
-    canvas.set_draw_color(Color::RGB(13, 22, 33));
+    let [red, green, blue] = state.preferences.color;
+    canvas.set_draw_color(Color::RGB(red, green, blue));
     canvas.clear();
+    if let Some(Some(wallpaper)) = icons.get(state.apps.len()) {
+        canvas.copy(wallpaper, None, None)?;
+    }
     text(
         canvas,
         &if state.settings.open {
@@ -174,7 +196,7 @@ pub fn render(
         layout.text_scale,
         Color::RGB(93, 218, 201),
     )?;
-    system_status(canvas, layout, &state.settings.status)?;
+    system_status(canvas, layout, &state.settings.status, &state.preferences)?;
     if state.settings.open {
         return system_panel(canvas, layout, &state.settings);
     }
@@ -212,6 +234,7 @@ pub fn render(
             app,
             *tile,
             index == state.selected,
+            state.running.contains(&app.id),
             icons.get(index).and_then(Option::as_ref),
         )?;
     }
@@ -230,6 +253,7 @@ fn system_status(
     canvas: &mut Screen,
     layout: &Layout,
     status: &crate::platform::system::Status,
+    preferences: &crate::preferences::Preferences,
 ) -> Result<(), String> {
     use crate::platform::system::Wifi;
     let flag = |value: Option<bool>| value.map_or("?", |v| if v { "Y" } else { "N" });
@@ -250,7 +274,7 @@ fn system_status(
             flag(status.charging),
             flag(status.external_power),
             flag(status.bluetooth),
-            status.clock.as_deref().unwrap_or("--:--")
+            preferences.clock(status.clock.as_deref())
         ),
         Rect {
             x: layout.previous.x + layout.previous.w,
@@ -313,6 +337,7 @@ fn render_tile(
     app: &AppEntry,
     tile: Rect,
     selected: bool,
+    running: bool,
     texture: Option<&Texture<'_>>,
 ) -> Result<(), String> {
     fill(
@@ -324,6 +349,20 @@ fn render_tile(
             Color::RGB(25, 40, 55)
         },
     )?;
+    if running {
+        text(
+            canvas,
+            "*",
+            Rect {
+                x: tile.x,
+                y: tile.y,
+                w: 16,
+                h: 16,
+            },
+            1,
+            Color::RGB(93, 218, 201),
+        )?;
+    }
     if selected {
         canvas.set_draw_color(Color::RGB(93, 218, 201));
         canvas.draw_rect(rect(tile)?)?;

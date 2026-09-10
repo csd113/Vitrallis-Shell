@@ -1,0 +1,54 @@
+Running as unit: vitrallis-session.service; invocation ID: d159d355b8514ad290ff7ebf8f8ad47e
+Terminal new windows ['14680067'] focus ['chip@chip: ~']
+['chip@chip: ~']
+Terminal returned to Vitrallis
+Write new windows ['14680067'] focus ['(Untitled)']
+['(Untitled)']
+Write returned to Vitrallis
+Browse Files new windows ['14680071'] focus ['chip']
+['chip']
+Browse Files returned to Vitrallis
+Wi-Fi Settings new windows ['14680067'] focus ['nmtui']
+['nmtui']
+Wi-Fi Settings returned to Vitrallis
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.655: file ../../../gio/gfileinfo.c: line 1669 (g_file_info_get_is_backup): should not be reached
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.657: GFileInfo created without standard::edit-name
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: file ../../../gio/gfileinfo.c: line 1757 (g_file_info_get_edit_name): should not be reached
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: GFileInfo created without standard::size
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: file ../../../gio/gfileinfo.c: line 1860 (g_file_info_get_size): should not be reached
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: GFileInfo created without standard::content-type
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: file ../../../gio/gfileinfo.c: line 1836 (g_file_info_get_content_type): should not be reached
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: GFileInfo created without standard::is-symlink
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: file ../../../gio/gfileinfo.c: line 1691 (g_file_info_get_is_symlink): should not be reached
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: GFileInfo created without standard::is-backup
+
+(pcmanfm:15445): GLib-GIO-CRITICAL **: 09:42:53.658: file ../../../gio/gfileinfo.c: line 1669 (g_file_info_get_is_backup): should not be reached
+
+(pcmanfm:15445): Gtk-WARNING **: 09:42:53.761: Theme parsing error: <data>:2:27: The style property GtkWidget:focus-padding is deprecated and shouldn't be used anymore. It will be removed in a future version
+
+(pcmanfm:15445): Gtk-WARNING **: 09:42:53.764: Theme parsing error: <data>:3:30: The style property GtkWidget:focus-line-width is deprecated and shouldn't be used anymore. It will be removed in a future version
+
+(pcmanfm:15445): Gtk-WARNING **: 09:42:56.918: gtk_menu_detach(): menu is not attached
+level=info event=child_reaped pid=15445 status=ExitStatus(unix_wait_status(0))
+level=info event=group_cleanup pgid=15445 helper_status=exit status: 1 (nonzero_can_mean_group_already_gone)
+level=info event=app_exited status=ExitStatus(unix_wait_status(0))
+level=info event=discovery_paths config=Some("/home/chip/.pocket-home/config.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.pocket-home/config.json"
+level=info event=launch_request app=vitrallis-wifi-settings name="Wi-Fi Settings" runtime=None entry="/usr/bin/lxterminal" args=["-e", "nmtui"] cwd=None environment_keys=[]
+level=info event=app_started app=vitrallis-wifi-settings pid=15693
+level=info event=child_reaped pid=15693 status=ExitStatus(unix_wait_status(0))
+level=info event=group_cleanup pgid=15693 helper_status=exit status: 1 (nonzero_can_mean_group_already_gone)
+level=info event=app_exited status=ExitStatus(unix_wait_status(0))
+level=info event=discovery_paths config=Some("/home/chip/.pocket-home/config.json") assets=["/usr/share/pocket-home", "/home/chip/../../assets", "/home/chip"] reserved_native_apps=Some("/home/chip/.local/share/vitrallis/apps")
+level=info event=discovery_source path="/home/chip/.pocket-home/config.json"
+

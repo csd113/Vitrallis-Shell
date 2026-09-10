@@ -1,0 +1,2 @@
+Removed exactly one temporary USB-restricted key; all other bytes preserved.
+Remaining authorized_keys SHA256 4db1ca0215cc1470b2c7477fd96bad327b722b070df7a373a66e13e14bd8b872
