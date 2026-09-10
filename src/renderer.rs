@@ -260,8 +260,12 @@ pub fn render(
         text(
             canvas,
             label,
-            bounds,
-            layout.text_scale + 1,
+            // Keep the arrows in the title row above the system status.
+            Rect {
+                h: bounds.h / 2,
+                ..bounds
+            },
+            (layout.text_scale + 1).min(bounds.h / 16),
             if enabled {
                 Color::RGB(93, 218, 201)
             } else {
