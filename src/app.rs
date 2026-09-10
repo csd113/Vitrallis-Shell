@@ -1,16 +1,26 @@
-use std::{ffi::OsString, path::PathBuf};
+use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
+
+/// Runtime-independent launch definition. An absent runtime executes entry directly;
+/// a runtime executes entry as its first argument (Python is only one possibility).
+#[derive(Debug, Clone, Default)]
+pub struct AppManifest {
+    pub runtime: Option<PathBuf>,
+    pub entry: PathBuf,
+    pub args: Vec<OsString>,
+    pub cwd: Option<PathBuf>,
+    pub env: BTreeMap<OsString, OsString>,
+}
 
 #[derive(Debug, Clone)]
-pub struct App {
+pub struct AppEntry {
     pub id: String,
     pub name: String,
     pub icon: Option<PathBuf>,
-    pub executable: PathBuf,
-    pub args: Vec<OsString>,
-    pub cwd: Option<PathBuf>,
+    pub manifest: AppManifest,
+    pub unavailable: Option<String>,
 }
 
-impl App {
+impl AppEntry {
     pub fn validate(&self) -> Result<(), String> {
         if self.id.is_empty()
             || !self
@@ -25,29 +35,36 @@ impl App {
         if self.name.trim().is_empty() || self.name.chars().any(char::is_control) {
             return Err(format!("app {} has an empty or invalid label", self.id));
         }
-        // Absolute paths make execution independent of an untrusted PATH or cwd.
-        if !self.executable.is_absolute() {
-            return Err(format!(
-                "app {} requires an absolute executable path",
-                self.id
-            ));
-        }
-        if self.cwd.as_ref().is_some_and(|p| !p.is_absolute())
-            || self.icon.as_ref().is_some_and(|p| !p.is_absolute())
+        let m = &self.manifest;
+        for path in [
+            Some(&m.entry),
+            m.runtime.as_ref(),
+            m.cwd.as_ref(),
+            self.icon.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
         {
-            return Err(format!(
-                "app {} requires absolute asset and working paths",
-                self.id
-            ));
+            if !path.is_absolute() || path.as_os_str().as_encoded_bytes().contains(&0) {
+                return Err(format!(
+                    "app {} requires absolute paths without NUL",
+                    self.id
+                ));
+            }
         }
-        if self.executable.as_os_str().as_encoded_bytes().contains(&0)
-            || self.args.iter().any(|a| a.as_encoded_bytes().contains(&0))
-            || self
-                .cwd
-                .as_ref()
-                .is_some_and(|p| p.as_os_str().as_encoded_bytes().contains(&0))
-        {
-            return Err(format!("app {} contains a NUL in its command", self.id));
+        if m.args.iter().any(|a| a.as_encoded_bytes().contains(&0)) {
+            return Err(format!("app {} contains a NUL argument", self.id));
+        }
+        for (key, value) in &m.env {
+            if key.is_empty()
+                || key.as_encoded_bytes().iter().any(|b| matches!(b, 0 | b'='))
+                || value.as_encoded_bytes().contains(&0)
+            {
+                return Err(format!(
+                    "app {} contains an invalid environment entry",
+                    self.id
+                ));
+            }
         }
         Ok(())
     }
@@ -63,10 +80,13 @@ mod tests {
         app.name.clear();
         assert!(app.validate().is_err());
         app.name = "Demo".into();
-        app.executable = "relative".into();
+        app.manifest.entry = "relative".into();
         assert!(app.validate().is_err());
-        app.executable = "/bin/demo".into();
-        app.args.push("bad\0arg".into());
+        app.manifest.entry = "/bin/demo".into();
+        app.manifest.env.insert("BAD=KEY".into(), "value".into());
+        assert!(app.validate().is_err());
+        app.manifest.env.clear();
+        app.manifest.args.push("bad\0arg".into());
         assert!(app.validate().is_err());
     }
 }

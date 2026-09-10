@@ -43,7 +43,7 @@ fn renderer_outputs_native_size_bmp_and_refuses_overwrite() -> Result<(), Box<dy
     let mut command = Command::new(env!("CARGO_BIN_EXE_vitrallis"));
     command
         .env("SDL_VIDEODRIVER", "dummy")
-        .args(["--size", "480x272", "--screenshot"])
+        .args(["--demo", "--size", "480x272", "--screenshot"])
         .arg(&file);
     let first = command.output()?;
     assert!(
@@ -59,5 +59,45 @@ fn renderer_outputs_native_size_bmp_and_refuses_overwrite() -> Result<(), Box<dy
     assert!(bytes[54..].windows(3).any(|pixel| pixel == [201, 218, 93]));
     assert!(!command.output()?.status.success());
     assert_eq!(std::fs::read(&file)?, bytes);
+    Ok(())
+}
+
+#[test]
+fn imported_catalog_is_read_only_and_missing_icons_render_safely()
+-> Result<(), Box<dyn std::error::Error>> {
+    let root = std::env::temp_dir().join(format!("vitrallis-import-test-{}", std::process::id()));
+    std::fs::create_dir(&root)?;
+    let scratch = Scratch(root);
+    let config = scratch.0.join("config.json");
+    let data = br#"{"pages":[{"name":"Apps","items":[{"name":"Real Label","shell":"/bin/sh","icon":"missing.png"},{"name":"Broken","shell":"/missing/vitrallis","icon":""},]}]}"#;
+    std::fs::write(&config, data)?;
+    let listed = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+        .arg("--app-config")
+        .arg(&config)
+        .arg("--assets")
+        .arg(&scratch.0)
+        .arg("--list-apps")
+        .output()?;
+    assert!(listed.status.success());
+    let catalog: serde_json::Value = serde_json::from_slice(&listed.stdout)?;
+    assert_eq!(catalog["apps"][0]["name"], "Real Label");
+    assert_eq!(catalog["apps"][1]["name"], "Broken");
+    assert!(catalog["apps"][1]["unavailable"].is_string());
+    let frame = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+        .env("SDL_VIDEODRIVER", "dummy")
+        .arg("--app-config")
+        .arg(&config)
+        .arg("--assets")
+        .arg(&scratch.0)
+        .arg("--screenshot")
+        .arg(scratch.0.join("import.bmp"))
+        .output()?;
+    assert!(
+        frame.status.success(),
+        "{}",
+        String::from_utf8_lossy(&frame.stderr)
+    );
+    assert!(String::from_utf8_lossy(&frame.stderr).contains("event=icon_fallback"));
+    assert_eq!(std::fs::read(&config)?, data);
     Ok(())
 }

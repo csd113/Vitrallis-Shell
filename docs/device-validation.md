@@ -1,3 +1,7 @@
+# Deferred device validation (Step 2)
+
+The user deferred device access for Step 2. Use the current [compatibility report](compatibility-step2.md) and README for implemented behavior. The older build notes below remain guidance, not executed commands. Before live testing, compare `--list-apps` with the installed Marshmallow Apps pages, including order, paths, args and icons. Exercise every page with keyboard and physical touch, representative installed apps, and repeated launch/exit cycles while measuring processes, RSS and idle CPU. Verify Marshmallow normally launches afterward and its files/startup remain unchanged.
+
 # Deferred PocketCHIP build and manual validation
 
 No instructions in this document were executed against a PocketCHIP. No USB/SSH/device access is needed for the current desktop implementation. Marshmallow remains installed and its startup unchanged.

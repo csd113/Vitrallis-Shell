@@ -1,6 +1,7 @@
-//! Portable Step 1 launcher. Core tests run without initializing a display.
+//! Portable PocketHome-compatible launcher. Core tests run without initializing a display.
 mod app;
 mod config;
+mod discovery;
 mod input;
 mod launcher;
 mod layout;
@@ -27,11 +28,15 @@ pub fn run() -> Result<(), String> {
     }
     if args == ["--help"] {
         println!(
-            "vitrallis [--pocketchip] [--size WIDTHxHEIGHT] [--screenshot NEW.bmp] [--smoke-test]\nDefault: desktop demo. Arrows select; Enter/tap opens; Escape/Home clears status. Close window to quit.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
+            "vitrallis [--pocketchip] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--screenshot NEW.bmp] [--smoke-test]\nDefault: PocketHome metadata in a desktop window. --demo enables fixtures. Arrows select; Enter/tap opens; Escape/Home clears status. Close window to quit.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
         );
         return Ok(());
     }
     let config = config::Config::parse(args.into_iter())?;
+    if config.mode == crate::config::Mode::List {
+        discovery::print(&discovery::load(&config)?);
+        return Ok(());
+    }
     if config.pocketchip {
         ui::run(&platform::pocketchip::PocketChip, &config)
     } else {
@@ -50,3 +55,6 @@ fn demo_child(args: &[String]) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod test_support;

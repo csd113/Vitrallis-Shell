@@ -1,3 +1,5 @@
+> Historical Step 1 results. Current Step 2 evidence is in [compatibility-step2.md](compatibility-step2.md).
+
 # Step 1 validation report
 
 Validated on the development Mac with Rust/Cargo 1.98.1 and SDL2 2.32.72. No PocketCHIP connection, USB enumeration, SSH, live-device commands, deployment, or startup changes occurred. No commit was created. The original `Vitrallis_Project_Reference.md` was preserved.

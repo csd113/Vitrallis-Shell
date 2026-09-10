@@ -1,10 +1,11 @@
 use crate::navigation::Direction;
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
     Move(Direction),
     Activate,
     SelectAndActivate(usize),
     Back,
+    Page(bool),
 }
 
 mod sdl {
@@ -18,6 +19,8 @@ mod sdl {
                 repeat: false,
                 ..
             } => match key {
+                Keycode::PageUp => Some(Action::Page(false)),
+                Keycode::PageDown => Some(Action::Page(true)),
                 Keycode::Left => Some(Action::Move(Direction::Left)),
                 Keycode::Right => Some(Action::Move(Direction::Right)),
                 Keycode::Up => Some(Action::Move(Direction::Up)),
@@ -33,14 +36,25 @@ mod sdl {
                 mouse_btn: MouseButton::Left,
                 which,
                 ..
-            } if which != u32::MAX => layout
-                .hit(f64::from(x), f64::from(y), count)
-                .map(Action::SelectAndActivate),
-            Event::FingerUp { x, y, .. } => {
-                layout.touch(x, y, count).map(Action::SelectAndActivate)
-            }
+            } if which != u32::MAX => pointer(layout, f64::from(x), f64::from(y), count),
+            Event::FingerUp { x, y, .. } => pointer(
+                layout,
+                f64::from(x) * f64::from(layout.width),
+                f64::from(y) * f64::from(layout.height),
+                count,
+            ),
             _ => None,
         }
+    }
+
+    fn pointer(layout: &Layout, x: f64, y: f64, count: usize) -> Option<Action> {
+        if layout.previous.contains(x, y) {
+            return Some(Action::Page(false));
+        }
+        if layout.next.contains(x, y) {
+            return Some(Action::Page(true));
+        }
+        layout.hit(x, y, count).map(Action::SelectAndActivate)
     }
 
     #[cfg(test)]
@@ -91,3 +105,196 @@ mod sdl {
     }
 }
 pub use sdl::action;
+
+/// Require press and release on the same target and pointer. Clear this when
+/// focus changes or an app exits so stale releases cannot launch another app.
+#[derive(Debug, Default)]
+pub struct PointerInput {
+    pressed: Option<(Pointer, Action)>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pointer {
+    Mouse(u32),
+    Finger(i64, i64),
+}
+impl PointerInput {
+    pub const fn clear(&mut self) {
+        self.pressed = None;
+    }
+    pub fn action(
+        &mut self,
+        event: &sdl2::event::Event,
+        layout: &crate::layout::Layout,
+        count: usize,
+    ) -> Option<Action> {
+        use sdl2::{
+            event::{Event, WindowEvent},
+            mouse::MouseButton,
+        };
+        let (pointer, down, mut translated) = match *event {
+            Event::MouseButtonDown {
+                which,
+                mouse_btn: MouseButton::Left,
+                ..
+            } if which != u32::MAX => {
+                let mut release = event.clone();
+                if let Event::MouseButtonDown {
+                    timestamp,
+                    window_id,
+                    which,
+                    mouse_btn,
+                    clicks,
+                    x,
+                    y,
+                } = release
+                {
+                    release = Event::MouseButtonUp {
+                        timestamp,
+                        window_id,
+                        which,
+                        mouse_btn,
+                        clicks,
+                        x,
+                        y,
+                    };
+                }
+                (Pointer::Mouse(which), true, action(&release, layout, count))
+            }
+            Event::MouseButtonUp {
+                which,
+                mouse_btn: MouseButton::Left,
+                ..
+            } if which != u32::MAX => (Pointer::Mouse(which), false, action(event, layout, count)),
+            Event::FingerDown {
+                timestamp,
+                touch_id,
+                finger_id,
+                x,
+                y,
+                dx,
+                dy,
+                pressure,
+            } => {
+                let release = Event::FingerUp {
+                    timestamp,
+                    touch_id,
+                    finger_id,
+                    x,
+                    y,
+                    dx,
+                    dy,
+                    pressure,
+                };
+                (
+                    Pointer::Finger(touch_id, finger_id),
+                    true,
+                    action(&release, layout, count),
+                )
+            }
+            Event::FingerUp {
+                touch_id,
+                finger_id,
+                ..
+            } => (
+                Pointer::Finger(touch_id, finger_id),
+                false,
+                action(event, layout, count),
+            ),
+            Event::Window {
+                win_event: WindowEvent::FocusLost,
+                ..
+            } => {
+                self.clear();
+                return None;
+            }
+            Event::KeyDown { .. } => {
+                self.clear();
+                return action(event, layout, count);
+            }
+            _ => return action(event, layout, count),
+        };
+        if down {
+            // A second touch cancels the gesture, rather than switching fingers.
+            if self.pressed.is_some() {
+                translated = None;
+            }
+            self.pressed = translated.map(|target| (pointer, target));
+            None
+        } else {
+            let pressed = self.pressed.take();
+            translated.filter(|target| pressed == Some((pointer, *target)))
+        }
+    }
+}
+
+#[cfg(test)]
+mod gesture_tests {
+    use super::*;
+    use sdl2::event::Event;
+    #[test]
+    fn finger_requires_matching_press_release_and_page_buttons_work() -> Result<(), String> {
+        let layout = crate::layout::Layout::home(480, 272)?;
+        let mut pointer = PointerInput::default();
+        let down = Event::FingerDown {
+            timestamp: 0,
+            touch_id: 1,
+            finger_id: 1,
+            x: 0.5,
+            y: 0.3,
+            dx: 0.,
+            dy: 0.,
+            pressure: 1.,
+        };
+        let mut up = Event::FingerUp {
+            timestamp: 0,
+            touch_id: 1,
+            finger_id: 1,
+            x: 0.5,
+            y: 0.3,
+            dx: 0.,
+            dy: 0.,
+            pressure: 0.,
+        };
+        assert!(pointer.action(&up, &layout, 6).is_none());
+        assert!(pointer.action(&down, &layout, 6).is_none());
+        assert_eq!(
+            pointer.action(&up, &layout, 6),
+            Some(Action::SelectAndActivate(1))
+        );
+        pointer.action(&down, &layout, 6);
+        if let Event::FingerUp { finger_id, .. } = &mut up {
+            *finger_id = 2;
+        }
+        assert!(pointer.action(&up, &layout, 6).is_none());
+        pointer.action(&down, &layout, 6);
+        pointer.clear();
+        assert!(pointer.action(&up, &layout, 6).is_none());
+        for (tile, forward) in [(layout.previous, false), (layout.next, true)] {
+            let x = f32::from(u16::try_from(tile.x + tile.w / 2).map_err(|_| "x")?) / 480.;
+            let y = f32::from(u16::try_from(tile.y + tile.h / 2).map_err(|_| "y")?) / 272.;
+            let down = Event::FingerDown {
+                timestamp: 0,
+                touch_id: 1,
+                finger_id: 1,
+                x,
+                y,
+                dx: 0.,
+                dy: 0.,
+                pressure: 1.,
+            };
+            let up = Event::FingerUp {
+                timestamp: 0,
+                touch_id: 1,
+                finger_id: 1,
+                x,
+                y,
+                dx: 0.,
+                dy: 0.,
+                pressure: 0.,
+            };
+            assert!(pointer.action(&down, &layout, 6).is_none());
+            assert_eq!(pointer.action(&up, &layout, 6), Some(Action::Page(forward)));
+        }
+        Ok(())
+    }
+}

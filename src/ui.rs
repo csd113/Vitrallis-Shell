@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    input::{Action, action},
+    input::{Action, PointerInput},
     launcher::{Launcher, Phase},
     layout::Layout,
     platform::Platform,
@@ -17,7 +17,14 @@ use std::time::{Duration, Instant};
 pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     let (width, height) = config.size.unwrap_or_else(|| platform.resolution());
     let layout = Layout::home(width, height)?;
-    let state = Launcher::new(platform.apps()?, layout.columns, layout.tiles.len())?;
+    let catalog = crate::discovery::load(config)?;
+    let mut state = Launcher::new(catalog.apps, layout.columns, layout.tiles.len())?;
+    if !catalog.diagnostics.is_empty() {
+        state.status = format!("{} APP WARNINGS - SEE LOG", catalog.diagnostics.len());
+        if state.apps.is_empty() {
+            state.status = "NO APPS - CHECK CONFIG / LOG".into();
+        }
+    }
     let sdl = sdl2::init().map_err(|e| format!("SDL init: {e}"))?;
     let video = sdl.video().map_err(|e| format!("SDL video: {e}"))?;
     sdl2::hint::set("SDL_TOUCH_MOUSE_EVENTS", "0");
@@ -59,7 +66,7 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         state,
         &icons,
         platform,
-        config.smoke,
+        config.mode == crate::config::Mode::Smoke,
     )
 }
 
@@ -74,20 +81,14 @@ fn event_loop(
 ) -> Result<(), String> {
     let mut events = sdl.event_pump()?;
     let mut child = NativeProcess::default();
+    let mut pointer = PointerInput::default();
+    let mut accept_after = Instant::now();
     let mut dirty = false;
     let mut last_wait_error = None;
     let mut next_poll = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(10);
     if smoke {
-        let event = Event::KeyDown {
-            timestamp: 0,
-            window_id: canvas.window().id(),
-            keycode: Some(Keycode::Return),
-            scancode: None,
-            keymod: sdl2::keyboard::Mod::NOMOD,
-            repeat: false,
-        };
-        sdl.event()?.push_event(event)?;
+        inject_activation(sdl, canvas)?;
     }
     loop {
         if dirty {
@@ -95,16 +96,7 @@ fn event_loop(
             canvas.present();
             dirty = false;
         }
-        let event = if state.phase == Phase::Running {
-            let wait = next_poll
-                .saturating_duration_since(Instant::now())
-                .as_millis();
-            events.wait_event_timeout(u32::try_from(wait).unwrap_or(250).clamp(1, 250))
-        } else if smoke {
-            events.wait_event_timeout(250)
-        } else {
-            Some(events.wait_event())
-        };
+        let event = wait_event(&mut events, state.phase, next_poll, smoke);
         if let Some(event) = event {
             if matches!(
                 event,
@@ -125,7 +117,21 @@ fn event_loop(
             ) {
                 dirty = true;
             }
-            dirty |= handle_action(&event, canvas, layout, &mut state, icons, &mut child)?;
+            if Instant::now() >= accept_after {
+                let action = pointer.action(&event, layout, state.visible_count());
+                let activating = state.phase == Phase::Ready
+                    && matches!(
+                        action,
+                        Some(Action::Activate | Action::SelectAndActivate(_))
+                    );
+                dirty |= handle_action(action, canvas, layout, &mut state, icons, &mut child)?;
+                if activating {
+                    pointer.clear();
+                    accept_after = Instant::now() + Duration::from_millis(400);
+                }
+            } else {
+                pointer.clear();
+            }
         }
         let result = if state.phase == Phase::Running && Instant::now() >= next_poll {
             next_poll = Instant::now() + Duration::from_millis(250);
@@ -142,18 +148,14 @@ fn event_loop(
                     format!("APP EXITED: {status}")
                 });
                 last_wait_error = None;
+                pointer.clear();
+                accept_after = Instant::now() + Duration::from_millis(400);
                 if platform.raise_after_exit() {
                     canvas.window_mut().raise();
                 }
                 dirty = true;
                 if smoke {
-                    render(canvas, layout, &state, icons)?;
-                    canvas.present();
-                    if !status.success() {
-                        return Err("smoke child failed".into());
-                    }
-                    eprintln!("level=info event=smoke_passed");
-                    return Ok(());
+                    return finish_smoke(canvas, layout, &state, icons, status);
                 }
             }
             Ok(None) => {}
@@ -174,17 +176,20 @@ fn event_loop(
 }
 
 fn handle_action(
-    event: &Event,
+    action: Option<Action>,
     canvas: &mut Screen,
     layout: &Layout,
     state: &mut Launcher,
     icons: &[Option<Texture<'_>>],
     child: &mut impl Processes,
 ) -> Result<bool, String> {
-    let Some(action) = action(event, layout, state.apps.len()) else {
+    let Some(mut action) = action else {
         return Ok(false);
     };
-    let before = (state.selected, state.phase);
+    if let Action::SelectAndActivate(index) = action {
+        action = Action::SelectAndActivate(state.page_start() + index);
+    }
+    let before = (state.selected, state.phase, state.error.is_some());
     let was_ready = state.phase == Phase::Ready;
     if let Some(index) = state.input(action) {
         // Present transition feedback before process creation.
@@ -192,10 +197,59 @@ fn handle_action(
         canvas.present();
         process::activate(state, child, index);
     }
-    Ok(before != (state.selected, state.phase)
-        || was_ready
-            && matches!(
-                action,
-                Action::Back | Action::Activate | Action::SelectAndActivate(_)
-            ))
+    Ok(
+        before != (state.selected, state.phase, state.error.is_some())
+            || was_ready
+                && matches!(
+                    action,
+                    Action::Back | Action::Activate | Action::SelectAndActivate(_)
+                ),
+    )
+}
+
+fn inject_activation(sdl: &sdl2::Sdl, canvas: &Screen) -> Result<(), String> {
+    let event = Event::KeyDown {
+        timestamp: 0,
+        window_id: canvas.window().id(),
+        keycode: Some(Keycode::Return),
+        scancode: None,
+        keymod: sdl2::keyboard::Mod::NOMOD,
+        repeat: false,
+    };
+    sdl.event()?.push_event(event)?;
+    Ok(())
+}
+
+fn finish_smoke(
+    canvas: &mut Screen,
+    layout: &Layout,
+    state: &Launcher,
+    icons: &[Option<Texture<'_>>],
+    status: std::process::ExitStatus,
+) -> Result<(), String> {
+    render(canvas, layout, state, icons)?;
+    canvas.present();
+    if !status.success() {
+        return Err("smoke child failed".into());
+    }
+    eprintln!("level=info event=smoke_passed");
+    Ok(())
+}
+
+fn wait_event(
+    events: &mut sdl2::EventPump,
+    phase: Phase,
+    next_poll: Instant,
+    smoke: bool,
+) -> Option<Event> {
+    if phase == Phase::Running {
+        let wait = next_poll
+            .saturating_duration_since(Instant::now())
+            .as_millis();
+        events.wait_event_timeout(u32::try_from(wait).unwrap_or(250).clamp(1, 250))
+    } else if smoke {
+        events.wait_event_timeout(250)
+    } else {
+        Some(events.wait_event())
+    }
 }

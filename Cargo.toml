@@ -17,6 +17,8 @@ path = "src/main.rs"
 [dependencies]
 sdl2 = { version = "0.38", features = ["use-pkgconfig"] }
 font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }
+serde_json = "1"
+png = "0.17.16"
 
 [profile.release]
 lto = true

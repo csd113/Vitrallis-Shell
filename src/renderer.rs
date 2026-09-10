@@ -1,5 +1,5 @@
 use crate::{
-    app::App,
+    app::AppEntry,
     launcher::Launcher,
     layout::{Layout, Rect},
 };
@@ -61,27 +61,28 @@ fn text(
 
 pub fn icons<'a>(
     creator: &'a TextureCreator<WindowContext>,
-    apps: &[App],
+    apps: &[AppEntry],
 ) -> Vec<Option<Texture<'a>>> {
     apps.iter()
         .map(|app| {
             let path = app.icon.as_ref()?;
-            // Bound decoding before loading. Step 1 supports only small BMP assets.
+            // Bound file size, decoded dimensions, and PNG decoder allocations.
             let load = || -> Result<Texture<'a>, String> {
+                if !std::fs::metadata(path)
+                    .map_err(|e| e.to_string())?
+                    .is_file()
+                {
+                    return Err("expected a regular file".into());
+                }
                 let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
                 if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-                    return Err("icon must be a regular BMP file".into());
+                    return Err("icon must be a regular image file".into());
                 }
                 let mut bytes = Vec::new();
                 file.take(1024 * 1024 + 1)
                     .read_to_end(&mut bytes)
                     .map_err(|e| e.to_string())?;
-                validate_bmp(&bytes)?;
-                let mut rw = sdl2::rwops::RWops::from_bytes(&bytes)?;
-                let surface = Surface::load_bmp_rw(&mut rw)?;
-                if surface.width() > 512 || surface.height() > 512 {
-                    return Err("icon exceeds 512x512".into());
-                }
+                let surface = decode_icon(&bytes)?;
                 creator
                     .create_texture_from_surface(&surface)
                     .map_err(|e| e.to_string())
@@ -100,6 +101,53 @@ pub fn icons<'a>(
         .collect()
 }
 
+fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        let mut decoder = png::Decoder::new_with_limits(
+            bytes,
+            png::Limits {
+                bytes: 8 * 1024 * 1024,
+            },
+        );
+        decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+        let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
+        let info = reader.info();
+        if !(1..=512).contains(&info.width)
+            || !(1..=512).contains(&info.height)
+            || bytes.len() > 1024 * 1024
+        {
+            return Err("PNG icon exceeds 512x512 or 1 MiB".into());
+        }
+        let mut pixels = vec![0; reader.output_buffer_size()];
+        let frame = reader.next_frame(&mut pixels).map_err(|e| e.to_string())?;
+        let channels = frame.color_type.samples();
+        let mut rgba = Vec::with_capacity(pixels.len() / channels * 4);
+        for pixel in pixels[..frame.buffer_size()].chunks_exact(channels) {
+            match frame.color_type {
+                png::ColorType::Rgb => rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]),
+                png::ColorType::Rgba => rgba.extend_from_slice(pixel),
+                png::ColorType::Grayscale => {
+                    rgba.extend_from_slice(&[pixel[0], pixel[0], pixel[0], 255]);
+                }
+                png::ColorType::GrayscaleAlpha => {
+                    rgba.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
+                }
+                png::ColorType::Indexed => return Err("unexpanded PNG palette".into()),
+            }
+        }
+        return Surface::from_data(
+            &mut rgba,
+            frame.width,
+            frame.height,
+            frame.width * 4,
+            PixelFormatEnum::RGBA32,
+        )?
+        .convert_format(PixelFormatEnum::RGBA32);
+    }
+    validate_bmp(bytes)?;
+    Surface::load_bmp_rw(&mut sdl2::rwops::RWops::from_bytes(bytes)?)
+}
+
 pub fn render(
     canvas: &mut Screen,
     layout: &Layout,
@@ -110,65 +158,53 @@ pub fn render(
     canvas.clear();
     text(
         canvas,
-        "VITRALLIS",
+        &format!(
+            "VITRALLIS {}/{}",
+            state.page_start() / layout.tiles.len() + 1,
+            state.page_count()
+        ),
         layout.title,
-        layout.text_scale + 1,
+        layout.text_scale,
         Color::RGB(93, 218, 201),
     )?;
-    for (index, (app, tile)) in state.apps.iter().zip(&layout.tiles).enumerate() {
-        fill(
-            canvas,
-            *tile,
-            if index == state.selected {
-                Color::RGB(44, 82, 99)
-            } else {
-                Color::RGB(25, 40, 55)
-            },
-        )?;
-        if index == state.selected {
-            canvas.set_draw_color(Color::RGB(93, 218, 201));
-            canvas.draw_rect(rect(*tile)?)?;
-        }
-        let icon = Rect {
-            x: tile.x + (tile.w - layout.icon_size) / 2,
-            y: tile.y + tile.h / 12,
-            w: layout.icon_size,
-            h: layout.icon_size,
-        };
-        if let Some(Some(texture)) = icons.get(index) {
-            canvas.copy(texture, None, rect(icon)?)?;
-        } else {
-            fill(canvas, icon, Color::RGB(57, 115, 137))?;
-            let mark = match index {
-                0 => ">_",
-                1 => "[]",
-                2 => "!",
-                3 => "?",
-                4 => "Aa",
-                _ => "+",
-            };
-            text(
-                canvas,
-                mark,
-                icon,
-                layout.text_scale + 1,
-                Color::RGB(219, 243, 240),
-            )?;
-        }
-        let label_top = icon.y + icon.h;
+    for (bounds, label, enabled) in [
+        (layout.previous, "<", state.page_start() > 0),
+        (
+            layout.next,
+            ">",
+            state.page_start() / layout.tiles.len() + 1 < state.page_count(),
+        ),
+    ] {
         text(
             canvas,
-            &app.name,
-            Rect {
-                x: tile.x + 4,
-                y: label_top,
-                w: tile.w - 8,
-                h: tile.y + tile.h - label_top,
+            label,
+            bounds,
+            layout.text_scale + 1,
+            if enabled {
+                Color::RGB(93, 218, 201)
+            } else {
+                Color::RGB(64, 78, 90)
             },
-            layout.text_scale,
-            Color::RGB(235, 242, 249),
         )?;
     }
+    for (local, (app, tile)) in state
+        .apps
+        .iter()
+        .skip(state.page_start())
+        .zip(&layout.tiles)
+        .enumerate()
+    {
+        let index = state.page_start() + local;
+        render_tile(
+            canvas,
+            layout,
+            app,
+            *tile,
+            index == state.selected,
+            icons.get(index).and_then(Option::as_ref),
+        )?;
+    }
+    error_dialog(canvas, layout, state)?;
     text(
         canvas,
         &state.status,
@@ -176,6 +212,134 @@ pub fn render(
         layout.text_scale,
         Color::RGB(173, 194, 210),
     )?;
+    Ok(())
+}
+
+fn render_tile(
+    canvas: &mut Screen,
+    layout: &Layout,
+    app: &AppEntry,
+    tile: Rect,
+    selected: bool,
+    texture: Option<&Texture<'_>>,
+) -> Result<(), String> {
+    fill(
+        canvas,
+        tile,
+        if selected {
+            Color::RGB(44, 82, 99)
+        } else {
+            Color::RGB(25, 40, 55)
+        },
+    )?;
+    if selected {
+        canvas.set_draw_color(Color::RGB(93, 218, 201));
+        canvas.draw_rect(rect(tile)?)?;
+    }
+    let icon = Rect {
+        x: tile.x + (tile.w - layout.icon_size) / 2,
+        y: tile.y + tile.h / 12,
+        w: layout.icon_size,
+        h: layout.icon_size,
+    };
+    if let Some(texture) = texture {
+        let size = texture.query();
+        let width = i32::try_from(size.width).map_err(|_| "icon width")?;
+        let height = i32::try_from(size.height).map_err(|_| "icon height")?;
+        let w = icon.w.min(icon.h * width / height);
+        let h = icon.h.min(icon.w * height / width);
+        canvas.copy(
+            texture,
+            None,
+            rect(Rect {
+                x: icon.x + (icon.w - w) / 2,
+                y: icon.y + (icon.h - h) / 2,
+                w,
+                h,
+            })?,
+        )?;
+    } else {
+        fill(canvas, icon, Color::RGB(57, 115, 137))?;
+        let mark = if app.unavailable.is_some() { "!" } else { "+" };
+        text(
+            canvas,
+            mark,
+            icon,
+            layout.text_scale + 1,
+            Color::RGB(219, 243, 240),
+        )?;
+    }
+    if app.unavailable.is_some() {
+        text(
+            canvas,
+            "!",
+            Rect {
+                x: tile.x + tile.w - 20,
+                y: tile.y,
+                w: 20,
+                h: 20,
+            },
+            layout.text_scale,
+            Color::RGB(255, 185, 96),
+        )?;
+    }
+    let label_top = icon.y + icon.h;
+    text(
+        canvas,
+        &app.name,
+        Rect {
+            x: tile.x + 4,
+            y: label_top,
+            w: tile.w - 8,
+            h: tile.y + tile.h - label_top,
+        },
+        layout.text_scale,
+        Color::RGB(235, 242, 249),
+    )?;
+    Ok(())
+}
+
+fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
+    let Some(error) = &state.error else {
+        return Ok(());
+    };
+    let bounds = Rect {
+        x: layout.title.x,
+        y: layout.title.h,
+        w: layout.title.w,
+        h: layout.footer.y - layout.title.h,
+    };
+    fill(canvas, bounds, Color::RGB(48, 32, 35))?;
+    let line_height = 16 * layout.text_scale;
+    text(
+        canvas,
+        "COULD NOT OPEN APP",
+        Rect {
+            h: line_height,
+            ..bounds
+        },
+        layout.text_scale,
+        Color::RGB(255, 185, 96),
+    )?;
+    let columns =
+        usize::try_from((bounds.w - 16) / (8 * layout.text_scale)).map_err(|_| "dialog columns")?;
+    let rows = usize::try_from(bounds.h / line_height - 1).map_err(|_| "dialog rows")?;
+    let chars: Vec<_> = error.chars().collect();
+    for (row, chunk) in chars.chunks(columns).take(rows).enumerate() {
+        let value: String = chunk.iter().collect();
+        text(
+            canvas,
+            &value,
+            Rect {
+                x: bounds.x + 8,
+                y: bounds.y + (i32::try_from(row).map_err(|_| "dialog row")? + 1) * line_height,
+                w: bounds.w - 16,
+                h: line_height,
+            },
+            layout.text_scale,
+            Color::RGB(235, 242, 249),
+        )?;
+    }
     Ok(())
 }
 
@@ -247,5 +411,31 @@ mod tests {
         assert!(validate_bmp(&header).is_ok());
         header[18..22].copy_from_slice(&u32::MAX.to_le_bytes());
         assert!(validate_bmp(&header).is_err());
+    }
+}
+
+#[cfg(test)]
+mod png_tests {
+    use super::*;
+    #[test]
+    fn png_pixels_decode_and_broken_or_large_assets_fall_back()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            encoder
+                .write_header()?
+                .write_image_data(&[12, 34, 56, 255])?;
+        }
+        let surface = decode_icon(&bytes)?;
+        assert_eq!((surface.width(), surface.height()), (1, 1));
+        assert_eq!(surface.without_lock(), Some([12, 34, 56, 255].as_slice()));
+        assert!(decode_icon(&bytes[..24]).is_err());
+        assert!(decode_icon(b"broken asset").is_err());
+        bytes.extend(vec![0; 1024 * 1024]);
+        assert!(decode_icon(&bytes).is_err());
+        Ok(())
     }
 }

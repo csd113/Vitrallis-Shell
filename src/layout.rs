@@ -24,6 +24,8 @@ pub struct Layout {
     pub text_scale: i32,
     pub title: Rect,
     pub footer: Rect,
+    pub previous: Rect,
+    pub next: Rect,
 }
 impl Layout {
     pub fn home(width: u16, height: u16) -> Result<Self, String> {
@@ -71,6 +73,18 @@ impl Layout {
                 w: w - 2 * margin,
                 h: top,
             },
+            previous: Rect {
+                x: margin,
+                y: 0,
+                w: top,
+                h: top,
+            },
+            next: Rect {
+                x: w - margin - top,
+                y: 0,
+                w: top,
+                h: top,
+            },
             footer: Rect {
                 x: margin,
                 y: h - bottom,
@@ -82,6 +96,7 @@ impl Layout {
     pub fn hit(&self, x: f64, y: f64, count: usize) -> Option<usize> {
         self.tiles.iter().take(count).position(|r| r.contains(x, y))
     }
+    #[cfg(test)]
     pub fn touch(&self, x: f32, y: f32, count: usize) -> Option<usize> {
         self.hit(
             f64::from(x) * f64::from(self.width),
