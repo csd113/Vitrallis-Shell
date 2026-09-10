@@ -6,7 +6,7 @@ This is the current settings interface; earlier backend audits and release notes
 
 - The launcher and settings header show the device's Wi-Fi IPv4 address, falling back to USB IPv4 when Wi-Fi has no address. Missing addresses display `IP --`. IPv6-only networks are not displayed by this backend.
 - The System Settings header displays the version compiled into the running binary, rather than a potentially different installed receipt.
-- Gear, Wi-Fi, brightness, volume, restart and power icons are transparent GPT Image assets embedded in the binary. They load once, use linear filtering at small sizes, and require no runtime files or network access. [Assets and complete prompts](../assets/system/README.md) document the built-in generation workflow.
+- Gear, Wi-Fi, brightness, volume, restart and power icons are transparent GPT Image assets embedded in the binary. They load once, use linear filtering at small sizes, and require no runtime files or network access. [Assets and complete prompts](../../../assets/system/README.md) document the built-in generation workflow.
 - **App Center** is the launcher's name for the existing free app download/update utility. Its original installation paths, IDs, catalogue and upstream `Update Apps` window title are preserved. There is no purchasing or new package ecosystem. The selected tile's footer explains that it provides free apps and updates.
 - Brightness and volume retain their existing live 10% sliders. Choose **More** at the bottom, move down to More and press Enter, or press Page Down to reach the additional settings.
 - **Screen timeout:** Never, 30 seconds, 1, 2, 5, 10 or 30 minutes. Left/right keypad changes the selected timeout; tap the left portion to decrease or the remainder to increase. Wait for Applying to finish before another change. Touching a timeout row does not drag the brightness slider.
@@ -34,7 +34,7 @@ No Marshmallow binary, Awesome configuration, X startup file, calibration implem
 - `src/platform/mod.rs`, `src/platform/system.rs`, `src/platform/pocketchip.rs`, `src/platform/pocketchip/display.rs`
 - `src/settings.rs`, `src/settings/device.rs`, `src/settings/geometry.rs`, `src/settings/pointer.rs`
 - `src/renderer.rs`, `src/renderer/system.rs`, `src/ui.rs`
-- `README.md`, `docs/store.md`, `docs/system-status.md`, this report and the current release record
+- `README.md`, `docs/devices/pocketchip/store.md`, `docs/devices/pocketchip/system-status.md`, this report and the current release record
 
 Existing changes from the earlier beta hardening work remain intact. No new Cargo or Python dependencies are required.
 

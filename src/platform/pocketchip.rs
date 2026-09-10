@@ -8,7 +8,7 @@ impl Platform for PocketChip {
         true
     }
     fn resolution(&self) -> (u16, u16) {
-        (480, 272)
+        crate::layout::DISPLAY_480X272
     }
     fn prepare_app(&self, app: &mut crate::app::AppEntry) {
         // LXTerminal normally relays new windows to an existing server. Keep

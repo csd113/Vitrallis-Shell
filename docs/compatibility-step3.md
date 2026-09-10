@@ -6,7 +6,7 @@ Work began 2026-09-10. This pass supersedes the earlier restriction on device ac
 
 ## Evidence and changes
 
-The Step 2 matrix remains the starting point, with system features described in `system-status.md`. Source reference: Marshmallow `dccbd38dc233f3f45ebd6ea130d6a787268e23f5`. Current store reference: `csd113/Pocketchip-update-apps` at `1f394452d6acd124d940154234b0eb8dd7150b70`. Installed updater source and deployment helper matched that commit byte-for-byte before patching. The installed Bitcoin source matched current upstream before any changes.
+The Step 2 matrix remains the starting point, with system features described in [the system audit](devices/pocketchip/system-status.md). Source reference: Marshmallow `dccbd38dc233f3f45ebd6ea130d6a787268e23f5`. Current store reference: `csd113/Pocketchip-update-apps` at `1f394452d6acd124d940154234b0eb8dd7150b70`. Installed updater source and deployment helper matched that commit byte-for-byte before patching. The installed Bitcoin source matched current upstream before any changes.
 
 - Imported the device's five existing applications in order, without conversion: Bitcoin CAD, Update Apps, Terminal, Write, Browse Files.
 - Built ARM on macOS using cargo-zigbuild and an SDL shared library copied read-only from the device. All loader dependencies resolved on the device. No OS packages or runtime libraries were installed/replaced.
@@ -19,7 +19,7 @@ The Step 2 matrix remains the starting point, with system features described in 
 
 ## Store lifecycle on the physical device
 
-The existing updater remains the Store UI and explicit catalogue authority. The patch retains repository/source/branch conventions and GitHub commit/blob verification. It never executes installer fragments from metadata. Compatibility fixes are delivered as a reviewable upstream diff and exact before/after hash manifest in `integration/`.
+The existing updater remains the Store UI and explicit catalogue authority. The patch retains repository/source/branch conventions and GitHub commit/blob verification. It never executes installer fragments from metadata. Compatibility fixes are delivered as a reviewable upstream diff and exact before/after hash manifest in `devices/pocketchip/integration/`.
 
 The original Bitcoin directory was preserved by rename to `/home/chip/.local/share/pocket-bitcoin.before-vitrallis-validation`; its source hash matched upstream. Through the Store opened from Vitrallis, injected X keyboard/pointer actions checked GitHub, observed “not installed” and latest v1.1.0, selected Bitcoin and installed it. The result UI reported one installed app and v1.1.0. The new app directory contains source, icon and an executable launch wrapper. Source SHA256: `87902ae5671fea88af84e1e3ed56214f2b2c3dab9c97153eb38e1ed8273f749e`.
 

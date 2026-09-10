@@ -77,6 +77,36 @@ mod tests {
             assert!(Config::parse(args.into_iter().map(str::to_owned)).is_err());
         }
     }
+
+    #[test]
+    fn display_size_is_independent_of_device_selection() -> Result<(), String> {
+        use crate::platform::{Platform, generic::Generic, pocketchip::PocketChip};
+
+        let desktop = Config::parse(["--size", "480x272"].into_iter().map(str::to_owned))?;
+        assert!(!desktop.pocketchip);
+        assert_eq!(desktop.size, Some((480, 272)));
+        assert_eq!(Generic.resolution(), (800, 480));
+        assert!(!Generic.fullscreen());
+
+        let device = Config::parse(
+            ["--pocketchip", "--size", "800x480"]
+                .into_iter()
+                .map(str::to_owned),
+        )?;
+        assert!(device.pocketchip);
+        assert_eq!(device.size, Some((800, 480)));
+        assert_eq!(PocketChip.resolution(), (480, 272));
+        assert!(PocketChip.fullscreen());
+
+        let smoke = Config::parse(
+            ["--size", "480x272", "--smoke-test"]
+                .into_iter()
+                .map(str::to_owned),
+        )?;
+        assert!(!smoke.pocketchip);
+        assert_eq!(smoke.mode, Mode::Smoke);
+        Ok(())
+    }
 }
 
 /// All filesystem conventions live here. Discovery only reads these locations.

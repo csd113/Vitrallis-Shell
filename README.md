@@ -5,8 +5,10 @@ for embedded Linux, tested on a Debian 13 PocketCHIP with Marshmallow recovery.
 See [current release validation](docs/release-candidate.md),
 [toolchain/dependency policy](docs/dependencies.md),
 [app developer quickstart](docs/app-development.md) and
-[beta security model](docs/security.md). The original project reference is a
-future design document; this beta does not yet ship an `app.toml` loader or Python SDK.
+[beta security model](docs/security.md). The [repository layout guide](docs/repository-layout.md)
+explains device adapters, installers, reusable display layouts, and shared tooling.
+The original project reference is a future design document; this beta does not
+yet ship an `app.toml` loader or Python SDK.
 
 Vitrallis reads existing PocketHome/Marshmallow application metadata without converting apps or modifying Marshmallow. It runs as a separate SDL2 launcher, with an optional supervised PocketCHIP launch target that preserves Marshmallow as the normal boot default.
 
@@ -24,7 +26,7 @@ cargo run --locked -- --demo
 SDL_VIDEODRIVER=dummy cargo run --locked -- --smoke-test
 ```
 
-`--pocketchip` selects the PocketCHIP system backend, fullscreen and a 480×272 default. Default desktop size is 800×480. `--size WIDTHxHEIGHT` changes the proportional layout. `--screenshot NEW.bmp` writes the initial frame and exits, refusing to overwrite an existing file.
+`--pocketchip` selects the PocketCHIP system backend, fullscreen and a 480×272 default. Default desktop size is 800×480. `--size WIDTHxHEIGHT` changes the proportional layout independently of hardware selection. Keyboard, mouse, and touch handling uses the events delivered by SDL; dimensions do not select input capabilities. `--screenshot NEW.bmp` writes the initial frame and exits, refusing to overwrite an existing file.
 
 Discovery first reads `~/.pocket-home/config.json`. Only when it is absent does it read the default asset configuration. Asset lookup checks `/usr/share/pocket-home/`, then `../../assets/` relative to the launcher's working directory, then that working directory. Explicit `--app-config` and `--assets` override these locations. A broken user config is reported rather than silently replaced or merged with defaults. All `Apps` pages contribute their `items` in configured order. A configured `wifiCommand` provides the System Settings tile; its Wi-Fi control opens that existing connection manager. Runtime discovery never writes source metadata; the explicit installer backs up and adds only a Vitrallis shortcut.
 
@@ -36,7 +38,7 @@ The launcher polls and reaps each owned child, retains selection, and requests f
 
 `AppEntry` contains a stable ID, display name, icon and availability diagnostic. `AppManifest` contains optional runtime, absolute entry, arguments, cwd and per-child environment. An absent runtime executes the entry directly; a runtime receives the entry as its first argument. Existing PocketHome `name`/`icon`/`shell` entries need no changes. Optional `args`, `cwd`, and `env` fields are Vitrallis extensions. Discovery preserves the pinned JUCE command tokenizer's double-quote grouping and literal argument quotes; it does not silently interpret shell syntax. Use an explicit shell command only when intended by metadata.
 
-`src/discovery/` is separate from platform window policy. `src/config.rs` centralizes filesystem conventions, including the reserved future `$XDG_DATA_HOME/vitrallis/apps` (fallback `~/.local/share/vitrallis/apps`) directory. App Center reuses the existing PocketCHIP updater and its PocketHome entries. See [App Center setup and safety](docs/store.md) and [installation, selection and recovery](docs/session.md).
+`src/discovery/` is separate from platform window policy. `src/config.rs` centralizes filesystem conventions, including the reserved future `$XDG_DATA_HOME/vitrallis/apps` (fallback `~/.local/share/vitrallis/apps`) directory. App Center reuses the existing PocketCHIP updater and its PocketHome entries. See [App Center setup and safety](docs/devices/pocketchip/store.md) and [installation, selection and recovery](docs/devices/pocketchip.md).
 
 PNG and bounded uncompressed BMP icons are decoded once per changed catalogue, retaining aspect ratio. The existing `background` color/PNG/BMP wallpaper, `showclock`, `timeformat` and `cursor` preferences are read without mutation. Missing icons use Marshmallow's default asset when available; broken/unsupported images use a built-in placeholder and log a warning. SVG/JPEG parity and full Unicode/font parity remain future work. No reference artwork is bundled. `serde_json` handles metadata and `png` handles the actual shipped icons. Retained icon textures are capped at 16 MiB; excess artwork uses placeholders. [Dependency exceptions](docs/dependencies.md) explain why the required strict Clippy policy currently prevents the newest PNG/compression versions.
 
@@ -44,11 +46,11 @@ See [current candidate validation](docs/release-candidate.md) for fresh evidence
 
 The System Settings tile and footer open the same settings screen. Brightness and volume use 10% steps for touch and left/right keypad input; up/down selects a control. Dragging updates the control live, coalesces pending changes, and filters small touch jitter. PocketCHIP brightness spans 10–100%, matching its ten lit hardware levels; volume spans 0–100%. Wi-Fi opens the configured connection manager and returns to settings on exit. Restart/power-off require a separate confirmation with Cancel selected initially. Escape/Home or the footer returns. F1 has no binding. SDL Power opens the panel when delivered to the application; the supervised Awesome session supplies the physical Home binding.
 
-Choose **More** in System Settings for screen timeout (Never, 30 seconds, 1, 2, 5, 10, or 30 minutes), time-zone selection, and touchscreen calibration. The settings header shows the running build version. Time-zone changes use the device’s existing password authentication when required; calibration opens the installed PocketCHIP utility. See [settings controls and device validation](docs/settings-expansion.md) for persistence, recovery, and current limits.
+Choose **More** in System Settings for screen timeout (Never, 30 seconds, 1, 2, 5, 10, or 30 minutes), time-zone selection, and touchscreen calibration. The settings header shows the running build version. Time-zone changes use the device’s existing password authentication when required; calibration opens the installed PocketCHIP utility. See [settings controls and device validation](docs/devices/pocketchip/settings.md) for persistence, recovery, and current limits.
 
 App activation displays an “Opening…” panel until the app takes focus. Window discovery retries for up to 30 seconds; an app that remains alive without a window returns to the grid with a retry hint, retaining ownership and avoiding duplicate processes.
 
-The status bar shows the Wi-Fi IPv4 address (USB IPv4 fallback), plus a filled battery icon and percentage, a charging/external-power bolt, a Wi-Fi connection icon, and local time in the configured 12/24-hour format. Low battery is amber; off/disconnected/unavailable Wi-Fi has a slash. System Settings uses embedded GPT Image artwork with transparent edges. Unavailable battery reads `--`. Bluetooth is omitted because this image has no validated backend. Desktop mode exposes time and no hardware controls. PocketCHIP reads the kernel AXP20x battery sysfs interface when present (legacy images can use optional `i2cget`), plus installed `nmcli`, `amixer`, `systemctl` and backlight sysfs. It does not install hardware packages or permissions. All hardware work runs off the UI thread, full refresh is ten seconds after the preceding refresh, and commands have bounded output and a two-second timeout. See [system audit and validation](docs/system-status.md) for exact mechanisms, assumptions, test evidence, and remaining parity gaps.
+The status bar shows the Wi-Fi IPv4 address (USB IPv4 fallback), plus a filled battery icon and percentage, a charging/external-power bolt, a Wi-Fi connection icon, and local time in the configured 12/24-hour format. Low battery is amber; off/disconnected/unavailable Wi-Fi has a slash. System Settings uses embedded GPT Image artwork with transparent edges. Unavailable battery reads `--`. Bluetooth is omitted because this image has no validated backend. Desktop mode exposes time and no hardware controls. PocketCHIP reads the kernel AXP20x battery sysfs interface when present (legacy images can use optional `i2cget`), plus installed `nmcli`, `amixer`, `systemctl` and backlight sysfs. It does not install hardware packages or permissions. All hardware work runs off the UI thread, full refresh is ten seconds after the preceding refresh, and commands have bounded output and a two-second timeout. See [system audit and validation](docs/devices/pocketchip/system-status.md) for exact mechanisms, assumptions, test evidence, and remaining parity gaps.
 
 ## Development and release checks
 
@@ -64,7 +66,7 @@ cargo tree --duplicates
 ```
 
 The validation script runs strict Clippy, workspace and Python tests, release
-build, SDL smoke test and diff checks. See [ARM setup](docs/session.md) for the
+build, SDL smoke test and diff checks. See [ARM setup](docs/devices/pocketchip.md) for the
 separate image-matched cross build. Keep `Cargo.lock`; application release builds
 use `--locked`. No global Python dependency installation is necessary.
 

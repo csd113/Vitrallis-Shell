@@ -1,11 +1,13 @@
 import importlib.util
 import os
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location('session', Path(__file__).parents[1] / 'scripts/vitrallis-session.py')
+spec = importlib.util.spec_from_file_location('session', Path(__file__).resolve().parents[1] / 'devices/pocketchip/vitrallis-session.py')
 s = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(s)
 
@@ -57,6 +59,42 @@ class Session(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'symlink'):
                     s.supervise(root)
                 awesome.assert_not_called()
+
+    def test_run_resolves_binary_beside_the_session_script(self):
+        with tempfile.TemporaryDirectory() as temp:
+            script = Path(temp).resolve() / 'installed session with spaces/vitrallis-session.py'
+            with patch.object(s, '__file__', str(script)), \
+                    patch.object(s.sys, 'argv', [str(script), 'run']), \
+                    patch.object(s, 'supervise', return_value=17) as supervise:
+                self.assertEqual(s.main(), 17)
+                supervise.assert_called_once_with(script.parent)
+
+    def test_run_wrapper_preserves_environment_arguments_cwd_and_exit_status(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            home = root / 'user home'
+            launcher = home / '.local/share/vitrallis/launch'
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text(
+                '#!/bin/sh\n'
+                'printf "%s\\n" "$HOME" "$PWD" "$DISPLAY" "$XAUTHORITY" "$@"\n'
+                'exit 17\n'
+            )
+            launcher.chmod(0o755)
+            package = root / 'package with spaces'
+            package.mkdir()
+            wrapper = package / 'run-pocketchip.sh'
+            shutil.copyfile(Path(s.__file__).parent / 'run-pocketchip.sh', wrapper)
+            cwd = root / 'unrelated directory'
+            cwd.mkdir()
+            args = ['argument with spaces', 'literal $HOME']
+            result = subprocess.run(
+                ['sh', str(wrapper), *args], cwd=cwd,
+                env=dict(os.environ, HOME=str(home), DISPLAY=':91', XAUTHORITY='fixture auth'),
+                capture_output=True, text=True, check=False,
+            )
+            self.assertEqual(result.returncode, 17, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [str(home), str(cwd), ':91', 'fixture auth', *args])
 
 
 if __name__ == '__main__':

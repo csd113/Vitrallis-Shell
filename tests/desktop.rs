@@ -22,7 +22,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> std::io::Result<Self> {
         let path =
-            std::env::temp_dir().join(format!("vitrallis-render-test-{}", std::process::id()));
+            std::env::temp_dir().join(format!("vitrallis render test {}", std::process::id()));
         std::fs::create_dir(&path)?;
         Ok(Self(path))
     }
@@ -42,6 +42,7 @@ fn renderer_outputs_native_size_bmp_and_refuses_overwrite() -> Result<(), Box<dy
     let file = scratch.0.join("preview.bmp");
     let mut command = Command::new(env!("CARGO_BIN_EXE_vitrallis"));
     command
+        .current_dir(&scratch.0)
         .env("SDL_VIDEODRIVER", "dummy")
         .args(["--demo", "--size", "480x272", "--screenshot"])
         .arg(&file);
@@ -106,11 +107,13 @@ fn imported_catalog_is_read_only_and_missing_icons_render_safely()
 fn existing_background_color_and_wallpaper_render_without_config_mutation()
 -> Result<(), Box<dyn std::error::Error>> {
     let root =
-        std::env::temp_dir().join(format!("vitrallis-wallpaper-test-{}", std::process::id()));
+        std::env::temp_dir().join(format!("vitrallis wallpaper test {}", std::process::id()));
     std::fs::create_dir(&root)?;
     let scratch = Scratch(root);
-    let config = scratch.0.join("config.json");
-    let file = std::fs::File::create(scratch.0.join("wallpaper.png"))?;
+    let config = scratch.0.join("source config.json");
+    let assets = scratch.0.join("exported assets");
+    std::fs::create_dir(&assets)?;
+    let file = std::fs::File::create(assets.join("wallpaper.png"))?;
     let mut encoder = png::Encoder::new(file, 1, 1);
     encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
@@ -126,11 +129,14 @@ fn existing_background_color_and_wallpaper_render_without_config_mutation()
         std::fs::write(&config, &content)?;
         let screenshot = scratch.0.join(format!("{name}.bmp"));
         let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+            .current_dir(&scratch.0)
             .env("SDL_VIDEODRIVER", "dummy")
-            .arg("--app-config")
-            .arg(&config)
-            .arg("--assets")
-            .arg(&scratch.0)
+            .args([
+                "--app-config",
+                "source config.json",
+                "--assets",
+                "exported assets",
+            ])
             .args(["--size", "480x272", "--screenshot"])
             .arg(&screenshot)
             .output()?;

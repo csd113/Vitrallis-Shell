@@ -1,3 +1,9 @@
+//! Reusable display dimensions and proportional layout, independent of device
+//! support and the keyboard, mouse, or touch events delivered by SDL.
+
+pub const DISPLAY_480X272: (u16, u16) = (480, 272);
+pub const DISPLAY_800X480: (u16, u16) = (800, 480);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,

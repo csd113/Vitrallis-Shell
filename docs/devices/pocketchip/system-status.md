@@ -1,10 +1,10 @@
-> Current timeout, time-zone, calibration, IP and generated-icon behavior is documented in [settings-expansion.md](settings-expansion.md).
+> Current timeout, time-zone, calibration, IP and generated-icon behavior is documented in [settings controls and recovery](settings.md).
 
-> Historical backend audit. The current slider screen, icon status bar, and device qualification are recorded in [release-candidate.md](release-candidate.md); the six-button presentation below has been replaced.
+> Historical backend audit. The current slider screen, icon status bar, and device qualification are recorded in [release-candidate.md](../../release-candidate.md); the six-button presentation below has been replaced.
 
 # PocketCHIP system integration and validation
 
-Historical Step 2 record. The [Step 3 hardware compatibility report](compatibility-step3.md) supersedes the hardware-access restrictions and results below.
+Historical Step 2 record. The [Step 3 hardware compatibility report](../../compatibility-step3.md) supersedes the hardware-access restrictions and results below.
 
 Implemented on 2026-09-10 against the static Marshmallow reference at [dccbd38dc233f3f45ebd6ea130d6a787268e23f5](https://github.com/o-marshmallow/PocketCHIP-pocket-home/tree/dccbd38dc233f3f45ebd6ea130d6a787268e23f5). The reference checkout is outside this repository. No hardware was accessed, packages installed, permissions changed, session files modified, or commits created. This extends the deliberately limited Step 1 audit.
 
@@ -83,7 +83,7 @@ Default-session replacement and Vitrallis Store are expressly excluded. ARM link
 
 ## Files changed
 
-- Added: `src/platform/system.rs`, `src/platform/command.rs`, `src/settings.rs`, `docs/system-status.md`.
+- Added: `src/platform/system.rs`, `src/platform/command.rs`, `src/settings.rs`, `docs/devices/pocketchip/system-status.md`.
 - Updated: `src/platform/mod.rs`, `src/platform/generic.rs`, `src/platform/pocketchip.rs`, `src/input.rs`, `src/launcher.rs`, `src/lib.rs`, `src/renderer.rs`, `src/ui.rs`, `README.md`.
 - `Cargo.toml`, `Cargo.lock`, startup scripts and existing configuration files are unchanged. Generated QA images are under ignored `target/system-qa*`.
 

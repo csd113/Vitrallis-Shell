@@ -54,4 +54,4 @@ Final host result: all three required validation commands **passed**; 25 unit te
 - `src/launcher.rs`, `src/navigation.rs`, `src/layout.rs`, `src/input.rs`: pagination, focus, shared hitboxes and guarded interaction.
 - `src/process.rs`, `src/ui.rs`, `src/renderer.rs`, `src/lib.rs`: launch lifecycle, cleanup, icons, error panel and application integration.
 - `src/test_support.rs`, `tests/desktop.rs`: isolated fixtures and integration coverage; behavior tests also live beside their modules.
-- `README.md`, `docs/device-validation.md`, `docs/validation.md`, `docs/compatibility-step2.md`: usage, evidence and compatibility/deferred-device report.
+- `README.md`, `docs/devices/pocketchip/validation.md`, `docs/validation.md`, `docs/compatibility-step2.md`: usage, evidence and compatibility/deferred-device report.

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location('store_patch', Path(__file__).parents[1] / 'scripts/apply-store-patch.py')
+spec = importlib.util.spec_from_file_location('store_patch', Path(__file__).resolve().parents[1] / 'devices/pocketchip/apply-store-patch.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 

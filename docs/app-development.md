@@ -122,10 +122,10 @@ app metadata do not require ARMv7; the target belongs in build/release metadata.
 
 Build the launcher with `sh scripts/build-pocketchip.sh` using the target image's
 SDL/sysroot and install with the reviewed user installer described in
-[session.md](session.md). This installer handles the launcher/session, not
-arbitrary packages.
+[PocketCHIP installation and recovery](devices/pocketchip.md). This installer
+handles the launcher/session, not arbitrary packages.
 
-For application distribution, follow [Store adapters and integrity](store.md).
+For application distribution, follow [Store adapters and integrity](devices/pocketchip/store.md).
 The current Store has a fixed reviewed catalogue and per-application installer;
 adding a row alone does not supply a safe generic package format. Extend its
 adapter and tests together. Preserve user data, explicit argv, source hashes,

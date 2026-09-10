@@ -17,7 +17,7 @@ and host-validation scripts plus a pinned read-only CI workflow.
 See [dependency review](dependencies.md) for the attempted PNG API migration,
 five exact upstream/policy exceptions, updated cross linker and security review.
 See [security](security.md), [app development](app-development.md),
-[Store](store.md) and [installation/recovery](session.md) for current interfaces.
+[Store](devices/pocketchip/store.md) and [installation/recovery](devices/pocketchip.md) for current interfaces.
 No public Python SDK, `app.toml` loader, signed package format or generic
 archive installer is claimed.
 
@@ -60,7 +60,7 @@ the declared MSRV. No Rust lint suppressions were introduced.
 | `RUSTUP_TOOLCHAIN=1.91.0 sh scripts/build-pocketchip.sh` | ARM MSRV build passed |
 | `cargo +1.91.0 test --locked --workspace --all-features` | Same 52 unit + 5 integration tests passed |
 | `SDL_VIDEODRIVER=dummy cargo run --locked -- --smoke-test` | Launch/reap/render recovery passed |
-| `sh -n scripts/run-pocketchip.sh scripts/build-pocketchip.sh` | Passed |
+| `sh -n devices/pocketchip/run-pocketchip.sh scripts/build-pocketchip.sh` | Passed |
 | `cargo audit` | No RustSec advisories/unmaintained warnings; 1,243 advisories loaded |
 | `cargo tree --duplicates` | No duplicate crate versions |
 | `cargo outdated --workspace` plus complete registry/lock comparison | Five documented exceptions; see dependencies.md |
@@ -174,27 +174,27 @@ page to exit, or run `systemctl --user stop vitrallis-session.service`.
 Over USB serial, use
 `XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user stop vitrallis-session.service`.
 The exact optional five-second startup block and removal instructions are in
-[session.md](session.md#optional-reversible-default). It has not been installed;
+[PocketCHIP installation and recovery](devices/pocketchip.md#optional-reversible-default). It has not been installed;
 Marshmallow remains the boot default.
 
 ## Changed files and source hygiene
 
 - Toolchain/build: `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`,
   `.github/workflows/validate.yml`, `.gitignore`, `scripts/build-pocketchip.sh`,
-  `scripts/validate.sh`, `scripts/run-pocketchip.sh`.
+  `scripts/validate.sh`, `devices/pocketchip/run-pocketchip.sh`.
 - Rust: `src/lib.rs`, `src/launcher.rs`, `src/process.rs`, `src/ui.rs`,
   `src/renderer.rs`, `src/preferences.rs`, `src/discovery/mod.rs`,
   `src/discovery/marshmallow.rs`, `src/platform/command.rs`,
   `src/platform/pocketchip.rs`, `src/platform/system.rs`.
-- Deployment/Store: `scripts/install-pocketchip.py`,
-  `scripts/apply-store-patch.py`, `scripts/vitrallis-session.py`,
-  `integration/pocketchip-store.patch`, `integration/store-patch-manifest.json`.
+- Deployment/Store: `devices/pocketchip/install.py`,
+  `devices/pocketchip/apply-store-patch.py`, `devices/pocketchip/vitrallis-session.py`,
+  `devices/pocketchip/integration/pocketchip-store.patch`, `devices/pocketchip/integration/store-patch-manifest.json`.
 - Tests: `tests/desktop.rs`, `tests/test_installer.py`, `tests/test_session.py`,
   `tests/test_store_patch.py`; additional Store tests are included in its patch.
 - Documentation: `README.md`, `docs/app-development.md`, `docs/dependencies.md`,
-  `docs/security.md`, `docs/release-candidate.md`, `docs/session.md`,
-  `docs/store.md`, and historical pointers in `docs/compatibility-step3.md`,
-  `docs/device-validation.md`, `docs/engineering-report.md`, `docs/validation.md`.
+  `docs/security.md`, `docs/release-candidate.md`, `docs/devices/pocketchip.md`,
+  `docs/devices/pocketchip/store.md`, and historical pointers in `docs/compatibility-step3.md`,
+  `docs/devices/pocketchip/validation.md`, `docs/engineering-report.md`, `docs/validation.md`.
 
 All build outputs, copied libraries, device logs, screenshots, local tools and
 raw test harnesses are under ignored `target/`. No commit or push was made.
@@ -231,7 +231,7 @@ icons; unsupported Bluetooth status is omitted. The PocketCHIP backend also adds
 other terminal commands and generic backends are unchanged. No new dependency
 or OS package was introduced. New source modules: `src/settings/geometry.rs`,
 `src/settings/pointer.rs`, `src/renderer/system.rs`; `src/settings.rs`,
-`src/platform/mod.rs`, `src/app.rs` and `docs/system-status.md` are also changed.
+`src/platform/mod.rs`, `src/app.rs` and `docs/devices/pocketchip/system-status.md` are also changed.
 
 The updated host gates pass: 52 unit + 5 integration Rust tests and 21 owned
 Python tests; the ARM release build passes. Render QA covers 480×272, 800×480
@@ -322,7 +322,7 @@ this feedback; the reported defects required another implementation pass.
 Files changed for this follow-up: `src/input.rs`, `src/launcher.rs`,
 `src/process.rs`, `src/ui.rs`, `src/settings.rs`, `src/settings/pointer.rs`,
 `src/platform/system.rs`, `src/platform/pocketchip.rs`, `src/renderer.rs`,
-`README.md`, `docs/session.md`, `docs/system-status.md`, and this report.
+`README.md`, `docs/devices/pocketchip.md`, `docs/devices/pocketchip/system-status.md`, and this report.
 
 Final source validation passed with Rust 1.91.1 and the declared 1.91.0 MSRV:
 `sh scripts/validate.sh` (formatting, strict workspace/all-target/all-feature
@@ -393,7 +393,7 @@ Final-device checks passed five-app immediate close/reopen and Home/resume,
 five Wi-Fi close/return cycles, and Marshmallow return/relaunch. A real authorized
 time-zone change and restoration passed. The user completed calibration; a later
 cancel test preserved the new saved and live matrix. See the
-[settings expansion report](settings-expansion.md) for the complete changed-file
+[settings expansion report](devices/pocketchip/settings.md) for the complete changed-file
 list, commands, persistence and screenshots/log locations. The user also confirmed
 that physical input wakes the display normally after the 30-second timeout.
 

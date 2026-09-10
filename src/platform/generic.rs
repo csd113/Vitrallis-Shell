@@ -9,7 +9,7 @@ impl Platform for Generic {
         false
     }
     fn resolution(&self) -> (u16, u16) {
-        (800, 480)
+        crate::layout::DISPLAY_800X480
     }
 }
 pub fn demo_apps(executable: &Path) -> Vec<AppEntry> {
@@ -49,7 +49,7 @@ impl Platform for Mock {
         false
     }
     fn resolution(&self) -> (u16, u16) {
-        (480, 272)
+        crate::layout::DISPLAY_480X272
     }
 }
 

@@ -7,6 +7,8 @@ pub mod system;
 /// Session policy and an independently refreshed system backend.
 pub trait Platform: system::System + Copy {
     fn fullscreen(&self) -> bool;
+    /// Preferred display dimensions; `--size` can override this default without
+    /// selecting a different system backend or changing input support.
     fn resolution(&self) -> (u16, u16);
     fn prepare_app(&self, _app: &mut crate::app::AppEntry) {}
     fn raise_after_exit(&self) -> bool {

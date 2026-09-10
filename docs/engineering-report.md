@@ -13,7 +13,7 @@
 9. **Files:** Rust: app, discovery/{mod,marshmallow,store}, launcher, preferences, platform/{mod,pocketchip}, process, renderer, ui, lib; tests/desktop.rs and three Python test modules. Scripts: install-pocketchip.py, vitrallis-session.py, apply-store-patch.py. Integration: reviewed Store patch/hash manifest. Documentation: README, session/store/compatibility report, evidence, and historical-report pointers. .gitignore excludes Python caches. No commits made.
 10. **Upstream changes:** Pocketchip-update-apps receives the reviewable local patch for persistent incomplete-install markers, repair detection, conservative manual self-update and regressions. It retains repository conventions and safe verified-source workflow. PocketChip-Bitcoin-Display has no source changes. No upstream commits or pushes.
 
-See [the differential matrix](compatibility-step3.md), [installation/recovery](session.md) and [Store workflow](store.md) for detailed evidence and reproduction.
+See [the differential matrix](compatibility-step3.md), [installation/recovery](devices/pocketchip.md) and [Store workflow](devices/pocketchip/store.md) for detailed evidence and reproduction.
 
 
 ## Changed files
@@ -21,16 +21,16 @@ See [the differential matrix](compatibility-step3.md), [installation/recovery](s
 - `.gitignore`
 - `README.md`
 - `docs/compatibility-step3.md`
-- `docs/device-validation.md`
+- `docs/devices/pocketchip/validation.md`
 - `docs/engineering-report.md`
-- `docs/session.md`
-- `docs/store.md`
-- `docs/system-status.md`
-- `integration/pocketchip-store.patch`
-- `integration/store-patch-manifest.json`
-- `scripts/apply-store-patch.py`
-- `scripts/install-pocketchip.py`
-- `scripts/vitrallis-session.py`
+- `docs/devices/pocketchip.md`
+- `docs/devices/pocketchip/store.md`
+- `docs/devices/pocketchip/system-status.md`
+- `devices/pocketchip/integration/pocketchip-store.patch`
+- `devices/pocketchip/integration/store-patch-manifest.json`
+- `devices/pocketchip/apply-store-patch.py`
+- `devices/pocketchip/install.py`
+- `devices/pocketchip/vitrallis-session.py`
 - `src/app.rs`
 - `src/discovery/marshmallow.rs`
 - `src/discovery/mod.rs`

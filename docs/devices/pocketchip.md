@@ -28,13 +28,23 @@ with the device. Do not use macOS SDL. Changing `VITRALLIS_ARM_GLIBC` requires
 validating the new target image; this Debian 13 result does not prove original
 Jessie compatibility.
 
-Copy the ARM binary and `scripts/install-pocketchip.py`, `scripts/vitrallis-session.py` to a staging directory on the PocketCHIP. After closing a previous Vitrallis session, run as the normal user:
+Copy the ARM binary and both `devices/pocketchip/install.py` and
+`devices/pocketchip/vitrallis-session.py` to a staging directory on the
+PocketCHIP. Keep the two Python files together: the installer resolves its
+session helper beside its own file, independent of the caller's working
+directory. After closing a previous Vitrallis session, run as the normal user:
 
 ```sh
-python3 install-pocketchip.py /absolute/path/to/arm/vitrallis
+python3 /absolute/path/to/staging/install.py /absolute/path/to/arm/vitrallis
 ```
 
 The installer checks the ELF architecture, validates the PocketHome menu and paths before mutation, refuses symlinks/unmanaged or edited installed files, preserves the menu file permissions, refuses edited desktop shortcuts and symlinked backup roots, preserves previous files under `~/.local/share/vitrallis-backups/`, and installs under `~/.local/share/vitrallis/`. It adds an app menu entry and `~/.local/share/applications/vitrallis.desktop`. It does not modify Awesome, greetd, X startup, kernel/input calibration, recovery services, system packages or Marshmallow's binary. The original user config was also copied off-device before testing.
+
+The original `scripts/install-pocketchip.py` entry point remains a forwarding
+shim. It locates the canonical installer in a source checkout. For standalone
+use, put `install.py` and `vitrallis-session.py` beside the downloaded
+`install-pocketchip.py`; the shim does not download or execute remote code.
+Both entry points preserve the binary argument and exit status.
 
 ## Select Vitrallis or Marshmallow
 
@@ -81,7 +91,7 @@ If a window manager restart erased the temporary hook state, its original `rc.lu
 
 If later opting into startup, remove the marked optional block over serial before rebooting to recover. No change to boot media, recovery mode, autologin, calibration or SSH authentication policy is required.
 
-See [the compatibility report](compatibility-step3.md) for what was actually tested, including limits. These instructions do not establish cold-start or physical-key validation without recorded evidence.
+See [the compatibility report](../compatibility-step3.md) for what was actually tested, including limits. These instructions do not establish cold-start or physical-key validation without recorded evidence.
 
 ## Existing preferences and settings
 

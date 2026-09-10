@@ -8,5 +8,8 @@ cargo test --locked --workspace --all-features
 python3 -m unittest discover -s tests -p 'test_*.py'
 cargo build --locked --release --workspace --all-features
 SDL_VIDEODRIVER=dummy cargo run --locked -- --smoke-test
-sh -n scripts/run-pocketchip.sh scripts/build-pocketchip.sh
+for script in scripts/*.sh devices/pocketchip/*.sh; do
+    sh -n "$script"
+done
+python3 -m compileall -q scripts devices
 git diff --check

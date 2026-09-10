@@ -1,8 +1,8 @@
-> Historical Step 2 notes. Current results are in [release-candidate.md](release-candidate.md); installation and recovery are in [session.md](session.md).
+> Historical Step 2 notes. Current results are in [release-candidate.md](../../release-candidate.md); installation and recovery are in [PocketCHIP installation and recovery](../pocketchip.md).
 
 # Deferred device validation (Step 2)
 
-The user deferred device access for Step 2. Use the current [compatibility report](compatibility-step2.md) and README for implemented behavior. The older build notes below remain guidance, not executed commands. Before live testing, compare `--list-apps` with the installed Marshmallow Apps pages, including order, paths, args and icons. Exercise every page with keyboard and physical touch, representative installed apps, and repeated launch/exit cycles while measuring processes, RSS and idle CPU. Verify Marshmallow normally launches afterward and its files/startup remain unchanged.
+The user deferred device access for Step 2. Use the current [compatibility report](../../compatibility-step2.md) and README for implemented behavior. The older build notes below remain guidance, not executed commands. Before live testing, compare `--list-apps` with the installed Marshmallow Apps pages, including order, paths, args and icons. Exercise every page with keyboard and physical touch, representative installed apps, and repeated launch/exit cycles while measuring processes, RSS and idle CPU. Verify Marshmallow normally launches afterward and its files/startup remain unchanged.
 
 # Deferred PocketCHIP build and manual validation
 
@@ -39,7 +39,7 @@ After a later explicitly authorized staging step places the compatible executabl
 SDL_VIDEODRIVER=x11 /opt/vitrallis/vitrallis --pocketchip
 ```
 
-Alternatively stage `scripts/run-pocketchip.sh` alongside it and run `sh /opt/vitrallis/run-pocketchip.sh`. The script requires an inherited `DISPLAY`, preserves `XAUTHORITY` and the rest of the existing environment, and does not guess display authorization, change cwd, reload keymaps, or alter session startup. Do not run as root. The executable is asset-independent apart from its dynamically linked SDL runtime.
+Alternatively stage `devices/pocketchip/run-pocketchip.sh` alongside it and run `sh /opt/vitrallis/run-pocketchip.sh`. The script requires an inherited `DISPLAY`, preserves `XAUTHORITY` and the rest of the existing environment, and does not guess display authorization, change cwd, reload keymaps, or alter session startup. Do not run as root. The executable is asset-independent apart from its dynamically linked SDL runtime.
 
 No deployment command or automatic session replacement is included. Keep a separate terminal available to close the test launcher. Start only one Vitrallis instance. Do not treat this shell as a login/authentication replacement.
 

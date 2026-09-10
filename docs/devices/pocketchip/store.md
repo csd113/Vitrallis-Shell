@@ -6,7 +6,7 @@ The upstream catalogue is the explicit `APPS` list in `update_apps.py`. Each ent
 
 ## Setup and compatibility patch
 
-The audited upstream revision is `1f394452d6acd124d940154234b0eb8dd7150b70`. Check out that exact revision in a separate directory, inspect it, then apply `integration/pocketchip-store.patch` with `git apply`. `integration/store-patch-manifest.json` records exact original and patched hashes, including intermediate reviewed revisions used during hardware testing. To patch an already installed copy, copy the five patched Python files, manifest and `scripts/apply-store-patch.py` to the device, then run as the normal user:
+The audited upstream revision is `1f394452d6acd124d940154234b0eb8dd7150b70`. Check out that exact revision in a separate directory, inspect it, then apply `devices/pocketchip/integration/pocketchip-store.patch` with `git apply`. `devices/pocketchip/integration/store-patch-manifest.json` records exact original and patched hashes, including intermediate reviewed revisions used during hardware testing. To patch an already installed copy, copy the five patched Python files, manifest and `devices/pocketchip/apply-store-patch.py` to the device, then run as the normal user:
 
 ```sh
 python3 apply-store-patch.py /absolute/path/to/patched-source store-patch-manifest.json
@@ -32,11 +32,11 @@ The current ecosystem has no safe uninstall API. Vitrallis therefore does not of
 
 This upstream version is not a generic arbitrary-script installer. Adding an `APPS` row alone is insufficient because the first-install path currently supplies Bitcoin's reviewed wrapper/icon. Extend the upstream Python catalogue and its installer adapter together: choose a fixed repository/branch/source, specify the required files and an explicit launcher argument vector, validate hashes/sizes/types/versions, stage all required files, retain an incomplete marker until completion, and add focused check/install/failure tests. Do not add shell fragments to downloaded metadata or reuse the Bitcoin adapter for an unrelated app. Keep new file conventions compatible with PocketHome's name/icon/shell entry so both launchers discover the app. A future multi-file package should use a complete verified bundle and its own safe transactional installer.
 
-Hardware results and evidence are recorded in [the compatibility report](compatibility-step3.md).
+Hardware results and evidence are recorded in [the compatibility report](../../compatibility-step3.md).
 
 
 The beta hardening patch additionally preserves private menu permissions,
 rejects malformed documents and unsafe bundle names, recognizes dangling
 incomplete markers, rejects hardlinks, and preserves detected concurrent edits
 during deployment rollback. The revised reviewed bundle passes 50 tests; see
-[current candidate results](release-candidate.md) for host/device outcomes.
+[current candidate results](../../release-candidate.md) for host/device outcomes.
