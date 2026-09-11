@@ -36,7 +36,25 @@ fn atomic_install_retains_backup_and_never_touches_apps() -> Result<(), Box<dyn 
     assert!(same_file(&app_before, &fs::metadata(&app)?));
     assert_eq!(fs::read_dir(&apps)?.count(), 1);
     drop(installation);
-    assert!(Installation::open(&target).is_ok());
+    drop(Installation::open(&target)?);
+    Ok(())
+}
+
+#[test]
+fn completed_installation_releases_lock_with_a_shared_descriptor()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (_scratch, target) = fixture()?;
+    let installation = Installation::open(&target)?;
+    // A concurrent fork can retain the same open file description until exec.
+    let inherited = installation.lock.try_clone()?;
+    assert!(Installation::open(&target).is_err());
+    drop(installation);
+    let retry = Installation::open(&target)?;
+    drop(inherited);
+    // Closing the old descriptor must not release the new installation's lock.
+    assert!(Installation::open(&target).is_err());
+    drop(retry);
+    drop(Installation::open(&target)?);
     Ok(())
 }
 

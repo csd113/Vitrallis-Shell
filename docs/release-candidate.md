@@ -14,6 +14,10 @@ The user explicitly authorized this version, commit, push, and GitHub release.
   before leaving the page. Power and install confirmations still default to Cancel.
 - Footer rendering, pointer hit testing, and key activation share the same visible
   targets. Blank footer areas no longer act as hidden navigation buttons.
+- Update cleanup explicitly unlocks after removing staged files. A shared file
+  descriptor retained across a helper fork can no longer keep a completed update
+  locked until that helper executes. A regression reproduces the former failure
+  and verifies that closing the old descriptor cannot unlock a new installation.
 - SDL key-event regression tests cover brightness, volume, Wi-Fi launch, restart,
   shutdown, timeout, time zones, calibration launch, update checks/installation,
   cancellation, and navigation while a hardware operation is pending. Native
@@ -26,7 +30,7 @@ Validation on macOS ARM64 with Rust 1.91.1:
 | `cargo fmt --all --check` | Passed after formatting touched Rust files |
 | `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -D clippy::nursery -D clippy::cargo` | Passed; no lint suppressions |
 | `cargo test --workspace --all-features settings::` | 15 Settings tests passed |
-| `sh scripts/validate.sh` | Passed: strict Clippy, 92 unit + 6 integration tests, 37 Python tests, release build, SDL smoke, shell/Python syntax and diff checks |
+| `sh scripts/validate.sh` | Passed: strict Clippy, 93 unit + 6 integration tests, 37 Python tests, release build, SDL smoke, shell/Python syntax and diff checks |
 | `PKG_CONFIG_LIBDIR="$PWD/target/arm-libs/pkgconfig" sh scripts/build-pocketchip.sh` | ARMv7 hard-float release cross-build passed with the existing image-matched SDL2 2.32.4 library |
 | `VITRALLIS_QA_DIR="$PWD/target/beta2-qa" cargo test --workspace --all-features system_panels_render_at_device_and_scaled_sizes` | Rendered all pages and selected footer targets at 320×200, 480×272, 800×480, and 1280×720; focus screenshots inspected |
 
@@ -41,7 +45,7 @@ image and is cross-built, not newly executed on hardware.
 
 Changed files: `AGENTS.md`, `Cargo.toml`, `Cargo.lock`, `README.md`, this report,
 `src/settings.rs`, `src/settings/{device,footer,geometry,keyboard_tests,pointer,update}.rs`,
-`src/renderer.rs`, and `src/renderer/system.rs`.
+`src/renderer.rs`, `src/renderer/system.rs`, and `src/platform/update/{unix,tests}.rs`.
 
 The following beta.1 records are historical and retain their original dates,
 binary hashes, device results, and handoff status.

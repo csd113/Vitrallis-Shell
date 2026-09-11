@@ -12,7 +12,7 @@ pub struct Installation {
     stage: PathBuf,
     original: fs::Metadata,
     // Held through cleanup. Never unlink the lock inode: waiters must share it.
-    _lock: File,
+    lock: File,
 }
 impl Installation {
     pub fn current() -> Result<Self, String> {
@@ -107,7 +107,7 @@ impl Installation {
             target,
             stage,
             original,
-            _lock: lock,
+            lock,
         })
     }
     pub fn payload(&self) -> Result<File, String> {
@@ -200,6 +200,11 @@ impl Drop for Installation {
             if let Err(error) = remove_file(&self.stage.join(name)) {
                 eprintln!("level=warning event=shell_update_cleanup message={error:?}");
             }
+        }
+        // A helper fork can retain this open file description until exec.
+        // Closing our descriptor alone would leave its lock held in that child.
+        if let Err(error) = self.lock.unlock() {
+            eprintln!("level=warning event=shell_update_unlock message={error:?}");
         }
     }
 }
