@@ -1,6 +1,6 @@
 # Vitrallis Shell
 
-**0.1.0-beta.1 release candidate — not production-ready.** Portable SDL2 launcher
+**0.1.0-beta.2 release candidate — not production-ready.** Portable SDL2 launcher
 for embedded Linux, tested on a Debian 13 PocketCHIP with Marshmallow recovery.
 See [current release validation](docs/release-candidate.md),
 [toolchain/dependency policy](docs/dependencies.md),
@@ -45,6 +45,15 @@ PNG and bounded uncompressed BMP icons are decoded once per changed catalogue, r
 See [current candidate validation](docs/release-candidate.md) for fresh evidence and remaining checks; the [Step 3 hardware compatibility report](docs/compatibility-step3.md) records earlier results. The [Step 2 report](docs/compatibility-step2.md) and earlier device notes are historical.
 
 The System Settings tile and footer open the same settings screen. Brightness and volume use 10% steps for touch and left/right keypad input; up/down selects a control. Dragging updates the control live, coalesces pending changes, and filters small touch jitter. PocketCHIP brightness spans 10–100%, matching its ten lit hardware levels; volume spans 0–100%. Wi-Fi opens the configured connection manager and returns to settings on exit. Restart/power-off require a separate confirmation with Cancel selected initially. Escape/Home or the footer returns. F1 has no binding. SDL Power opens the panel when delivered to the application; the supervised Awesome session supplies the physical Home binding.
+
+All native System Settings actions support keys and touch. Navigate down to the
+footer, use Left/Right to select its visible buttons, and press Enter. In the
+main settings footer, Left moves from **More** to **Back**; **More**, time-zone,
+and update pages also have selectable Back controls. Up returns to the controls
+above. In the time-zone list, Left/Right or Page Up/Down changes pages; Down from
+the last visible zone reaches Previous / Back / Next. Calibration can be launched
+or cancelled using keys, but measuring the touchscreen requires touching its
+targets. External utilities retain their own input controls.
 
 Choose **More → Check for Updates** to check and install verified stable **Vitrallis Shell** releases. Installation requires separate confirmation and a relaunch; installed apps are untouched. See [shell updates, release artifacts, and recovery](docs/shell-updates.md).
 

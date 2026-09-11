@@ -105,15 +105,13 @@ impl Settings {
             geometry.controls.as_slice()
         };
         let hit = targets.iter().position(|r| r.contains(x, y)).or_else(|| {
-            layout
-                .footer
-                .contains(x, y)
-                .then_some(if x < f64::from(layout.width) / 3. {
-                    6
-                } else if x > f64::from(layout.width) * 2. / 3. {
-                    5
-                } else {
-                    7
+            PanelLayout::footer(layout)
+                .into_iter()
+                .zip(self.footer_controls())
+                .find_map(|(bounds, control)| {
+                    control
+                        .filter(|_| bounds.contains(x, y))
+                        .map(|(index, _)| index)
                 })
         });
         match phase {
@@ -176,26 +174,12 @@ impl Settings {
                             self.selected = 0;
                             return self.timeout(false);
                         }
-                        return self.input(self.release_action(index));
+                        return self.input(Action::SelectAndActivate(index));
                     }
                 }
             }
         }
         None
-    }
-    fn release_action(&self, index: usize) -> Action {
-        if self.page == Page::Timezones && index == 6 {
-            Action::Page(false)
-        } else if index == 7
-            || (index == 6 && self.page != Page::Timezones)
-            || (index == 5 && matches!(self.page, Page::Device | Page::Updates))
-        {
-            Action::Back
-        } else if index == 5 && self.page == Page::Timezones {
-            Action::Page(true)
-        } else {
-            Action::SelectAndActivate(index)
-        }
     }
 }
 fn slider_value(x: f64, track: crate::layout::Rect) -> Option<Percent> {

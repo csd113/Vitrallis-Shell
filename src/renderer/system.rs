@@ -399,25 +399,11 @@ pub(super) fn panel(
     panel_footer(canvas, layout, settings)
 }
 fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
-    let (hint, labels) = match settings.page {
-        Page::General => (
-            "Drag / left-right: adjust",
-            [
-                "< Back",
-                "",
-                if settings.selected == 5 {
-                    "[ More > ]"
-                } else {
-                    "More >"
-                },
-            ],
-        ),
-        Page::Updates => ("Esc: back   Enter: select", ["< Back", "", ""]),
-        Page::Device => ("Left/right: timeout   Enter: select", ["< Back", "", ""]),
-        Page::Timezones => (
-            "Up/down: select   Enter: apply",
-            ["< Previous", "Back", "Next >"],
-        ),
+    let hint = match settings.page {
+        Page::General => "Drag / left-right: adjust",
+        Page::Updates => "Esc: back   Enter: select",
+        Page::Device => "Left/right: timeout   Enter: select",
+        Page::Timezones => "Arrows: select   Enter: apply",
     };
     let half = layout.footer.h / 2;
     text(
@@ -434,19 +420,22 @@ fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
         layout.text_scale,
         MUTED,
     )?;
-    for (index, label) in [0, 1, 2].into_iter().zip(labels) {
-        text(
-            canvas,
-            label,
-            Rect {
-                x: layout.footer.x + index * layout.footer.w / 3,
-                y: layout.footer.y + half,
-                w: layout.footer.w / 3,
-                h: half,
-            },
-            layout.text_scale,
-            ACCENT,
-        )?;
+    for (bounds, control) in PanelLayout::footer(layout)
+        .into_iter()
+        .zip(settings.footer_controls())
+    {
+        let Some((index, label)) = control else {
+            continue;
+        };
+        let bounds = Rect {
+            y: bounds.y + half,
+            h: half,
+            ..bounds
+        };
+        if settings.selected == index {
+            card(canvas, bounds, true)?;
+        }
+        text(canvas, label, bounds, layout.text_scale, ACCENT)?;
     }
     Ok(())
 }

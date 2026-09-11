@@ -1,4 +1,52 @@
-# Vitrallis 0.1.0-beta.1 candidate
+# Vitrallis 0.1.0-beta.2
+
+This release fixes keyboard navigation in the native system-service screens.
+The user explicitly authorized this version, commit, push, and GitHub release.
+`AGENTS.md` records that every future version change needs explicit permission.
+
+- General Settings: Down still reaches More; Left selects Back, Right returns to
+  More, and Enter activates the selected footer button. Up returns to the controls.
+- More: Down after Check for Updates selects Back; Enter returns to General.
+- Time zones: Down from the last visible entry selects the footer. Left/Right
+  selects Previous, Back, or Next; Enter activates it. Left/Right on a zone and
+  Page Up/Down still change pages, including partial final pages.
+- Updates: the footer Back is selectable and cancels an install confirmation
+  before leaving the page. Power and install confirmations still default to Cancel.
+- Footer rendering, pointer hit testing, and key activation share the same visible
+  targets. Blank footer areas no longer act as hidden navigation buttons.
+- SDL key-event regression tests cover brightness, volume, Wi-Fi launch, restart,
+  shutdown, timeout, time zones, calibration launch, update checks/installation,
+  cancellation, and navigation while a hardware operation is pending. Native
+  finger-event tests verify matching releases and footer parity at four sizes.
+
+Validation on macOS ARM64 with Rust 1.91.1:
+
+| Command | Result |
+| --- | --- |
+| `cargo fmt --all --check` | Passed after formatting touched Rust files |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -D clippy::nursery -D clippy::cargo` | Passed; no lint suppressions |
+| `cargo test --workspace --all-features settings::` | 15 Settings tests passed |
+| `sh scripts/validate.sh` | Passed: strict Clippy, 92 unit + 6 integration tests, 37 Python tests, release build, SDL smoke, shell/Python syntax and diff checks |
+| `PKG_CONFIG_LIBDIR="$PWD/target/arm-libs/pkgconfig" sh scripts/build-pocketchip.sh` | ARMv7 hard-float release cross-build passed with the existing image-matched SDL2 2.32.4 library |
+| `VITRALLIS_QA_DIR="$PWD/target/beta2-qa" cargo test --workspace --all-features system_panels_render_at_device_and_scaled_sizes` | Rendered all pages and selected footer targets at 320×200, 480×272, 800×480, and 1280×720; focus screenshots inspected |
+
+No new dependencies or hardware backend changes. This pass does not claim fresh
+physical-device validation or a device installation. Calibration measures touch
+coordinates, so its measurement still requires touch; keys launch or cancel it.
+External utilities such as the Wi-Fi manager and App Center retain their own
+input controls. The existing updater intentionally excludes prereleases, so this
+beta is a manual download. GitHub builds the standard Linux x86-64 artifact;
+the separately named PocketCHIP ARM artifact requires the existing SDL2 2.32.4
+image and is cross-built, not newly executed on hardware.
+
+Changed files: `AGENTS.md`, `Cargo.toml`, `Cargo.lock`, `README.md`, this report,
+`src/settings.rs`, `src/settings/{device,footer,geometry,keyboard_tests,pointer,update}.rs`,
+`src/renderer.rs`, and `src/renderer/system.rs`.
+
+The following beta.1 records are historical and retain their original dates,
+binary hashes, device results, and handoff status.
+
+## Vitrallis 0.1.0-beta.1 candidate
 
 The user has confirmed physical navigation/activation, cold startup into Marshmallow followed by Vitrallis launch, and return to Marshmallow. A second settings/loading follow-up addresses the remaining intermittent missing-window notice, slider jitter, and removal of F1. Its current validation is recorded at the end of this document.
 This is a beta candidate, not production-ready. The previous manifest said 0.1.0,

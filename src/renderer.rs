@@ -597,6 +597,33 @@ mod system_tests {
         platform::system::{Percent, Status, Wifi},
     };
 
+    fn footer_focus_samples(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &mut Launcher,
+        textures: &[Option<Texture<'_>>],
+        output: &std::path::Path,
+    ) -> Result<(), String> {
+        use crate::settings::Page;
+        let original_page = state.settings.page;
+        for page in [Page::General, Page::Device, Page::Timezones, Page::Updates] {
+            state.settings.page(page);
+            for (index, _) in state.settings.footer_controls().into_iter().flatten() {
+                state.settings.selected = index;
+                render(canvas, layout, state, textures)?;
+                screenshot(
+                    canvas,
+                    &output.join(format!(
+                        "footer-{page:?}-{index}-{}x{}.bmp",
+                        layout.width, layout.height
+                    )),
+                )?;
+            }
+        }
+        state.settings.page(original_page);
+        Ok(())
+    }
+
     #[test]
     fn system_panels_render_at_device_and_scaled_sizes() -> Result<(), String> {
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
@@ -678,6 +705,7 @@ mod system_tests {
             state.settings.input(Action::SelectAndActivate(1));
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("zones-{w}x{h}.bmp")))?;
+            footer_focus_samples(&mut canvas, &layout, &mut state, &textures, output)?;
             state.settings.input(Action::Back);
             state.settings.input(Action::Back);
             state.settings.input(Action::SelectAndActivate(4));

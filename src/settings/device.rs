@@ -1,5 +1,8 @@
 //! Additional settings and a bounded, paged system time-zone selector.
-use super::{Page, Request, Settings};
+use super::{
+    Page, Request, Settings,
+    footer::{BACK, ZONE_BACK},
+};
 use crate::{input::Action, navigation::Direction, platform::system::Control};
 impl Settings {
     pub fn page(&mut self, page: Page) {
@@ -24,7 +27,13 @@ impl Settings {
         }
         match action {
             Action::Move(Direction::Up) => self.selected = self.selected.saturating_sub(1),
-            Action::Move(Direction::Down) => self.selected = (self.selected + 1).min(3),
+            Action::Move(Direction::Down) => {
+                self.selected = if self.selected >= 3 {
+                    BACK
+                } else {
+                    self.selected + 1
+                };
+            }
             Action::Move(Direction::Left | Direction::Right) if self.selected == 0 => {
                 return self.timeout(action == Action::Move(Direction::Right));
             }
@@ -91,6 +100,10 @@ impl Settings {
                 return (index < count).then_some(Request::Control(Control::Timezone(index)));
             }
             Action::Move(direction) => {
+                if direction == Direction::Down && self.selected + 1 >= self.visible_zones() {
+                    self.selected = ZONE_BACK;
+                    return None;
+                }
                 let current = self.zone_start + self.selected;
                 let index = match direction {
                     Direction::Up => current.saturating_sub(1),

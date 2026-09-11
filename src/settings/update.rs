@@ -1,5 +1,5 @@
 //! Shell update page uses the existing keypad and matched-release pointer routing.
-use super::{Page, Request, Settings};
+use super::{Page, Request, Settings, footer::BACK};
 use crate::{input::Action, navigation::Direction, updater::State};
 use std::time::{Duration, Instant};
 
@@ -15,6 +15,11 @@ impl Settings {
             return None;
         }
         match action {
+            Action::Move(Direction::Down)
+                if self.update_confirmation.is_none() || self.selected == 1 =>
+            {
+                self.selected = BACK;
+            }
             Action::Move(direction) => {
                 self.selected =
                     usize::from(matches!(direction, Direction::Right | Direction::Down));

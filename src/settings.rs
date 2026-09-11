@@ -1,6 +1,9 @@
 //! Shared System Settings screen, independent of hardware commands and paths.
 mod device;
+mod footer;
 mod geometry;
+#[cfg(test)]
+mod keyboard_tests;
 mod pointer;
 mod update;
 pub use geometry::PanelLayout;
@@ -120,6 +123,9 @@ impl Settings {
         }
     }
     pub fn input(&mut self, action: Action) -> Option<Request> {
+        if self.open && self.footer_input(action) {
+            return None;
+        }
         if self.open && self.page == Page::Updates {
             return self.update_input(action);
         }

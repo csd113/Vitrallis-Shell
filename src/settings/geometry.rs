@@ -6,6 +6,14 @@ pub struct PanelLayout {
     pub confirmation: [Rect; 2],
 }
 impl PanelLayout {
+    pub fn footer(layout: &Layout) -> [Rect; 3] {
+        [0, 1, 2].map(|index| Rect {
+            x: layout.footer.x + index * layout.footer.w / 3,
+            w: layout.footer.w / 3,
+            ..layout.footer
+        })
+    }
+
     pub fn rows(layout: &Layout, count: i32) -> Vec<Rect> {
         let gap = (i32::from(layout.height) / 40).max(5);
         let top = layout.title.h + gap;
