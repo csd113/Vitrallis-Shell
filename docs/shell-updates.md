@@ -2,10 +2,13 @@
 
 Open **System Settings → More → Check for Updates**. The Updates page displays
 `CARGO_PKG_VERSION` from the running build. Select **Check for Updates** to contact
-only the official `csd113/Vitrallis-Shell` GitHub releases API. The highest stable
-semantic version wins, regardless of release publication order; drafts and
-prereleases are excluded. Build metadata does not change version precedence.
-No published stable release, inaccessible/private releases, malformed metadata,
+only the official `csd113/Vitrallis-Shell` GitHub releases API. Beta and other
+prerelease builds receive newer published prereleases as well as stable releases.
+Stable builds receive stable releases. Drafts are always excluded. The highest
+eligible semantic version wins regardless of publication order: beta.10 is newer
+than beta.2, and a stable 0.1.0 is newer than 0.1.0-beta.10. Equal versions,
+downgrades, and changes only to build metadata are not installed.
+No eligible published release, inaccessible/private releases, malformed metadata,
 missing builds, and network errors produce a useful failure instead of claiming
 that the shell is current. No GitHub token is read or sent.
 
@@ -72,14 +75,18 @@ signature or protection against a compromised GitHub publishing account.
 
 ## Publishing compatible releases
 
-Previously this repository had validation/cross-build scripts but no binary
-release workflow. `.github/workflows/shell-release.yml` builds and validates a
-native x86-64 executable in Debian 12, packages it, and creates a **draft** GitHub
-release on a `v*` tag. Set the authoritative workspace version in `Cargo.toml`
-before tagging. Tag and executable version must match Cargo metadata. Review and
-test the draft before publishing; mark prerelease versions as prereleases.
-Until a stable release and matching verified artifact are published, users will
-see a missing stable release/build diagnostic.
+`.github/workflows/shell-release.yml` builds native x86-64 and cross-builds ARMv7
+hard-float executables against Debian 12's glibc 2.36 / SDL2 2.26.5 baseline.
+It runs the host validation suite, then verifies ARM startup/version and a 480×272
+SDL frame under QEMU with the Cortex-A8 CPU model. Both architectures are packaged
+with the exact updater filenames and SHA-256 sidecars. No manual ARM rename or
+image-specific SDL download is required for each release.
+
+A `v*` tag creates a **draft** GitHub release. For an explicitly authorized rebuild
+of an existing version, successful builds return that release to draft and replace
+its matching assets for review. Review/test the complete draft before publishing;
+mark prerelease versions as prereleases. Change the workspace version only with
+explicit user permission. Tag and executable version must match Cargo metadata.
 
 Artifacts are raw executables (no archive extraction):
 
@@ -97,8 +104,9 @@ are eligible; duplicate or incomplete assets are rejected.
 To add another supported architecture, build on a matching glibc 2.36/SDL2 2.26.5
 baseline, run the same validation, then use `scripts/package-shell-release.py`
 with its explicit `--target`, `--binary`, `--output` and `--tag` arguments. Packaging
-runs the built executable's `--version`, so use a native build host or a configured
-compatible binary-emulation environment. The existing ARM cross-build helper
+runs the built executable's `--version`, either natively or through an explicitly
+provided local emulator executable such as `--runner /usr/bin/qemu-arm`. The
+runner is invoked directly without shell parsing. The existing ARM cross-build helper
 can supply the binary, but its image-matched libraries must satisfy this release
 ABI contract. Never relabel a newer ABI build as glibc 2.36. Upload both files to
 the reviewed draft before publication. Additional architectures are opt-in and
@@ -111,3 +119,17 @@ Settings tests cover explicit confirmation, cancellation and navigation.
 
 Protocol references: [GitHub releases API](https://docs.github.com/en/rest/releases/releases)
 and [curl options](https://curl.se/docs/manpage.html).
+
+## One-time transition from the original beta updater
+
+The original beta.1 and initially published beta.2 updater excluded every
+prerelease. Those installed executables cannot discover this correction through
+GitHub metadata alone. Install the refreshed beta.2 shell once using the existing
+[device installer](devices/pocketchip.md), then relaunch Vitrallis. Future newer
+beta versions are available through **More → Check for Updates**.
+
+The corrected ARM download is
+`vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36` and its matching `.sha256` file.
+The older `vitrallis-pocketchip-armv7-glibc2.36-sdl2.32.4` manual artifact is
+superseded. This correction keeps version `0.1.0-beta.2`; an older beta.2 binary
+also needs the one-time replacement because equal versions are not updates.

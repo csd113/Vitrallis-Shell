@@ -88,6 +88,77 @@ fn versions_use_semantic_precedence_and_ignore_drafts_prereleases()
 }
 
 #[test]
+fn beta_builds_receive_published_previews_without_downgrades()
+-> Result<(), Box<dyn std::error::Error>> {
+    for (current, newest, available) in [
+        ("0.1.0-beta.1", "0.1.0-beta.2", true),
+        ("0.1.0-beta.2", "0.1.0-beta.10", true),
+        ("0.1.0-beta.10", "0.1.0-beta.2", false),
+        ("0.1.0-beta.2", "0.1.0-beta.2", false),
+        ("0.1.0-beta.2+old", "0.1.0-beta.2+new", false),
+        ("0.1.0-beta.2", "0.1.0-rc.1", true),
+        ("0.1.0-beta.2", "0.1.0", true),
+    ] {
+        for flagged in [false, true] {
+            let mut value = metadata(newest)?;
+            value["prerelease"] = flagged.into();
+            let state = check(&mock(&[value])?, current, target)?;
+            assert_eq!(
+                matches!(state, State::Available(_)),
+                available,
+                "{current} / {newest}"
+            );
+            assert!(matches!(state, State::Available(_) | State::Current));
+        }
+    }
+    let mut draft = metadata("99.0.0-beta.1")?;
+    draft["draft"] = true.into();
+    let mut beta = metadata("0.1.0-beta.10")?;
+    beta["prerelease"] = true.into();
+    let transport = mock(&[beta, draft.clone(), metadata("0.1.0-beta.2")?])?;
+    let State::Available(release) = check(&transport, "0.1.0-beta.1", target)? else {
+        return Err("missing beta update".into());
+    };
+    assert_eq!(release.version, Version::parse("0.1.0-beta.10")?);
+    assert!(check(&mock(&[draft])?, "0.1.0-beta.1", target).is_err());
+    assert!(check(&transport, "0.1.0", target).is_err());
+    let mut invalid = metadata("0.1.0-beta.2")?;
+    invalid["prerelease"] = "true".into();
+    assert!(check(&mock(&[invalid])?, "0.1.0-beta.1", target).is_err());
+    Ok(())
+}
+
+#[test]
+fn pocketchip_beta_selects_the_standard_arm_artifact_and_verifies_download()
+-> Result<(), Box<dyn std::error::Error>> {
+    let arm = || Target::for_triple("armv7-unknown-linux-gnueabihf");
+    let name = arm()?.artifact();
+    assert_eq!(name, "vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36");
+    let mut value = metadata("0.1.0-beta.2")?;
+    value["prerelease"] = true.into();
+    assert!(check(&mock(&[value.clone()])?, "0.1.0-beta.1", arm).is_err());
+    value["assets"][0]["name"] = name.clone().into();
+    let url =
+        format!("https://github.com/csd113/Vitrallis-Shell/releases/download/v0.1.0-beta.2/{name}");
+    value["assets"][0]["browser_download_url"] = url.clone().into();
+    let mut transport = mock(&[value])?;
+    transport.responses.insert(url, Ok(b"shell".to_vec()));
+    let State::Available(release) = check(&transport, "0.1.0-beta.1", arm)? else {
+        return Err("missing PocketCHIP beta update".into());
+    };
+    assert_eq!(release.name, name);
+    let scratch = crate::test_support::Scratch::new()?;
+    let mut file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(scratch.0.join("download"))?;
+    download(&transport, &release, &mut file)?;
+    assert_eq!(std::fs::read(scratch.0.join("download"))?, b"shell");
+    Ok(())
+}
+
+#[test]
 fn invalid_metadata_network_and_unsupported_builds_fail_closed()
 -> Result<(), Box<dyn std::error::Error>> {
     for value in [

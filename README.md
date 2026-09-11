@@ -55,7 +55,7 @@ the last visible zone reaches Previous / Back / Next. Calibration can be launche
 or cancelled using keys, but measuring the touchscreen requires touching its
 targets. External utilities retain their own input controls.
 
-Choose **More → Check for Updates** to check and install verified stable **Vitrallis Shell** releases. Installation requires separate confirmation and a relaunch; installed apps are untouched. See [shell updates, release artifacts, and recovery](docs/shell-updates.md).
+Choose **More → Check for Updates** to check and install verified **Vitrallis Shell** releases. Beta builds receive newer published prereleases and stable releases; stable builds receive stable releases. Installation requires separate confirmation and a relaunch; installed apps are untouched. See [shell updates, release artifacts, and recovery](docs/shell-updates.md).
 
 Choose **More** in System Settings for screen timeout (Never, 30 seconds, 1, 2, 5, 10, or 30 minutes), time-zone selection, and touchscreen calibration. The settings header shows the running build version. Time-zone changes use the device’s existing password authentication when required; calibration opens the installed PocketCHIP utility. See [settings controls and device validation](docs/devices/pocketchip/settings.md) for persistence, recovery, and current limits.
 

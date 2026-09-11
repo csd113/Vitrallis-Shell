@@ -58,6 +58,23 @@ class ShellRelease(unittest.TestCase):
         self.assertEqual(self.check.call_count, 1)
         self.assertFalse(self.output.exists())
 
+    def test_packages_arm_beta_using_an_explicit_emulator_without_shell_parsing(self):
+        self.data[:7] = b'\x7fELF\x01\x01\x01'
+        self.data[18:20] = b'\x28\x00'
+        self.binary.write_bytes(self.data)
+        self.check.side_effect = [json.dumps({'packages': [
+            {'name': 'vitrallis-shell', 'version': '0.1.0-beta.2'}]}).encode(),
+            'vitrallis 0.1.0-beta.2\n']
+        runner = Path('/local emulator/qemu-arm')
+        RELEASE.package(self.binary, 'armv7-unknown-linux-gnueabihf', self.output,
+                        'v0.1.0-beta.2', runner)
+        name = 'vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36'
+        self.assertEqual((self.output / name).read_bytes(), self.data)
+        self.assertEqual((self.output / (name + '.sha256')).read_text(),
+                         hashlib.sha256(self.data).hexdigest() + '  ' + name + '\n')
+        self.assertEqual(self.check.call_args_list[1].args[0],
+                         [str(runner), str(self.binary.resolve()), '--version'])
+
     def test_rejects_wrong_executable_version_and_existing_output(self):
         self.check.side_effect = [json.dumps({'packages': [{'name': 'vitrallis-shell', 'version': '1.2.3'}]}).encode(), 'vitrallis 0.9.0\n']
         with self.assertRaisesRegex(ValueError, 'version'):

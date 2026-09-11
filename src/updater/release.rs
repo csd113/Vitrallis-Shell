@@ -20,12 +20,18 @@ pub struct Release {
     pub(super) checksum: Option<Asset>,
 }
 
-pub(super) fn latest(releases: &[Value]) -> Result<(&Value, Version), String> {
+pub(super) fn latest<'a>(
+    releases: &'a [Value],
+    current: &Version,
+) -> Result<(&'a Value, Version), String> {
+    // Prerelease builds follow published previews through to a stable release.
+    // Stable installations keep their existing stable-only update policy.
+    let previews = !current.pre.is_empty();
     let mut latest: Option<(&Value, Version)> = None;
     for release in releases {
         let draft = flag(release, "draft")?;
         let prerelease = flag(release, "prerelease")?;
-        if draft || prerelease {
+        if draft || (prerelease && !previews) {
             continue;
         }
         let tag = field(release, "tag_name")?;
@@ -34,7 +40,7 @@ pub(super) fn latest(releases: &[Value]) -> Result<(&Value, Version), String> {
         }
         let version = Version::parse(tag.strip_prefix('v').unwrap_or(tag))
             .map_err(|_| "Release has an invalid semantic version")?;
-        if !version.pre.is_empty() {
+        if !version.pre.is_empty() && !previews {
             continue;
         }
         if latest
@@ -44,7 +50,14 @@ pub(super) fn latest(releases: &[Value]) -> Result<(&Value, Version), String> {
             latest = Some((release, version));
         }
     }
-    latest.ok_or_else(|| "No stable shell release is published yet".into())
+    latest.ok_or_else(|| {
+        if previews {
+            "No shell release is published yet"
+        } else {
+            "No stable shell release is published yet"
+        }
+        .into()
+    })
 }
 
 pub(super) fn select(release: &Value, version: Version, name: String) -> Result<Release, String> {

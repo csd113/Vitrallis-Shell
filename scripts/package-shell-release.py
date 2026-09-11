@@ -16,7 +16,7 @@ TARGETS = {
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def package(binary, target, output, tag):
+def package(binary, target, output, tag, runner=None):
     metadata = json.loads(subprocess.check_output(
         ['cargo', 'metadata', '--no-deps', '--locked', '--format-version', '1'], cwd=ROOT))
     version = next(p['version'] for p in metadata['packages'] if p['name'] == 'vitrallis-shell')
@@ -31,7 +31,8 @@ def package(binary, target, output, tag):
             or int.from_bytes(data[18:20], 'little') != machine):
         raise ValueError('Executable does not match the release target')
     # Run only a maintainer-supplied local build, never remote release commands.
-    actual = subprocess.check_output([str(binary.resolve()), '--version'], timeout=5, text=True).strip()
+    command = ([str(runner)] if runner is not None else []) + [str(binary.resolve()), '--version']
+    actual = subprocess.check_output(command, timeout=5, text=True).strip()
     if actual != 'vitrallis ' + version:
         raise ValueError('Executable version does not match Cargo metadata')
     name = 'vitrallis-' + target + '-glibc2.36'
@@ -55,9 +56,10 @@ def main():
     parser.add_argument('--target', required=True, choices=TARGETS)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--tag', required=True)
+    parser.add_argument('--runner', type=Path, help='Local emulator executable for a cross-built binary')
     args = parser.parse_args()
     try:
-        package(args.binary, args.target, args.output, args.tag)
+        package(args.binary, args.target, args.output, args.tag, args.runner)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         parser.exit(1, f'Shell release packaging failed: {error}\n')
 

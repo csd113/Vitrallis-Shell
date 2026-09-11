@@ -36,7 +36,7 @@ impl State {
     }
     pub fn detail(&self) -> String {
         match self {
-            Self::Idle => "Check the official stable shell releases".into(),
+            Self::Idle => "Check the official shell releases".into(),
             Self::Checking => "Checking GitHub for shell updates...".into(),
             Self::Current => "Vitrallis is up to date.".into(),
             Self::Available(release) => format!("New version available: {}", release.version),
@@ -139,7 +139,7 @@ fn check(
         let complete = values.len() < 100;
         releases.extend(values);
         if complete {
-            let (latest, version) = release::latest(&releases)?;
+            let (latest, version) = release::latest(&releases, &current)?;
             if !version.cmp_precedence(&current).is_gt() {
                 return Ok(State::Current);
             }

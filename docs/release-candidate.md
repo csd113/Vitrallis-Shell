@@ -40,15 +40,39 @@ No new dependencies or hardware backend changes. This pass does not claim fresh
 physical-device validation or a device installation. Calibration measures touch
 coordinates, so its measurement still requires touch; keys launch or cancel it.
 External utilities such as the Wi-Fi manager and App Center retain their own
-input controls. The existing updater intentionally excludes prereleases, so this
-beta is a manual download. GitHub builds the standard Linux x86-64 artifact;
-the separately named PocketCHIP ARM artifact requires the existing SDL2 2.32.4
-image and is cross-built, not newly executed on hardware.
+input controls. The initial beta.2 publication excluded prereleases and used a
+manual-only ARM asset name; the beta updater correction below supersedes those
+limitations.
 
 Changed files: `AGENTS.md`, `Cargo.toml`, `Cargo.lock`, `README.md`, this report,
 `src/settings.rs`, `src/settings/{device,footer,geometry,keyboard_tests,pointer,update}.rs`,
 `src/renderer.rs`, `src/renderer/system.rs`, and `src/platform/update/{unix,tests}.rs`.
 Release workflow: `.github/workflows/shell-release.yml`.
+
+## Beta updater correction
+
+The version remains `0.1.0-beta.2`, as requested. Prerelease builds now select newer
+published prereleases and stable releases using semantic precedence. Stable
+builds retain stable-only selection; drafts, equal versions, downgrades, malformed
+metadata, unverifiable downloads, and foreign artifacts remain excluded.
+
+The release workflow now builds both x86-64 and ARMv7 against Debian 12's supported
+ABI baseline. ARM uses the standard updater filename and receives an emulated
+Cortex-A8 startup/version check and SDL frame render. The packager accepts an
+explicit local emulator, invoked without shell interpretation.
+
+Older installed beta.1/beta.2 updater binaries need a one-time replacement. The
+refreshed updater can then receive future newer betas from the built-in Settings
+page. No new Rust dependencies or version changes were introduced.
+
+Correction files: `src/updater/{mod,release,tests}.rs`,
+`scripts/package-shell-release.py`, `tests/test_shell_release.py`,
+`.github/workflows/shell-release.yml`, `README.md`, `docs/shell-updates.md`, and
+this report. `sh scripts/validate.sh` passed on macOS ARM64 / Rust 1.91.1:
+formatting, strict workspace Clippy, 95 unit and 6 integration tests, 38 Python
+tests, release build, SDL smoke, syntax checks, and `git diff --check`. Targeted
+updater and release-packaging tests also passed. GitHub and device results are
+recorded with the corrected release.
 
 The following beta.1 records are historical and retain their original dates,
 binary hashes, device results, and handoff status.
