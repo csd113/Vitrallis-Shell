@@ -30,7 +30,7 @@ No Marshmallow binary, Awesome configuration, X startup file, calibration implem
 ## Files changed for this expansion
 
 - `assets/system/{gear,wifi,sun,speaker,power,restart}.png`, `assets/system/README.md`
-- `src/discovery/store.rs`, `src/process.rs`, `src/lib.rs`
+- `src/platform/pocketchip/store.rs`, `src/process.rs`, `src/lib.rs`
 - `src/platform/mod.rs`, `src/platform/system.rs`, `src/platform/pocketchip.rs`, `src/platform/pocketchip/display.rs`
 - `src/settings.rs`, `src/settings/device.rs`, `src/settings/geometry.rs`, `src/settings/pointer.rs`
 - `src/renderer.rs`, `src/renderer/system.rs`, `src/ui.rs`

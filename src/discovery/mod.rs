@@ -1,7 +1,8 @@
 //! Discovery backends return normalized entries without touching the session or
 //! modifying source metadata. A native package directory can implement this trait.
-mod marshmallow;
-mod store;
+mod catalog;
+mod executable;
+mod pockethome;
 use crate::{
     app::AppEntry,
     config::{Config, Paths},
@@ -41,7 +42,7 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
         "level=info event=discovery_paths config={:?} assets={:?} reserved_native_apps={:?}",
         paths.user_config, paths.asset_roots, paths.native_apps
     );
-    let backend = marshmallow::Marshmallow {
+    let backend = catalog::CatalogFile {
         paths: &paths,
         explicit_config: config.catalog_path.is_some(),
     };
@@ -60,7 +61,7 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
             .map(std::path::PathBuf::from)
             .filter(|path| path.is_absolute())
     {
-        store::integrate(&mut catalog, &home);
+        crate::platform::pocketchip::store::integrate(&mut catalog, &home);
     }
     if config.pocketchip {
         for app in &mut catalog.apps {

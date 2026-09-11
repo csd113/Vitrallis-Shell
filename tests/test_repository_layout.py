@@ -90,6 +90,8 @@ class SourcePackage(unittest.TestCase):
                 'devices/pocketchip/integration/store-patch-manifest.json',
                 'docs/devices/pocketchip.md', 'docs/repository-layout.md',
                 'src/layout.rs', 'src/renderer.rs', 'src/renderer/system.rs',
+                'src/discovery/catalog.rs', 'src/discovery/executable.rs',
+                'src/discovery/pockethome.rs', 'src/platform/pocketchip/store.rs',
             }
             required.update('assets/system/' + name + '.png'
                             for name in ('gear', 'wifi', 'sun', 'speaker', 'power', 'restart'))
@@ -104,6 +106,7 @@ class SourcePackage(unittest.TestCase):
                     self.assertNotIn(name, {
                         'scripts/vitrallis-session.py', 'scripts/run-pocketchip.sh',
                         'scripts/apply-store-patch.py', 'integration/pocketchip-store.patch',
+                        'src/discovery/marshmallow.rs', 'src/discovery/store.rs',
                     })
                 for name in required - {'Cargo.toml'}:
                     with archive.extractfile(members[name]) as stream:

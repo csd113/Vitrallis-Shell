@@ -17,9 +17,20 @@ scripts/
   install-pocketchip.py       Legacy installer forwarding entry point
 src/
   config.rs                   CLI selection and filesystem conventions
+  discovery/
+    catalog.rs                Bounded catalog file loading and source precedence
+    executable.rs             Executable lookup in cwd/PATH order
+    pockethome.rs              PocketHome/Marshmallow format compatibility
+  preferences.rs              Normalized display preferences and clock formatting
+  launcher.rs                 Application selection and lifecycle state
+  process.rs                  Child launching, tracking, and cleanup
   layout.rs                   Reusable dimensions and proportional layout
   input.rs                    Shared SDL keyboard, mouse, and touch translation
   platform/                   Hardware/OS and window/session interfaces
+    pocketchip.rs             PocketCHIP hardware and session policy
+    pocketchip/
+      display.rs              X timeout and time-zone settings
+      store.rs                Device Store and return-to-home catalog entries
 assets/system/                Shared embedded artwork and provenance
 docs/devices/
   pocketchip.md               Installation, selection, and recovery
@@ -43,6 +54,25 @@ there is no general uninstall command. Keep its sibling
 directory when those two files are beside it. See the
 [PocketCHIP guide](devices/pocketchip.md) for the complete payload and recovery
 instructions. No automated downloader or new installer framework is added.
+
+The private `discovery::catalog::CatalogFile` replaces the former `Marshmallow`
+discovery type. Its file selection and bounded reads are separate from
+`discovery::pockethome::parse_catalog`, which retains the exact Apps-page schema,
+JUCE command tokenization, trailing-comma handling, stable `pockethome-*` IDs,
+and preference parsing. Executable lookup moved to `discovery::executable`;
+the shared `Preferences` model and clock formatting remain in `preferences.rs`.
+These responsibilities previously shared `discovery/marshmallow.rs` and
+`Preferences::parse`. The device Store adapter moved from `discovery/store.rs`
+to `platform/pocketchip/store.rs`. The only public Rust entry point is `run`;
+these private moves require no consumer aliases or old-name wrapper files.
+
+Retain `PocketChip`, `config.pocketchip`, and `--pocketchip`: they select actual
+hardware/session behavior, independently of screen dimensions. PocketHome paths,
+format keys, and app IDs remain compatibility data. The Marshmallow return tile
+still names the launcher it returns to. Published `run-pocketchip.sh`,
+`build-pocketchip.sh`, the installer shim, and the Store patch keep their names.
+Historical reports keep the source names and upstream references they recorded;
+this guide describes the current layout.
 
 For a **display profile**, use the existing `src/config.rs` and `src/layout.rs`
 area: `--size WIDTHxHEIGHT` selects dimensions, and `Layout` validates and scales

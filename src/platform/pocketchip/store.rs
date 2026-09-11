@@ -1,7 +1,9 @@
 //! Adapt the existing `PocketCHIP` updater; its explicit catalogue remains the
 //! authority. No repository-provided commands are interpreted by this adapter.
-use super::Catalog;
-use crate::app::{AppEntry, AppManifest};
+use crate::{
+    app::{AppEntry, AppManifest},
+    discovery::Catalog,
+};
 use std::path::Path;
 
 pub fn integrate(catalog: &mut Catalog, home: &Path) {

@@ -1,64 +1,20 @@
-use super::{Catalog, Discovery};
+//! Read-only PocketHome/Marshmallow format compatibility: Apps pages, JUCE
+//! commands, stable IDs, and display preferences. Normalize into shared models.
+use super::{Catalog, executable::resolve};
 use crate::{
     app::{AppEntry, AppManifest},
     config::Paths,
+    preferences::Preferences,
 };
 use serde_json::Value;
-use std::{
-    collections::BTreeMap,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, path::PathBuf};
 
-pub struct Marshmallow<'a> {
-    pub paths: &'a Paths,
-    pub explicit_config: bool,
-}
-impl Discovery for Marshmallow<'_> {
-    fn discover(&self) -> Result<Catalog, String> {
-        let path = match &self.paths.user_config {
-            Some(path)
-                if self.explicit_config
-                    || path
-                        .try_exists()
-                        .map_err(|e| format!("config {}: {e}", path.display()))? =>
-            {
-                path.clone()
-            }
-            _ => self.paths.asset("config.json"),
-        };
-        eprintln!(
-            "level=info event=discovery_source path={:?}",
-            path.to_string_lossy()
-        );
-        if !std::fs::metadata(&path)
-            .map_err(|e| format!("config {}: {e}", path.display()))?
-            .is_file()
-        {
-            return Err("app config must be a regular file".into());
-        }
-        let file =
-            std::fs::File::open(&path).map_err(|e| format!("config {}: {e}", path.display()))?;
-        if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-            return Err("app config must be a regular file".into());
-        }
-        let mut text = String::new();
-        file.take(1024 * 1024 + 1)
-            .read_to_string(&mut text)
-            .map_err(|e| format!("config {}: {e}", path.display()))?;
-        if text.len() > 1024 * 1024 {
-            return Err("app config exceeds 1 MiB".into());
-        }
-        parse(&text, self.paths).map_err(|e| format!("config {}: {e}", path.display()))
-    }
-}
-
-fn parse(text: &str, paths: &Paths) -> Result<Catalog, String> {
+pub(super) fn parse_catalog(text: &str, paths: &Paths) -> Result<Catalog, String> {
     let root: Value = serde_json::from_str(&without_trailing_commas(text))
         .map_err(|e| format!("invalid JSON: {e}"))?;
     let pages = root["pages"].as_array().ok_or("missing pages array")?;
     let mut catalog = Catalog {
-        preferences: crate::preferences::Preferences::parse(&root, paths),
+        preferences: parse_preferences(&root, paths),
         ..Catalog::default()
     };
     let mut ids = BTreeMap::<String, usize>::new();
@@ -74,7 +30,7 @@ fn parse(text: &str, paths: &Paths) -> Result<Catalog, String> {
             continue;
         };
         for (index, item) in items.iter().enumerate() {
-            match entry(item, paths) {
+            match parse_entry(item, paths) {
                 Ok(mut app) => {
                     // Marshmallow has no IDs and permits duplicate commands. Keep all
                     // tiles, with deterministic content IDs and occurrence suffixes.
@@ -97,7 +53,7 @@ fn parse(text: &str, paths: &Paths) -> Result<Catalog, String> {
     if let Some(command) = root.get("wifiCommand") {
         let item =
             serde_json::json!({"name": "System Settings", "shell": command, "icon": "wifiOff.png"});
-        match entry(&item, paths) {
+        match parse_entry(&item, paths) {
             Ok(mut app) => {
                 app.id = "vitrallis-wifi-settings".into();
                 app.icon = None;
@@ -109,11 +65,11 @@ fn parse(text: &str, paths: &Paths) -> Result<Catalog, String> {
     Ok(catalog)
 }
 
-fn entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
+fn parse_entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
     let name = item["name"].as_str().ok_or("name must be a string")?;
     let shell = item["shell"].as_str().ok_or("shell must be a string")?;
     let icon = item["icon"].as_str().ok_or("icon must be a string")?;
-    let (program, mut args) = tokens(shell)?;
+    let (program, mut args) = command_tokens(shell)?;
     let mut env = BTreeMap::new();
     if let Some(value) = item.get("env") {
         for (key, value) in value.as_object().ok_or("env must be an object")? {
@@ -180,34 +136,10 @@ fn entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
     Ok(app)
 }
 
-fn resolve(program: &str, cwd: &Path, search: &[PathBuf]) -> Option<PathBuf> {
-    if program.contains('/') {
-        return Some(cwd.join(program)).filter(|p| executable(p));
-    }
-    search
-        .iter()
-        .map(|p| p.join(program))
-        .find(|p| executable(p))
-}
-fn executable(path: &Path) -> bool {
-    let Ok(metadata) = path.metadata() else {
-        return false;
-    };
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    {
-        metadata.is_file()
-    }
-}
-
 // JUCE fromTokens(command, true) groups using double quotes, retains quotes in
 // arguments, treats single quotes/backslashes literally, and skips empty tokens.
 // Only the executable is unquoted by JUCE's ActiveProcess. Never shell-expand.
-fn tokens(command: &str) -> Result<(String, Vec<std::ffi::OsString>), String> {
+fn command_tokens(command: &str) -> Result<(String, Vec<std::ffi::OsString>), String> {
     if command.contains('\0') {
         return Err("NUL in command".into());
     }
@@ -288,6 +220,32 @@ fn without_trailing_commas(text: &str) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+fn parse_preferences(root: &Value, paths: &Paths) -> Preferences {
+    let mut prefs = Preferences {
+        show_clock: root["showclock"]
+            .as_str()
+            .is_none_or(|v| v.is_empty() || v == "yes"),
+        ampm: root["timeformat"] == "ampm",
+        show_cursor: root["cursor"] != "notvisible",
+        ..Preferences::default()
+    };
+    if let Some(background) = root["background"].as_str() {
+        if background.len() == 6
+            && background
+                .bytes()
+                .all(|c| c.is_ascii_digit() || (b'A'..=b'F').contains(&c))
+        {
+            if let Ok(rgb) = u32::from_str_radix(background, 16) {
+                let bytes = rgb.to_be_bytes();
+                prefs.color = [bytes[1], bytes[2], bytes[3]];
+            }
+        } else if !background.is_empty() && !background.chars().any(char::is_control) {
+            prefs.wallpaper = Some(paths.asset(background));
+        }
+    }
+    prefs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,7 +266,7 @@ mod tests {
         {"name":"Alpha","shell":"/no/such/vitrallis-command","icon":"lost.png"},
         {"name":"Zulu","shell":"sh","icon":""},
         ]},{"name":"Apps","items":[{"name":"Last","shell":"sh","icon":""}]}]}"#;
-        let result = parse(text, &paths())?;
+        let result = parse_catalog(text, &paths())?;
         assert_eq!(
             result
                 .apps
@@ -322,14 +280,15 @@ mod tests {
         assert!(result.apps[1].unavailable.is_some());
         assert_ne!(result.apps[0].id, result.apps[2].id);
         assert_eq!(result.apps[1].icon, Some("/appIcons/default.png".into()));
-        let again = parse(text, &paths())?;
+        let again = parse_catalog(text, &paths())?;
         assert_eq!(again.apps[0].id, result.apps[0].id);
         assert_eq!(stable_id("Zulu", "sh"), result.apps[0].id);
         Ok(())
     }
     #[test]
     fn juce_commands_preserve_quotes_and_do_not_expand_shell_syntax() -> Result<(), String> {
-        let (program, args) = tokens(r#""/bin/echo" "two words" 'single words' $HOME a\ b ;"#)?;
+        let (program, args) =
+            command_tokens(r#""/bin/echo" "two words" 'single words' $HOME a\ b ;"#)?;
         assert_eq!(program, "/bin/echo");
         let args: Vec<_> = args.iter().map(|a| a.to_string_lossy()).collect();
         assert_eq!(
@@ -344,9 +303,9 @@ mod tests {
                 ";"
             ]
         );
-        assert!(tokens("").is_err());
-        assert!(tokens("sh \"unfinished").is_err());
-        assert!(tokens("sh\0bad").is_err());
+        assert!(command_tokens("").is_err());
+        assert!(command_tokens("sh \"unfinished").is_err());
+        assert!(command_tokens("sh\0bad").is_err());
         Ok(())
     }
     #[test]
@@ -357,13 +316,13 @@ mod tests {
         assert_eq!(result["text"], "a,] b\",} c");
         assert_eq!(result["items"][0], 1);
         for text in ["{}", "{bad}", "{\"pages\":false}", "{\"pages\":[,]}"] {
-            assert!(parse(text, &paths()).is_err());
+            assert!(parse_catalog(text, &paths()).is_err());
         }
     }
     #[test]
     fn extensions_are_validated_and_preserved() -> Result<(), String> {
         let item = serde_json::json!({"name":"Tool", "shell":"sh", "icon":"", "cwd":"/tmp", "args":["two words", ""], "env":{"VITRALLIS_TEST":"yes"}});
-        let app = entry(&item, &paths())?;
+        let app = parse_entry(&item, &paths())?;
         assert_eq!(app.manifest.cwd, Some("/tmp".into()));
         assert_eq!(app.manifest.args, ["two words", ""]);
         assert_eq!(
@@ -378,44 +337,36 @@ mod tests {
         ] {
             let mut invalid = item.clone();
             invalid[key] = value;
-            assert!(entry(&invalid, &paths()).is_err());
+            assert!(parse_entry(&invalid, &paths()).is_err());
         }
         Ok(())
     }
 
+    #[cfg(unix)]
     #[test]
-    fn user_catalog_overrides_defaults_without_merging_or_mutation()
+    fn entry_path_override_resolves_against_child_cwd_without_changing_arguments()
     -> Result<(), Box<dyn std::error::Error>> {
         let scratch = crate::test_support::Scratch::new()?;
         let root = &scratch.0;
+        for directory in ["first", "second"] {
+            std::fs::create_dir(root.join(directory))?;
+            std::os::unix::fs::symlink("/bin/sh", root.join(directory).join("tool"))?;
+        }
         let mut paths = paths();
-        paths.user_config = Some(root.join("user.json"));
-        paths.asset_roots = vec![root.clone()];
-        let default =
-            br#"{"pages":[{"name":"Apps","items":[{"name":"Default","shell":"sh","icon":""}]}]}"#;
-        std::fs::write(root.join("config.json"), default)?;
-        let backend = Marshmallow {
-            paths: &paths,
-            explicit_config: false,
-        };
-        assert_eq!(backend.discover()?.apps[0].name, "Default");
-        assert!(!root.join("user.json").exists());
-        let user = br#"{"pages":[{"name":"Apps","items":[]}]}"#;
-        std::fs::write(root.join("user.json"), user)?;
-        assert!(backend.discover()?.apps.is_empty());
-        assert_eq!(std::fs::read(root.join("user.json"))?, user);
-        assert_eq!(std::fs::read(root.join("config.json"))?, default);
-        std::fs::write(root.join("user.json"), "broken")?;
-        assert!(backend.discover().is_err()); // Never silently replace broken user config.
-        std::fs::remove_file(root.join("user.json"))?;
-        assert!(
-            Marshmallow {
-                paths: &paths,
-                explicit_config: true
-            }
-            .discover()
-            .is_err()
+        paths.search_path = vec![root.join("first")];
+        let item = serde_json::json!({
+            "name": "Tool", "shell": "tool \"two words\"", "icon": "",
+            "cwd": root, "env": {"PATH": "second:first"}, "args": ["literal $HOME"]
+        });
+        let app = parse_entry(&item, &paths)?;
+        assert_eq!(app.manifest.entry, root.join("second/tool"));
+        assert_eq!(app.manifest.args, ["\"two words\"", "literal $HOME"]);
+        assert_eq!(app.manifest.cwd.as_deref(), Some(root.as_path()));
+        assert_eq!(
+            app.manifest.env.get(std::ffi::OsStr::new("PATH")),
+            Some(&"second:first".into())
         );
+        assert!(app.unavailable.is_none());
         Ok(())
     }
 
@@ -454,6 +405,35 @@ mod tests {
         }
         std::fs::write(root.join("first/not-executable"), "test")?;
         assert!(resolve("not-executable", root, &paths.asset_roots).is_none());
+        Ok(())
+    }
+    #[test]
+    fn pockethome_preferences_validate_colors_paths_and_types() -> Result<(), String> {
+        let paths = Paths::from_config(&crate::config::Config::default())?;
+        let prefs = parse_preferences(
+            &serde_json::json!({
+                "background": "FF0080", "timeformat": "ampm", "cursor": "notvisible", "showclock": "no"
+            }),
+            &paths,
+        );
+        assert_eq!(prefs.color, [255, 0, 128]);
+        assert!(prefs.wallpaper.is_none());
+        assert!(!prefs.show_clock);
+        assert!(prefs.ampm);
+        assert!(!prefs.show_cursor);
+        let image = parse_preferences(&serde_json::json!({"background": "background.png"}), &paths);
+        assert_eq!(image.wallpaper, Some(paths.asset("background.png")));
+        for background in [
+            serde_json::json!("bad\0path"),
+            serde_json::json!(42),
+            serde_json::Value::Null,
+        ] {
+            assert!(
+                parse_preferences(&serde_json::json!({"background": background}), &paths)
+                    .wallpaper
+                    .is_none()
+            );
+        }
         Ok(())
     }
 }

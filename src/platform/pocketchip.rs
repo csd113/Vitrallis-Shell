@@ -1,5 +1,7 @@
+//! `PocketCHIP` hardware controls and session-specific application policy.
 use super::Platform;
 mod display;
+pub mod store;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PocketChip;
