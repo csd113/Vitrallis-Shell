@@ -18,6 +18,8 @@ The user explicitly authorized this version, commit, push, and GitHub release.
   descriptor retained across a helper fork can no longer keep a completed update
   locked until that helper executes. A regression reproduces the former failure
   and verifies that closing the old descriptor cannot unlock a new installation.
+- The release container trusts only its exact mounted checkout path so Git's
+  final diff validation can run across the runner/container ownership boundary.
 - SDL key-event regression tests cover brightness, volume, Wi-Fi launch, restart,
   shutdown, timeout, time zones, calibration launch, update checks/installation,
   cancellation, and navigation while a hardware operation is pending. Native
@@ -46,6 +48,7 @@ image and is cross-built, not newly executed on hardware.
 Changed files: `AGENTS.md`, `Cargo.toml`, `Cargo.lock`, `README.md`, this report,
 `src/settings.rs`, `src/settings/{device,footer,geometry,keyboard_tests,pointer,update}.rs`,
 `src/renderer.rs`, `src/renderer/system.rs`, and `src/platform/update/{unix,tests}.rs`.
+Release workflow: `.github/workflows/shell-release.yml`.
 
 The following beta.1 records are historical and retain their original dates,
 binary hashes, device results, and handoff status.

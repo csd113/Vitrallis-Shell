@@ -18,6 +18,8 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends libsdl2-dev pkg-config python3 python3-tk gh
           rustup component add rustfmt clippy
+          # The mounted checkout is owned by the host runner, not container root.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Validate shell
         run: sh scripts/validate.sh
       - name: Package shell only
