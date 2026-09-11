@@ -85,6 +85,26 @@ impl<P> ProcessSet<P> {
         self.members.iter().map(|(id, _)| id.clone()).collect()
     }
 }
+impl ProcessSet<NativeProcess> {
+    pub(crate) fn terminate(&mut self, id: &str) -> bool {
+        let Some(index) = self.members.iter().position(|(member, _)| member == id) else {
+            return false;
+        };
+        if self
+            .resume
+            .as_ref()
+            .is_some_and(|resume| resume.app.id == id)
+        {
+            self.resume = None;
+        }
+        if self.active.as_deref() == Some(id) {
+            self.active = None;
+        }
+        // Dropping the owner kills its process group and reaps the direct child.
+        self.members.remove(index);
+        true
+    }
+}
 impl<P: Processes + Default> Processes for ProcessSet<P> {
     fn start(&mut self, app: &AppEntry) -> Result<(), String> {
         if let Some(index) = self.members.iter().position(|(id, _)| id == &app.id) {
@@ -403,6 +423,45 @@ mod tests {
                 ..crate::app::AppManifest::default()
             },
         }
+    }
+    #[test]
+    fn terminate_kills_only_the_named_app_and_cancels_its_resume()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut first = app();
+        first.manifest.args = vec!["-c".into(), "exec sleep 30".into()];
+        let mut second = first.clone();
+        second.id = "second".into();
+        let mut processes = ProcessSet::<NativeProcess>::default();
+        processes.start(&first)?;
+        processes.start(&second)?;
+        let pid = processes.members[0]
+            .1
+            .child
+            .as_ref()
+            .ok_or("missing child")?
+            .id();
+        processes.resume = Some(Resume {
+            app: first.clone(),
+            deadline: Instant::now(),
+            next_attempt: Instant::now(),
+            relaunch_on_exit: true,
+            last_error: None,
+        });
+
+        assert!(!processes.terminate("not-running"));
+        assert!(processes.terminate(&first.id));
+        assert!(processes.resume.is_none());
+        assert_eq!(processes.active.as_deref(), Some("second"));
+        assert_eq!(processes.running_ids(), ["second"]);
+        assert!(processes.members[0].1.poll()?.is_none());
+        let result = Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "pid="])
+            .output()?;
+        assert!(result.stdout.is_empty(), "terminated child still exists");
+        assert!(processes.terminate(&second.id));
+        assert!(processes.active.is_none());
+        assert!(!processes.has_children());
+        Ok(())
     }
     #[test]
     fn command_preserves_arguments_and_working_directory() -> Result<(), String> {

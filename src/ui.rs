@@ -109,6 +109,7 @@ fn event_loop(
             dirty |= exposed(&event);
             dirty |= window_focus(&event, &mut state, &mut pointer, &mut accept_after);
             if Instant::now() >= accept_after {
+                dirty |= terminate_selected(&event, &mut state, &mut child);
                 let (action, system_changed) =
                     translate_action(&event, layout, &mut state, &mut pointer, &mut worker);
                 dirty |= system_changed;
@@ -181,6 +182,32 @@ fn poll_children(
     } else {
         Ok(None)
     }
+}
+
+fn terminate_selected(event: &Event, state: &mut Launcher, child: &mut ProcessSet) -> bool {
+    if state.phase != Phase::Ready
+        || state.settings.open
+        || state.error.is_some()
+        || !matches!(
+            event,
+            Event::KeyDown {
+                keycode: Some(Keycode::Escape),
+                repeat: false,
+                ..
+            }
+        )
+    {
+        return false;
+    }
+    let Some(app) = state.apps.get(state.selected) else {
+        return false;
+    };
+    if !child.terminate(&app.id) {
+        return false;
+    }
+    state.running = child.running_ids();
+    state.finished("APP CLOSED - READY".into());
+    true
 }
 
 fn refresh_utility(
@@ -650,6 +677,63 @@ fn open_requested(state: &mut Launcher, child: &mut impl Processes) -> bool {
 mod tests {
     use super::*;
     use sdl2::mouse::MouseButton;
+    #[test]
+    fn escape_terminates_only_the_highlighted_background_app() -> Result<(), String> {
+        let mut apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        for app in &mut apps {
+            app.manifest = crate::app::AppManifest {
+                entry: "/bin/sh".into(),
+                args: vec!["-c".into(), "exec sleep 30".into()],
+                ..crate::app::AppManifest::default()
+            };
+        }
+        let mut state = Launcher::new(apps, 3, 6)?;
+        let mut child = ProcessSet::default();
+        child.start(&state.apps[0])?;
+        child.start(&state.apps[1])?;
+        state.running = child.running_ids();
+        let mut event = Event::KeyDown {
+            timestamp: 0,
+            window_id: 1,
+            keycode: Some(Keycode::Home),
+            scancode: None,
+            keymod: sdl2::keyboard::Mod::NOMOD,
+            repeat: false,
+        };
+        assert!(!terminate_selected(&event, &mut state, &mut child));
+        if let Event::KeyDown {
+            keycode, repeat, ..
+        } = &mut event
+        {
+            *keycode = Some(Keycode::Escape);
+            *repeat = true;
+        }
+        assert!(!terminate_selected(&event, &mut state, &mut child));
+        if let Event::KeyDown { repeat, .. } = &mut event {
+            *repeat = false;
+        }
+        state.settings.open = true;
+        assert!(!terminate_selected(&event, &mut state, &mut child));
+        state.settings.open = false;
+        state.error = Some("dismiss first".into());
+        assert!(!terminate_selected(&event, &mut state, &mut child));
+        state.error = None;
+        state.started();
+        assert!(!terminate_selected(&event, &mut state, &mut child));
+        state.returned_home();
+        state.selected = 2;
+        assert!(!terminate_selected(&event, &mut state, &mut child));
+        state.selected = 0;
+        assert_eq!(child.running_ids().len(), 2);
+
+        assert!(terminate_selected(&event, &mut state, &mut child));
+        assert_eq!(state.running, [state.apps[1].id.clone()]);
+        assert_eq!(child.running_ids(), state.running);
+        assert_eq!(state.selected, 0);
+        assert_eq!(state.phase, Phase::Ready);
+        assert!(!terminate_selected(&event, &mut state, &mut child));
+        Ok(())
+    }
     #[test]
     fn pending_slider_input_coalesces_to_the_latest_value() -> Result<(), String> {
         use crate::platform::system::{Control, Percent, Status, System, Worker};
