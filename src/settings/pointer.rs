@@ -96,8 +96,8 @@ impl Settings {
         }
         let (id, phase, x, y) = contact(event, layout)?;
         let geometry = PanelLayout::new(layout);
-        let rows = PanelLayout::rows(layout, if self.page == Page::Timezones { 5 } else { 3 });
-        let targets = if self.confirmation.is_some() {
+        let rows = PanelLayout::rows(layout, if self.page == Page::Timezones { 5 } else { 4 });
+        let targets = if self.confirmation.is_some() || self.page == Page::Updates {
             geometry.confirmation.as_slice()
         } else if self.page != Page::General {
             rows.as_slice()
@@ -188,7 +188,7 @@ impl Settings {
             Action::Page(false)
         } else if index == 7
             || (index == 6 && self.page != Page::Timezones)
-            || (index == 5 && self.page == Page::Device)
+            || (index == 5 && matches!(self.page, Page::Device | Page::Updates))
         {
             Action::Back
         } else if index == 5 && self.page == Page::Timezones {
@@ -262,6 +262,29 @@ mod tests {
             Some(Request::Control(Control::Timezone(1)))
         );
         assert_eq!(settings.page, Page::Device);
+        Ok(())
+    }
+    #[test]
+    fn update_buttons_require_matched_release_and_focus_cancels_touch() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let button = PanelLayout::new(&layout).confirmation[1];
+        let (x, y) = (button.x + 5, button.y + 5);
+        let mut settings = Settings::default();
+        settings.show();
+        settings.page(Page::Updates);
+        assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
+        settings.event(&mouse(true, x, y), &layout);
+        settings.lost_focus();
+        assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
+        settings.event(&mouse(true, x, y), &layout);
+        assert_eq!(
+            settings.event(&mouse(false, x, y), &layout),
+            Some(Request::CheckUpdates)
+        );
+        settings.update_confirmation = Some(std::time::Instant::now());
+        settings.event(&mouse(true, x, y), &layout);
+        settings.input(Action::Back);
+        assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
         Ok(())
     }
     #[test]

@@ -605,7 +605,7 @@ mod system_tests {
         let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
         let qa = std::env::var_os("VITRALLIS_QA_DIR").map(std::path::PathBuf::from);
         let output = qa.as_ref().unwrap_or(&scratch.0);
-        for (w, h) in [(480, 272), (800, 480), (1280, 720)] {
+        for (w, h) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
             let window = video
                 .window("system QA", w, h)
                 .hidden()
@@ -646,6 +646,35 @@ mod system_tests {
             state.settings.input(Action::SelectAndActivate(5));
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("device-{w}x{h}.bmp")))?;
+            state.settings.input(Action::SelectAndActivate(3));
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(&canvas, &output.join(format!("updates-{w}x{h}.bmp")))?;
+            state.settings.updater.state =
+                crate::updater::State::Available(crate::updater::tests::release()?);
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(
+                &canvas,
+                &output.join(format!("update-available-{w}x{h}.bmp")),
+            )?;
+            state.settings.input(Action::SelectAndActivate(1));
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(&canvas, &output.join(format!("update-confirm-{w}x{h}.bmp")))?;
+            state.settings.input(Action::Back);
+            state.settings.updater.state = crate::updater::State::Failed(
+                "Update check failed: Version 1.10.0 available; No shell build is available for this platform".into()
+            );
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(&canvas, &output.join(format!("update-error-{w}x{h}.bmp")))?;
+            state.settings.updater.state = crate::updater::State::Installed {
+                version: semver::Version::new(1, 10, 0),
+                durable: true,
+            };
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(
+                &canvas,
+                &output.join(format!("update-installed-{w}x{h}.bmp")),
+            )?;
+            state.settings.input(Action::Back);
             state.settings.input(Action::SelectAndActivate(1));
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("zones-{w}x{h}.bmp")))?;

@@ -306,6 +306,9 @@ pub(super) fn panel(
     settings: &Settings,
     textures: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
+    if settings.page == Page::Updates {
+        return update_panel(canvas, layout, settings);
+    }
     if settings.page != Page::General {
         return device_panel(canvas, layout, settings);
     }
@@ -409,6 +412,7 @@ fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
                 },
             ],
         ),
+        Page::Updates => ("Esc: back   Enter: select", ["< Back", "", ""]),
         Page::Device => ("Left/right: timeout   Enter: select", ["< Back", "", ""]),
         Page::Timezones => (
             "Up/down: select   Enter: apply",
@@ -593,7 +597,7 @@ fn confirmation(
 
 fn device_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
     let zones = settings.page == Page::Timezones;
-    let rows = PanelLayout::rows(layout, if zones { 5 } else { 3 });
+    let rows = PanelLayout::rows(layout, if zones { 5 } else { 4 });
     for (index, bounds) in rows.into_iter().enumerate() {
         if zones {
             let Some(zone) = settings.status.timezones.get(settings.zone_start + index) else {
@@ -638,6 +642,10 @@ fn device_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
                         .timezone
                         .clone()
                         .unwrap_or_else(|| "Unavailable".into()),
+                ),
+                3 => (
+                    "Check for Updates",
+                    format!("Vitrallis Shell {}", crate::updater::VERSION),
                 ),
                 _ => (
                     "Calibrate touchscreen",
@@ -697,4 +705,98 @@ fn timeout_label(timeout: Option<u16>) -> String {
             seconds => format!("< {} minutes >", seconds / 60),
         },
     )
+}
+
+fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
+    use crate::updater::{State, VERSION};
+    let geometry = PanelLayout::new(layout);
+    let confirming = settings.update_confirmation.is_some();
+    let detail = if confirming {
+        match &settings.updater.state {
+            State::Available(release) => format!(
+                "Install Vitrallis Shell {}?\nOnly the shell executable will be replaced.\nRelaunch after installation.",
+                release.version
+            ),
+            _ => "Update no longer available. Cancel and check again.".into(),
+        }
+    } else {
+        settings.updater.state.detail()
+    };
+    let message = format!("Running Vitrallis Shell {VERSION}\n{detail}");
+    let top = layout.title.h + 8;
+    let line_height = 12 * layout.text_scale;
+    let capacity = usize::try_from(layout.title.w / (8 * layout.text_scale))
+        .map_err(|_| "update text width")?
+        .max(1);
+    let max_lines = usize::try_from((geometry.controls[2].y - top - 8) / line_height)
+        .map_err(|_| "update text height")?;
+    let lines = update_lines(&message, capacity);
+    for (index, line) in lines.iter().take(max_lines).enumerate() {
+        label(
+            canvas,
+            line,
+            Rect {
+                x: layout.title.x,
+                y: top + i32::try_from(index).map_err(|_| "update line index")? * line_height,
+                w: layout.title.w,
+                h: line_height,
+            },
+            layout.text_scale,
+            INK,
+        )?;
+    }
+    let action = if confirming {
+        "Confirm Install"
+    } else {
+        match settings.updater.state {
+            State::Available(_) => "Install Update",
+            State::Checking | State::Installing => "Please wait...",
+            State::Installed { .. } => "Relaunch required",
+            _ => "Check for Updates",
+        }
+    };
+    for (index, bounds) in geometry.confirmation.iter().copied().enumerate() {
+        card(canvas, bounds, settings.selected == index)?;
+        text(
+            canvas,
+            if index == 0 {
+                if confirming { "Cancel" } else { "Back" }
+            } else {
+                action
+            },
+            bounds,
+            layout.text_scale,
+            if index == 1 && confirming {
+                AMBER
+            } else {
+                ACCENT
+            },
+        )?;
+    }
+    panel_footer(canvas, layout, settings)
+}
+
+fn update_lines(message: &str, capacity: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in message.lines() {
+        let mut line = String::new();
+        for word in paragraph.split_whitespace() {
+            if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > capacity {
+                lines.push(std::mem::take(&mut line));
+            }
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            for character in word.chars() {
+                if line.chars().count() == capacity {
+                    lines.push(std::mem::take(&mut line));
+                }
+                line.push(character);
+            }
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+    }
+    lines
 }

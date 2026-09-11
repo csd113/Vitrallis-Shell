@@ -100,3 +100,13 @@ self-update so a remote update cannot remove local safety changes.
 Rust 1.91.1 includes the upstream 1.91 patch fixes; the declared MSRV remains
 1.91. CI checks both 1.91.0 and 1.91.1. See the
 [official Rust release notes](https://doc.rust-lang.org/stable/releases.html#version-1911-2025-11-10).
+
+## Shell updater additions
+
+The shell updater adds `semver` 1.x for standard version precedence (including
+prereleases and build metadata) and `sha2` 0.11 with default features disabled
+for streaming SHA-256 verification. Neither existing dependencies nor the
+standard library provide those operations. The hashing crate avoids relying on
+varying external checksum utilities; both additions support Rust 1.91 and keep
+the graph free of duplicate crate versions. Networking uses optional system
+`/usr/bin/curl` rather than adding an HTTP/TLS dependency stack.

@@ -391,6 +391,7 @@ fn refresh_system(
     settings: &mut crate::settings::Settings,
 ) -> bool {
     let mut dirty = settings.expire();
+    dirty |= settings.updater.poll();
     if let Some(worker) = worker {
         if let Some(update) = worker.update() {
             settings.status = update.status;
@@ -449,6 +450,8 @@ fn submit_setting(
     settings: &mut crate::settings::Settings,
 ) {
     match request {
+        Some(crate::settings::Request::CheckUpdates) => settings.updater.check(),
+        Some(crate::settings::Request::InstallUpdate) => settings.updater.install(),
         Some(crate::settings::Request::Calibration) => {
             settings.network = crate::settings::NetworkState::CalibrationRequested;
         }

@@ -3,6 +3,7 @@ pub mod pocketchip;
 
 mod command;
 pub mod system;
+pub mod update;
 
 /// Session policy and an independently refreshed system backend.
 pub trait Platform: system::System + Copy {

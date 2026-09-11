@@ -12,6 +12,7 @@ mod process;
 mod renderer;
 mod settings;
 mod ui;
+mod updater;
 
 /// Run the launcher or its bounded demo child.
 ///

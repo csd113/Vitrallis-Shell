@@ -6,6 +6,7 @@ impl Settings {
         self.page = page;
         self.selected = 0;
         self.confirmation = None;
+        self.update_confirmation = None;
         self.clear_pointer();
         self.message.clear();
     }
@@ -23,11 +24,11 @@ impl Settings {
         }
         match action {
             Action::Move(Direction::Up) => self.selected = self.selected.saturating_sub(1),
-            Action::Move(Direction::Down) => self.selected = (self.selected + 1).min(2),
+            Action::Move(Direction::Down) => self.selected = (self.selected + 1).min(3),
             Action::Move(Direction::Left | Direction::Right) if self.selected == 0 => {
                 return self.timeout(action == Action::Move(Direction::Right));
             }
-            Action::SelectAndActivate(index) if index < 3 => {
+            Action::SelectAndActivate(index) if index < 4 => {
                 self.selected = index;
                 return self.device_input(Action::Activate);
             }
@@ -44,6 +45,7 @@ impl Settings {
                     self.zone_start = index / 5 * 5;
                     self.selected = index % 5;
                 }
+                3 => self.page(Page::Updates),
                 2 if self.status.calibration => return Some(Request::Calibration),
                 _ => self.message = "Control unavailable on this device".into(),
             },

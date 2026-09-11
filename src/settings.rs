@@ -2,6 +2,7 @@
 mod device;
 mod geometry;
 mod pointer;
+mod update;
 pub use geometry::PanelLayout;
 
 use crate::{
@@ -16,6 +17,8 @@ pub enum Request {
     Control(Control),
     Network,
     Calibration,
+    CheckUpdates,
+    InstallUpdate,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +38,7 @@ pub enum Page {
     General,
     Device,
     Timezones,
+    Updates,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -48,6 +52,8 @@ pub enum TimezoneState {
 
 #[derive(Debug, Default)]
 pub struct Settings {
+    pub updater: crate::updater::Updater,
+    pub update_confirmation: Option<Instant>,
     pub timezone: TimezoneState,
     pub page: Page,
     pub zone_start: usize,
@@ -74,12 +80,14 @@ impl Settings {
         self.open = false;
         self.page = Page::General;
         self.confirmation = None;
+        self.update_confirmation = None;
         self.selected = 0;
         self.clear_pointer();
     }
     pub fn lost_focus(&mut self) {
         self.clear_pointer();
-        if self.confirmation.take().is_some() {
+        let update_confirmation = self.update_confirmation.take().is_some();
+        if self.confirmation.take().is_some() || update_confirmation {
             self.selected = 0;
             self.message.clear();
         }
@@ -89,6 +97,15 @@ impl Settings {
         self.preview = None;
     }
     pub fn expire(&mut self) -> bool {
+        if self
+            .update_confirmation
+            .is_some_and(|time| time.elapsed() >= Duration::from_secs(15))
+        {
+            self.update_confirmation = None;
+            self.selected = 0;
+            self.clear_pointer();
+            return true;
+        }
         if self
             .confirmation
             .is_some_and(|(_, time)| time.elapsed() >= Duration::from_secs(15))
@@ -103,6 +120,9 @@ impl Settings {
         }
     }
     pub fn input(&mut self, action: Action) -> Option<Request> {
+        if self.open && self.page == Page::Updates {
+            return self.update_input(action);
+        }
         if self.open && self.page != Page::General {
             return self.device_input(action);
         }
