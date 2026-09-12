@@ -1,3 +1,5 @@
+> Original design reference, not the implemented application contract or a compatibility requirement. Use [application development](docs/app-development.md) and [AGENTS.md](AGENTS.md) for current engineering work.
+
 # Vitrallis Project Reference
 
 ## Overview

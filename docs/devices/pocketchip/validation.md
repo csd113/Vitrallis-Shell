@@ -1,3 +1,5 @@
+> Historical validation record; earlier application formats and version claims below are not current requirements. See [current application-contract validation](../../app-center-validation.md).
+
 > Historical Step 2 notes. Current results are in [release-candidate.md](../../release-candidate.md); installation and recovery are in [PocketCHIP installation and recovery](../pocketchip.md).
 
 # Deferred device validation (Step 2)

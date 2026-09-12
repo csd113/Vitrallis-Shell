@@ -1,5 +1,5 @@
 //! Discovery backends return normalized entries without touching the session or
-//! modifying source metadata. A native package directory can implement this trait.
+//! modifying source metadata. App Center supplies installed manifest packages.
 mod catalog;
 mod executable;
 mod pockethome;
@@ -39,15 +39,19 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
     }
     let paths = Paths::from_config(config)?;
     eprintln!(
-        "level=info event=discovery_paths config={:?} assets={:?} reserved_native_apps={:?}",
-        paths.user_config, paths.asset_roots, paths.native_apps
+        "level=info event=discovery_paths config={:?} assets={:?}",
+        paths.user_config, paths.asset_roots
     );
     let backend = catalog::CatalogFile {
         paths: &paths,
         explicit_config: config.catalog_path.is_some(),
     };
     // A broken catalog leaves a usable empty launcher, with a visible diagnostic.
-    let mut catalog = match backend.discover() {
+    let mut catalog = match if config.pocketchip || config.catalog_path.is_some() {
+        backend.discover()
+    } else {
+        Ok(Catalog::default())
+    } {
         Ok(catalog) => catalog,
         Err(error) if tolerate_invalid => Catalog {
             apps: vec![],
@@ -61,7 +65,7 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
             .map(std::path::PathBuf::from)
             .filter(|path| path.is_absolute())
     {
-        crate::platform::pocketchip::store::integrate(&mut catalog, &home);
+        crate::platform::pocketchip::recovery::integrate(&mut catalog, &home);
     }
     crate::app_center::integrate(&mut catalog);
     if config.pocketchip {

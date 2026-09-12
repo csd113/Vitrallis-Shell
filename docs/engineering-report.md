@@ -1,3 +1,5 @@
+> Historical validation record. Application/store formats, paths and test counts below describe earlier implementations. For the supported contract and current results, see [the application-contract audit](app-center-validation.md). Superseded tools mentioned here are no longer shipped.
+
 > Historical Step 3 record. Current candidate changes and validation are in [release-candidate.md](release-candidate.md).
 
 # Engineering report

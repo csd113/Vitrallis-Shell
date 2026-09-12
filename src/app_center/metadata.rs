@@ -9,7 +9,6 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const CATALOG_LIMIT: usize = 8 * 1024 * 1024;
 pub const FILE_LIMIT: usize = 2 * 1024 * 1024;
 pub const BUNDLE_LIMIT: usize = 16 * 1024 * 1024;
-pub const BITCOIN: &str = "io.vitrallis.bitcoindashboard";
 pub type Files = BTreeMap<String, Vec<u8>>;
 
 struct Unique(Value);
@@ -221,12 +220,6 @@ impl Package {
     pub fn key(&self) -> String {
         format!("{}:{}", self.origin.as_str(), self.id)
     }
-    pub fn legacy(&self) -> bool {
-        self.id == BITCOIN
-            && self.origin.is_default()
-            && self.repository.is_default()
-            && self.directory == "Apps/Bitcoin-Dashboard"
-    }
 }
 pub fn catalog(origin: &Repository, bytes: &[u8]) -> Result<Vec<Package>, String> {
     let doc = json(bytes)?;
@@ -303,17 +296,13 @@ fn parse_source(source: &Value) -> Result<(Repository, String, String), String> 
     let (base, slug) = directory
         .split_once('/')
         .ok_or("Invalid source directory")?;
-    let legacy = base == "Apps"
-        && slug
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c));
-    let native = base == "apps"
+    let canonical = base == "apps"
         && slug.split('-').all(|p| {
             !p.is_empty()
                 && p.bytes()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         });
-    if !legacy && !native {
+    if !canonical {
         return Err("Invalid source directory".into());
     }
     Ok((repository, commit, directory))
@@ -339,6 +328,12 @@ fn parse_inventory(v: &Value) -> Result<Vec<FileRow>, String> {
         })
         .collect::<Result<Vec<_>, String>>()?;
     check_paths(files.iter().map(|f| f.path.as_str()))?;
+    if files.iter().any(|f| f.path.starts_with("tests/")) {
+        return Err("App-local tests must be excluded from device packages".into());
+    }
+    if files.windows(2).any(|rows| rows[0].path >= rows[1].path) {
+        return Err("Inventory must be sorted by ASCII path".into());
+    }
     if files.iter().map(|f| f.size).sum::<usize>() > BUNDLE_LIMIT {
         return Err("Bundle exceeds 16 MiB".into());
     }
@@ -380,77 +375,52 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
     if files.len() != p.files.len() {
         return Err("incomplete inventory".into());
     }
+    if p.files.iter().any(|f| f.path.starts_with("tests/")) {
+        return Err("App-local tests must be excluded from device packages".into());
+    }
     for row in &p.files {
         let bytes = files.get(&row.path).ok_or("missing file")?;
         if bytes.len() != row.size || super::storage::sha(bytes) != row.sha256 {
             return Err(format!("size/SHA-256 mismatch: {}", row.path));
         }
     }
-    if p.legacy() {
-        if p.entry != "bitcoin.py"
-            || p.permissions != serde_json::json!({"network":true,"audio":false,"storage":true})
-        {
-            return Err("Bitcoin package needs a reviewed adapter / matching version".into());
+    for name in [
+        "app.toml",
+        "icon.png",
+        "main.py",
+        "requirements.txt",
+        "README.md",
+    ] {
+        if !files.contains_key(name) {
+            return Err(format!("missing {name}"));
         }
-    } else {
-        for name in [
-            "app.toml",
-            "icon.png",
-            "main.py",
-            "requirements.txt",
-            "README.md",
-        ] {
-            if !files.contains_key(name) {
-                return Err(format!("missing {name}"));
-            }
-        }
-        // Development tests are required in the source repository, but current
-        // catalog v1 device packages omit them. Assets remain part of the payload.
-        if !files.keys().any(|p| p.starts_with("assets/")) {
-            return Err("missing populated assets/".into());
-        }
-        let v = manifest(&files["app.toml"])?;
-        if v["id"] != p.id
-            || v["name"] != p.name
-            || v["version"] != p.version.to_string()
-            || v["entry"] != p.entry
-            || v["permissions"] != p.permissions
-        {
-            return Err("catalog/manifest disagreement".into());
-        }
-        let mut decoder = png::Decoder::new(std::io::Cursor::new(&files["icon.png"]));
-        decoder.set_limits(png::Limits {
-            bytes: 4 * 1024 * 1024,
-        });
-        let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
-        let info = reader.info();
-        if !(1..=512).contains(&info.width) || !(1..=512).contains(&info.height) || info.interlaced
-        {
-            return Err("invalid icon dimensions/interlacing".into());
-        }
-        let mut pixels = vec![0; reader.output_buffer_size()];
-        reader.next_frame(&mut pixels).map_err(|e| e.to_string())?;
-        reader.finish().map_err(|e| e.to_string())?;
     }
+    // Development tests are required in the source repository, but current
+    // catalog v1 device packages omit them. Assets remain part of the payload.
+    if !files.keys().any(|p| p.starts_with("assets/")) {
+        return Err("missing populated assets/".into());
+    }
+    let v = manifest(&files["app.toml"])?;
+    if v["id"] != p.id
+        || v["name"] != p.name
+        || v["version"] != p.version.to_string()
+        || v["entry"] != p.entry
+        || v["permissions"] != p.permissions
+    {
+        return Err("catalog/manifest disagreement".into());
+    }
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(&files["icon.png"]));
+    decoder.set_limits(png::Limits {
+        bytes: 4 * 1024 * 1024,
+    });
+    let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
+    let info = reader.info();
+    if !(1..=512).contains(&info.width) || !(1..=512).contains(&info.height) || info.interlaced {
+        return Err("invalid icon dimensions/interlacing".into());
+    }
+    let mut pixels = vec![0; reader.output_buffer_size()];
+    reader.next_frame(&mut pixels).map_err(|e| e.to_string())?;
+    reader.finish().map_err(|e| e.to_string())?;
+
     Ok(())
-}
-pub fn legacy_version(bytes: &[u8]) -> Option<Version> {
-    let s = std::str::from_utf8(bytes).ok()?;
-    let mut matches = s
-        .lines()
-        .filter_map(|l| l.strip_prefix("VERSION"))
-        .filter_map(|l| l.trim_start().strip_prefix('='));
-    let value = matches.next()?.trim();
-    if matches.next().is_some() {
-        return None;
-    }
-    let quote = value.chars().next()?;
-    if !matches!(quote, '\'' | '"') {
-        return None;
-    }
-    let end = value[1..].find(quote)? + 1;
-    if !value[end + 1..].trim().is_empty() && !value[end + 1..].trim().starts_with('#') {
-        return None;
-    }
-    version(&value[1..end]).ok()
 }

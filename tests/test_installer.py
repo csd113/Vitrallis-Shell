@@ -206,12 +206,7 @@ class Installer(unittest.TestCase):
         canonical.mkdir(parents=True, exist_ok=True)
         for name in ('install.py', 'vitrallis-session.py'):
             shutil.copyfile(DEVICE / name, canonical / name)
-        if layout == 'canonical':
-            entry = canonical / 'install.py'
-        else:
-            entry = stage / 'scripts/install-pocketchip.py' if layout == 'checkout' else stage / 'install-pocketchip.py'
-            entry.parent.mkdir(exist_ok=True)
-            shutil.copyfile(ROOT / 'scripts/install-pocketchip.py', entry)
+        entry = canonical / 'install.py'
         result = self.run_installer(entry, str(self.binary.relative_to(self.home)))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.target / 'vitrallis').read_bytes(), self.binary.read_bytes())
@@ -219,39 +214,11 @@ class Installer(unittest.TestCase):
         self.assertIn(str(self.target), result.stdout)
         self.assertFalse((self.target / '.installation-pending').exists())
 
-    def test_checkout_shim_stages_from_unrelated_cwd_with_spaces(self):
+    def test_checkout_installer_stages_from_unrelated_cwd_with_spaces(self):
         self.stage_and_install('checkout')
 
     def test_canonical_pair_stages_from_unrelated_cwd_with_spaces(self):
         self.stage_and_install('canonical')
-
-    def test_standalone_legacy_bundle_stages_without_checkout(self):
-        self.stage_and_install('legacy')
-
-    def test_missing_canonical_fails_without_mutation(self):
-        entry = self.source / 'install-pocketchip.py'
-        shutil.copyfile(ROOT / 'scripts/install-pocketchip.py', entry)
-        before = self.config.read_bytes()
-        result = self.run_installer(entry, str(self.binary))
-        self.assertEqual(result.returncode, 1)
-        self.assertIn('place install.py and vitrallis-session.py beside', result.stderr)
-        self.assertEqual(self.config.read_bytes(), before)
-        self.assertFalse((self.config.parent / 'vitrallis-install.lock').exists())
-        self.assertFalse(self.target.exists())
-
-    def test_shim_preserves_arguments_and_exit_status(self):
-        entry = self.source / 'install-pocketchip.py'
-        shutil.copyfile(ROOT / 'scripts/install-pocketchip.py', entry)
-        (self.source / 'install.py').write_text(
-            'import json, sys\n'
-            'print(json.dumps(sys.argv[1:]))\n'
-            'raise SystemExit(23)\n'
-        )
-        args = ['binary with spaces', '--unknown-option', 'literal $HOME']
-        result = self.run_installer(entry, *args)
-        self.assertEqual(result.returncode, 23, result.stderr)
-        self.assertEqual(json.loads(result.stdout), args)
-        self.assertFalse(self.target.exists())
 
     def test_missing_adjacent_session_fails_before_installing_files(self):
         entry = self.source / 'install.py'

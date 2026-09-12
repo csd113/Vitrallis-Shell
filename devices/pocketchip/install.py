@@ -215,7 +215,7 @@ def install_locked(binary, source, home):
 if __name__ == '__main__':
     try:
         if len(sys.argv) != 2 or os.geteuid() == 0:
-            raise ValueError('Run as your normal user: install-pocketchip.py ARM_BINARY')
+            raise ValueError('Run as your normal user: install.py ARM_BINARY')
         install(Path(sys.argv[1]), Path(__file__).resolve().parent, Path.home())
     except (OSError, ValueError, TypeError, SyntaxError) as error:
         print('Install failed: ' + str(error), file=sys.stderr)

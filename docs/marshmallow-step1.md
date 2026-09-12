@@ -1,3 +1,5 @@
+> Historical validation record; earlier application formats and version claims below are not current requirements. See [current application-contract validation](app-center-validation.md).
+
 # Marshmallow Step 1 integration audit
 
 Only launcher/session, layout, input, assets, and app lifecycle code was inspected. Battery, networking, audio management, settings and other subsystems were not audited or implemented. Incidental code in the startup file was not ported.

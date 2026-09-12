@@ -1,3 +1,5 @@
+> Historical validation record. Application/store formats, paths and test counts below describe earlier implementations. For the supported contract and current results, see [the application-contract audit](app-center-validation.md). Superseded tools mentioned here are no longer shipped.
+
 # Repository cleanup validation — 2026-09-10
 
 PocketCHIP installation/session files and device documentation are now grouped

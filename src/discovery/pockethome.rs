@@ -1,4 +1,4 @@
-//! Read-only PocketHome/Marshmallow format compatibility: Apps pages, JUCE
+//! Read-only integration with the `PocketCHIP` OS menu: Apps pages, JUCE
 //! commands, stable IDs, and display preferences. Normalize into shared models.
 use super::{Catalog, executable::resolve};
 use crate::{
@@ -7,7 +7,7 @@ use crate::{
     preferences::Preferences,
 };
 use serde_json::Value;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::collections::BTreeMap;
 
 pub(super) fn parse_catalog(text: &str, paths: &Paths) -> Result<Catalog, String> {
     let root: Value = serde_json::from_str(&without_trailing_commas(text))
@@ -69,34 +69,18 @@ fn parse_entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
     let name = item["name"].as_str().ok_or("name must be a string")?;
     let shell = item["shell"].as_str().ok_or("shell must be a string")?;
     let icon = item["icon"].as_str().ok_or("icon must be a string")?;
-    let (program, mut args) = command_tokens(shell)?;
-    let mut env = BTreeMap::new();
-    if let Some(value) = item.get("env") {
-        for (key, value) in value.as_object().ok_or("env must be an object")? {
-            env.insert(
-                key.into(),
-                value
-                    .as_str()
-                    .ok_or("environment values must be strings")?
-                    .into(),
-            );
-        }
+    if item.as_object().is_none_or(|fields| {
+        fields
+            .keys()
+            .any(|key| !matches!(key.as_str(), "name" | "shell" | "icon"))
+    }) {
+        return Err("Device menu entries require name, shell and icon only".into());
     }
-    if let Some(value) = item.get("args") {
-        for arg in value.as_array().ok_or("args must be an array")? {
-            args.push(arg.as_str().ok_or("arguments must be strings")?.into());
-        }
-    }
-    let cwd = item
-        .get("cwd")
-        .map(|v| v.as_str().ok_or("cwd must be a string").map(PathBuf::from))
-        .transpose()?;
+    let (program, args) = command_tokens(shell)?;
     let mut manifest = AppManifest {
         entry: paths.cwd.join(&program),
         args,
-        cwd,
-        env,
-        runtime: None,
+        ..AppManifest::default()
     };
     // Validate untrusted fields before searching for executables, or launching.
     let mut app = AppEntry {
@@ -111,19 +95,11 @@ fn parse_entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
         unavailable: None,
     };
     app.validate()?;
-    let cwd = manifest.cwd.as_deref().unwrap_or(&paths.cwd);
-    let search: Vec<_> = manifest.env.get(std::ffi::OsStr::new("PATH")).map_or_else(
-        || paths.search_path.clone(),
-        |p| std::env::split_paths(p).map(|p| cwd.join(p)).collect(),
-    );
-    let resolved = resolve(&program, cwd, &search);
+    let resolved = resolve(&program, &paths.cwd, &paths.search_path);
     if let Some(path) = resolved {
         manifest.entry = path;
     } else {
         app.unavailable = Some(format!("command not found or not executable: {program}"));
-    }
-    if !cwd.is_dir() {
-        app.unavailable = Some(format!("working directory unavailable: {}", cwd.display()));
     }
     if app
         .icon
@@ -253,7 +229,6 @@ mod tests {
         Paths {
             user_config: None,
             asset_roots: vec!["/missing-assets".into()],
-            native_apps: None,
             cwd: "/".into(),
             search_path: vec!["/bin".into(), "/usr/bin".into()],
         }
@@ -320,54 +295,17 @@ mod tests {
         }
     }
     #[test]
-    fn extensions_are_validated_and_preserved() -> Result<(), String> {
-        let item = serde_json::json!({"name":"Tool", "shell":"sh", "icon":"", "cwd":"/tmp", "args":["two words", ""], "env":{"VITRALLIS_TEST":"yes"}});
-        let app = parse_entry(&item, &paths())?;
-        assert_eq!(app.manifest.cwd, Some("/tmp".into()));
-        assert_eq!(app.manifest.args, ["two words", ""]);
-        assert_eq!(
-            app.manifest.env.get(std::ffi::OsStr::new("VITRALLIS_TEST")),
-            Some(&"yes".into())
-        );
+    fn device_menu_rejects_non_contract_fields() {
         for (key, value) in [
-            ("env", serde_json::json!({"BAD=KEY":"value"})),
-            ("cwd", serde_json::json!("relative")),
-            ("args", serde_json::json!([42])),
+            ("env", serde_json::json!({"KEY":"value"})),
+            ("cwd", serde_json::json!("/tmp")),
+            ("args", serde_json::json!(["arg"])),
             ("name", serde_json::json!("\n")),
         ] {
-            let mut invalid = item.clone();
-            invalid[key] = value;
-            assert!(parse_entry(&invalid, &paths()).is_err());
+            let mut item = serde_json::json!({"name":"Tool", "shell":"sh", "icon":""});
+            item[key] = value;
+            assert!(parse_entry(&item, &paths()).is_err());
         }
-        Ok(())
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn entry_path_override_resolves_against_child_cwd_without_changing_arguments()
-    -> Result<(), Box<dyn std::error::Error>> {
-        let scratch = crate::test_support::Scratch::new()?;
-        let root = &scratch.0;
-        for directory in ["first", "second"] {
-            std::fs::create_dir(root.join(directory))?;
-            std::os::unix::fs::symlink("/bin/sh", root.join(directory).join("tool"))?;
-        }
-        let mut paths = paths();
-        paths.search_path = vec![root.join("first")];
-        let item = serde_json::json!({
-            "name": "Tool", "shell": "tool \"two words\"", "icon": "",
-            "cwd": root, "env": {"PATH": "second:first"}, "args": ["literal $HOME"]
-        });
-        let app = parse_entry(&item, &paths)?;
-        assert_eq!(app.manifest.entry, root.join("second/tool"));
-        assert_eq!(app.manifest.args, ["\"two words\"", "literal $HOME"]);
-        assert_eq!(app.manifest.cwd.as_deref(), Some(root.as_path()));
-        assert_eq!(
-            app.manifest.env.get(std::ffi::OsStr::new("PATH")),
-            Some(&"second:first".into())
-        );
-        assert!(app.unavailable.is_none());
-        Ok(())
     }
 
     #[test]
@@ -388,7 +326,7 @@ mod tests {
         );
         assert_eq!(
             paths.asset("/absolute/icon.png"),
-            PathBuf::from("/absolute/icon.png")
+            std::path::PathBuf::from("/absolute/icon.png")
         );
         #[cfg(unix)]
         {

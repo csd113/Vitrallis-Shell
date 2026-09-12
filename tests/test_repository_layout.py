@@ -1,5 +1,4 @@
 """Host-only regression checks for build paths and the shipped source archive."""
-import json
 import os
 from pathlib import Path
 import shutil
@@ -69,7 +68,7 @@ class BuildPaths(unittest.TestCase):
 
 
 class SourcePackage(unittest.TestCase):
-    def test_archive_contains_installation_pair_patch_bundle_and_embedded_assets(self):
+    def test_archive_contains_installation_pair_and_embedded_assets(self):
         with tempfile.TemporaryDirectory(prefix='vitrallis source package ') as temp:
             output = Path(temp).resolve() / 'package output'
             result = subprocess.run([
@@ -81,17 +80,14 @@ class SourcePackage(unittest.TestCase):
             self.assertEqual(len(archives), 1)
             required = {
                 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'README.md',
-                'scripts/install-pocketchip.py', 'scripts/build-pocketchip.sh',
+                'scripts/build-pocketchip.sh',
                 'scripts/validate.sh', 'devices/pocketchip/install.py',
                 'devices/pocketchip/vitrallis-session.py',
                 'devices/pocketchip/run-pocketchip.sh',
-                'devices/pocketchip/apply-store-patch.py',
-                'devices/pocketchip/integration/pocketchip-store.patch',
-                'devices/pocketchip/integration/store-patch-manifest.json',
                 'docs/devices/pocketchip.md', 'docs/repository-layout.md',
                 'src/layout.rs', 'src/renderer.rs', 'src/renderer/system.rs',
                 'src/discovery/catalog.rs', 'src/discovery/executable.rs',
-                'src/discovery/pockethome.rs', 'src/platform/pocketchip/store.rs',
+                'src/discovery/pockethome.rs', 'src/platform/pocketchip/recovery.rs',
             }
             required.update('assets/system/' + name + '.png'
                             for name in ('gear', 'wifi', 'sun', 'speaker', 'power', 'restart'))
@@ -111,9 +107,7 @@ class SourcePackage(unittest.TestCase):
                 for name in required - {'Cargo.toml'}:
                     with archive.extractfile(members[name]) as stream:
                         self.assertEqual(stream.read(), (ROOT / name).read_bytes(), name)
-                manifest_name = 'devices/pocketchip/integration/store-patch-manifest.json'
-                with archive.extractfile(members[manifest_name]) as stream:
-                    self.assertEqual(len(json.load(stream)['files']), 5)
+
 
 
 if __name__ == '__main__':

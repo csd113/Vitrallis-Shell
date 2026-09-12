@@ -194,13 +194,9 @@ pub fn bundle(
             return Err("Duplicate Git path".into());
         }
     }
-    // Catalog v1 publishes app-local tests separately from device packages.
-    // Retain compatibility with older catalogs that included the full directory;
-    // a catalog including any test file must still include every test file.
+    // Device packages always exclude app-local development tests.
     metadata::check_paths(inventory.keys().copied())?;
-    if !p.files.iter().any(|file| file.path.starts_with("tests/")) {
-        inventory.retain(|name, _| !name.starts_with("tests/"));
-    }
+    inventory.retain(|name, _| !name.starts_with("tests/"));
     if inventory.len() != p.files.len()
         || p.files
             .iter()

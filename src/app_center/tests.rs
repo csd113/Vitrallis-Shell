@@ -21,7 +21,7 @@ fn fixture_icon() -> Result<Vec<u8>, String> {
     }
     Ok(bytes)
 }
-fn generic() -> Result<(Package, Files), String> {
+pub(super) fn generic() -> Result<(Package, Files), String> {
     let files = Files::from([
         (
             "app.toml".into(),
@@ -32,7 +32,6 @@ fn generic() -> Result<(Package, Files), String> {
         ("README.md".into(), b"Fixture package".to_vec()),
         ("requirements.txt".into(), b"# no dependencies\n".to_vec()),
         ("assets/greeting.txt".into(), b"Hello".to_vec()),
-        ("tests/test_main.py".into(), b"# fixture\n".to_vec()),
     ]);
     let v = metadata::manifest(&files["app.toml"])?;
     let origin = sources::Repository::parse("example/catalog")?;
@@ -52,7 +51,7 @@ fn generic() -> Result<(Package, Files), String> {
     };
     Ok((inventory(p, &files), files))
 }
-fn inventory(mut p: Package, files: &Files) -> Package {
+pub(super) fn inventory(mut p: Package, files: &Files) -> Package {
     p.files = files
         .iter()
         .map(|(path, b)| metadata::FileRow {
@@ -63,7 +62,7 @@ fn inventory(mut p: Package, files: &Files) -> Package {
         .collect();
     p
 }
-fn locations() -> Result<(crate::test_support::Scratch, Locations), String> {
+pub(super) fn locations() -> Result<(crate::test_support::Scratch, Locations), String> {
     let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
     let home = scratch.0.canonicalize().map_err(|e| e.to_string())?;
     let data = home.join(".local/share");
@@ -86,7 +85,7 @@ fn sources_normalize_persist_batch_and_keep_default() -> Result<(), String> {
     )?;
     assert_eq!(s.catalogs.len(), 3);
     s.remove(0);
-    assert!(s.catalogs[0].is_default());
+    assert_eq!(s.catalogs[0].as_str(), sources::DEFAULT);
     s.save(&loc.sources)?;
     let mut s = Sources::load(&loc.sources)?;
     s.edit(Some(1), "new/repo")?;
@@ -119,7 +118,9 @@ fn actual_catalog_and_manifest_contracts_reject_malicious_metadata() -> Result<(
     let bytes = std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?;
     let origin = sources::Repository::parse(sources::DEFAULT)?;
     let p = metadata::catalog(&origin, &bytes)?;
-    assert!(p[0].legacy());
+    assert_eq!(p[0].directory, "apps/bitcoin-dashboard");
+    assert_eq!(p[0].entry, "main.py");
+    assert!(!p[0].installable);
     assert!(metadata::json(br#"{"a":1,"a":2}"#).is_err());
     assert!(metadata::json(br#"{"nested":{"a":1,"a":2}}"#).is_err());
     for names in [
@@ -298,7 +299,7 @@ fn branch_resolution_complete_inventory_and_partial_failures() -> Result<(), Str
     Ok(())
 }
 #[test]
-fn native_install_update_repair_origin_and_local_edit_protections() -> Result<(), String> {
+fn install_update_repair_origin_and_local_edit_protections() -> Result<(), String> {
     let (_scratch, loc) = locations()?;
     let (p, mut files) = generic()?;
     // A headless fixture avoids a toolkit prerequisite; real runtime checks still run.
@@ -362,30 +363,23 @@ fn native_install_update_repair_origin_and_local_edit_protections() -> Result<()
     Ok(())
 }
 #[test]
-fn legacy_path_support_customizations_pending_and_stale_check() -> Result<(), String> {
+fn launcher_customizations_pending_and_stale_check() -> Result<(), String> {
     let (_scratch, loc) = locations()?;
-    let bytes = std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?;
-    let p = metadata::catalog(&sources::Repository::parse(sources::DEFAULT)?, &bytes)?.remove(0);
-    let mut files = Files::from([("icon.png".into(), fixture_icon()?)]);
-    // Fixed adapter layout and literal version, without a GUI runtime prerequisite.
-    files.insert(
-        "bitcoin.py".into(),
-        format!("VERSION = '{}'\n", p.version).into_bytes(),
-    );
-    let p = inventory(p, &files);
+    let (p, files) = generic()?;
     let checked = install::prepare(&loc, p.clone(), files.clone())?;
     install::install(&loc, &checked)?;
-    let root = loc.home.join(".local/share/pocket-bitcoin");
-    assert!(root.join("bitcoin.py").is_file());
+    let root = loc.root(&p);
+    let launcher = loc.state.join("launchers").join(&p.id);
+    assert!(root.join("main.py").is_file());
     let custom = FileData {
         bytes: b"#!/bin/sh\n# custom\n".to_vec(),
         mode: 0o755,
     };
-    storage::atomic(&root.join("launch"), &custom)?;
-    std::fs::remove_file(root.join("bitcoin.png")).map_err(|e| e.to_string())?;
+    storage::atomic(&launcher, &custom)?;
+    std::fs::remove_file(root.join("icon.png")).map_err(|e| e.to_string())?;
     let repair = install::prepare(&loc, p.clone(), files.clone())?;
     install::install(&loc, &repair)?;
-    assert_eq!(storage::read(&root.join("launch"), 1024)?, Some(custom));
+    assert_eq!(storage::read(&launcher, 1024)?, Some(custom));
     storage::atomic(
         &root.join(".installation-pending"),
         &FileData {
@@ -403,7 +397,7 @@ fn legacy_path_support_customizations_pending_and_stale_check() -> Result<(), St
     assert!(install::install(&loc, &repair).is_err());
     let repair = install::prepare(&loc, p, files)?;
     storage::atomic(
-        &root.join("bitcoin.py"),
+        &root.join("main.py"),
         &FileData {
             bytes: b"later edit".to_vec(),
             mode: 0o644,
@@ -485,29 +479,16 @@ fn syntax_preflight_never_executes_app_code_and_reports_dependencies() -> Result
         )
         .into_bytes(),
     );
-    let runtime = runtime::detect(&loc.home, &loc.root(&p), &files)?;
+    let runtime = runtime::detect(&loc.root(&p), &files)?;
     runtime::validate(&runtime, &files)?;
     assert!(!marker.exists());
-    assert_eq!(
-        runtime::legacy_version(&runtime, b"\"\"\"\nVERSION = '1.0.0'\n\"\"\"\n")?,
-        None
-    );
-    assert_eq!(
-        runtime::legacy_version(&runtime, b"VERSION: str = '1.10.0'\n")?,
-        Some(metadata::version("1.10.0")?)
-    );
-    assert_eq!(
-        runtime::legacy_version(&runtime, b"VERSION = '1.0.0'\nVERSION = '2.0.0'\n")?,
-        None
-    );
-    assert!(metadata::version("999999999999999999999999.0.0")? > metadata::version("1.0.0")?);
     files.insert("main.py".into(), b"def broken(:\n".to_vec());
     assert!(runtime::validate(&runtime, &files).is_err());
     files.insert(
         "requirements.txt".into(),
         b"vitrallis-test-missing-distribution-123456==99.99\n".to_vec(),
     );
-    assert!(runtime::detect(&loc.home, &loc.root(&p), &files).is_err());
+    assert!(runtime::detect(&loc.root(&p), &files).is_err());
     Ok(())
 }
 #[cfg(unix)]
@@ -550,60 +531,6 @@ fn running_app_identity_is_rechecked_and_only_exact_script_is_closed() -> Result
     )?;
     let status = child.0.wait().map_err(|e| e.to_string())?;
     assert!(!status.success());
-    Ok(())
-}
-
-#[cfg(unix)]
-#[test]
-fn unsafe_pockethome_menu_does_not_block_legacy_installation() -> Result<(), String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let (_scratch, loc) = locations()?;
-    let menu = loc.home.join(".pocket-home");
-    let config = menu.join("config.json");
-    storage::directory(&menu)?;
-    let original = br#"{"pages":[{"name":"Apps","items":[]}]}"#;
-    std::fs::write(&config, original).map_err(|e| e.to_string())?;
-    std::fs::set_permissions(&menu, std::fs::Permissions::from_mode(0o775))
-        .map_err(|e| e.to_string())?;
-    assert!(storage::read(&config, 1024).is_err());
-    let bytes = std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?;
-    let package =
-        metadata::catalog(&sources::Repository::parse(sources::DEFAULT)?, &bytes)?.remove(0);
-    let files = Files::from([
-        ("icon.png".into(), fixture_icon()?),
-        (
-            "bitcoin.py".into(),
-            format!("VERSION = '{}'\n", package.version).into_bytes(),
-        ),
-    ]);
-    let package = inventory(package, &files);
-    let checked = install::prepare(&loc, package.clone(), files.clone())?;
-    assert!(checked.status.contains("PocketHome menu unchanged"));
-    assert!(
-        checked
-            .prepared
-            .as_ref()
-            .is_some_and(|p| p.writes.iter().all(|w| w.path != config))
-    );
-    install::install(&loc, &checked)?;
-    assert!(loc.root(&package).join("bitcoin.py").is_file());
-    assert_eq!(std::fs::read(&config).map_err(|e| e.to_string())?, original);
-    assert_eq!(
-        std::fs::metadata(&menu).map_err(|e| e.to_string())?.mode() & 0o777,
-        0o775
-    );
-    // A safe PocketHome menu still receives the normal compatibility entry.
-    std::fs::set_permissions(&menu, std::fs::Permissions::from_mode(0o755))
-        .map_err(|e| e.to_string())?;
-    let checked = install::prepare(&loc, package.clone(), files.clone())?;
-    assert!(!checked.status.contains("PocketHome menu unchanged"));
-    install::install(&loc, &checked)?;
-    let updated = metadata::json(&std::fs::read(&config).map_err(|e| e.to_string())?)?;
-    assert_eq!(updated["pages"][0]["items"][0]["name"], "Bitcoin CAD");
-    // Unsafe application storage must still block preparation and writes.
-    std::fs::set_permissions(loc.root(&package), std::fs::Permissions::from_mode(0o775))
-        .map_err(|e| e.to_string())?;
-    assert!(install::prepare(&loc, package, files).is_err());
     Ok(())
 }
 
@@ -767,8 +694,7 @@ fn metadata_only_check_and_selected_install_update_use_one_download_per_file() -
     Ok(())
 }
 #[test]
-fn catalog_advertising_more_than_old_ram_limit_is_all_available_without_payloads()
--> Result<(), String> {
+fn large_catalog_is_available_without_downloading_payloads() -> Result<(), String> {
     let (_scratch, loc) = locations()?;
     let (p, files) = generic()?;
     let mut fetch = transport(&p, &files)?;
@@ -1034,8 +960,7 @@ fn stream_io_failure_discards_partial_download() {
 }
 
 #[test]
-fn device_inventory_excludes_only_app_local_tests_and_keeps_legacy_catalogs() -> Result<(), String>
-{
+fn device_inventory_excludes_only_app_local_tests() -> Result<(), String> {
     let (p, mut files) = generic()?;
     files.insert(
         "tests/test_layout.py".into(),
@@ -1047,7 +972,8 @@ fn device_inventory_excludes_only_app_local_tests_and_keeps_legacy_catalogs() ->
     );
     let full = inventory(p, &files);
     let fetch = transport(&full, &files)?;
-    assert_eq!(network::bundle(&fetch, &full, |_| Ok(()))?, files);
+    assert!(network::bundle(&fetch, &full, |_| Ok(())).is_err());
+    assert!(metadata::validate_bundle(&full, &files).is_err());
     let mut device = full.clone();
     device.files.retain(|f| !f.path.starts_with("tests/"));
     fetch.requests.borrow_mut().clear();
@@ -1072,28 +998,17 @@ fn device_inventory_excludes_only_app_local_tests_and_keeps_legacy_catalogs() ->
         assert!(network::bundle(&fetch, &bad, |_| Ok(())).is_err());
     }
     let mut partial = full;
-    partial.files.retain(|f| f.path != "tests/test_layout.py");
+    partial
+        .files
+        .retain(|f| f.path != "assets/tests/example.txt");
     assert!(network::bundle(&fetch, &partial, |_| Ok(())).is_err());
     Ok(())
 }
 
 #[test]
-fn bitcoin_device_inventory_omits_tests_but_rejects_unsafe_git_entries() -> Result<(), String> {
-    let origin = sources::Repository::parse(sources::DEFAULT)?;
-    let p = metadata::catalog(
-        &origin,
-        &std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?,
-    )?
-    .remove(0);
-    let files = Files::from([
-        (
-            "bitcoin.py".into(),
-            format!("VERSION = '{}'\n", p.version).into_bytes(),
-        ),
-        ("docs/dashboard.png".into(), fixture_icon()?),
-        ("tests/test_bitcoin.py".into(), b"# test\n".to_vec()),
-        ("tests/test_layout.py".into(), b"# layout test\n".to_vec()),
-    ]);
+fn device_inventory_rejects_unsafe_git_entries_even_in_excluded_tests() -> Result<(), String> {
+    let (p, mut files) = generic()?;
+    files.insert("tests/test_main.py".into(), b"# test\n".to_vec());
     let full = inventory(p, &files);
     let mut fetch = transport(&full, &files)?;
     let mut device = full;
@@ -1101,14 +1016,14 @@ fn bitcoin_device_inventory_omits_tests_but_rejects_unsafe_git_entries() -> Resu
     let (_scratch, loc) = locations()?;
     let row = install::check(&loc, device.clone())?;
     selected_install(&loc, &test_sources(&device), &row, &fetch)?;
-    assert!(loc.root(&device).join("bitcoin.py").is_file());
+    assert!(loc.root(&device).join("main.py").is_file());
     assert!(!loc.root(&device).join("tests").exists());
     assert!(
         !fetch
             .requests
             .borrow()
             .iter()
-            .any(|u| u.contains("/Bitcoin-Dashboard/tests/"))
+            .any(|u| u.contains("/hello/tests/"))
     );
     let tree = format!(
         "https://api.github.com/repos/{}/git/trees/{}?recursive=1",
@@ -1201,150 +1116,6 @@ fn uninstall_removes_receipted_app_and_shortcuts_preserving_data_and_other_apps(
     Ok(())
 }
 
-#[test]
-fn uninstall_bitcoin_removes_only_its_menu_entries_and_supports_legacy_installations()
--> Result<(), String> {
-    for receipt in [true, false] {
-        let (_scratch, loc) = locations()?;
-        let p = metadata::catalog(
-            &sources::Repository::parse(sources::DEFAULT)?,
-            &std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?,
-        )?
-        .remove(0);
-        let files = Files::from([
-            (
-                "bitcoin.py".into(),
-                format!("VERSION = '{}'\n", p.version).into_bytes(),
-            ),
-            ("icon.png".into(), fixture_icon()?),
-        ]);
-        let p = inventory(p, &files);
-        let menu = loc.home.join(".pocket-home/config.json");
-        storage::atomic(&menu, &FileData { bytes: br#"{"pages":[{"name":"Apps","items":[{"name":"Bitcoin CAD","shell":"/another/launch"}]}]}"#.to_vec(), mode: 0o600 })?;
-        install::install(&loc, &install::prepare(&loc, p.clone(), files)?)?;
-        let root = loc.root(&p);
-        let mut contents = metadata::json(&std::fs::read(&menu).map_err(|e| e.to_string())?)?;
-        contents["pages"][0]["items"]
-            .as_array_mut()
-            .ok_or("items")?
-            .push(serde_json::json!({"name":"Bitcoin CAD","shell":root.join("launch")}));
-        storage::atomic(
-            &menu,
-            &FileData {
-                bytes: serde_json::to_vec(&contents).map_err(|e| e.to_string())?,
-                mode: 0o600,
-            },
-        )?;
-        if !receipt {
-            std::fs::remove_file(root.join(".vitrallis-receipt.json"))
-                .map_err(|e| e.to_string())?;
-        }
-        assert!(uninstall::uninstall(&loc, &p)?.is_none());
-        for name in ["bitcoin.py", "launch", "bitcoin.png", "icon.png"] {
-            assert!(!root.join(name).exists(), "{name}");
-        }
-        let menu = metadata::json(&std::fs::read(menu).map_err(|e| e.to_string())?)?;
-        assert_eq!(
-            menu["pages"][0]["items"],
-            serde_json::json!([{"name":"Bitcoin CAD","shell":"/another/launch"}])
-        );
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-#[test]
-fn unsafe_optional_pockethome_menu_does_not_block_uninstall() -> Result<(), String> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
-    for problem in [
-        "directory permissions",
-        "file permissions",
-        "symlink",
-        "invalid JSON",
-    ] {
-        for receipt in [true, false] {
-            let (_scratch, loc) = locations()?;
-            let p = metadata::catalog(
-                &sources::Repository::parse(sources::DEFAULT)?,
-                &std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?,
-            )?
-            .remove(0);
-            let files = Files::from([
-                (
-                    "bitcoin.py".into(),
-                    format!("VERSION = '{}'\n", p.version).into_bytes(),
-                ),
-                ("icon.png".into(), fixture_icon()?),
-            ]);
-            let p = inventory(p, &files);
-            let directory = loc.home.join(".pocket-home");
-            let config = directory.join("config.json");
-            storage::atomic(
-                &config,
-                &FileData {
-                    bytes: br#"{"pages":[{"name":"Apps","items":[]}]}"#.to_vec(),
-                    mode: 0o600,
-                },
-            )?;
-            install::install(&loc, &install::prepare(&loc, p.clone(), files)?)?;
-            let root = loc.root(&p);
-            if !receipt {
-                std::fs::remove_file(root.join(".vitrallis-receipt.json"))
-                    .map_err(|e| e.to_string())?;
-            }
-            match problem {
-                "directory permissions" => {
-                    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o775))
-                }
-                "file permissions" => {
-                    std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o664))
-                }
-                "symlink" => {
-                    let target = loc.home.join("other-menu");
-                    std::fs::rename(&directory, &target).map_err(|e| e.to_string())?;
-                    symlink(&target, &directory)
-                }
-                _ => std::fs::write(&config, b"invalid JSON"),
-            }
-            .map_err(|e| e.to_string())?;
-            let before = std::fs::read(&config).map_err(|e| e.to_string())?;
-            let dir_mode = std::fs::symlink_metadata(&directory)
-                .map_err(|e| e.to_string())?
-                .mode();
-            let file_mode = std::fs::metadata(&config)
-                .map_err(|e| e.to_string())?
-                .mode();
-            let warning = uninstall::uninstall(&loc, &p)?.ok_or("missing menu warning")?;
-            assert!(warning.contains("PocketHome shortcut may remain; menu unchanged"));
-            assert_eq!(std::fs::read(&config).map_err(|e| e.to_string())?, before);
-            assert_eq!(
-                std::fs::symlink_metadata(&directory)
-                    .map_err(|e| e.to_string())?
-                    .mode(),
-                dir_mode
-            );
-            assert_eq!(
-                std::fs::metadata(&config)
-                    .map_err(|e| e.to_string())?
-                    .mode(),
-                file_mode
-            );
-            for name in [
-                "bitcoin.py",
-                "launch",
-                "bitcoin.png",
-                "icon.png",
-                ".vitrallis-receipt.json",
-                ".installation-pending",
-            ] {
-                assert!(!root.join(name).exists(), "{name}");
-            }
-            assert_eq!(install::check(&loc, p)?.installed, "not installed");
-        }
-    }
-    Ok(())
-}
-
 #[cfg(unix)]
 #[test]
 fn uninstall_rejects_source_switches_unsafe_files_and_modified_receipts_before_removal()
@@ -1418,5 +1189,107 @@ fn uninstall_refuses_a_running_app_without_removing_files() -> Result<(), String
     assert!(entry.is_file());
     assert!(loc.root(&p).join(".vitrallis-receipt.json").is_file());
     assert!(!loc.root(&p).join(".installation-pending").exists());
+    Ok(())
+}
+
+#[test]
+fn canonical_catalog_paths_manifests_and_inventory_are_required() -> Result<(), String> {
+    let (p, files) = generic()?;
+    for path in [
+        "Apps/Hello",
+        "apps/Hello",
+        "apps/hello_world",
+        "apps/hello/nested",
+        "other/hello",
+    ] {
+        let mut value = catalog_value(&p);
+        value["apps"][0]["source"]["path"] = path.into();
+        assert!(
+            metadata::catalog(
+                &p.origin,
+                &serde_json::to_vec(&value).map_err(|e| e.to_string())?
+            )
+            .is_err()
+        );
+    }
+    for omitted in [
+        "app.toml",
+        "main.py",
+        "icon.png",
+        "requirements.txt",
+        "README.md",
+        "assets/greeting.txt",
+    ] {
+        let mut incomplete = files.clone();
+        incomplete.remove(omitted);
+        assert!(
+            metadata::validate_bundle(&inventory(p.clone(), &incomplete), &incomplete).is_err(),
+            "{omitted}"
+        );
+    }
+    let mut with_tests = files;
+    with_tests.insert("tests/test_main.py".into(), b"# test".to_vec());
+    let value = catalog_value(&inventory(p.clone(), &with_tests));
+    assert!(
+        metadata::catalog(
+            &p.origin,
+            &serde_json::to_vec(&value).map_err(|e| e.to_string())?
+        )
+        .is_err()
+    );
+    let mut value = catalog_value(&p);
+    value["apps"][0]["files"]
+        .as_array_mut()
+        .ok_or("files")?
+        .reverse();
+    assert!(
+        metadata::catalog(
+            &p.origin,
+            &serde_json::to_vec(&value).map_err(|e| e.to_string())?
+        )
+        .is_err()
+    );
+    Ok(())
+}
+
+#[test]
+fn unreceipted_source_never_supplies_version_or_ownership() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    let root = loc.root(&p);
+    storage::atomic(
+        &root.join("main.py"),
+        &FileData {
+            bytes: b"VERSION = '0.1.0'\n".to_vec(),
+            mode: 0o644,
+        },
+    )?;
+    assert_eq!(install::label(&loc, &p)?, "local / unknown");
+    assert!(install::check(&loc, p.clone()).is_err());
+    assert!(install::prepare(&loc, p.clone(), files).is_err());
+    assert!(uninstall::uninstall(&loc, &p).is_err());
+    assert!(root.join("main.py").exists());
+    Ok(())
+}
+
+#[test]
+#[ignore = "explicit online contract check against GitHub"]
+fn published_catalog_packages_match_the_current_contract() -> Result<(), String> {
+    let origin = sources::Repository::parse(sources::DEFAULT)?;
+    let packages = network::catalog(&network::Curl, &origin)?;
+    assert!(!packages.is_empty());
+    for package in packages {
+        let files = network::bundle(&network::Curl, &package, |_| Ok(()))?;
+        metadata::validate_bundle(&package, &files)?;
+        eprintln!(
+            "Verified {} {} at {}/{} ({} files; installable={})",
+            package.id,
+            package.version,
+            package.commit,
+            package.directory,
+            files.len(),
+            package.installable
+        );
+    }
     Ok(())
 }

@@ -1359,6 +1359,7 @@ mod tests {
             let layout = Layout::home(w, h)?;
             let mut center = center()?;
             center.rows[0].package.version = super::super::metadata::version("1.10.0")?;
+            center.rows[0].package.installable = true;
             for (installed, update) in [
                 ("not installed", false),
                 ("local / unknown", false),

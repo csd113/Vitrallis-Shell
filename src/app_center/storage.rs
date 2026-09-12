@@ -186,10 +186,6 @@ impl Locations {
         })
     }
     pub fn root(&self, p: &super::metadata::Package) -> PathBuf {
-        if p.legacy() {
-            self.home.join(".local/share/pocket-bitcoin")
-        } else {
-            self.data.join("vitrallis/apps").join(&p.id)
-        }
+        self.data.join("vitrallis/apps").join(&p.id)
     }
 }

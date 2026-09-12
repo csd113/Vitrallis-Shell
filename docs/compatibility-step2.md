@@ -1,3 +1,5 @@
+> Historical validation record. Application/store formats, paths and test counts below describe earlier implementations. For the supported contract and current results, see [the application-contract audit](app-center-validation.md). Superseded tools mentioned here are no longer shipped.
+
 # Step 2 compatibility report
 
 Implementation and host validation: 2026-09-10. The user explicitly deferred actual-device access during this task. No SSH, device probing, deployment, Marshmallow writes or session/startup changes were performed. Device behavior is **not** claimed verified.

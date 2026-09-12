@@ -58,7 +58,6 @@ mod tests {
         let mut paths = Paths {
             user_config: None,
             asset_roots: vec![],
-            native_apps: None,
             cwd: "/".into(),
             search_path: vec!["/bin".into(), "/usr/bin".into()],
         };

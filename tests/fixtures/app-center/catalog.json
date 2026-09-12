@@ -3,68 +3,68 @@
   "apps": [
     {
       "id": "io.vitrallis.bitcoindashboard",
+      "installable": false,
       "name": "Bitcoin Dashboard",
-      "version": "1.2.0",
-      "description": "Bitcoin CAD price, chart, and network dashboard for the PocketCHIP.",
+      "version": "1.2.2",
       "runtime": "python",
-      "entry": "bitcoin.py",
+      "entry": "main.py",
       "permissions": {
         "network": true,
         "audio": false,
         "storage": true
       },
-      "installable": true,
-      "compatibility_notes": "Requires Pocketchip-update-apps 1.6.0 or later and a compatible Python/Tk runtime. Its reviewed Bitcoin adapter supplies the launcher and icon and preserves existing PocketCHIP paths. Desktop install/update/repair checks passed; physical PocketCHIP verification of manager 1.6.0 remains pending.",
+      "description": "Bitcoin CAD price, chart, and network dashboard for the PocketCHIP.",
+      "compatibility_notes": "Requires Python 3.8+ and system Tkinter with Tk 8.6. Native manifest v1 package; installation, update, repair and launcher integration require verification before enabling installation. Physical PocketCHIP verification remains pending.",
       "source": {
         "repository": "csd113/Vitrallis-Apps",
-        "commit": "ab2869b2cf25818cfcf09f5d1fc7055dfbb9a218",
-        "path": "Apps/Bitcoin-Dashboard"
+        "commit": "c45e941396adc42f5aee5ddaa6342b171a3d3734",
+        "path": "apps/bitcoin-dashboard"
       },
       "files": [
         {
-          "path": ".gitignore",
-          "size": 49,
-          "sha256": "455c26aa093bcd128237fcaeeccfae53616ded322221aade5afd23cc1fd3212e"
-        },
-        {
           "path": "CHANGELOG.md",
-          "size": 4177,
-          "sha256": "355732d06b753eb7536f9cbbf683699f9a84ebf9a4fbd2b6dc36fa86806f17af"
+          "size": 4831,
+          "sha256": "7089c81e845a89ba6793bf13999f0b4f8eea140195022f1231539a5e65f671db"
         },
         {
           "path": "README.md",
-          "size": 4580,
-          "sha256": "da2a234d8dcccd3844db9551073b3e8c643c6b8b68e2af578cb4d0aee1c1f292"
+          "size": 4925,
+          "sha256": "214a17c8cd505266b0ea15892f61292819c7004ae17ba047c886c48d2ae162eb"
         },
         {
-          "path": "bitcoin.py",
-          "size": 43039,
-          "sha256": "43c84ddb0f8d6dc77954d038b5093b9fb0bf2fe929c09305459c7207c2376a46"
+          "path": "app.toml",
+          "size": 199,
+          "sha256": "ce5a30e580b8ffad8ef0dc437843f839e554085a8b4156f9caef12f7867fe777"
         },
         {
-          "path": "docs/dashboard.png",
+          "path": "assets/README.md",
+          "size": 478,
+          "sha256": "222404366dcbb9a860d296e9879c3c0307147644f0ea59e634e334b2143953a0"
+        },
+        {
+          "path": "assets/dashboard.png",
           "size": 40594,
           "sha256": "91aba850f575e3698caaffa1577c3b561553d6c130b1705cd172851af0cb805a"
         },
         {
           "path": "docs/development.md",
-          "size": 11311,
-          "sha256": "1e72c990064b52213ceb7386e285100fdd1688efb0bf2cb05a11686a43af3d0b"
+          "size": 11230,
+          "sha256": "4441dd9bbea6a694670af71e687314878c7e87b569e0c36b8ba31fa20dc06b45"
         },
         {
-          "path": "launch",
-          "size": 351,
-          "sha256": "61d7f238468029765e3c5fb193e7f7705f6d09d12fcadef31bab1a56ff386fde"
+          "path": "icon.png",
+          "size": 688,
+          "sha256": "bdaeaee34bf4f6140c1e6fc996c845af15e0ee5945b98bd8fac45830271758ea"
         },
         {
-          "path": "test_bitcoin.py",
-          "size": 20915,
-          "sha256": "f260fedd2012e9be7f590502099ef54f7a8e5b590e95a57a6804899e04da204a"
+          "path": "main.py",
+          "size": 42524,
+          "sha256": "2341191c928bb084282ba3ca46830b3fdcd36389741c031c1c67ed89e25069ce"
         },
         {
-          "path": "test_layout.py",
-          "size": 25567,
-          "sha256": "6146c3905bc64a39f99e833ff481947f1db8f8d3d2cff21721bfa77ed80332b3"
+          "path": "requirements.txt",
+          "size": 76,
+          "sha256": "0cee70ab425b69d50a4b23207ed958015db6faea15aa64ba50c81f88792aa662"
         }
       ]
     }

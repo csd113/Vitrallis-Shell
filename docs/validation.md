@@ -1,3 +1,5 @@
+> Historical validation record; earlier application formats and version claims below are not current requirements. See [current application-contract validation](app-center-validation.md).
+
 > Historical Step 1 results. Current release evidence is in [release-candidate.md](release-candidate.md).
 
 # Step 1 validation report

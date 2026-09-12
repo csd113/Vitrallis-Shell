@@ -1,16 +1,14 @@
 //! Detect existing runtimes without installing dependencies or importing app code.
-use super::{metadata::Files, storage};
+use super::metadata::Files;
 use std::{
     collections::BTreeMap,
-    ffi::OsString,
     path::{Path, PathBuf},
 };
 #[derive(Debug, Clone)]
 pub struct Runtime {
     pub program: PathBuf,
-    pub env: BTreeMap<OsString, OsString>,
 }
-pub fn detect(home: &Path, root: &Path, files: &Files) -> Result<Runtime, String> {
+pub fn detect(root: &Path, files: &Files) -> Result<Runtime, String> {
     let mut candidates = Vec::new();
     for program in [
         root.join(".venv/bin/python3"),
@@ -20,32 +18,6 @@ pub fn detect(home: &Path, root: &Path, files: &Files) -> Result<Runtime, String
     ] {
         if program.is_file() {
             candidates.push(program);
-        }
-    }
-    let mut env = BTreeMap::new();
-    for base in [
-        root.join("runtime/usr"),
-        home.join(".local/share/pocket-update-apps/runtime/usr"),
-        home.join(".local/share/pocket-bitcoin/runtime/usr"),
-    ] {
-        if base.is_dir() {
-            storage::safe(&base)?;
-            for (key, path) in [
-                ("LD_LIBRARY_PATH", base.join("lib/arm-linux-gnueabihf")),
-                ("TCL_LIBRARY", base.join("share/tcltk/tcl8.6")),
-                ("TK_LIBRARY", base.join("share/tcltk/tk8.6")),
-            ] {
-                env.insert(key.into(), path.into_os_string());
-            }
-            let paths = [
-                base.join("lib/python3.13"),
-                base.join("lib/python3.13/lib-dynload"),
-            ];
-            env.insert(
-                "PYTHONPATH".into(),
-                std::env::join_paths(paths).map_err(|e| e.to_string())?,
-            );
-            break;
         }
     }
     let requirements = files
@@ -87,9 +59,9 @@ if len(sys.argv) > 2:
     if m.version(requirement.name) not in requirement.specifier: raise RuntimeError('dependency version mismatch')
 ";
     for program in candidates {
-        let result = probe(&program, &env, script, needs_tk, &deps);
+        let result = probe(&program, script, needs_tk, &deps);
         if result.is_ok() {
-            return Ok(Runtime { program, env });
+            return Ok(Runtime { program });
         }
     }
     Err(format!(
@@ -98,13 +70,7 @@ if len(sys.argv) > 2:
         deps.join(", ")
     ))
 }
-fn probe(
-    program: &Path,
-    env: &BTreeMap<OsString, OsString>,
-    script: &str,
-    tk: bool,
-    deps: &[String],
-) -> Result<(), String> {
+fn probe(program: &Path, script: &str, tk: bool, deps: &[String]) -> Result<(), String> {
     use std::{
         process::{Command, Stdio},
         time::{Duration, Instant},
@@ -113,13 +79,10 @@ fn probe(
     command
         .args(["-s", "-c", script, if tk { "tk" } else { "plain" }])
         .args(deps)
-        .envs(env)
         .current_dir("/")
         .env_remove("PYTHONSTARTUP")
         .env_remove("PYTHONHOME");
-    if !env.contains_key(&OsString::from("PYTHONPATH")) {
-        command.env_remove("PYTHONPATH");
-    }
+    command.env_remove("PYTHONPATH");
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -151,14 +114,6 @@ pub fn launcher(runtime: &Runtime, entry: &Path) -> Result<Vec<u8>, String> {
     }
     use std::fmt::Write;
     let mut s = String::from("#!/bin/sh\n");
-    for (key, value) in &runtime.env {
-        let _ = writeln!(
-            s,
-            "export {}={}",
-            key.to_string_lossy(),
-            quote(&value.to_string_lossy())
-        );
-    }
     let program = runtime
         .program
         .to_str()
@@ -181,36 +136,11 @@ pub fn validate(runtime: &Runtime, files: &Files) -> Result<(), String> {
         .collect::<Result<BTreeMap<_, _>, String>>()?;
     let input = serde_json::to_vec(&sources).map_err(|e| e.to_string())?;
     let script = "import json,sys\nfor name,source in json.load(sys.stdin).items():\n compile(source,name,'exec',dont_inherit=True)\n";
-    inspect(runtime, input, script).map(|_| ())
+    compile_sources(runtime, input, script)
 }
-pub fn legacy_version(
-    runtime: &Runtime,
-    bytes: &[u8],
-) -> Result<Option<super::metadata::Version>, String> {
-    let script = r"import ast,sys,re
-try:
- tree=ast.parse(sys.stdin.buffer.read())
- values=[]
- for node in tree.body:
-  if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='VERSION' for t in node.targets): values.append(node.value)
-  if isinstance(node,ast.AnnAssign) and isinstance(node.target,ast.Name) and node.target.id=='VERSION': values.append(node.value)
- value=ast.literal_eval(values[0]) if len(values)==1 else None
- if isinstance(value,str) and len(value)<=32 and re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)',value): print(value)
-except (SyntaxError,ValueError,TypeError,MemoryError,RecursionError): pass
-";
-    let output = inspect(runtime, bytes.to_vec(), script)?;
-    let version = std::str::from_utf8(&output)
-        .map_err(|e| e.to_string())?
-        .trim();
-    if version.is_empty() {
-        Ok(None)
-    } else {
-        super::metadata::version(version).map(Some)
-    }
-}
-fn inspect(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<Vec<u8>, String> {
+fn compile_sources(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<(), String> {
     use std::{
-        io::{Read, Write},
+        io::Write,
         process::{Command, Stdio},
         time::{Duration, Instant},
     };
@@ -218,15 +148,12 @@ fn inspect(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<Vec<u8>, S
     command
         .args(["-s", "-c", script])
         .current_dir("/")
-        .envs(&runtime.env)
         .env_remove("PYTHONSTARTUP")
         .env_remove("PYTHONHOME");
-    if !runtime.env.contains_key(&OsString::from("PYTHONPATH")) {
-        command.env_remove("PYTHONPATH");
-    }
+    command.env_remove("PYTHONPATH");
     let mut child = command
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -269,17 +196,5 @@ fn inspect(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<Vec<u8>, S
         .map_err(|_| "Syntax input worker failed".to_owned())?
         .map_err(|e| e.to_string());
     result?;
-    written?;
-    let mut output = Vec::new();
-    child
-        .stdout
-        .take()
-        .ok_or("Missing inspection output")?
-        .take(4097)
-        .read_to_end(&mut output)
-        .map_err(|e| e.to_string())?;
-    if output.len() > 4096 {
-        return Err("Runtime inspection output exceeds 4 KiB".into());
-    }
-    Ok(output)
+    written
 }

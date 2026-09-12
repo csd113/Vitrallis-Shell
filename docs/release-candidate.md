@@ -1,3 +1,5 @@
+> Historical validation record. Application/store formats, paths and test counts below describe earlier implementations. For the supported contract and current results, see [the application-contract audit](app-center-validation.md). Superseded tools mentioned here are no longer shipped.
+
 # Vitrallis 0.1.0-beta2.4
 
 This prerelease fixes Bitcoin uninstall when the optional PocketHome menu has

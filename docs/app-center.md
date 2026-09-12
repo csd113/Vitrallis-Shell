@@ -1,4 +1,4 @@
-# Native App Center
+# App Center
 
 App Center is a built-in Rust/SDL screen on desktop and PocketCHIP. A fresh shell
 contains **no installed apps, app sources, embedded catalog manifest, or app artwork**.
@@ -40,16 +40,11 @@ Clear and Delete controls, and a visible insertion end for long batches.
 Select an installed app, open **Details**, and choose **Uninstall**. The confirmation
 defaults to **Cancel**; keyboard and touch use the same confirmation. Close the app
 before uninstalling. Uninstall needs no network requests and removes the receipt's
-app files, the managed launcher, and matching desktop/PocketHome entries. Other
-files, such as saves and app-local runtimes not listed in the receipt, remain.
-PocketHome menu cleanup is optional, just as registration is during installation.
-If that menu has unsafe permissions, links, or invalid contents, uninstall leaves
-it untouched and reports that a Marshmallow shortcut may remain. App files and
-managed launchers still require the full filesystem checks before removal.
-Removed files (including locally edited package files) are backed up in the existing
-transaction journal. Custom shortcuts pointing elsewhere are preserved. A legacy
-Bitcoin installation without a receipt uses the reviewed fixed adapter paths and
-removes other catalog files only when their local hashes match. Uninstall failures
+app files, the managed launcher, and matching desktop entries. Other files,
+such as saves and app-local virtual environments not listed in the receipt, remain.
+Uninstall requires a validated receipt bound to the app ID and publisher. Removed
+files (including locally edited package files) are backed up in the transaction
+journal. Custom shortcuts pointing elsewhere are preserved. Uninstall failures
 roll back conditionally and keep the incomplete marker for recovery. The app list
 and home grid refresh after removal; the catalog app can be installed again.
 
@@ -82,13 +77,13 @@ new Check. Approvals are scoped to the originating catalog. Removing a catalog
 removes its approvals, invalidates checked results, and does not uninstall apps
 or remove saves. Re-add the same source to manage those installations again.
 
-## Packages and compatibility
+## Package contract
 
 The service implements catalog v1 and package `app.toml` manifest v1 as documented
 by [Vitrallis Apps](https://github.com/csd113/Vitrallis-Apps/blob/main/docs/creating-apps.md).
-Native packages require `app.toml`, `main.py`, `icon.png`, `requirements.txt`,
+Packages require `app.toml`, `main.py`, `icon.png`, `requirements.txt`,
 `README.md`, and a populated `assets/` directory. Source repositories also include
-`tests/`, which current device packages omit. The declared Python
+`tests/`, which device packages must exclude. The declared Python
 entry must be in the inventory. Manifest ID, name, runtime, entry, version, and
 network/audio/storage declarations must agree with the catalog. TOML uses the
 standard Rust parser, including rejection of duplicate assignments and unknown
@@ -103,26 +98,15 @@ block replacement; restore or reconcile them before checking again. Same-version
 republishing and downgrades are blocked. Stable version components compare
 numerically, including components larger than machine integers.
 
-A narrow compatibility adapter recognizes existing Bitcoin installations at
-`~/.local/share/pocket-bitcoin`. It preserves that path, Bitcoin CAD shortcuts,
-working launchers/icons, and app-local runtimes. Its **inventory is fetched from
-the catalog**, not compiled into the shell. All published files are verified;
-the legacy `launch` is supplied locally rather than executing a remote launcher.
-Missing legacy artwork is taken from the verified package's `icon.png`,
-`bitcoin.png`, or first published PNG. The current catalog's published screenshot
-is the fallback when it has no dedicated icon. No Bitcoin image ships in the shell.
-Previous source is also retained as `bitcoin.py.before-update`. The recognized
-legacy source hash can upgrade; unknown unversioned sources are preserved.
-Existing Python updater files/receipts remain untouched, but its duplicate shell
-tile is replaced by the native App Center. Marshmallow recovery is preserved.
-PocketHome menu registration is optional: if its config or directory fails validation,
-App Center reports "PocketHome menu unchanged" and installs the app without editing
-that menu or changing its permissions. Vitrallis discovers the installed app directly.
-The usual strict checks still apply to all installation files and recovery writes.
+All source directories must use `apps/<app-slug>` with a lowercase hyphenated
+slug. Downloads use the catalog's validated `source.path`, repository, and commit;
+no package-specific paths, icons, version inference, or installation modes exist.
+Bitcoin uses the same manifest, inventory and ID-based storage as every other app.
+The publisher's `installable` flag remains authoritative; a disabled package stays
+disabled even when its manifest and bytes validate.
 
-Runtime detection tries an app-local `.venv/bin/python3`, existing system Python,
-and the existing PocketCHIP Tk/Tcl environment. Missing runtimes, Tk imports, and
-declared distributions block installation with a diagnostic. No pip, apt, global
+Runtime detection tries an app-local `.venv/bin/python3` and existing system Python.
+Missing runtimes, Tk imports, and declared distributions block installation with a diagnostic. No pip, apt, global
 installation, remote install script, or app import runs during inspection. Python
 syntax is compiled without execution in the detected app runtime, off the UI
 thread. Source text currently must be UTF-8. Simple distribution names and exact
@@ -147,8 +131,8 @@ An installation plan older than 15 minutes is rejected before commit.
 After selection and before mutation, the service walks the pinned Git directory tree and verifies
 that the catalog lists its complete device-package inventory and sizes, then downloads and
 verifies every SHA-256. Current catalog v1 packages omit only the app-local `tests/`
-folder. Older complete-directory catalogs remain supported; partially listed tests
-and omissions elsewhere are rejected. Omitted tests are never downloaded.
+folder. Catalog inventories containing app-local tests or omitting other files are
+rejected. Development tests are never downloaded.
 Truncated Git trees, symlinks, submodules, special files,
 duplicate JSON keys, duplicate IDs/paths, file/directory collisions, case-colliding
 directories, traversal, invalid fields, and installer/runtime path collisions fail
@@ -190,21 +174,18 @@ Updates**. Its separate
 installation confirmation and relaunch behavior remain in effect. App Center does
 not implement Python manager self-updates or a second shell updater.
 
-## Reference parity and validation
+## Contract and validation
 
-The implementation was mapped against
-[Pocketchip-update-apps](https://github.com/csd113/Pocketchip-update-apps) commit
-`946f69ec58fe4327f60bda6e615dbded5491b541` (`update_apps.py`, `deployment.py`, tests,
-and behavior docs), and Vitrallis Apps commit
-`78221ebdc78109c21d0d1b1faf1526f2a8282f3f` (catalog/schema, manifest specification,
-example, and validator). Test metadata is separate from runtime catalogs and is
-not embedded in production builds.
+The implementation follows Vitrallis Apps commit
+`a86ae57450d52fd779e0ddcdd794b57213ca8eb8` (catalog/schema, manifest specification,
+and publisher tooling). Test metadata is separate from runtime catalogs and is
+not embedded in production builds. See [the audit and validation report](app-center-validation.md).
 
 | Reference behavior | Native implementation / fixture evidence |
 | --- | --- |
 | Installed/latest status, disabled rows, independent checks | `check_all`, metadata/network fixtures; disabled entries make no package requests |
 | Unchecked rows and sequential selected installs | screen selection tests, captured worker command, per-app batch error handling |
-| First install/update/repair | native and legacy fixtures, missing icon and pending-marker repair |
+| First install/update/repair | manifest-package fixtures, missing icon and pending-marker repair |
 | Numeric versions and local-copy protection | strict versions, downgrade, same-version inventory, origin and local-edit checks |
 | Pinned complete bundle, path/hash checks | Git-tree fixtures, malicious metadata, size/hash mismatch, reserved paths |
 | Runtime/dependency checks | real runtime syntax/dependency test; a source containing a file write is never executed |

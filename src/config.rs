@@ -114,7 +114,6 @@ mod tests {
 pub struct Paths {
     pub user_config: Option<std::path::PathBuf>,
     pub asset_roots: Vec<std::path::PathBuf>,
-    pub native_apps: Option<std::path::PathBuf>,
     pub cwd: std::path::PathBuf,
     pub search_path: Vec<std::path::PathBuf>,
 }
@@ -137,20 +136,9 @@ impl Paths {
             .map(absolute)
             .or_else(|| home.as_ref().map(|p| p.join(".pocket-home/config.json")));
         let asset_roots = config.assets.as_ref().map_or_else(
-            || {
-                vec![
-                    "/usr/share/pocket-home".into(),
-                    cwd.join("../../assets"),
-                    cwd.clone(),
-                ]
-            },
+            || vec!["/usr/share/pocket-home".into(), cwd.clone()],
             |p| vec![absolute(p)],
         );
-        let data = std::env::var_os("XDG_DATA_HOME")
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .or_else(|| home.map(|p| p.join(".local/share")));
-        let native_apps = data.map(|p| p.join("vitrallis/apps"));
         // Preserve execvp's PATH order, including relative/empty entries, but resolve
         // against the inherited cwd before constructing a child command.
         let search_path = std::env::var_os("PATH").map_or_else(
@@ -160,7 +148,6 @@ impl Paths {
         Ok(Self {
             user_config,
             asset_roots,
-            native_apps,
             cwd,
             search_path,
         })

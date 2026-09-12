@@ -90,13 +90,6 @@ credentials. There were no previous CI action pins. Ubuntu's packaged SDL/Tk
 are host test prerequisites. The workflow has been reviewed locally; a remote
 Actions run is not claimed before committing/pushing.
 
-The Store's reviewed upstream commit remains
-`1f394452d6acd124d940154234b0eb8dd7150b70`, which still matched remote HEAD during
-this pass. The compatibility patch and SHA-256 manifest were updated together;
-previous reviewed hashes remain accepted for migration. It has no pip lockfile
-or third-party Python dependency to upgrade. The patch preserves manual Store
-self-update so a remote update cannot remove local safety changes.
-
 Rust 1.91.1 includes the upstream 1.91 patch fixes; the declared MSRV remains
 1.91. CI checks both 1.91.0 and 1.91.1. See the
 [official Rust release notes](https://doc.rust-lang.org/stable/releases.html#version-1911-2025-11-10).
@@ -122,5 +115,4 @@ retains the existing Rust 1.91 policy and no duplicate crate versions. No packag
 or workspace version was changed. HTTP uses the existing optional system curl
 approach; SHA-256 and PNG verification reuse existing crates. Runtime Python is
 probed only for the apps being checked; there is no Python/Tk App Center UI or
-updater dependency. Old Store integration notes above describe the historical
-compatibility patch, not a prerequisite for the native App Center.
+updater dependency. Python runtime probes use system Python or an app-local virtual environment.

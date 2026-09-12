@@ -60,12 +60,6 @@ incorrect paths; do not recursively change home-directory ownership or disable
 the updater's checks. This is a permissions repair and does not require replacing
 the running shell before retrying OTA.
 
-The original `scripts/install-pocketchip.py` entry point remains a forwarding
-shim. It locates the canonical installer in a source checkout. For standalone
-use, put `install.py` and `vitrallis-session.py` beside the downloaded
-`install-pocketchip.py`; the shim does not download or execute remote code.
-Both entry points preserve the binary argument and exit status.
-
 ## Select Vitrallis or Marshmallow
 
 From a terminal inside the existing graphical session:
@@ -107,7 +101,7 @@ If Vitrallis fails, stop its user unit as above; the independent Marshmallow pro
 XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user stop vitrallis-session.service
 ```
 
-If a window manager restart erased the temporary hook state, its original `rc.lua` still supplies Marshmallow's Home binding. Reboot starts the unchanged original session. If an installer was interrupted, rerun the same reviewed installer; do not remove `.installation-pending` just to launch incomplete files. Preserve `vitrallis-backups` and the original Bitcoin backup until satisfied with the installation.
+If a window manager restart erased the temporary hook state, its original `rc.lua` still supplies Marshmallow's Home binding. Reboot starts the unchanged original session. If an installer was interrupted, rerun the same reviewed installer; do not remove `.installation-pending` just to launch incomplete files. Preserve `vitrallis-backups` until satisfied with the installation.
 
 If later opting into startup, remove the marked optional block over serial before rebooting to recover. No change to boot media, recovery mode, autologin, calibration or SSH authentication policy is required.
 

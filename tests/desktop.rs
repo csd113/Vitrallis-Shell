@@ -158,7 +158,7 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::temp_dir().join(format!("vitrallis catalog paths {}", std::process::id()));
     std::fs::create_dir(&root)?;
-    let scratch = Scratch(root);
+    let scratch = Scratch(root.canonicalize()?);
     let home = scratch.0.join("user home");
     let assets = scratch.0.join("exported assets");
     std::fs::create_dir_all(home.join(".pocket-home"))?;
@@ -172,6 +172,8 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
     command
         .current_dir(&scratch.0)
         .env("HOME", &home)
+        .env("XDG_DATA_HOME", home.join(".local/share"))
+        .env("XDG_CONFIG_HOME", home.join(".config"))
         .env_remove("VITRALLIS_SESSION")
         .args(["--assets", "exported assets", "--list-apps"]);
     let list = |command: &mut Command| -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -183,6 +185,15 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
         );
         Ok(serde_json::from_slice(&output.stdout)?)
     };
+    let desktop = list(&mut command)?;
+    assert_eq!(desktop["apps"].as_array().ok_or("missing apps")?.len(), 1);
+    assert!(
+        desktop["diagnostics"]
+            .as_array()
+            .ok_or("diagnostics")?
+            .is_empty()
+    );
+    command.arg("--pocketchip");
     let fallback = list(&mut command)?;
     assert_eq!(fallback["apps"][0]["id"], "vitrallis-app-center");
     assert_eq!(fallback["apps"][1]["name"], "Default");
@@ -193,15 +204,20 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
         {"name": "Vitrallis", "shell": format!("\"{}\"", home.join(".local/share/vitrallis/launch").display()), "icon": ""}
     ]}]}))?;
     std::fs::write(&user_config, &user)?;
-    let desktop = list(&mut command)?;
-    assert_eq!(desktop["apps"].as_array().ok_or("missing apps")?.len(), 3);
-    assert_eq!(desktop["apps"][1]["name"], "Terminal");
-    assert_eq!(desktop["apps"][1]["args"], serde_json::json!([]));
+    let configured = list(&mut command)?;
+    assert_eq!(
+        configured["apps"].as_array().ok_or("missing apps")?.len(),
+        3
+    );
+    assert_eq!(configured["apps"][1]["name"], "Terminal");
+    assert_eq!(
+        configured["apps"][1]["args"],
+        serde_json::json!(["--no-remote"])
+    );
 
-    command.arg("--pocketchip");
     let device = list(&mut command)?;
     assert_eq!(device["apps"].as_array().ok_or("missing apps")?.len(), 3);
-    assert_eq!(device["apps"][1]["id"], desktop["apps"][1]["id"]);
+    assert_eq!(device["apps"][1]["id"], configured["apps"][1]["id"]);
     assert_eq!(
         device["apps"][1]["args"],
         serde_json::json!(["--no-remote"])

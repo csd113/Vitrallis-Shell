@@ -10,7 +10,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<Option<String>, String> {
+pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), String> {
     use running::Processes;
     metadata::identity(&package.id)?;
     let root = loc.root(package);
@@ -19,7 +19,7 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<Option<
         return Err("Close the app before uninstalling; no files were removed".into());
     }
     install::recover(loc, package)?;
-    let (writes, warning) = plan(loc, package)?;
+    let writes = plan(loc, package)?;
     if !running::Native.list(&entry)?.is_empty() {
         return Err("App started again; uninstall cancelled".into());
     }
@@ -40,12 +40,9 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<Option<
     transaction::apply(&journal, &writes)?;
     std::fs::remove_file(marker).map_err(|e| e.to_string())?;
     storage::sync(&root)?;
-    Ok(warning)
+    Ok(())
 }
 fn installed_entry(root: &Path, p: &metadata::Package) -> Result<std::path::PathBuf, String> {
-    if p.legacy() {
-        return Ok(root.join("bitcoin.py"));
-    }
     if let Some(file) = storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)? {
         let manifest = metadata::manifest(&file.bytes)?;
         if manifest["id"] != p.id {
@@ -68,7 +65,7 @@ fn validate_owned_path(name: &str) -> Result<(), String> {
     }
     Ok(())
 }
-fn plan(loc: &Locations, p: &metadata::Package) -> Result<(Vec<Write>, Option<String>), String> {
+fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
     let root = loc.root(p);
     let receipt = install::receipt(&root)?;
     let mut paths = BTreeSet::new();
@@ -87,36 +84,12 @@ fn plan(loc: &Locations, p: &metadata::Package) -> Result<(Vec<Write>, Option<St
             validate_owned_path(name)?;
             paths.insert(root.join(name));
         }
-    } else if p.legacy() && storage::read(&root.join("bitcoin.py"), metadata::FILE_LIMIT)?.is_some()
-    {
-        // The reviewed adapter has fixed ownership of its legacy entry/launcher/icon.
-        // Without a receipt, remove other catalog files only when their hashes match.
-        paths.insert(root.join("bitcoin.py"));
-        for file in &p.files {
-            validate_owned_path(&file.path)?;
-            if let Some(local) = storage::read(&root.join(&file.path), metadata::FILE_LIMIT)?
-                && storage::sha(&local.bytes) == file.sha256
-            {
-                paths.insert(root.join(&file.path));
-            }
-        }
     } else {
         return Err("No installed app receipt; uninstall refused".into());
     }
-    let launcher = if p.legacy() {
-        root.join("launch")
-    } else {
-        loc.state.join("launchers").join(&p.id)
-    };
+    let launcher = loc.state.join("launchers").join(&p.id);
     paths.insert(launcher.clone());
-    if p.legacy() {
-        paths.insert(root.join("bitcoin.png"));
-    }
-    let desktop = if p.legacy() {
-        "pocket-bitcoin.desktop".into()
-    } else {
-        format!("{}.desktop", p.id)
-    };
+    let desktop = format!("{}.desktop", p.id);
     let exec = format!("Exec={}", install::desktop_quote(&launcher)?);
     for directory in [loc.data.join("applications"), loc.home.join("Desktop")] {
         let path = directory.join(&desktop);
@@ -130,51 +103,7 @@ fn plan(loc: &Locations, p: &metadata::Package) -> Result<(Vec<Write>, Option<St
         .into_iter()
         .map(transaction::remove)
         .collect::<Result<Vec<_>, _>>()?;
-    // Match installation: optional PocketHome integration must pass all normal
-    // storage checks, but an unsafe menu must not block native app removal.
-    let warning = if p.legacy() {
-        remove_menu(loc, &launcher, &mut writes)
-            .err()
-            .map(|error| format!("PocketHome shortcut may remain; menu unchanged: {error}"))
-    } else {
-        None
-    };
     // Keep ownership metadata until the remaining removals have succeeded.
     writes.push(transaction::remove(root.join(".vitrallis-receipt.json"))?);
-    Ok((writes, warning))
-}
-fn remove_menu(loc: &Locations, launcher: &Path, writes: &mut Vec<Write>) -> Result<(), String> {
-    let path = loc.home.join(".pocket-home/config.json");
-    let Some(before) = storage::read(&path, 1024 * 1024)? else {
-        return Ok(());
-    };
-    let mut value = metadata::json(&before.bytes)?;
-    let pages = value["pages"]
-        .as_array_mut()
-        .ok_or("Invalid PocketHome pages")?;
-    let quoted = format!("'{}'", launcher.to_string_lossy().replace('\'', "'\\''"));
-    let mut changed = false;
-    for page in pages {
-        let items = page["items"]
-            .as_array_mut()
-            .ok_or("Invalid PocketHome items")?;
-        let count = items.len();
-        items.retain(|item| {
-            item["shell"] != quoted && item["shell"] != launcher.to_string_lossy().as_ref()
-        });
-        changed |= count != items.len();
-    }
-    if !changed {
-        return Ok(());
-    }
-    let after = FileData {
-        bytes: serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?,
-        mode: before.mode,
-    };
-    writes.push(Write {
-        path,
-        before: Some(before),
-        after: Some(after),
-    });
-    Ok(())
+    Ok(writes)
 }

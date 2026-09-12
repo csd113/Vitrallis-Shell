@@ -1,4 +1,4 @@
-//! Portable PocketHome-compatible launcher. Core tests run without initializing a display.
+//! Portable Vitrallis application launcher. Core tests run without initializing a display.
 mod app;
 mod app_center;
 mod config;
@@ -38,7 +38,7 @@ pub fn run() -> Result<(), String> {
     }
     if args == ["--help"] {
         println!(
-            "vitrallis [--pocketchip] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--screenshot NEW.bmp] [--smoke-test]\nDefault: PocketHome metadata in a desktop window. --demo enables fixtures. Arrows select; Enter/tap opens; settings tile/footer opens system controls; Escape/Home goes back. Close window to quit.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
+            "vitrallis [--pocketchip] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--screenshot NEW.bmp] [--smoke-test]\nDefault: installed Vitrallis apps in a desktop window; --pocketchip also reads device menu metadata. --demo enables fixtures. Arrows select; Enter/tap opens; settings tile/footer opens system controls; Escape/Home goes back. Close window to quit.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
         );
         return Ok(());
     }

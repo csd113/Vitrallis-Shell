@@ -1,4 +1,4 @@
-//! Merge native packages while retaining legacy launcher identities.
+//! Discover installed manifest packages and the built-in App Center.
 use super::{
     metadata,
     storage::{self, Locations},
@@ -8,37 +8,15 @@ use crate::{
     discovery::Catalog,
 };
 pub fn integrate(catalog: &mut Catalog) {
-    let loc = Locations::current();
-    if let Ok(loc) = &loc {
-        let old = loc.home.join(".local/share/pocket-update-apps/launch");
-        let script = loc
-            .home
-            .join(".local/share/pocket-update-apps/update_apps.py");
-        catalog.apps.retain(|a| {
-            a.id != super::TILE_ID
-                && a.id != "vitrallis-pocketchip-store"
-                && a.manifest.entry != old
-                && a.manifest.entry != script
-                && !(a
-                    .manifest
-                    .entry
-                    .to_str()
-                    .is_some_and(super::running::python)
-                    && a.manifest
-                        .args
-                        .first()
-                        .is_some_and(|arg| arg == script.as_os_str()))
-        });
-        if let Err(error) = legacy(catalog, loc) {
-            catalog.diagnostics.push(error);
+    match Locations::current() {
+        Ok(loc) => {
+            if let Err(error) = installed(catalog, &loc) {
+                catalog.diagnostics.push(error);
+            }
         }
-        if let Err(error) = native(catalog, loc) {
-            catalog.diagnostics.push(error);
-        }
+        Err(error) => catalog.diagnostics.push(error),
     }
-    catalog
-        .apps
-        .retain(|a| a.id != super::TILE_ID && a.id != "vitrallis-pocketchip-store");
+    catalog.apps.retain(|a| a.id != super::TILE_ID);
     catalog.apps.insert(
         0,
         AppEntry {
@@ -53,7 +31,7 @@ pub fn integrate(catalog: &mut Catalog) {
         },
     );
 }
-fn native(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
+fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
     let root = loc.data.join("vitrallis/apps");
     storage::safe(&root)?;
     let entries = match std::fs::read_dir(&root) {
@@ -65,7 +43,7 @@ fn native(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
         if index >= 1000 {
             catalog
                 .diagnostics
-                .push("Native app discovery limited to 1000 directories".into());
+                .push("App discovery limited to 1000 directories".into());
             break;
         }
         let item = item.map_err(|e| e.to_string())?;
@@ -78,10 +56,10 @@ fn native(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
             let v = metadata::manifest(&file.bytes)?;
             let id = metadata::text(&v["id"], 128)?;
             if item.file_name() != std::ffi::OsStr::new(id) {
-                return Err("Native directory must match app ID".into());
+                return Err("App directory must match app ID".into());
             }
             let entry = path.join(metadata::text(&v["entry"], 240)?);
-            storage::read(&entry, metadata::FILE_LIMIT)?.ok_or("Native entry missing")?;
+            storage::read(&entry, metadata::FILE_LIMIT)?.ok_or("App entry missing")?;
             let launch = loc.state.join("launchers").join(id);
             let available =
                 storage::read(&launch, metadata::FILE_LIMIT)?.is_some_and(|d| d.mode & 0o111 != 0);
@@ -110,7 +88,7 @@ fn native(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
                 {
                     if catalog.apps.iter().any(|old| old.id == app.id) {
                         catalog.diagnostics.push(format!(
-                            "Native app ID conflicts with configured launcher: {}",
+                            "App ID conflicts with configured launcher: {}",
                             app.id
                         ));
                     } else {
@@ -125,34 +103,6 @@ fn native(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
     Ok(())
 }
 
-fn legacy(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
-    let root = loc.home.join(".local/share/pocket-bitcoin");
-    let entry = root.join("bitcoin.py");
-    if storage::read(&entry, metadata::FILE_LIMIT)?.is_none() {
-        return Ok(());
-    }
-    let launch = root.join("launch");
-    if catalog.apps.iter().any(|a| {
-        a.manifest.entry == entry || a.manifest.entry == launch || a.id == metadata::BITCOIN
-    }) {
-        return Ok(());
-    }
-    let available =
-        storage::read(&launch, metadata::FILE_LIMIT)?.is_some_and(|d| d.mode & 0o111 != 0);
-    let pending = storage::read(&root.join(".installation-pending"), 1024)?.is_some();
-    catalog.apps.push(AppEntry {
-        id: metadata::BITCOIN.into(),
-        name: "Bitcoin CAD".into(),
-        icon: Some(root.join("bitcoin.png")),
-        manifest: AppManifest {
-            entry: launch,
-            ..AppManifest::default()
-        },
-        unavailable: (!available || pending)
-            .then(|| "Incomplete installation; repair in App Center".into()),
-    });
-    Ok(())
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,21 +118,70 @@ mod tests {
             data,
         };
         let mut catalog = Catalog::default();
-        native(&mut catalog, &loc)?;
-        legacy(&mut catalog, &loc)?;
+        installed(&mut catalog, &loc)?;
         assert!(catalog.apps.is_empty());
-        let root = loc.home.join(".local/share/pocket-bitcoin");
-        storage::atomic(
-            &root.join("bitcoin.py"),
-            &storage::FileData {
-                bytes: b"VERSION = '1.0.0'".to_vec(),
-                mode: 0o644,
-            },
-        )?;
-        legacy(&mut catalog, &loc)?;
-        legacy(&mut catalog, &loc)?;
+        let root = loc.data.join("vitrallis/apps/io.vitrallis.hello");
+        for (name, bytes) in [
+            (
+                "app.toml",
+                include_bytes!("../../tests/fixtures/app-center/app.toml").as_slice(),
+            ),
+            ("main.py", b"print('hello')".as_slice()),
+        ] {
+            storage::atomic(
+                &root.join(name),
+                &storage::FileData {
+                    bytes: bytes.to_vec(),
+                    mode: 0o644,
+                },
+            )?;
+        }
+        installed(&mut catalog, &loc)?;
+        installed(&mut catalog, &loc)?;
         assert_eq!(catalog.apps.len(), 1);
         assert!(catalog.apps[0].unavailable.is_some());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod integration_tests {
+    use super::super::{install, tests};
+    use super::*;
+
+    #[test]
+    fn installed_manifest_supplies_identity_icon_and_launch_entry() -> Result<(), String> {
+        let (_scratch, loc) = tests::locations()?;
+        let (mut package, mut files) = tests::generic()?;
+        package.entry = "tools/start.py".into();
+        let manifest = String::from_utf8(files["app.toml"].clone()).map_err(|e| e.to_string())?;
+        files.insert(
+            "app.toml".into(),
+            manifest
+                .replace("entry = \"main.py\"", "entry = \"tools/start.py\"")
+                .into_bytes(),
+        );
+        files.insert(
+            "tools/start.py".into(),
+            b"print('manifest entry')\n".to_vec(),
+        );
+        let package = tests::inventory(package, &files);
+        install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
+        let mut catalog = Catalog::default();
+        installed(&mut catalog, &loc)?;
+        assert!(catalog.diagnostics.is_empty());
+        assert_eq!(catalog.apps.len(), 1);
+        let app = &catalog.apps[0];
+        assert_eq!(app.id, package.id);
+        assert_eq!(app.name, package.name);
+        assert_eq!(app.icon, Some(loc.root(&package).join("icon.png")));
+        assert!(app.unavailable.is_none());
+        let output = std::process::Command::new(&app.manifest.entry)
+            .current_dir(&loc.home)
+            .output()
+            .map_err(|e| e.to_string())?;
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"manifest entry\n");
         Ok(())
     }
 }

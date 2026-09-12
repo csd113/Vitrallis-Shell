@@ -19,8 +19,6 @@ pub trait Platform: system::System + Copy {
 
 #[derive(Debug, Clone, Copy)]
 pub enum AppWindow {
-    Bitcoin,
-    Store,
     Calibration,
 }
 
@@ -29,14 +27,7 @@ impl AppWindow {
         if entry == std::path::Path::new("/usr/local/bin/pocketchip-calibration") {
             return Some(Self::Calibration);
         }
-        let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
-        if entry == home.join(".local/share/pocket-bitcoin/launch") {
-            Some(Self::Bitcoin)
-        } else if entry == home.join(".local/share/pocket-update-apps/launch") {
-            Some(Self::Store)
-        } else {
-            None
-        }
+        None
     }
 }
 
@@ -57,16 +48,6 @@ pub fn focus_application(pid: u32, hint: Option<AppWindow>) -> Result<FocusResul
     }
     // The only interpolated value is a process ID obtained from Child::id.
     // A child window may belong to a descendant; match our private process group.
-    // Tk does not publish _NET_WM_PID on this image. Only the two inspected
-    // upstream wrappers use this closed class/title fallback; it changes focus,
-    // never process ownership or termination policy.
-    let fallback = match hint {
-        Some(AppWindow::Bitcoin) => {
-            "c.class=='Tk' and c.name:match('^Bitcoin CAD v%d+%.%d+%.%d+$')"
-        }
-        Some(AppWindow::Store) => "c.class=='Tk' and c.name=='Update Apps'",
-        None | Some(AppWindow::Calibration) => "false",
-    };
     let code = format!(
         "for _,c in ipairs(client.get()) do \
          local p=tonumber(c.pid); if p and p>0 and p%1==0 then \
@@ -75,8 +56,7 @@ pub fn focus_application(pid: u32, hint: Option<AppWindow>) -> Result<FocusResul
          local group=s and s:match('.*%)%s+%S+%s+%d+%s+(%d+)'); \
          if tonumber(group)=={pid} then client.focus=c; c:raise(); return 'focused' end \
          end end end; \
-         for _,c in ipairs(client.get()) do if {fallback} then \
-         client.focus=c; c:raise(); return 'focused' end end; return 'no matching window'"
+         return 'no matching window'"
     );
     let result = command::run("/usr/bin/awesome-client", &[&code])?;
     if result.contains("\"focused\"") {

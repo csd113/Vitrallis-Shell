@@ -9,12 +9,9 @@ devices/pocketchip/
   install.py                  Canonical user installer
   vitrallis-session.py         Awesome/systemd session and recovery
   run-pocketchip.sh            Launch the installed user session
-  apply-store-patch.py         Reviewed PocketCHIP Store patch installer
-  integration/                Device Store patch and hash manifest
 scripts/
   validate.sh                 Shared host validation
   build-pocketchip.sh         Host cross-build tooling for the target ABI
-  install-pocketchip.py       Legacy installer forwarding entry point
 src/
   config.rs                   CLI selection and filesystem conventions
   discovery/
@@ -30,12 +27,12 @@ src/
     pocketchip.rs             PocketCHIP hardware and session policy
     pocketchip/
       display.rs              X timeout and time-zone settings
-      store.rs                Marshmallow return-to-home catalog entry
+      recovery.rs             Marshmallow return-to-home catalog entry
 assets/system/                Shared embedded artwork and provenance
 docs/devices/
   pocketchip.md               Installation, selection, and recovery
   pocketchip/                 Settings, Store, and device validation notes
-tests/                        Desktop, installer, session, and migration tests
+tests/                        Desktop, installer, session, and package tests
 ```
 
 For a new **device adapter**, extend the existing `Platform` and
@@ -49,30 +46,19 @@ A device's **installer**, recovery/session helper, and device-only templates
 belong in `devices/<device>/`, with setup and limitations in `docs/devices/`.
 PocketCHIP's `install.py` also contains its current rollback/repair logic;
 there is no general uninstall command. Keep its sibling
-`vitrallis-session.py` when staging or copying the installer. The original
-`scripts/install-pocketchip.py` shim also works in a standalone staging
-directory when those two files are beside it. See the
-[PocketCHIP guide](devices/pocketchip.md) for the complete payload and recovery
-instructions. No automated downloader or new installer framework is added.
+`vitrallis-session.py` when staging or copying the installer. See the
+[PocketCHIP guide](devices/pocketchip.md) for the payload and recovery instructions.
 
-The private `discovery::catalog::CatalogFile` replaces the former `Marshmallow`
-discovery type. Its file selection and bounded reads are separate from
-`discovery::pockethome::parse_catalog`, which retains the exact Apps-page schema,
-JUCE command tokenization, trailing-comma handling, stable `pockethome-*` IDs,
-and preference parsing. Executable lookup moved to `discovery::executable`;
-the shared `Preferences` model and clock formatting remain in `preferences.rs`.
-These responsibilities previously shared `discovery/marshmallow.rs` and
-`Preferences::parse`. The device Store adapter moved from `discovery/store.rs`
-to `platform/pocketchip/store.rs`. The only public Rust entry point is `run`;
-these private moves require no consumer aliases or old-name wrapper files.
+`discovery::catalog::CatalogFile` handles bounded device-menu reads separately
+from `discovery::pockethome::parse_catalog`. The latter understands PocketHome's
+Apps-page schema, JUCE command tokenization, stable device-menu IDs and display
+preferences. This is an integration boundary with the independent PocketCHIP OS.
+It is loaded by PocketCHIP mode or an explicit `--app-config`; desktop startup
+uses App Center's manifest discovery. `platform/pocketchip/recovery.rs` supplies
+the supervised session's return-to-Marshmallow tile.
 
-Retain `PocketChip`, `config.pocketchip`, and `--pocketchip`: they select actual
-hardware/session behavior, independently of screen dimensions. PocketHome paths,
-format keys, and app IDs remain compatibility data. The Marshmallow return tile
-still names the launcher it returns to. Published `run-pocketchip.sh`,
-`build-pocketchip.sh`, the installer shim, and the Store patch keep their names.
-Historical reports keep the source names and upstream references they recorded;
-this guide describes the current layout.
+Follow [AGENTS.md](../AGENTS.md) when replacing an implementation. Current callers
+must use the replacement directly; superseded entry points and formats are removed.
 
 For a **display profile**, use the existing `src/config.rs` and `src/layout.rs`
 area: `--size WIDTHxHEIGHT` selects dimensions, and `Layout` validates and scales
