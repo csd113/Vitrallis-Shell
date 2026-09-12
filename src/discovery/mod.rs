@@ -63,6 +63,7 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
     {
         crate::platform::pocketchip::store::integrate(&mut catalog, &home);
     }
+    crate::app_center::integrate(&mut catalog);
     if config.pocketchip {
         for app in &mut catalog.apps {
             crate::platform::pocketchip::PocketChip.prepare_app(app);

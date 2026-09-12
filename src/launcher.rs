@@ -12,6 +12,7 @@ pub struct Launcher {
     pub running: Vec<String>,
     pub preferences: crate::preferences::Preferences,
     pub settings: crate::settings::Settings,
+    pub app_center: crate::app_center::Center,
     pub apps: Vec<AppEntry>,
     pub selected: usize,
     pub phase: Phase,
@@ -37,6 +38,7 @@ impl Launcher {
             running: Vec::new(),
             preferences: crate::preferences::Preferences::default(),
             settings: crate::settings::Settings::default(),
+            app_center: crate::app_center::Center::default(),
             selected: 0,
             phase: Phase::Ready,
             error: None,
@@ -88,6 +90,10 @@ impl Launcher {
                 return self.input(Action::Activate);
             }
             Action::Activate if !self.apps.is_empty() => {
+                if self.apps[self.selected].id == crate::app_center::TILE_ID {
+                    self.app_center.show();
+                    return None;
+                }
                 if self.apps[self.selected].is_system_settings() {
                     self.settings.show();
                     return None;

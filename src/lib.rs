@@ -1,5 +1,6 @@
 //! Portable PocketHome-compatible launcher. Core tests run without initializing a display.
 mod app;
+mod app_center;
 mod config;
 mod discovery;
 mod input;

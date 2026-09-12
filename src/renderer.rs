@@ -1,3 +1,4 @@
+mod app_center;
 mod system;
 use crate::{
     app::AppEntry,
@@ -214,6 +215,9 @@ pub fn render(
     state: &Launcher,
     icons: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
+    if state.app_center.open {
+        return app_center::panel(canvas, layout, &state.app_center);
+    }
     let [red, green, blue] = state.preferences.color;
     canvas.set_draw_color(Color::RGB(red, green, blue));
     canvas.clear();
@@ -721,6 +725,7 @@ mod system_tests {
             state.opening = Some("Bitcoin CAD".into());
             render(&mut canvas, &layout, &state, &[])?;
             screenshot(&canvas, &output.join(format!("loading-{w}x{h}.bmp")))?;
+            app_center::qa(&mut canvas, &layout, output)?;
         }
         Ok(())
     }

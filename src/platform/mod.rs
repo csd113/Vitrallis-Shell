@@ -1,7 +1,7 @@
 pub mod generic;
 pub mod pocketchip;
 
-mod command;
+pub mod command;
 pub mod system;
 pub mod update;
 

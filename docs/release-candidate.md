@@ -1,3 +1,26 @@
+# Vitrallis 0.1.0-beta2.1
+
+This prerelease adds the native Rust App Center for PocketCHIP OTA testing.
+Catalog manifests are fetched from GitHub at runtime. No applications, catalog
+manifests, or application artwork are bundled; app files and assets are fetched
+only when installing the associated app. Existing installed apps are preserved.
+
+The App Center includes repository management, verified sequential installations,
+local-change and publisher protections, recovery, and keyboard/touch navigation.
+See [App Center behavior](app-center.md) and [changed files and validation](app-center-validation.md).
+
+Version `0.1.0-beta2.1` and tag `v0.1.0-beta2.1` are explicitly authorized.
+This version sorts above `0.1.0-beta.2` under semantic version precedence.
+Release CI builds Linux x86-64 and ARMv7 binaries against glibc 2.36 / SDL2 2.26.5,
+checks ARM startup and a 480×272 frame under Cortex-A8 QEMU, and supplies SHA-256
+sidecars. Physical PocketCHIP OTA validation remains pending.
+
+Use **More → Check for Updates** on the corrected beta.2 shell. The initially
+published beta.2 updater excluded prereleases and needs the one-time replacement
+described in [shell updates](shell-updates.md#one-time-transition-from-the-original-beta-updater).
+
+---
+
 # Vitrallis 0.1.0-beta.2
 
 This release fixes keyboard navigation in the native system-service screens.

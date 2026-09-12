@@ -92,6 +92,8 @@ fn beta_builds_receive_published_previews_without_downgrades()
 -> Result<(), Box<dyn std::error::Error>> {
     for (current, newest, available) in [
         ("0.1.0-beta.1", "0.1.0-beta.2", true),
+        ("0.1.0-beta.2", "0.1.0-beta2.1", true),
+        ("0.1.0-beta2.1", "0.1.0-beta.2", false),
         ("0.1.0-beta.2", "0.1.0-beta.10", true),
         ("0.1.0-beta.10", "0.1.0-beta.2", false),
         ("0.1.0-beta.2", "0.1.0-beta.2", false),

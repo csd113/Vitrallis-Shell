@@ -1,4 +1,16 @@
-# App Center: free app downloads and updates
+# App Center on PocketCHIP
+
+App Center is now a native Rust/SDL screen. It needs no Python/Tk updater install
+or compatibility patch. Catalog manifests and app assets are fetched at runtime;
+no apps are bundled or preinstalled. See the [native App Center guide](../../app-center.md)
+for source management, install/update/repair, safety, and parity details. Existing
+app paths, shortcuts, private runtimes, and Marshmallow recovery remain supported.
+Shell-manager updates use the existing verified shell updater.
+
+The following instructions are retained only for maintaining an older standalone
+Python updater installation. They are **not native App Center setup steps**.
+
+# Historical Python updater compatibility and recovery
 
 Vitrallis uses [Pocketchip-update-apps](https://github.com/csd113/Pocketchip-update-apps), not a second package ecosystem. In PocketCHIP mode its existing Update Apps launcher is shown as **App Center**; the original PocketHome JSON is not renamed. It provides free downloads and updates, with no purchasing. If it is missing, App Center remains visible with a setup diagnostic. Installation is deliberately not a remote shell one-liner.
 

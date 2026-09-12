@@ -110,3 +110,17 @@ standard library provide those operations. The hashing crate avoids relying on
 varying external checksum utilities; both additions support Rust 1.91 and keep
 the graph free of duplicate crate versions. Networking uses optional system
 `/usr/bin/curl` rather than adding an HTTP/TLS dependency stack.
+
+
+## Native App Center additions
+
+App Center adds the Rust `toml` parser (1.1, parse/std/serde features only) because
+manifest v1 requires complete TOML parsing, duplicate-key rejection, and strict
+types. No existing crate parsed TOML. `serde`, already in the dependency graph,
+is now direct for the recursive duplicate-key-rejecting JSON visitor. The lockfile
+retains the existing Rust 1.91 policy and no duplicate crate versions. No package
+or workspace version was changed. HTTP uses the existing optional system curl
+approach; SHA-256 and PNG verification reuse existing crates. Runtime Python is
+probed only for the apps being checked; there is no Python/Tk App Center UI or
+updater dependency. Old Store integration notes above describe the historical
+compatibility patch, not a prerequisite for the native App Center.

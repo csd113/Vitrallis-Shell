@@ -1,0 +1,206 @@
+//! Journaled conditional file replacement. Recovery never overwrites later edits.
+use super::{
+    metadata,
+    storage::{self, FileData},
+};
+use serde_json::Value;
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
+#[derive(Debug, Clone)]
+pub struct Write {
+    pub path: PathBuf,
+    pub before: Option<FileData>,
+    pub after: FileData,
+}
+pub fn plan(path: PathBuf, after: FileData) -> Result<Write, String> {
+    let before = storage::read(&path, metadata::BUNDLE_LIMIT)?;
+    Ok(Write {
+        path,
+        before,
+        after,
+    })
+}
+fn value(data: Option<&FileData>) -> Value {
+    data.map_or(
+        Value::Null,
+        |d| serde_json::json!({"sha256":storage::sha(&d.bytes),"mode":d.mode}),
+    )
+}
+fn record(journal: &Path, writes: &[Write]) -> Result<(), String> {
+    storage::directory(journal)?;
+    let mut rows = Vec::new();
+    for (i, w) in writes.iter().enumerate() {
+        if let Some(old) = &w.before {
+            storage::atomic(&journal.join(format!("{i}.before")), old)?;
+        }
+        storage::atomic(&journal.join(format!("{i}.after")), &w.after)?;
+        rows.push(serde_json::json!({"path":w.path,"before":value(w.before.as_ref()),"after":value(Some(&w.after))}));
+    }
+    storage::atomic(
+        &journal.join("pending.json"),
+        &FileData {
+            bytes: serde_json::to_vec(&rows).map_err(|e| e.to_string())?,
+            mode: 0o600,
+        },
+    )
+}
+pub fn apply(journal: &Path, writes: &[Write]) -> Result<(), String> {
+    apply_with(journal, writes, |_| Ok(()))
+}
+fn apply_with(
+    journal: &Path,
+    writes: &[Write],
+    mut after_write: impl FnMut(usize) -> Result<(), String>,
+) -> Result<(), String> {
+    if storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)?.is_some() {
+        return Err("Pending transaction must be recovered first".into());
+    }
+    for w in writes {
+        if storage::read(&w.path, metadata::BUNDLE_LIMIT)? != w.before {
+            return Err("Files changed; check for updates again".into());
+        }
+    }
+    record(journal, writes)?;
+    let result: Result<(), String> = (|| {
+        for (i, w) in writes.iter().enumerate() {
+            if storage::read(&w.path, metadata::BUNDLE_LIMIT)? != w.before {
+                return Err("File changed during installation".into());
+            }
+            storage::atomic(&w.path, &w.after)?;
+            after_write(i)?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let rollback = rollback(writes);
+        return Err(format!(
+            "{error}; {}",
+            rollback.map_or_else(|e| e, |()| "rolled back; repair on next check".into())
+        ));
+    }
+    std::fs::rename(journal.join("pending.json"), journal.join("completed.json"))
+        .map_err(|e| e.to_string())?;
+    storage::sync(journal)
+}
+fn rollback(writes: &[Write]) -> Result<(), String> {
+    let mut conflicts = Vec::new();
+    for w in writes.iter().rev() {
+        let current = storage::read(&w.path, metadata::BUNDLE_LIMIT)?;
+        if current == w.before {
+            continue;
+        }
+        if current.as_ref() != Some(&w.after) {
+            conflicts.push(w.path.display().to_string());
+            continue;
+        }
+        if let Some(old) = &w.before {
+            storage::atomic(&w.path, old)?;
+        } else {
+            std::fs::remove_file(&w.path).map_err(|e| e.to_string())?;
+            storage::sync(w.path.parent().ok_or("Missing parent")?)?;
+        }
+    }
+    if conflicts.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Later edits preserved; resolve recovery conflicts: {}",
+            conflicts.join(", ")
+        ))
+    }
+}
+pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, String> {
+    let Some(file) = storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)? else {
+        return Ok(false);
+    };
+    let v = metadata::json(&file.bytes)?;
+    let rows = v
+        .as_array()
+        .filter(|a| a.len() <= 270)
+        .ok_or("Invalid recovery journal")?;
+    let mut writes = Vec::new();
+    let mut seen = BTreeSet::new();
+    for (i, row) in rows.iter().enumerate() {
+        metadata::fields(row, "path before after")?;
+        let path = PathBuf::from(metadata::text(&row["path"], 4096)?);
+        storage::safe(&path)?;
+        if !allowed(&path) || !seen.insert(path.clone()) {
+            return Err("Recovery target is outside installation scope".into());
+        }
+        let before = if row["before"].is_null() {
+            None
+        } else {
+            Some(load_saved(journal, i, "before", &row["before"])?)
+        };
+        let after = load_saved(journal, i, "after", &row["after"])?;
+        writes.push(Write {
+            path,
+            before,
+            after,
+        });
+    }
+    rollback(&writes)?;
+    std::fs::rename(journal.join("pending.json"), journal.join("recovered.json"))
+        .map_err(|e| e.to_string())?;
+    storage::sync(journal)?;
+    Ok(true)
+}
+fn load_saved(journal: &Path, i: usize, kind: &str, v: &Value) -> Result<FileData, String> {
+    metadata::fields(v, "sha256 mode")?;
+    let d = storage::read(&journal.join(format!("{i}.{kind}")), metadata::BUNDLE_LIMIT)?
+        .ok_or("Missing recovery backup")?;
+    if v["sha256"] != storage::sha(&d.bytes) || v["mode"].as_u64() != Some(u64::from(d.mode)) {
+        return Err("Corrupt recovery backup".into());
+    }
+    Ok(d)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn rollback_preserves_later_edits_and_recovery_is_repeatable() -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let path = root.join("app");
+        let journal = root.join("journal");
+        let old = FileData {
+            bytes: b"old".to_vec(),
+            mode: 0o600,
+        };
+        storage::atomic(&path, &old)?;
+        let w = plan(
+            path.clone(),
+            FileData {
+                bytes: b"new".to_vec(),
+                mode: 0o600,
+            },
+        )?;
+        assert!(apply_with(&journal, &[w], |_| Err("interrupted".into())).is_err());
+        assert_eq!(storage::read(&path, 100)?, Some(old));
+        assert!(recover(&journal, |p| p == path)?);
+        assert!(!recover(&journal, |p| p == path)?);
+        let w = plan(
+            path.clone(),
+            FileData {
+                bytes: b"new".to_vec(),
+                mode: 0o600,
+            },
+        )?;
+        let later = FileData {
+            bytes: b"user edit".to_vec(),
+            mode: 0o600,
+        };
+        assert!(
+            apply_with(&journal, &[w], |_| {
+                storage::atomic(&path, &later)?;
+                Err("interrupted".into())
+            })
+            .is_err()
+        );
+        assert_eq!(storage::read(&path, 100)?, Some(later));
+        assert!(recover(&journal, |p| p == path).is_err());
+        Ok(())
+    }
+}

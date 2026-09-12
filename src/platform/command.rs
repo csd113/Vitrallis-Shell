@@ -8,6 +8,28 @@ use std::{
 };
 
 pub fn run(program: &str, args: &[&str]) -> Result<String, String> {
+    run_bounded(program, args, 8192)
+}
+pub fn run_bounded(program: &str, args: &[&str], limit: u64) -> Result<String, String> {
+    execute(program, args, limit, false)
+}
+#[cfg(not(target_os = "linux"))]
+pub fn process_arguments(pid: u32) -> Result<Option<String>, String> {
+    // BSD ps exits 1 with no output when a valid PID query has no match.
+    let output = execute(
+        "/bin/ps",
+        &["-p", &pid.to_string(), "-o", "command="],
+        8192,
+        true,
+    )?;
+    Ok((!output.trim().is_empty()).then_some(output))
+}
+fn execute(
+    program: &str,
+    args: &[&str],
+    limit: u64,
+    no_matches_ok: bool,
+) -> Result<String, String> {
     let mut command = Command::new(program);
     #[cfg(unix)]
     {
@@ -32,7 +54,10 @@ pub fn run(program: &str, args: &[&str]) -> Result<String, String> {
         .name("system-output".into())
         .spawn(move || {
             let mut bytes = Vec::new();
-            let result = stdout.take(8193).read_to_end(&mut bytes).map(|_| bytes);
+            let result = stdout
+                .take(limit.saturating_add(1))
+                .read_to_end(&mut bytes)
+                .map(|_| bytes);
             let _ = send.send(result);
         });
     if let Err(error) = reader {
@@ -53,7 +78,7 @@ pub fn run(program: &str, args: &[&str]) -> Result<String, String> {
             }
         }
     };
-    if !status.success() {
+    if !(status.success() || no_matches_ok && status.code() == Some(1)) {
         crate::process::cleanup_group(child.id());
         return Err(format!("{program}: {status}"));
     }
@@ -64,8 +89,8 @@ pub fn run(program: &str, args: &[&str]) -> Result<String, String> {
             "command output timed out".to_owned()
         })?
         .map_err(|e| e.to_string())?;
-    if bytes.len() > 8192 {
-        return Err("command output exceeds 8 KiB".into());
+    if u64::try_from(bytes.len()).map_err(|e| e.to_string())? > limit {
+        return Err(format!("command output exceeds {limit} bytes"));
     }
     String::from_utf8(bytes).map_err(|_| "command output is not UTF-8".into())
 }

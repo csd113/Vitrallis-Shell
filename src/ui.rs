@@ -88,11 +88,11 @@ fn event_loop(
     present_initial(canvas, layout, &state, &textures)?;
     loop {
         dirty |= refresh_system(&mut worker, &mut state.settings);
-        if let crate::settings::TimezoneState::Authentication(index) = state.settings.timezone {
-            state.settings.timezone = crate::settings::TimezoneState::Idle;
-            open_timezone(&mut state, &mut child, index);
+        if refresh_app_center(sdl, config, &mut state, &mut dirty)? {
+            textures = artwork(&creator, &state);
             dirty = true;
         }
+        dirty |= refresh_timezone(&mut state, &mut child);
         dirty |= refresh_focus(&mut child, &mut state);
         if dirty && Instant::now() >= next_frame {
             state.running = child.running_ids();
@@ -103,7 +103,7 @@ fn event_loop(
         }
         let event = wait_event(&mut events, state.phase, next_poll, dirty);
         if let Some(event) = event {
-            if closing(&event) {
+            if closing(&event) && !state.app_center.busy {
                 return Ok(());
             }
             dirty |= exposed(&event);
@@ -184,9 +184,43 @@ fn poll_children(
     }
 }
 
+fn refresh_timezone(state: &mut Launcher, child: &mut ProcessSet) -> bool {
+    if let crate::settings::TimezoneState::Authentication(index) = state.settings.timezone {
+        state.settings.timezone = crate::settings::TimezoneState::Idle;
+        open_timezone(state, child, index);
+        true
+    } else {
+        false
+    }
+}
+
+fn refresh_app_center(
+    sdl: &sdl2::Sdl,
+    config: &Config,
+    state: &mut Launcher,
+    dirty: &mut bool,
+) -> Result<bool, String> {
+    *dirty |= state.app_center.poll();
+    let artwork_changed =
+        std::mem::take(&mut state.app_center.refresh) && reload_catalog(config, state);
+    if state.app_center.request.take().is_some() {
+        state.settings.show();
+        state.settings.page = crate::settings::Page::Updates;
+        *dirty = true;
+    }
+    let input = sdl.video()?.text_input();
+    if state.app_center.editing() && !input.is_active() {
+        input.start();
+    } else if !state.app_center.editing() && input.is_active() {
+        input.stop();
+    }
+    Ok(artwork_changed)
+}
+
 fn terminate_selected(event: &Event, state: &mut Launcher, child: &mut ProcessSet) -> bool {
     if state.phase != Phase::Ready
         || state.settings.open
+        || state.app_center.open
         || state.error.is_some()
         || !matches!(
             event,
@@ -296,6 +330,7 @@ fn window_focus(
         } => {
             state.opening = None;
             state.settings.lost_focus();
+            state.app_center.lost_focus();
             pointer.clear();
             true
         }
@@ -368,6 +403,10 @@ fn translate_action(
     pointer: &mut PointerInput,
     worker: &mut Option<crate::platform::system::Worker>,
 ) -> (Option<Action>, bool) {
+    if state.app_center.open {
+        state.app_center.event(event, layout);
+        return (None, true);
+    }
     state.settings.network_available = state
         .apps
         .iter()

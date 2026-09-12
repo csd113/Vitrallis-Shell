@@ -30,7 +30,7 @@ src/
     pocketchip.rs             PocketCHIP hardware and session policy
     pocketchip/
       display.rs              X timeout and time-zone settings
-      store.rs                Device Store and return-to-home catalog entries
+      store.rs                Marshmallow return-to-home catalog entry
 assets/system/                Shared embedded artwork and provenance
 docs/devices/
   pocketchip.md               Installation, selection, and recovery
@@ -98,3 +98,9 @@ standard locations. Historical reports and `docs/evidence/` remain useful
 validation records. Build outputs, Python caches, local environment files, and
 private keys are already ignored; keep device sysroots and local credentials
 out of Git.
+
+Native App Center lives in `src/app_center/`: strict catalog/manifest metadata,
+GitHub transport, source settings, runtime/process checks, transactional installer,
+discovery, and SDL screen state. `src/renderer/app_center.rs` renders its shared
+keyboard/touch target model. Runtime catalogs and app assets are fetched; no apps
+are compiled into the shell. See [App Center](app-center.md).
