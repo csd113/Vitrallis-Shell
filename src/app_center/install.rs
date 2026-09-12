@@ -126,7 +126,7 @@ pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Checked, Str
             },
         )?);
     }
-    support(loc, &p, &runtime, &files, &mut writes)?;
+    let menu_warning = support(loc, &p, &runtime, &files, &mut writes)?;
     let changed = writes.iter().any(|w| w.before.as_ref() != Some(&w.after));
     let pending = storage::read(&root.join(".installation-pending"), 1024)?.is_some();
     let entry = root.join(&p.entry);
@@ -138,7 +138,7 @@ pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Checked, Str
             mode: 0o600,
         },
     )?);
-    let status = if pending {
+    let mut status = if pending {
         "incomplete / repair"
     } else if changed && installed == "not installed" {
         "ready to install"
@@ -148,6 +148,10 @@ pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Checked, Str
         "up to date"
     }
     .to_owned();
+    if let Some(warning) = menu_warning {
+        status.push_str("; ");
+        status.push_str(&warning);
+    }
     Ok(Checked {
         package: p,
         installed,
@@ -236,7 +240,7 @@ fn support(
     runtime: &Runtime,
     files: &Files,
     writes: &mut Vec<Write>,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let root = loc.root(p);
     if p.legacy() {
         for (name, mode) in [("launch", 0o755), ("bitcoin.png", 0o644)] {
@@ -317,10 +321,14 @@ fn support(
             after,
         });
     }
-    if p.legacy() {
-        menu(loc, &root, writes)?;
+    // PocketHome registration is optional: native discovery already exposes the app.
+    // Keep its file out of the transaction if it cannot pass the normal checks.
+    if p.legacy()
+        && let Err(error) = menu(loc, &root, writes)
+    {
+        return Ok(Some(format!("PocketHome menu unchanged: {error}")));
     }
-    Ok(())
+    Ok(None)
 }
 fn desktop_quote(path: &Path) -> Result<String, String> {
     let s = path.to_str().ok_or("Desktop path must be UTF-8")?;

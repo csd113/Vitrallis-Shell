@@ -78,6 +78,10 @@ Previous source is also retained as `bitcoin.py.before-update`. The recognized
 legacy source hash can upgrade; unknown unversioned sources are preserved.
 Existing Python updater files/receipts remain untouched, but its duplicate shell
 tile is replaced by the native App Center. Marshmallow recovery is preserved.
+PocketHome menu registration is optional: if its config or directory fails validation,
+App Center reports "PocketHome menu unchanged" and installs the app without editing
+that menu or changing its permissions. Vitrallis discovers the installed app directly.
+The usual strict checks still apply to all installation files and recovery writes.
 
 Runtime detection tries an app-local `.venv/bin/python3`, existing system Python,
 and the existing PocketCHIP Tk/Tcl environment. Missing runtimes, Tk imports, and

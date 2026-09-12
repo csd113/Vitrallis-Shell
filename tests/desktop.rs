@@ -81,9 +81,9 @@ fn imported_catalog_is_read_only_and_missing_icons_render_safely()
         .output()?;
     assert!(listed.status.success());
     let catalog: serde_json::Value = serde_json::from_slice(&listed.stdout)?;
-    assert_eq!(catalog["apps"][0]["name"], "Real Label");
-    assert_eq!(catalog["apps"][1]["name"], "Broken");
-    assert!(catalog["apps"][1]["unavailable"].is_string());
+    assert_eq!(catalog["apps"][1]["name"], "Real Label");
+    assert_eq!(catalog["apps"][2]["name"], "Broken");
+    assert!(catalog["apps"][2]["unavailable"].is_string());
     let frame = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
         .env("SDL_VIDEODRIVER", "dummy")
         .arg("--app-config")
@@ -184,7 +184,8 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
         Ok(serde_json::from_slice(&output.stdout)?)
     };
     let fallback = list(&mut command)?;
-    assert_eq!(fallback["apps"][0]["name"], "Default");
+    assert_eq!(fallback["apps"][0]["id"], "vitrallis-app-center");
+    assert_eq!(fallback["apps"][1]["name"], "Default");
     assert!(!user_config.exists());
 
     let user = serde_json::to_vec(&serde_json::json!({"pages": [{"name": "Apps", "items": [
@@ -194,30 +195,30 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
     std::fs::write(&user_config, &user)?;
     let desktop = list(&mut command)?;
     assert_eq!(desktop["apps"].as_array().ok_or("missing apps")?.len(), 3);
-    assert_eq!(desktop["apps"][0]["name"], "Terminal");
-    assert_eq!(desktop["apps"][0]["args"], serde_json::json!([]));
+    assert_eq!(desktop["apps"][1]["name"], "Terminal");
+    assert_eq!(desktop["apps"][1]["args"], serde_json::json!([]));
 
     command.arg("--pocketchip");
     let device = list(&mut command)?;
     assert_eq!(device["apps"].as_array().ok_or("missing apps")?.len(), 3);
-    assert_eq!(device["apps"][0]["id"], desktop["apps"][0]["id"]);
+    assert_eq!(device["apps"][1]["id"], desktop["apps"][1]["id"]);
     assert_eq!(
-        device["apps"][0]["args"],
+        device["apps"][1]["args"],
         serde_json::json!(["--no-remote"])
     );
-    assert_eq!(device["apps"][1]["name"], "Vitrallis");
-    assert_eq!(device["apps"][2]["id"], "vitrallis-app-center");
+    assert_eq!(device["apps"][2]["name"], "Vitrallis");
+    assert_eq!(device["apps"][0]["id"], "vitrallis-app-center");
 
     command.env("VITRALLIS_SESSION", "1");
     let session = list(&mut command)?;
     assert_eq!(session["apps"].as_array().ok_or("missing apps")?.len(), 3);
-    assert_eq!(session["apps"][1]["id"], "vitrallis-return-marshmallow");
-    assert_eq!(session["apps"][1]["entry"], "/usr/bin/systemctl");
+    assert_eq!(session["apps"][2]["id"], "vitrallis-return-marshmallow");
+    assert_eq!(session["apps"][2]["entry"], "/usr/bin/systemctl");
     assert_eq!(
-        session["apps"][1]["args"],
+        session["apps"][2]["args"],
         serde_json::json!(["--user", "stop", "vitrallis-session.service"])
     );
-    assert_eq!(session["apps"][2]["id"], "vitrallis-app-center");
+    assert_eq!(session["apps"][0]["id"], "vitrallis-app-center");
     assert_eq!(std::fs::read(&default_config)?, default);
     assert_eq!(std::fs::read(&user_config)?, user);
     Ok(())

@@ -39,16 +39,19 @@ pub fn integrate(catalog: &mut Catalog) {
     catalog
         .apps
         .retain(|a| a.id != super::TILE_ID && a.id != "vitrallis-pocketchip-store");
-    catalog.apps.push(AppEntry {
-        id: super::TILE_ID.into(),
-        name: "App Center".into(),
-        icon: None,
-        manifest: AppManifest {
-            entry: "/vitrallis/builtin/app-center".into(),
-            ..AppManifest::default()
+    catalog.apps.insert(
+        0,
+        AppEntry {
+            id: super::TILE_ID.into(),
+            name: "App Center".into(),
+            icon: None,
+            manifest: AppManifest {
+                entry: "/vitrallis/builtin/app-center".into(),
+                ..AppManifest::default()
+            },
+            unavailable: None,
         },
-        unavailable: None,
-    });
+    );
 }
 fn native(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
     let root = loc.data.join("vitrallis/apps");

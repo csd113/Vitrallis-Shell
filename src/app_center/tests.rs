@@ -538,3 +538,57 @@ fn running_app_identity_is_rechecked_and_only_exact_script_is_closed() -> Result
     assert!(!status.success());
     Ok(())
 }
+
+#[cfg(unix)]
+#[test]
+fn unsafe_pockethome_menu_does_not_block_legacy_installation() -> Result<(), String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let (_scratch, loc) = locations()?;
+    let menu = loc.home.join(".pocket-home");
+    let config = menu.join("config.json");
+    storage::directory(&menu)?;
+    let original = br#"{"pages":[{"name":"Apps","items":[]}]}"#;
+    std::fs::write(&config, original).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&menu, std::fs::Permissions::from_mode(0o775))
+        .map_err(|e| e.to_string())?;
+    assert!(storage::read(&config, 1024).is_err());
+    let bytes = std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?;
+    let package =
+        metadata::catalog(&sources::Repository::parse(sources::DEFAULT)?, &bytes)?.remove(0);
+    let files = Files::from([
+        ("icon.png".into(), fixture_icon()?),
+        (
+            "bitcoin.py".into(),
+            format!("VERSION = '{}'\n", package.version).into_bytes(),
+        ),
+    ]);
+    let package = inventory(package, &files);
+    let checked = install::prepare(&loc, package.clone(), files.clone())?;
+    assert!(checked.status.contains("PocketHome menu unchanged"));
+    assert!(
+        checked
+            .prepared
+            .as_ref()
+            .is_some_and(|p| p.writes.iter().all(|w| w.path != config))
+    );
+    install::install(&loc, &checked)?;
+    assert!(loc.root(&package).join("bitcoin.py").is_file());
+    assert_eq!(std::fs::read(&config).map_err(|e| e.to_string())?, original);
+    assert_eq!(
+        std::fs::metadata(&menu).map_err(|e| e.to_string())?.mode() & 0o777,
+        0o775
+    );
+    // A safe PocketHome menu still receives the normal compatibility entry.
+    std::fs::set_permissions(&menu, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+    let checked = install::prepare(&loc, package.clone(), files.clone())?;
+    assert!(!checked.status.contains("PocketHome menu unchanged"));
+    install::install(&loc, &checked)?;
+    let updated = metadata::json(&std::fs::read(&config).map_err(|e| e.to_string())?)?;
+    assert_eq!(updated["pages"][0]["items"][0]["name"], "Bitcoin CAD");
+    // Unsafe application storage must still block preparation and writes.
+    std::fs::set_permissions(loc.root(&package), std::fs::Permissions::from_mode(0o775))
+        .map_err(|e| e.to_string())?;
+    assert!(install::prepare(&loc, package, files).is_err());
+    Ok(())
+}

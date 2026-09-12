@@ -73,8 +73,15 @@ pub fn icons<'a>(
             if remaining == 0 {
                 return None;
             }
-            let result = if app.is_system_settings() {
-                decode_icon(include_bytes!("../assets/system/gear.png")).and_then(|surface| {
+            let builtin: Option<&[u8]> = if app.id == crate::app_center::TILE_ID {
+                Some(include_bytes!("../assets/system/apps.png"))
+            } else if app.is_system_settings() {
+                Some(include_bytes!("../assets/system/gear.png"))
+            } else {
+                None
+            };
+            let result = if let Some(bytes) = builtin {
+                decode_icon(bytes).and_then(|surface| {
                     creator
                         .create_texture_from_surface(&surface)
                         .map_err(|e| e.to_string())

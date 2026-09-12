@@ -25,3 +25,9 @@ Use case: logo-brand. Asset type: production power-off icon for a compact handhe
 ## restart.png
 
 Use case: logo-brand. Asset type: production restart icon for a compact handheld Linux launcher, used at 24 pixels. Subject: one simple almost-complete circular clockwise arrow with a clear chunky triangular arrowhead at upper right. Style: premium clean dimensional icon, softly beveled satin silver-white with subtle cool blue shadows, strong simple silhouette, crisp anti-aliased edges, restrained depth, no tiny details. Composition: centered single symbol occupies 80 percent of square canvas. Background: genuinely transparent alpha, no backdrop, no tile, no surrounding shadow. No text, letters, watermark, extra objects or border. Designed to be legible on a dark navy UI. Generate a polished standalone icon matching an elegant silver-white settings gear.
+
+## apps.png
+
+Generated with the built-in image tool for App Center, exported as a 128×128 RGBA PNG with alpha preserved, and embedded in the launcher.
+
+Prompt: Use case: logo-brand. Create one production App Manager icon for a compact handheld Linux launcher, readable at 32 and 64 pixels. Subject: exactly four identical rounded square app tiles arranged in a tidy two-by-two grid with clear equal gaps. Style: premium clean dimensional icon, softly beveled satin silver-white with subtle cool blue shadows, matching a silver-white beveled system settings gear. Front view, strong simple silhouette, crisp antialiased edges, restrained depth, no tiny details. Composition: centered grid occupies 80 percent of a square canvas. Background: genuinely transparent alpha, no backdrop, no enclosing tile, no surrounding shadow. No text, letters, watermark, badges, extra objects or border. Designed for a dark navy UI.
