@@ -171,9 +171,11 @@ fn actual_catalog_and_manifest_contracts_reject_malicious_metadata() -> Result<(
 }
 struct FixtureFetch {
     responses: BTreeMap<String, Vec<u8>>,
+    requests: std::cell::RefCell<Vec<String>>,
 }
 impl network::Fetch for FixtureFetch {
     fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
+        self.requests.borrow_mut().push(url.into());
         let b = self
             .responses
             .get(url)
@@ -182,6 +184,15 @@ impl network::Fetch for FixtureFetch {
             return Err("bounded fixture".into());
         }
         Ok(b.clone())
+    }
+    fn fetch_progress(
+        &self,
+        url: &str,
+        limit: usize,
+        progress: &mut dyn FnMut(usize) -> Result<(), String>,
+    ) -> Result<Vec<u8>, String> {
+        let bytes = network::Fetch::fetch(self, url, limit)?;
+        network::read_download(std::io::Cursor::new(bytes), limit, progress)
     }
 }
 fn catalog_value(p: &Package) -> serde_json::Value {
@@ -237,14 +248,17 @@ fn transport(p: &Package, files: &Files) -> Result<FixtureFetch, String> {
             bytes.clone(),
         );
     }
-    Ok(FixtureFetch { responses })
+    Ok(FixtureFetch {
+        responses,
+        requests: std::cell::RefCell::default(),
+    })
 }
 #[test]
 fn branch_resolution_complete_inventory_and_partial_failures() -> Result<(), String> {
     let (mut p, files) = generic()?;
     let mut fetch = transport(&p, &files)?;
     assert_eq!(network::catalog(&fetch, &p.origin)?[0].key(), p.key());
-    assert_eq!(network::bundle(&fetch, &p, |_| ())?, files);
+    assert_eq!(network::bundle(&fetch, &p, |_| Ok(()))?, files);
     let tree = format!(
         "https://api.github.com/repos/{}/git/trees/{}?recursive=1",
         p.repository.as_str(),
@@ -266,7 +280,7 @@ fn branch_resolution_complete_inventory_and_partial_failures() -> Result<(), Str
             tree.clone(),
             serde_json::to_vec(&v).map_err(|e| e.to_string())?,
         );
-        assert!(network::bundle(&fetch, &p, |_| ()).is_err());
+        assert!(network::bundle(&fetch, &p, |_| Ok(())).is_err());
     }
     let (_scratch, loc) = locations()?;
     let mut sources = Sources::default();
@@ -280,7 +294,7 @@ fn branch_resolution_complete_inventory_and_partial_failures() -> Result<(), Str
     assert!(rows[0].status.contains("Fixture missing"));
     assert_eq!(rows[1].package.version, p.version);
     assert!(rows[1].status.starts_with("Disabled"));
-    assert!(rows.iter().all(|r| r.prepared.is_none()));
+    assert!(rows.iter().all(|r| !r.ready));
     Ok(())
 }
 #[test]
@@ -291,7 +305,7 @@ fn native_install_update_repair_origin_and_local_edit_protections() -> Result<()
     files.insert("main.py".into(), b"print('hello')\n".to_vec());
     let p = inventory(p, &files);
     let checked = install::prepare(&loc, p.clone(), files.clone())?;
-    assert_eq!(checked.installed, "not installed");
+    assert_eq!(install::check(&loc, p.clone())?.installed, "not installed");
     assert!(checked.prepared.is_some());
     install::install(&loc, &checked)?;
     let root = loc.root(&p);
@@ -382,7 +396,7 @@ fn legacy_path_support_customizations_pending_and_stale_check() -> Result<(), St
     let mut repair = install::prepare(&loc, p.clone(), files.clone())?;
     assert!(repair.status.contains("repair"));
     if let Some(prepared) = &mut repair.prepared {
-        prepared.checked_at = std::time::Instant::now()
+        prepared.created_at = std::time::Instant::now()
             .checked_sub(std::time::Duration::from_secs(901))
             .ok_or("time")?;
     }
@@ -590,5 +604,536 @@ fn unsafe_pockethome_menu_does_not_block_legacy_installation() -> Result<(), Str
     std::fs::set_permissions(loc.root(&package), std::fs::Permissions::from_mode(0o775))
         .map_err(|e| e.to_string())?;
     assert!(install::prepare(&loc, package, files).is_err());
+    Ok(())
+}
+
+fn test_sources(p: &Package) -> Sources {
+    Sources {
+        catalogs: vec![p.origin.clone()],
+        ..Sources::default()
+    }
+}
+fn selected_install(
+    loc: &Locations,
+    sources: &Sources,
+    row: &Checked,
+    fetch: &impl network::Fetch,
+) -> Result<Vec<String>, String> {
+    let (_send, commands) = mpsc::channel();
+    let (updates, receive) = mpsc::channel();
+    install_one(
+        loc,
+        sources,
+        row,
+        &commands,
+        &updates,
+        &AtomicBool::new(false),
+        fetch,
+    )?;
+    Ok(receive
+        .try_iter()
+        .filter_map(|u| match u {
+            Update::Progress(s) => Some(s),
+            _ => None,
+        })
+        .collect())
+}
+fn payload_url(p: &Package, name: &str) -> String {
+    format!(
+        "https://raw.githubusercontent.com/{}/{}/{}/{name}",
+        p.repository.as_str(),
+        p.commit,
+        p.directory
+    )
+}
+fn replace_catalog(
+    fetch: &mut FixtureFetch,
+    p: &Package,
+    packages: &[Package],
+) -> Result<(), String> {
+    let apps = packages
+        .iter()
+        .map(|p| catalog_value(p)["apps"][0].clone())
+        .collect::<Vec<_>>();
+    fetch.responses.insert(
+        format!(
+            "https://raw.githubusercontent.com/{}/{}/apps.json",
+            p.origin.as_str(),
+            "b".repeat(40)
+        ),
+        serde_json::to_vec(&serde_json::json!({"schema_version":1,"apps":apps}))
+            .map_err(|e| e.to_string())?,
+    );
+    Ok(())
+}
+#[test]
+fn metadata_only_check_and_selected_install_update_use_one_download_per_file() -> Result<(), String>
+{
+    let (_scratch, loc) = locations()?;
+    let (mut p, mut files) = generic()?;
+    files.insert("README.md".into(), vec![b'x'; 40_000]);
+    p = inventory(p, &files);
+    let sources = test_sources(&p);
+    let mut fetch = transport(&p, &files)?;
+    let mut other = p.clone();
+    other.id = "org.example.other".into();
+    other.directory = "apps/other".into();
+    replace_catalog(&mut fetch, &p, &[p.clone(), other.clone()])?;
+    let rows = check_all(&loc, &sources, &fetch, |_| ());
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|r| r.ready));
+    assert_eq!(fetch.requests.borrow().len(), 3);
+    assert!(!loc.root(&p).exists());
+    let total = files.values().map(Vec::len).sum::<usize>();
+    assert_eq!(Row::from(&rows[0]).download_size, total);
+    let progress = selected_install(&loc, &sources, &rows[0], &fetch)?;
+    assert!(
+        progress
+            .iter()
+            .any(|s| s.starts_with("Downloading: 16384 /"))
+    );
+    assert!(
+        progress
+            .iter()
+            .any(|s| s.starts_with(&format!("Downloading: {total} / {total} bytes (100%)")))
+    );
+    let verifying = progress
+        .iter()
+        .position(|s| s.starts_with("Verifying"))
+        .ok_or("verify stage")?;
+    let installing = progress
+        .iter()
+        .position(|s| s.starts_with("Installing"))
+        .ok_or("install stage")?;
+    assert!(verifying < installing);
+    for name in files.keys() {
+        assert_eq!(
+            fetch
+                .requests
+                .borrow()
+                .iter()
+                .filter(|u| **u == payload_url(&p, name))
+                .count(),
+            1
+        );
+    }
+    assert!(
+        !fetch
+            .requests
+            .borrow()
+            .iter()
+            .any(|u| u.contains("/apps/other/"))
+    );
+    assert!(!loc.root(&other).exists());
+    assert!(!install::check(&loc, p.clone())?.ready);
+
+    p.version = metadata::version("0.2.0")?;
+    p.commit = "e".repeat(40);
+    files.insert(
+        "app.toml".into(),
+        String::from_utf8(files["app.toml"].clone())
+            .map_err(|e| e.to_string())?
+            .replace("0.1.0", "0.2.0")
+            .into_bytes(),
+    );
+    files.insert("main.py".into(), b"print('new version')\n".to_vec());
+    p = inventory(p, &files);
+    let mut fetch = transport(&p, &files)?;
+    replace_catalog(&mut fetch, &p, &[p.clone(), other])?;
+    let rows = check_all(&loc, &sources, &fetch, |_| ());
+    assert_eq!(rows[0].installed, "0.1.0");
+    assert!(rows[0].ready);
+    assert_eq!(fetch.requests.borrow().len(), 3);
+    selected_install(&loc, &sources, &rows[0], &fetch)?;
+    for name in files.keys() {
+        assert_eq!(
+            fetch
+                .requests
+                .borrow()
+                .iter()
+                .filter(|u| **u == payload_url(&p, name))
+                .count(),
+            1
+        );
+    }
+    assert!(
+        !fetch
+            .requests
+            .borrow()
+            .iter()
+            .any(|u| u.contains("/apps/other/"))
+    );
+    assert_eq!(install::label(&loc, &p)?, "0.2.0");
+    Ok(())
+}
+#[test]
+fn catalog_advertising_more_than_old_ram_limit_is_all_available_without_payloads()
+-> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    let mut fetch = transport(&p, &files)?;
+    let packages = (0..6)
+        .map(|i| {
+            let mut next = p.clone();
+            next.id = format!("org.example.app{i}");
+            for file in &mut next.files {
+                file.size = metadata::FILE_LIMIT;
+            }
+            next
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        packages
+            .iter()
+            .flat_map(|p| &p.files)
+            .map(|f| f.size)
+            .sum::<usize>()
+            > 64 * 1024 * 1024
+    );
+    replace_catalog(&mut fetch, &p, &packages)?;
+    fetch
+        .responses
+        .retain(|u, _| !u.contains("/git/trees/") && !u.contains("/apps/hello/"));
+    let rows = check_all(&loc, &test_sources(&p), &fetch, |_| ());
+    assert_eq!(rows.len(), 6);
+    assert!(
+        rows.iter()
+            .all(|r| r.ready && r.status == "ready to install")
+    );
+    assert_eq!(fetch.requests.borrow().len(), 3);
+    assert!(!loc.data.exists());
+    Ok(())
+}
+#[test]
+fn failed_or_corrupt_downloads_never_install_or_replace_existing_app() -> Result<(), String> {
+    for existing in [false, true] {
+        let (_scratch, loc) = locations()?;
+        let (mut p, mut files) = generic()?;
+        let sources = test_sources(&p);
+        if existing {
+            let row = install::check(&loc, p.clone())?;
+            selected_install(&loc, &sources, &row, &transport(&p, &files)?)?;
+            p.version = metadata::version("0.2.0")?;
+            files.insert(
+                "app.toml".into(),
+                String::from_utf8(files["app.toml"].clone())
+                    .map_err(|e| e.to_string())?
+                    .replace("0.1.0", "0.2.0")
+                    .into_bytes(),
+            );
+            p = inventory(p, &files);
+        }
+        let before = storage::read(
+            &loc.root(&p).join(".vitrallis-receipt.json"),
+            metadata::CATALOG_LIMIT,
+        )?;
+        for failure in ["network", "hash", "short", "long"] {
+            let mut fetch = transport(&p, &files)?;
+            let url = payload_url(&p, "main.py");
+            match failure {
+                "network" => {
+                    fetch.responses.remove(&url);
+                }
+                "hash" => {
+                    fetch.responses.get_mut(&url).ok_or("payload")?[0] ^= 1;
+                }
+                "short" => {
+                    fetch.responses.get_mut(&url).ok_or("payload")?.pop();
+                }
+                _ => fetch.responses.get_mut(&url).ok_or("payload")?.push(0),
+            }
+            let rows = check_all(&loc, &sources, &fetch, |_| ());
+            assert!(rows[0].ready);
+            assert!(selected_install(&loc, &sources, &rows[0], &fetch).is_err());
+            assert_eq!(
+                storage::read(
+                    &loc.root(&p).join(".vitrallis-receipt.json"),
+                    metadata::CATALOG_LIMIT
+                )?,
+                before
+            );
+            assert!(!loc.root(&p).join(".installation-pending").exists());
+            if existing {
+                assert_eq!(
+                    std::fs::read(loc.root(&p).join("main.py")).map_err(|e| e.to_string())?,
+                    files["main.py"]
+                );
+            } else {
+                assert!(!loc.root(&p).exists());
+            }
+        }
+    }
+    Ok(())
+}
+#[test]
+fn streamed_byte_progress_and_cancellation_leave_no_installation() -> Result<(), String> {
+    let mut seen = Vec::new();
+    let bytes = vec![b'x'; 40_000];
+    assert_eq!(
+        network::read_download(std::io::Cursor::new(&bytes), bytes.len(), &mut |n| {
+            seen.push(n);
+            Ok(())
+        })?,
+        bytes
+    );
+    seen.dedup();
+    assert_eq!(seen, [0, 16384, 32768, 40000]);
+    let mut cursor = std::io::Cursor::new(&bytes);
+    assert!(
+        network::read_download(&mut cursor, bytes.len(), &mut |n| {
+            if n >= 16384 {
+                Err("cancelled".into())
+            } else {
+                Ok(())
+            }
+        })
+        .is_err()
+    );
+    assert_eq!(cursor.position(), 16384);
+    assert!(network::read_download(std::io::Cursor::new(&bytes), 10, &mut |_| Ok(())).is_err());
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    let fetch = transport(&p, &files)?;
+    let row = install::check(&loc, p.clone())?;
+    assert!(
+        acquire(&loc, &row, &fetch, |s| {
+            if s.starts_with("Downloading") {
+                Err("cancelled".into())
+            } else {
+                Ok(())
+            }
+        })
+        .is_err()
+    );
+    assert!(!loc.root(&p).exists());
+    let fetch = transport(&p, &files)?;
+    assert!(
+        acquire(&loc, &row, &fetch, |s| {
+            if s.starts_with("Verifying") {
+                Err("cancelled".into())
+            } else {
+                Ok(())
+            }
+        })
+        .is_err()
+    );
+    assert!(!loc.root(&p).exists());
+    Ok(())
+}
+#[test]
+fn deferred_install_rechecks_source_trust_and_manifest_agreement() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (mut p, files) = generic()?;
+    let mut sources = test_sources(&p);
+    let row = install::check(&loc, p.clone())?;
+    let fetch = transport(&p, &files)?;
+    sources.catalogs.clear();
+    assert!(selected_install(&loc, &sources, &row, &fetch).is_err());
+    assert!(fetch.requests.borrow().is_empty());
+    p.repository = sources::Repository::parse("unapproved/source")?;
+    let fetch = transport(&p, &files)?;
+    let sources = test_sources(&p);
+    let rows = check_all(&loc, &sources, &fetch, |_| ());
+    assert!(!rows[0].ready);
+    assert!(rows[0].status.contains("Approval required"));
+    assert_eq!(fetch.requests.borrow().len(), 3);
+    let formerly_approved = install::check(&loc, p)?;
+    fetch.requests.borrow_mut().clear();
+    assert!(selected_install(&loc, &sources, &formerly_approved, &fetch).is_err());
+    assert!(fetch.requests.borrow().is_empty());
+    let (mut p, files) = generic()?;
+    p.name = "Catalog disagrees with app.toml".into();
+    let fetch = transport(&p, &files)?;
+    let row = install::check(&loc, p.clone())?;
+    assert!(selected_install(&loc, &test_sources(&p), &row, &fetch).is_err());
+    assert!(!loc.root(&p).exists());
+    Ok(())
+}
+
+#[test]
+fn cancellation_token_interrupts_selected_transfer_before_commit() -> Result<(), String> {
+    struct CancelFetch<'a> {
+        inner: &'a FixtureFetch,
+        cancelled: &'a AtomicBool,
+    }
+    impl network::Fetch for CancelFetch<'_> {
+        fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
+            self.inner.fetch(url, limit)
+        }
+        fn fetch_progress(
+            &self,
+            url: &str,
+            limit: usize,
+            progress: &mut dyn FnMut(usize) -> Result<(), String>,
+        ) -> Result<Vec<u8>, String> {
+            self.inner.fetch_progress(url, limit, &mut |n| {
+                if n > 0 {
+                    self.cancelled.store(true, Ordering::Relaxed);
+                }
+                progress(n)
+            })
+        }
+    }
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    let inner = transport(&p, &files)?;
+    let cancelled = AtomicBool::new(false);
+    let fetch = CancelFetch {
+        inner: &inner,
+        cancelled: &cancelled,
+    };
+    let row = install::check(&loc, p.clone())?;
+    let (_send, commands) = mpsc::channel();
+    let (updates, _receive) = mpsc::channel();
+    let error = install_one(
+        &loc,
+        &test_sources(&p),
+        &row,
+        &commands,
+        &updates,
+        &cancelled,
+        &fetch,
+    )
+    .err()
+    .ok_or("expected cancellation")?;
+    assert!(error.contains("Cancelled"));
+    assert!(!loc.root(&p).exists());
+    assert_eq!(
+        inner
+            .requests
+            .borrow()
+            .iter()
+            .filter(|u| u.contains("raw.githubusercontent.com"))
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn stream_io_failure_discards_partial_download() {
+    struct BrokenStream(bool);
+    impl std::io::Read for BrokenStream {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            if self.0 {
+                return Err(std::io::Error::other("connection lost"));
+            }
+            self.0 = true;
+            out[..3].copy_from_slice(b"abc");
+            Ok(3)
+        }
+    }
+    let mut progress = Vec::new();
+    let result = network::read_download(BrokenStream(false), 10, &mut |n| {
+        progress.push(n);
+        Ok(())
+    });
+    assert!(result.is_err());
+    assert_eq!(progress.last(), Some(&3));
+    assert!(!progress.contains(&10));
+}
+
+#[test]
+fn device_inventory_excludes_only_app_local_tests_and_keeps_legacy_catalogs() -> Result<(), String>
+{
+    let (p, mut files) = generic()?;
+    files.insert(
+        "tests/test_layout.py".into(),
+        b"# development test\n".to_vec(),
+    );
+    files.insert(
+        "assets/tests/example.txt".into(),
+        b"runtime asset\n".to_vec(),
+    );
+    let full = inventory(p, &files);
+    let fetch = transport(&full, &files)?;
+    assert_eq!(network::bundle(&fetch, &full, |_| Ok(()))?, files);
+    let mut device = full.clone();
+    device.files.retain(|f| !f.path.starts_with("tests/"));
+    fetch.requests.borrow_mut().clear();
+    let payload = network::bundle(&fetch, &device, |_| Ok(()))?;
+    assert!(payload.keys().all(|p| !p.starts_with("tests/")));
+    assert!(payload.contains_key("assets/tests/example.txt"));
+    assert!(
+        !fetch
+            .requests
+            .borrow()
+            .iter()
+            .any(|u| u.contains("/hello/tests/"))
+    );
+    metadata::validate_bundle(&device, &payload)?;
+    let (_scratch, loc) = locations()?;
+    let row = install::check(&loc, device.clone())?;
+    selected_install(&loc, &test_sources(&device), &row, &fetch)?;
+    assert!(!loc.root(&device).join("tests").exists());
+    for omitted in ["main.py", "README.md", "assets/tests/example.txt"] {
+        let mut bad = device.clone();
+        bad.files.retain(|f| f.path != omitted);
+        assert!(network::bundle(&fetch, &bad, |_| Ok(())).is_err());
+    }
+    let mut partial = full;
+    partial.files.retain(|f| f.path != "tests/test_layout.py");
+    assert!(network::bundle(&fetch, &partial, |_| Ok(())).is_err());
+    Ok(())
+}
+
+#[test]
+fn bitcoin_device_inventory_omits_tests_but_rejects_unsafe_git_entries() -> Result<(), String> {
+    let origin = sources::Repository::parse(sources::DEFAULT)?;
+    let p = metadata::catalog(
+        &origin,
+        &std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?,
+    )?
+    .remove(0);
+    let files = Files::from([
+        (
+            "bitcoin.py".into(),
+            format!("VERSION = '{}'\n", p.version).into_bytes(),
+        ),
+        ("docs/dashboard.png".into(), fixture_icon()?),
+        ("tests/test_bitcoin.py".into(), b"# test\n".to_vec()),
+        ("tests/test_layout.py".into(), b"# layout test\n".to_vec()),
+    ]);
+    let full = inventory(p, &files);
+    let mut fetch = transport(&full, &files)?;
+    let mut device = full;
+    device.files.retain(|f| !f.path.starts_with("tests/"));
+    let (_scratch, loc) = locations()?;
+    let row = install::check(&loc, device.clone())?;
+    selected_install(&loc, &test_sources(&device), &row, &fetch)?;
+    assert!(loc.root(&device).join("bitcoin.py").is_file());
+    assert!(!loc.root(&device).join("tests").exists());
+    assert!(
+        !fetch
+            .requests
+            .borrow()
+            .iter()
+            .any(|u| u.contains("/Bitcoin-Dashboard/tests/"))
+    );
+    let tree = format!(
+        "https://api.github.com/repos/{}/git/trees/{}?recursive=1",
+        device.repository.as_str(),
+        "d".repeat(40)
+    );
+    let original = fetch.responses[&tree].clone();
+    for (mode, kind, name) in [
+        ("120000", "blob", "tests/link"),
+        ("160000", "commit", "tests/submodule"),
+        ("100644", "blob", "tests/../outside"),
+        ("100644", "blob", "Tests/hidden.py"),
+    ] {
+        let mut v = metadata::json(&original)?;
+        v["tree"]
+            .as_array_mut()
+            .ok_or("tree")?
+            .push(serde_json::json!({
+                "path":name,"size":0,"type":kind,"mode":mode
+            }));
+        fetch.responses.insert(
+            tree.clone(),
+            serde_json::to_vec(&v).map_err(|e| e.to_string())?,
+        );
+        assert!(network::bundle(&fetch, &device, |_| Ok(())).is_err());
+    }
     Ok(())
 }

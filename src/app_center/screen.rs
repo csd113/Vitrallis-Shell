@@ -52,6 +52,7 @@ pub struct Center {
     pub open: bool,
     pub message: String,
     pub busy: bool,
+    download_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub refresh: bool,
     pub request: Option<Destination>,
     pub selected: usize,
@@ -73,6 +74,7 @@ impl Default for Center {
             open: false,
             message: "Check for updates to load catalogs".into(),
             busy: false,
+            download_cancel: None,
             refresh: false,
             request: None,
             selected: 0,
@@ -129,6 +131,7 @@ impl Center {
                 }
                 Update::Done(result, changed) => {
                     self.busy = false;
+                    self.download_cancel = None;
                     self.confirmation = None;
                     self.refresh |= changed;
                     self.message = result.map_or_else(
@@ -149,6 +152,13 @@ impl Center {
     }
     fn send(&mut self, command: Command) {
         if let Some(w) = &self.worker {
+            if matches!(command, Command::Install(_)) {
+                self.download_cancel = Some(std::sync::Arc::clone(&w.cancelled));
+            }
+            if matches!(command, Command::Check | Command::Install(_)) {
+                w.cancelled
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+            }
             match w.send.send(command) {
                 Ok(()) => {
                     self.busy = true;
@@ -187,6 +197,9 @@ impl Center {
             Confirmation::Remove(i)=>format!("Remove {}? Installed apps and saves remain.",self.sources.catalogs[*i].as_str()),
         };
         }
+        if self.busy {
+            return self.message.clone();
+        }
         if self.page == Page::Edit {
             return format!(
                 "owner/repo or HTTPS URL; use ; for batch entry\n{}",
@@ -194,7 +207,7 @@ impl Center {
             );
         }
         if self.page == Page::Details {
-            return self.rows.get(self.row).map_or_else(||self.message.clone(),|r|format!("{}\nID: {}\nCatalog: {}\nSource: {}\nInstalled: {} Latest: {}\n{}\n{}\nRequirements: {}. Apps are not sandboxed.",r.package.name,r.package.id,r.package.origin.as_str(),r.package.repository.as_str(),r.installed,r.package.version,r.status,r.package.notes,r.package.permissions));
+            return self.rows.get(self.row).map_or_else(||self.message.clone(),|r|format!("{}\nID: {}\nCatalog: {}\nSource: {}\nInstalled: {} Latest: {}\nDownload: {} bytes\n{}\n{}\nRequirements: {}. Apps are not sandboxed.",r.package.name,r.package.id,r.package.origin.as_str(),r.package.repository.as_str(),r.installed,r.package.version,r.download_size,r.status,r.package.notes,r.package.permissions));
         }
         if self.page == Page::Sources {
             return "Default catalog is always included. Customs supplement it.\nRemoving a source never uninstalls apps.".into();
@@ -267,7 +280,11 @@ impl Center {
         let menu = match self.page {
             Page::Apps => vec![
                 (Target::Check, "Check"),
-                (Target::Install, "Install"),
+                if self.busy && self.download_cancel.is_some() {
+                    (Target::Cancel, "Cancel")
+                } else {
+                    (Target::Install, "Install")
+                },
                 (Target::Sources, "Sources"),
                 (Target::Shell, "Shell"),
                 (Target::Home, "Home"),
@@ -411,7 +428,7 @@ impl Center {
             return matches!(target, Target::Confirm(_));
         }
         if self.busy {
-            return false;
+            return *target == Target::Cancel && self.download_cancel.is_some();
         }
         match target {
             Target::Install => !self.checked.is_empty(),
@@ -599,6 +616,17 @@ impl Center {
         self.selected = 0;
         self.contact = None;
     }
+    fn cancel_download(&mut self) {
+        if let Some(cancelled) = &self.download_cancel {
+            cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        self.message = "Cancelling download; any commit already started will finish safely".into();
+    }
+    fn check_catalogs(&mut self) {
+        self.checked.clear();
+        self.rows.clear();
+        self.send(Command::Check);
+    }
     fn activate(&mut self, target: Target, layout: &Layout) {
         if target == Target::Cancel && self.confirmation.is_some() {
             self.answer(false);
@@ -607,12 +635,12 @@ impl Center {
         if !self.enabled(&target) {
             return;
         }
+        if target == Target::Cancel && self.busy {
+            self.cancel_download();
+            return;
+        }
         match target {
-            Target::Check => {
-                self.checked.clear();
-                self.rows.clear();
-                self.send(Command::Check);
-            }
+            Target::Check => self.check_catalogs(),
             Target::Install => self.send(Command::Install(self.checked.iter().cloned().collect())),
             Target::Sources => {
                 self.row = 0;
@@ -784,6 +812,7 @@ impl Center {
                 installed: "not installed".into(),
                 status: "ready".into(),
                 ready: true,
+                download_size: 12345,
             });
         }
         Ok(center)
@@ -829,6 +858,79 @@ mod tests {
         Center::fixture()
     }
     #[test]
+    fn download_cancel_is_visible_and_shared_by_keyboard_and_touch() -> Result<(), String> {
+        for (w, h) in [(480, 272), (800, 480)] {
+            let layout = Layout::home(w, h)?;
+            for touch in [false, true] {
+                let mut center = center()?;
+                let (send, _commands) = std::sync::mpsc::channel();
+                let (_updates, receive) = std::sync::mpsc::channel();
+                let cancelled = std::sync::Arc::default();
+                center.worker = Some(Worker {
+                    send,
+                    receive,
+                    cancelled: std::sync::Arc::clone(&cancelled),
+                });
+                center.send(Command::Install(vec![center.rows[0].package.key()]));
+                center.message = "Downloading: 16384 / 40000 bytes (40%)\nSelected app".into();
+                assert!(center.details().starts_with("Downloading:"));
+                let (index, (_, label, bounds)) = center
+                    .targets(&layout)
+                    .into_iter()
+                    .enumerate()
+                    .find(|(_, (t, _, _))| *t == Target::Cancel)
+                    .ok_or("Cancel target")?;
+                assert_eq!(label, "Cancel");
+                assert!(center.enabled(&Target::Cancel));
+                for _ in 0..index {
+                    center.event(&key(Keycode::Tab), &layout);
+                }
+                assert_eq!(center.selected, index);
+                if touch {
+                    let x = f32::from(
+                        u16::try_from(bounds.x + bounds.w / 2).map_err(|e| e.to_string())?,
+                    ) / f32::from(w);
+                    let y = f32::from(
+                        u16::try_from(bounds.y + bounds.h / 2).map_err(|e| e.to_string())?,
+                    ) / f32::from(h);
+                    center.event(
+                        &Event::FingerDown {
+                            timestamp: 0,
+                            touch_id: 1,
+                            finger_id: 1,
+                            x,
+                            y,
+                            dx: 0.,
+                            dy: 0.,
+                            pressure: 1.,
+                        },
+                        &layout,
+                    );
+                    center.event(
+                        &Event::FingerUp {
+                            timestamp: 0,
+                            touch_id: 1,
+                            finger_id: 1,
+                            x,
+                            y,
+                            dx: 0.,
+                            dy: 0.,
+                            pressure: 0.,
+                        },
+                        &layout,
+                    );
+                } else {
+                    center.event(&key(Keycode::Return), &layout);
+                }
+                assert!(cancelled.load(std::sync::atomic::Ordering::Relaxed));
+                assert!(center.busy);
+                assert!(center.open);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn home_leaves_every_page_even_when_busy_and_cancels_confirmation() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         for page in [Page::Apps, Page::Sources, Page::Edit, Page::Details] {
@@ -859,7 +961,11 @@ mod tests {
         let (send, commands) = std::sync::mpsc::channel();
         let (updates, receive) = std::sync::mpsc::channel();
         let mut center = center()?;
-        center.worker = Some(Worker { send, receive });
+        center.worker = Some(Worker {
+            send,
+            receive,
+            cancelled: std::sync::Arc::default(),
+        });
         center.busy = true;
         center.confirmation = Some(Confirmation::Running(1, "Close app?".into()));
         center.event(&key(Keycode::Home), &layout);
@@ -1007,6 +1113,7 @@ mod tests {
         center.worker = Some(Worker {
             send,
             receive: queue,
+            cancelled: std::sync::Arc::default(),
         });
         center.activate(Target::Install, &layout);
         assert!(

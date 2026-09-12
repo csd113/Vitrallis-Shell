@@ -9,10 +9,30 @@ use std::{
 };
 pub trait Fetch {
     fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String>;
+    fn fetch_progress(
+        &self,
+        url: &str,
+        limit: usize,
+        progress: &mut dyn FnMut(usize) -> Result<(), String>,
+    ) -> Result<Vec<u8>, String> {
+        progress(0)?;
+        let bytes = self.fetch(url, limit)?;
+        progress(bytes.len())?;
+        Ok(bytes)
+    }
 }
 pub struct Curl;
 impl Fetch for Curl {
     fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
+        self.fetch_progress(url, limit, &mut |_| Ok(()))
+    }
+    fn fetch_progress(
+        &self,
+        url: &str,
+        limit: usize,
+        progress: &mut dyn FnMut(usize) -> Result<(), String>,
+    ) -> Result<Vec<u8>, String> {
+        progress(0)?;
         if !(url.starts_with("https://api.github.com/repos/")
             || url.starts_with("https://raw.githubusercontent.com/"))
             || url.chars().any(char::is_control)
@@ -52,26 +72,49 @@ impl Fetch for Curl {
             .map_err(|e| e.to_string())?;
         let result = (|| {
             let out = child.stdout.take().ok_or("Missing download stream")?;
-            let mut bytes = Vec::new();
-            out.take(u64::try_from(limit).map_err(|e| e.to_string())? + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|e| e.to_string())?;
-            if bytes.len() > limit {
-                return Err("Download exceeds byte limit".into());
-            }
-            Ok(bytes)
+            read_download(out, limit, progress)
         })();
         if result.is_err() {
             let _ = child.kill();
         }
         let status = child.wait().map_err(|e| e.to_string())?;
+        let bytes = result?;
         if !status.success() {
             return Err(format!(
                 "GitHub request failed ({status}); check connection/rate limit"
             ));
         }
-        result
+        Ok(bytes)
     }
+}
+/// Report cumulative bytes only after they have actually been read from the pipe.
+pub(super) fn read_download(
+    mut reader: impl Read,
+    limit: usize,
+    progress: &mut dyn FnMut(usize) -> Result<(), String>,
+) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0; 16 * 1024];
+    loop {
+        progress(bytes.len())?;
+        let remaining = limit
+            .saturating_sub(bytes.len())
+            .saturating_add(1)
+            .min(chunk.len());
+        let count = match reader.read(&mut chunk[..remaining]) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result.map_err(|e| e.to_string())?,
+        };
+        if count == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..count]);
+        progress(bytes.len())?;
+        if bytes.len() > limit {
+            return Err("Download exceeds byte limit".into());
+        }
+    }
+    Ok(bytes)
 }
 fn api(fetch: &impl Fetch, path: &str) -> Result<serde_json::Value, String> {
     metadata::json(&fetch.fetch(
@@ -109,11 +152,13 @@ pub fn catalog(fetch: &impl Fetch, repo: &Repository) -> Result<Vec<Package>, St
 pub fn bundle(
     fetch: &impl Fetch,
     p: &Package,
-    mut progress: impl FnMut(String),
+    mut progress: impl FnMut(String) -> Result<(), String>,
 ) -> Result<Files, String> {
+    progress(format!("Checking source inventory: {}", p.name))?;
     // Resolve the exact directory tree without relying on a possibly truncated recursive repository tree.
     let mut tree = p.commit.clone();
     for component in p.directory.split('/') {
+        progress(format!("Checking source inventory: {}", p.name))?;
         let v = api(
             fetch,
             &format!("{}/git/trees/{tree}", p.repository.as_str()),
@@ -149,22 +194,27 @@ pub fn bundle(
             return Err("Duplicate Git path".into());
         }
     }
+    // Catalog v1 publishes app-local tests separately from device packages.
+    // Retain compatibility with older catalogs that included the full directory;
+    // a catalog including any test file must still include every test file.
+    metadata::check_paths(inventory.keys().copied())?;
+    if !p.files.iter().any(|file| file.path.starts_with("tests/")) {
+        inventory.retain(|name, _| !name.starts_with("tests/"));
+    }
     if inventory.len() != p.files.len()
         || p.files
             .iter()
             .any(|r| inventory.get(r.path.as_str()).copied() != u64::try_from(r.size).ok())
     {
-        return Err("Catalog must enumerate the complete pinned directory".into());
+        return Err(
+            "Catalog must enumerate the pinned package; only app-local tests/ may be omitted"
+                .into(),
+        );
     }
     let mut files = Files::new();
-    for (index, row) in p.files.iter().enumerate() {
-        progress(format!(
-            "{}: verifying {}/{} {}",
-            p.name,
-            index + 1,
-            p.files.len(),
-            row.path
-        ));
+    let total = p.files.iter().map(|f| f.size).sum::<usize>();
+    let mut downloaded = 0;
+    for row in &p.files {
         let url = format!(
             "https://raw.githubusercontent.com/{}/{}/{}/{}",
             p.repository.as_str(),
@@ -172,12 +222,25 @@ pub fn bundle(
             p.directory,
             row.path
         );
-        let bytes = fetch.fetch(&url, row.size)?;
+        let bytes = fetch.fetch_progress(&url, row.size, &mut |received| {
+            let received = downloaded + received;
+            let percent = if total == 0 {
+                100
+            } else {
+                received.saturating_mul(100) / total
+            };
+            progress(format!(
+                "Downloading: {received} / {total} bytes ({percent}%)\n{}",
+                p.name
+            ))
+        })?;
         if bytes.len() != row.size || super::storage::sha(&bytes) != row.sha256 {
             return Err(format!("SHA-256/size mismatch: {}", row.path));
         }
+        downloaded += bytes.len();
         files.insert(row.path.clone(), bytes);
     }
+    progress(format!("Verifying {}", p.name))?;
     metadata::validate_bundle(p, &files)?;
     Ok(files)
 }

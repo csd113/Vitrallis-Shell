@@ -4,12 +4,18 @@ App Center is a built-in Rust/SDL screen on desktop and PocketCHIP. A fresh shel
 contains **no installed apps, app sources, embedded catalog manifest, or app artwork**.
 The only built-in catalog setting is `csd113/Vitrallis-Apps`. Check resolves that
 repository's current default branch through GitHub, pins its commit, and fetches
-root `apps.json`. Catalog contents and app assets are downloaded at runtime;
-assets are written only when the associated app is installed or repaired.
+root `apps.json`. Check downloads only catalog metadata, including the pinned file
+inventory, sizes, and hashes. App payload files are downloaded only after the user
+selects an app and chooses Install (also used for updates and repairs).
 
 Open **App Center**, choose **Check**, select the desired rows, then **Install**.
 Rows show installed/latest versions; **Details** shows the full status, origin,
-source, compatibility notes, and declared requirements. Selections start unchecked.
+source, download size, compatibility notes, and declared requirements. Selections
+start unchecked. Download progress shows actual bytes received / total bytes and
+percentage, followed by Verifying and Installing. Cancel (or Escape while acquiring)
+stops the remaining downloads before installation; a stalled request can take up to
+its 30-second deadline to stop. Once filesystem commit starts, it finishes or rolls
+back safely. Cancelling a batch skips its remaining apps.
 Install processes the selected apps in order. A failed app does not prevent the
 remaining selected apps from being attempted. Check, editing, and installation
 cannot overlap. Progress and errors remain visible; Details also exposes long
@@ -51,7 +57,8 @@ or remove saves. Re-add the same source to manage those installations again.
 The service implements catalog v1 and package `app.toml` manifest v1 as documented
 by [Vitrallis Apps](https://github.com/csd113/Vitrallis-Apps/blob/main/docs/creating-apps.md).
 Native packages require `app.toml`, `main.py`, `icon.png`, `requirements.txt`,
-`README.md`, and populated `assets/` and `tests/` directories. The declared Python
+`README.md`, and a populated `assets/` directory. Source repositories also include
+`tests/`, which current device packages omit. The declared Python
 entry must be in the inventory. Manifest ID, name, runtime, entry, version, and
 network/audio/storage declarations must agree with the catalog. TOML uses the
 standard Rust parser, including rejection of duplicate assignments and unknown
@@ -98,15 +105,21 @@ claimed.
 ## Verification and recovery
 
 Catalogs are limited to 8 MiB and 1,000 apps per source. Packages allow 256 files,
-2 MiB per file, and 16 MiB total. Retained verified downloads are limited to
-64 MiB; install the checked subset before checking additional packages if this
-limit is reached. Checked results expire after 15 minutes and are invalidated on
-checks/source edits or after an install batch. No stale or failed check authorizes
-an installation.
+2 MiB per file, and 16 MiB total. Check retains metadata only, so there is no
+catalog-wide prepared-package RAM limit. Installed receipts and local hashes identify
+current apps and repairs without fetching payloads. Metadata rows are invalidated on
+checks/source edits or after an install batch. Source trust is rechecked on Install.
+Only the selected package is acquired and held in memory for its installation;
+each payload file is downloaded once during that operation. Runtime prerequisites,
+package `app.toml` agreement, and content validation run after acquisition.
+An installation plan older than 15 minutes is rejected before commit.
 
-Before mutation, the service walks the pinned Git directory tree and verifies
-that the catalog lists its complete file inventory and sizes, then downloads and
-verifies every SHA-256. Truncated Git trees, symlinks, submodules, special files,
+After selection and before mutation, the service walks the pinned Git directory tree and verifies
+that the catalog lists its complete device-package inventory and sizes, then downloads and
+verifies every SHA-256. Current catalog v1 packages omit only the app-local `tests/`
+folder. Older complete-directory catalogs remain supported; partially listed tests
+and omissions elsewhere are rejected. Omitted tests are never downloaded.
+Truncated Git trees, symlinks, submodules, special files,
 duplicate JSON keys, duplicate IDs/paths, file/directory collisions, case-colliding
 directories, traversal, invalid fields, and installer/runtime path collisions fail
 closed. Downloads use system `/usr/bin/curl`, HTTPS, fixed GitHub API/raw hosts,
@@ -114,13 +127,15 @@ no redirects, verified TLS, ten-second connect and thirty-second total request
 deadlines. GitHub and each configured catalog are trust roots; checksums are not
 independent publisher signatures.
 
-A cross-process file lock covers source saves, checks/recovery, and installs.
+A cross-process file lock covers source saves, checks, installation, and recovery.
 Writes are staged, synced, and atomically renamed. Existing contents and modes
 are checked again before replacement. Receipts contain origin, source repository,
 commit, version, ID, and installed hashes. Backups and journals live below
 `$XDG_DATA_HOME/vitrallis/app-center/transactions/`; completed journals are retained.
 A `.installation-pending` marker prevents discovery from offering a partial install
-as healthy. Check recovers unfinished journals before preparing repair.
+as healthy. Check marks incomplete installations as repairable. Selecting Install
+acquires and verifies the package, then recovers unfinished journals before preparing
+repair. Failed or cancelled acquisition never writes app files or install markers.
 
 Rollback restores a file only if it still matches this installation's recorded
 output. Later edits are preserved and conflicting recovery stops with a diagnostic.

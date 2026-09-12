@@ -404,10 +404,10 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
                 return Err(format!("missing {name}"));
             }
         }
-        for prefix in ["assets/", "tests/"] {
-            if !files.keys().any(|p| p.starts_with(prefix)) {
-                return Err(format!("missing populated {prefix}"));
-            }
+        // Development tests are required in the source repository, but current
+        // catalog v1 device packages omit them. Assets remain part of the payload.
+        if !files.keys().any(|p| p.starts_with("assets/")) {
+            return Err("missing populated assets/".into());
         }
         let v = manifest(&files["app.toml"])?;
         if v["id"] != p.id

@@ -10,10 +10,119 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+/// Discovery retains only catalog metadata, never acquired files or write plans.
 #[derive(Debug, Clone)]
 pub struct Checked {
     pub package: Package,
     pub installed: String,
+    pub status: String,
+    pub ready: bool,
+}
+
+pub fn check(loc: &Locations, p: Package) -> Result<Checked, String> {
+    validate_paths(&p)?;
+    let root = loc.root(&p);
+    // Recovery may need payload backups; defer it to the selected installation.
+    // An interrupted transaction can leave a receipt/inventory only partly replaced.
+    if storage::read(&root.join(".installation-pending"), 1024)?.is_some() {
+        return Ok(Checked {
+            installed: label(loc, &p).unwrap_or_else(|_| "incomplete".into()),
+            package: p,
+            status: "incomplete / repair".into(),
+            ready: true,
+        });
+    }
+    let installed = label(loc, &p)?;
+    let saved = receipt(&root)?;
+    let mut ready = true;
+    if let Some(r) = &saved {
+        if r["origin"] != p.origin.as_str()
+            || r["repository"] != p.repository.as_str()
+            || r["id"] != p.id
+        {
+            return Err("Installed origin differs; refusing publisher/source switch".into());
+        }
+        let local = metadata::version(metadata::text(&r["version"], 32)?)?;
+        if local > p.version {
+            return Err("Installed version is newer; downgrade blocked".into());
+        }
+        let hashes = p
+            .files
+            .iter()
+            .filter(|f| !p.legacy() || !matches!(f.path.as_str(), "launch" | "bitcoin.png"))
+            .map(|f| (f.path.clone(), Value::String(f.sha256.clone())))
+            .collect::<serde_json::Map<_, _>>();
+        if local == p.version && r["files"] != Value::Object(hashes) {
+            return Err("Same version has a different inventory; keeping local files".into());
+        }
+        ready = local != p.version;
+        for (name, hash) in r["files"].as_object().ok_or("Invalid receipt")? {
+            match storage::read(&root.join(name), metadata::FILE_LIMIT)? {
+                Some(old) if hash != &storage::sha(&old.bytes) => {
+                    return Err(format!("Local edit preserved: {name}"));
+                }
+                None => ready = true,
+                Some(_) => (),
+            }
+        }
+        let launcher = if p.legacy() {
+            root.join("launch")
+        } else {
+            loc.state.join("launchers").join(&p.id)
+        };
+        if storage::read(&launcher, metadata::FILE_LIMIT)?.is_none_or(|f| f.mode & 0o111 == 0) {
+            ready = true;
+        }
+        let desktop = if p.legacy() {
+            "pocket-bitcoin.desktop".into()
+        } else {
+            format!("{}.desktop", p.id)
+        };
+        for directory in [loc.data.join("applications"), loc.home.join("Desktop")] {
+            if storage::read(&directory.join(&desktop), metadata::FILE_LIMIT)?.is_none() {
+                ready = true;
+            }
+        }
+        if p.legacy() && storage::read(&root.join("bitcoin.png"), metadata::FILE_LIMIT)?.is_none() {
+            ready = true;
+        }
+    } else if installed != "not installed" && !p.legacy() {
+        return Err("Unknown installed origin/version; keeping existing files".into());
+    }
+    let status = if !ready {
+        "up to date"
+    } else if installed == "not installed" {
+        "ready to install"
+    } else {
+        "update / repair available"
+    }
+    .into();
+    Ok(Checked {
+        package: p,
+        installed,
+        status,
+        ready,
+    })
+}
+
+fn validate_paths(p: &Package) -> Result<(), String> {
+    metadata::check_paths(p.files.iter().map(|f| f.path.as_str()))?;
+    for file in &p.files {
+        if file.path.split('/').any(|c| {
+            matches!(
+                c.to_ascii_lowercase().as_str(),
+                ".vitrallis-receipt.json" | ".installation-pending" | ".venv" | "runtime"
+            )
+        }) {
+            return Err("Package path collides with installer/runtime state".into());
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct Planned {
+    pub package: Package,
     pub status: String,
     pub prepared: Option<Prepared>,
 }
@@ -21,8 +130,7 @@ pub struct Checked {
 pub struct Prepared {
     pub files: Files,
     pub writes: Vec<Write>,
-    pub checked_at: Instant,
-    pub entry: PathBuf,
+    pub created_at: Instant,
 }
 pub fn label(loc: &Locations, p: &Package) -> Result<String, String> {
     let root = loc.root(p);
@@ -88,18 +196,9 @@ fn receipt(root: &Path) -> Result<Option<Value>, String> {
     })
     .transpose()
 }
-pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Checked, String> {
+pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Planned, String> {
     metadata::validate_bundle(&p, &files)?;
-    for name in files.keys() {
-        if name.split('/').any(|c| {
-            matches!(
-                c.to_ascii_lowercase().as_str(),
-                ".vitrallis-receipt.json" | ".installation-pending" | ".venv" | "runtime"
-            )
-        }) {
-            return Err("Package path collides with installer/runtime state".into());
-        }
-    }
+    validate_paths(&p)?;
     let root = loc.root(&p);
     let runtime = runtime::detect(&loc.home, &root, &files)?;
     runtime::validate(&runtime, &files)?;
@@ -129,7 +228,6 @@ pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Checked, Str
     let menu_warning = support(loc, &p, &runtime, &files, &mut writes)?;
     let changed = writes.iter().any(|w| w.before.as_ref() != Some(&w.after));
     let pending = storage::read(&root.join(".installation-pending"), 1024)?.is_some();
-    let entry = root.join(&p.entry);
     let receipt = serde_json::json!({"version":p.version.to_string(),"origin":p.origin.as_str(),"repository":p.repository.as_str(),"commit":p.commit,"id":p.id,"files":source_files.iter().map(|(k,v)|(k.clone(),Value::String(storage::sha(v)))).collect::<serde_json::Map<_,_>>()});
     writes.push(transaction::plan(
         root.join(".vitrallis-receipt.json"),
@@ -152,15 +250,13 @@ pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Checked, Str
         status.push_str("; ");
         status.push_str(&warning);
     }
-    Ok(Checked {
+    Ok(Planned {
         package: p,
-        installed,
         status,
         prepared: (changed || pending).then_some(Prepared {
             files,
             writes,
-            checked_at: Instant::now(),
-            entry,
+            created_at: Instant::now(),
         }),
     })
 }
@@ -426,18 +522,18 @@ fn allowed(loc: &Locations, p: &Package, path: &Path) -> bool {
                 })
             })
 }
-pub fn install(loc: &Locations, checked: &Checked) -> Result<(), String> {
+pub fn install(loc: &Locations, checked: &Planned) -> Result<(), String> {
     let prepared = checked
         .prepared
         .as_ref()
         .ok_or("No verified update available")?;
-    if prepared.checked_at.elapsed() > Duration::from_secs(15 * 60) {
-        return Err("Check expired; check for updates again".into());
+    if prepared.created_at.elapsed() > Duration::from_secs(15 * 60) {
+        return Err("Installation plan expired; retry installation".into());
     }
     metadata::validate_bundle(&checked.package, &prepared.files)?;
     for w in &prepared.writes {
         if storage::read(&w.path, metadata::BUNDLE_LIMIT)? != w.before {
-            return Err("File changed since check; retry Check for updates".into());
+            return Err("File changed since preparation; retry installation".into());
         }
     }
     let root = loc.root(&checked.package);

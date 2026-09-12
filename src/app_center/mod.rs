@@ -17,7 +17,11 @@ pub const TILE_ID: &str = "vitrallis-app-center";
 use install::Checked;
 use sources::Sources;
 use std::{
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, Sender},
+    },
     thread,
 };
 use storage::Locations;
@@ -40,20 +44,32 @@ enum Update {
 struct Worker {
     send: Sender<Command>,
     receive: Receiver<Update>,
+    cancelled: Arc<AtomicBool>,
 }
 impl Worker {
     fn start() -> Result<Self, String> {
         let loc = Locations::current()?;
         let (send, commands) = mpsc::channel();
         let (updates, receive) = mpsc::channel();
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_cancelled = Arc::clone(&cancelled);
         thread::Builder::new()
             .name("app-center".into())
-            .spawn(move || service(&loc, &commands, &updates))
+            .spawn(move || service(&loc, &commands, &updates, &worker_cancelled))
             .map_err(|e| e.to_string())?;
-        Ok(Self { send, receive })
+        Ok(Self {
+            send,
+            receive,
+            cancelled,
+        })
     }
 }
-fn service(loc: &Locations, commands: &Receiver<Command>, updates: &Sender<Update>) {
+fn service(
+    loc: &Locations,
+    commands: &Receiver<Command>,
+    updates: &Sender<Update>,
+    cancelled: &AtomicBool,
+) {
     let mut rows = Vec::new();
     let initial = Sources::load(&loc.sources);
     let mut expected_sources = initial.as_ref().ok().cloned();
@@ -94,7 +110,15 @@ fn service(loc: &Locations, commands: &Receiver<Command>, updates: &Sender<Updat
                             errors.push("Check is no longer valid".into());
                             continue;
                         };
-                        let result = install_one(loc, &sources, row, commands, updates);
+                        let result = install_one(
+                            loc,
+                            &sources,
+                            row,
+                            commands,
+                            updates,
+                            cancelled,
+                            &network::Curl,
+                        );
                         match result {
                             Ok(()) => changed = true,
                             Err(e) => errors.push(format!("{}: {e}", row.package.name)),
@@ -121,15 +145,21 @@ fn install_one(
     row: &Checked,
     commands: &Receiver<Command>,
     updates: &Sender<Update>,
+    cancelled: &AtomicBool,
+    fetch: &impl network::Fetch,
 ) -> Result<(), String> {
     use running::Processes;
+    cancellation(cancelled)?;
     if !sources.catalogs.contains(&row.package.origin)
         || !sources.trusted(&row.package.origin, &row.package.repository)
     {
         return Err("Source removed or approval revoked; check again".into());
     }
-    let prepared = row.prepared.as_ref().ok_or("No verified update")?;
-    let processes = running::Native.list(&prepared.entry)?;
+    if !row.ready {
+        return Err("No available update".into());
+    }
+    let entry = loc.root(&row.package).join(&row.package.entry);
+    let processes = running::Native.list(&entry)?;
     if !processes.is_empty() {
         use std::sync::atomic::{AtomicU64, Ordering};
         static PROMPT: AtomicU64 = AtomicU64::new(1);
@@ -151,7 +181,7 @@ fn install_one(
                 Ok(Command::Answer(token, true)) if token == id => {
                     running::close(
                         &running::Native,
-                        &prepared.entry,
+                        &entry,
                         &processes,
                         std::time::Duration::from_secs(8),
                     )?;
@@ -162,12 +192,46 @@ fn install_one(
             }
         }
     }
-    if !running::Native.list(&prepared.entry)?.is_empty() {
+    if !running::Native.list(&entry)?.is_empty() {
         return Err("App started again; update skipped".into());
     }
-    let _ = updates.send(Update::Progress(format!("Installing {}", row.package.name)));
-    install::install(loc, row)
+    let planned = acquire(loc, row, fetch, |s| {
+        cancellation(cancelled)?;
+        updates.send(Update::Progress(s)).map_err(|e| e.to_string())
+    })?;
+    if !running::Native.list(&entry)?.is_empty() {
+        return Err("App started again; update skipped".into());
+    }
+    cancellation(cancelled)?;
+    // Once commit begins, let the transaction finish or roll back without interruption.
+    let _ = updates.send(Update::Progress(format!(
+        "Installing {}: {}",
+        row.package.name, planned.status
+    )));
+    install::install(loc, &planned)
 }
+fn cancellation(cancelled: &AtomicBool) -> Result<(), String> {
+    if cancelled.load(Ordering::Relaxed) {
+        Err("Cancelled before installation".into())
+    } else {
+        Ok(())
+    }
+}
+
+fn acquire(
+    loc: &Locations,
+    row: &Checked,
+    fetch: &impl network::Fetch,
+    mut progress: impl FnMut(String) -> Result<(), String>,
+) -> Result<install::Planned, String> {
+    if !row.ready {
+        return Err("No available update".into());
+    }
+    let files = network::bundle(fetch, &row.package, &mut progress)?;
+    progress(format!("Verifying {}", row.package.name))?;
+    install::prepare(loc, row.package.clone(), files)
+}
+
 fn check_all(
     loc: &Locations,
     sources: &Sources,
@@ -175,7 +239,6 @@ fn check_all(
     mut progress: impl FnMut(String),
 ) -> Vec<Checked> {
     let mut rows = Vec::new();
-    let mut retained = 0;
     for origin in &sources.catalogs {
         progress(format!("Checking {}", origin.as_str()));
         match network::catalog(fetch, origin) {
@@ -196,25 +259,13 @@ fn check_all(
                                 package.repository.as_str()
                             ));
                         }
-                        let size = package.files.iter().map(|f| f.size).sum::<usize>();
-                        if retained + size > 64 * 1024 * 1024 {
-                            return Err(
-                                "Verified package memory limit reached; install checked apps first"
-                                    .into(),
-                            );
-                        }
-                        let files = network::bundle(fetch, &package, &mut progress)?;
-                        let checked = install::prepare(loc, package.clone(), files)?;
-                        if checked.prepared.is_some() {
-                            retained += size;
-                        }
-                        Ok(checked)
+                        install::check(loc, package.clone())
                     })();
                     rows.push(result.unwrap_or_else(|status| Checked {
                         package,
                         installed,
                         status,
-                        prepared: None,
+                        ready: false,
                     }));
                 }
             }
@@ -240,7 +291,7 @@ fn source_error(origin: &sources::Repository, error: &str) -> Checked {
         },
         installed: "unavailable".into(),
         status: error.into(),
-        prepared: None,
+        ready: false,
     }
 }
 
@@ -250,6 +301,7 @@ struct Row {
     installed: String,
     status: String,
     ready: bool,
+    download_size: usize,
 }
 impl From<&Checked> for Row {
     fn from(c: &Checked) -> Self {
@@ -259,7 +311,8 @@ impl From<&Checked> for Row {
             package,
             installed: c.installed.clone(),
             status: c.status.clone(),
-            ready: c.prepared.is_some(),
+            ready: c.ready,
+            download_size: c.package.files.iter().map(|f| f.size).sum(),
         }
     }
 }
