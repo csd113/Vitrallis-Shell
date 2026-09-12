@@ -37,6 +37,31 @@ pub enum FocusResult {
     Missing,
 }
 
+/// Repair X input focus after a Tk window closes. Awesome can already consider
+/// the shell focused even when X has reverted to no input window.
+pub fn restore_shell_focus() {
+    if std::env::var_os("VITRALLIS_SESSION").as_deref() != Some(std::ffi::OsStr::new("1")) {
+        return;
+    }
+    let pid = std::process::id();
+    let result = std::thread::Builder::new()
+        .name("shell-focus".into())
+        .spawn(move || {
+            // Do not steal focus if the user has already switched to another app.
+            let code = format!(
+                "for _,c in ipairs(client.get()) do if c.pid=={pid} then \
+                 if not client.focus or client.focus==c then \
+                 client.focus=nil; client.focus=c; c:raise() end; return end end"
+            );
+            if let Err(error) = command::run("/usr/bin/awesome-client", &[&code]) {
+                eprintln!("level=warning event=shell_focus_failed message={error:?}");
+            }
+        });
+    if let Err(error) = result {
+        eprintln!("level=warning event=shell_focus_worker_failed message={error:?}");
+    }
+}
+
 pub fn focus_application(pid: u32, hint: Option<AppWindow>) -> Result<FocusResult, String> {
     // The inspected calibrator uses an override-redirect surface and grabs its
     // own input. It has no Awesome client to raise or wait for.

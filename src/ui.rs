@@ -148,6 +148,7 @@ fn event_loop(
                 }
                 if raise && platform.raise_after_exit() {
                     canvas.window_mut().raise();
+                    crate::platform::restore_shell_focus();
                 }
                 dirty = true;
                 if smoke {
