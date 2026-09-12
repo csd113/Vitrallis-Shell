@@ -1,3 +1,35 @@
+# Vitrallis 0.1.0-beta2.5
+
+This prerelease standardizes App Center on catalog v1 and manifest v1 packages
+from `apps/<app-slug>`. Every application uses manifest metadata, the published
+`icon.png`, ID-based installation paths and publisher-bound receipts.
+
+- Removed uppercase package layouts, Bitcoin-specific install/discovery/uninstall,
+  historical version/hash/receipt parsing, icon guessing and private updater runtimes.
+- Removed the Python store patch bundle, installer forwarding shim and obsolete CI job.
+- Device inventories exclude app-local tests. Device menus accept the OS
+  name/shell/icon contract; Vitrallis-specific args/cwd/env extensions are removed.
+- Desktop startup discovers manifest packages. PocketCHIP retains its read-only
+  OS menu integration and Marshmallow recovery.
+- Added a durable pre-release policy requiring removal of superseded implementations.
+
+This intentionally breaks obsolete pre-release application formats. Existing
+obsolete installations are not migrated or deleted. Applications require system
+Python/Tk or an app-local virtual environment. Automatic window resume requires
+`_NET_WM_PID`; old Bitcoin/Store title matching is removed. The publisher's Bitcoin
+`installable: false` flag remains authoritative. Physical PocketCHIP package
+verification remains pending.
+
+Local `sh scripts/validate.sh` passed for this version: formatting, strict Clippy,
+145 Rust unit tests, 6 desktop integration tests, 32 Python tests, release build,
+SDL smoke, shell/Python syntax and diff checks. The separate online contract test
+is excluded from the offline suite.
+
+See [the contract audit](app-center-validation.md) for detailed behavior, tests
+and retained current device boundaries. Linux x86-64 and ARMv7 release binaries
+are built against glibc 2.36 and SDL2 2.26.5; the tag workflow validates both,
+including ARM startup/version and a 480×272 SDL frame under Cortex-A8 QEMU.
+
 > Historical validation record. Application/store formats, paths and test counts below describe earlier implementations. For the supported contract and current results, see [the application-contract audit](app-center-validation.md). Superseded tools mentioned here are no longer shipped.
 
 # Vitrallis 0.1.0-beta2.4
