@@ -1,4 +1,5 @@
 //! Native App Center services and screen state, independent of device adapters.
+mod cache;
 mod discovery;
 mod install;
 mod metadata;
@@ -13,6 +14,7 @@ mod tests;
 mod transaction;
 mod uninstall;
 pub use discovery::integrate;
+pub use discovery::refresh_apps;
 pub use screen::Center;
 pub const TILE_ID: &str = "vitrallis-app-center";
 use install::Checked;
@@ -29,6 +31,7 @@ use storage::Locations;
 #[derive(Debug)]
 enum Command {
     Check,
+    Scan,
     Save(Sources),
     Install(Vec<String>),
     Uninstall(String),
@@ -39,6 +42,7 @@ enum Update {
     Sources(Sources),
     Progress(String),
     Rows(Vec<Row>),
+    Row(Box<Row>),
     Confirm(u64, String),
     Done(Result<String, String>, bool),
 }
@@ -77,68 +81,71 @@ fn service(
     let initial = Sources::load(&loc.sources);
     let mut expected_sources = initial.as_ref().ok().cloned();
     if let Ok(sources) = &initial {
+        rows = cache::load(loc, sources);
         let _ = updates.send(Update::Sources(sources.clone()));
+        let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
     }
     let _ = updates.send(Update::Done(
-        initial.map(|_| "Choose Check to load available apps".into()),
+        initial.map(|_| initial_message(&rows).into()),
         false,
     ));
     while let Ok(command) = commands.recv() {
         let mut changed = false;
         let mut success = String::from(match &command {
-            Command::Save(_) => "Sources saved. Choose Check to load available apps",
+            Command::Save(_) => "Sources saved. Refresh to load available apps",
             Command::Uninstall(_) => "App uninstalled. Other data kept; removed files backed up.",
-            Command::Install(_) => "Installed; apps remain closed. Check again for current status",
-            _ => "Ready. Selections are unchecked by default",
+            Command::Install(_) => "Complete. The installed version is ready to open.",
+            _ => "Ready. Select an app to continue.",
         });
         let result = (|| {
             let _lock = storage::Lock::take(&loc.state)?;
             match command {
                 Command::Check => {
-                    rows.clear();
+                    let (sources, message) = refresh_catalog(loc, fetch, &mut rows, updates)?;
+                    expected_sources = Some(sources);
+                    success = message;
+                }
+                Command::Scan => {
                     let sources = Sources::load(&loc.sources)?;
-                    expected_sources = Some(sources.clone());
-                    let _ = updates.send(Update::Sources(sources.clone()));
-                    rows = check_all(loc, &sources, fetch, |s| {
-                        let _ = updates.send(Update::Progress(s));
-                    });
-                    success = if rows.is_empty() {
-                        "Check finished: catalogs contain no apps".into()
-                    } else {
-                        format!(
-                            "Check finished: {} entries. Select an entry for details",
-                            rows.len()
-                        )
-                    };
-                    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+                    for row in &mut rows {
+                        refresh_local(loc, &sources, row);
+                        let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
+                    }
+                    changed = true;
+                    success = "Installed apps checked".into();
                 }
                 Command::Save(sources) => {
                     if Some(Sources::load(&loc.sources)?) != expected_sources {
-                        return Err("Source settings changed; Check again before editing".into());
+                        return Err("Source settings changed; Refresh before editing".into());
                     }
                     sources.save(&loc.sources)?;
                     expected_sources = Some(sources.clone());
-                    rows.clear();
+                    rows.retain(|r| sources.catalogs.contains(&r.package.origin));
+                    for row in &mut rows {
+                        refresh_local(loc, &sources, row);
+                    }
                     let _ = updates.send(Update::Sources(sources));
-                    let _ = updates.send(Update::Rows(Vec::new()));
+                    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
                 }
                 Command::Install(keys) => {
                     let sources = Sources::load(&loc.sources)?;
                     let mut errors = Vec::new();
                     for key in keys {
-                        let Some(row) = rows.iter().find(|r| r.package.key() == key) else {
-                            errors.push("Check is no longer valid".into());
+                        let Some(row) = rows.iter_mut().find(|r| r.package.key() == key) else {
+                            errors.push(
+                                "App selection is no longer available; Refresh the catalog".into(),
+                            );
                             continue;
                         };
                         let result =
                             install_one(loc, &sources, row, commands, updates, cancelled, fetch);
-                        match result {
-                            Ok(()) => changed = true,
-                            Err(e) => errors.push(format!("{}: {e}", row.package.name)),
+                        changed = true;
+                        if let Err(e) = result {
+                            errors.push(format!("{}: {e}", row.package.name));
                         }
+                        refresh_local(loc, &sources, row);
+                        let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
                     }
-                    rows.clear();
-                    let _ = updates.send(Update::Rows(Vec::new()));
                     if !errors.is_empty() {
                         return Err(errors.join("; "));
                     }
@@ -152,12 +159,11 @@ fn service(
                         "Uninstalling {}",
                         row.package.name
                     )));
+                    let result = uninstall::uninstall(loc, &row.package);
                     changed = true;
-                    uninstall::uninstall(loc, &row.package)?;
-                    row.installed = "not installed".into();
-                    row.status = "not installed; other data retained".into();
-                    row.ready = row.package.installable;
-                    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+                    refresh_local(loc, &Sources::load(&loc.sources)?, row);
+                    let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
+                    result?;
                 }
                 Command::Answer(_, _) => {
                     return Err("No running-app confirmation is pending".into());
@@ -167,6 +173,32 @@ fn service(
         })();
         let _ = updates.send(Update::Done(result.map(|()| success), changed));
     }
+}
+const fn initial_message(rows: &[Checked]) -> &'static str {
+    if rows.is_empty() {
+        "Refresh to load available apps"
+    } else {
+        "Saved catalog ready. Refresh to check for new releases."
+    }
+}
+fn refresh_catalog(
+    loc: &Locations,
+    fetch: &impl network::Fetch,
+    rows: &mut Vec<Checked>,
+    updates: &Sender<Update>,
+) -> Result<(Sources, String), String> {
+    let sources = Sources::load(&loc.sources)?;
+    let _ = updates.send(Update::Sources(sources.clone()));
+    *rows = cache::refresh(loc, &sources, fetch, rows, |s| {
+        let _ = updates.send(Update::Progress(s));
+    });
+    let success = if rows.is_empty() {
+        "Refresh finished: repositories contain no apps".into()
+    } else {
+        format!("Refresh complete: {} entries. Select an app.", rows.len())
+    };
+    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+    Ok((sources, success))
 }
 fn install_one(
     loc: &Locations,
@@ -187,7 +219,7 @@ fn install_one(
     if !row.ready {
         return Err("No available update".into());
     }
-    let entry = loc.root(&row.package).join(&row.package.entry);
+    let entry = uninstall::installed_entry(&loc.root(&row.package), &row.package)?;
     let processes = running::Native.list(&entry)?;
     if !processes.is_empty() {
         use std::sync::atomic::{AtomicU64, Ordering};
@@ -237,7 +269,7 @@ fn install_one(
         "Installing {}: {}",
         row.package.name, planned.status
     )));
-    install::install(loc, &planned)
+    install::install(loc, &planned).map_err(|e| format!("Installation failed: {e}"))
 }
 fn cancellation(cancelled: &AtomicBool) -> Result<(), String> {
     if cancelled.load(Ordering::Relaxed) {
@@ -256,11 +288,12 @@ fn acquire(
     if !row.ready {
         return Err("No available update".into());
     }
-    let files = network::bundle(fetch, &row.package, &mut progress)?;
+    let bundle = network::download(fetch, &row.package, &mut progress)?;
     progress(format!("Verifying {}", row.package.name))?;
-    install::prepare(loc, row.package.clone(), files)
+    install::prepare_with_modes(loc, row.package.clone(), bundle.files, &bundle.modes)
 }
 
+#[cfg(test)]
 fn check_all(
     loc: &Locations,
     sources: &Sources,
@@ -302,6 +335,30 @@ fn check_all(
     }
     rows
 }
+fn refresh_local(loc: &Locations, sources: &Sources, row: &mut Checked) {
+    if row.package.entry.is_empty() {
+        return;
+    }
+    let result = if !row.package.installable {
+        Err(format!("Unavailable: {}", row.package.notes))
+    } else if !sources.trusted(&row.package.origin, &row.package.repository) {
+        Err(format!(
+            "Approval required for source {}",
+            row.package.repository.as_str()
+        ))
+    } else {
+        install::check(loc, row.package.clone())
+    };
+    match result {
+        Ok(checked) => *row = checked,
+        Err(error) => {
+            row.installed =
+                install::label(loc, &row.package).unwrap_or_else(|_| "unavailable".into());
+            row.ready = false;
+            row.status = error;
+        }
+    }
+}
 fn source_error(origin: &sources::Repository, error: &str) -> Checked {
     Checked {
         package: metadata::Package {
@@ -309,6 +366,9 @@ fn source_error(origin: &sources::Repository, error: &str) -> Checked {
             repository: origin.clone(),
             id: "io.vitrallis.sourceerror".into(),
             name: format!("Source: {}", origin.as_str()),
+            description: "Repository unavailable".into(),
+            changelog: None,
+            icon: None,
             version: metadata::Version::zero(),
             entry: String::new(),
             permissions: serde_json::Value::Null,
@@ -334,8 +394,7 @@ struct Row {
 }
 impl From<&Checked> for Row {
     fn from(c: &Checked) -> Self {
-        let mut package = c.package.clone();
-        package.files.clear();
+        let package = c.package.display_metadata();
         Self {
             package,
             installed: c.installed.clone(),

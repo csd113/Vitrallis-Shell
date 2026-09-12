@@ -94,6 +94,7 @@ fn event_loop(
             dirty = true;
         }
         dirty |= refresh_shell(&mut state, &mut child);
+        dirty |= launch_from_center(canvas, layout, &mut state, &textures, &mut child)?;
         dirty |= open_native(&broker, canvas, layout, &mut state, &textures, &mut child)?;
         if dirty && Instant::now() >= next_frame {
             state.running = child.running_ids();
@@ -235,6 +236,33 @@ fn refresh_timezone(state: &mut Launcher, child: &mut ProcessSet) -> bool {
     }
 }
 
+fn launch_from_center(
+    canvas: &mut Screen,
+    layout: &Layout,
+    state: &mut Launcher,
+    textures: &[Option<sdl2::render::Texture<'_>>],
+    child: &mut ProcessSet,
+) -> Result<bool, String> {
+    let Some(id) = state.app_center.launch.take() else {
+        return Ok(false);
+    };
+    if let Some(index) = state.apps.iter().position(|app| app.id == id) {
+        state.app_center.open = false;
+        handle_action(
+            Some(Action::SelectAndActivate(index)),
+            canvas,
+            layout,
+            state,
+            textures,
+            child,
+        )
+    } else {
+        state.app_center.message =
+            "App is no longer installed; reopen App Center to check local state".into();
+        Ok(true)
+    }
+}
+
 fn refresh_app_center(
     sdl: &sdl2::Sdl,
     config: &Config,
@@ -242,8 +270,31 @@ fn refresh_app_center(
     dirty: &mut bool,
 ) -> Result<bool, String> {
     *dirty |= state.app_center.poll();
-    let artwork_changed =
-        std::mem::take(&mut state.app_center.refresh) && reload_catalog(config, state);
+    let artwork_changed = if state.app_center.refresh && state.phase == Phase::Ready {
+        match crate::app_center::refresh_apps(&state.apps).and_then(|mut apps| {
+            if config.pocketchip {
+                use crate::platform::Platform;
+                for app in &mut apps {
+                    crate::platform::pocketchip::PocketChip.prepare_app(app);
+                }
+            }
+            state.reload(apps)
+        }) {
+            Ok(_) => {
+                state.app_center.refresh = false;
+                *dirty = true;
+                true
+            }
+            Err(error) => {
+                state.app_center.refresh = false;
+                state.app_center.message = format!("Installed apps could not refresh: {error}");
+                eprintln!("level=warn event=app_center_menu_refresh error={error:?}");
+                false
+            }
+        }
+    } else {
+        false
+    };
     let input = sdl.video()?.text_input();
     if state.app_center.editing() && !input.is_active() {
         input.start();

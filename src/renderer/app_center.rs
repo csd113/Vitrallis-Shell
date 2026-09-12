@@ -15,7 +15,7 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
             w: width,
             h: height,
         },
-        Color::RGB(19, 28, 39),
+        Color::RGB(14, 24, 34),
     )?;
     text(
         canvas,
@@ -29,6 +29,18 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
         1,
         Color::RGB(93, 218, 201),
     )?;
+    if let Some(pixels) = center.detail_icon() {
+        draw_icon(
+            canvas,
+            pixels,
+            Rect {
+                x: 8,
+                y: 0,
+                w: 24,
+                h: 24,
+            },
+        )?;
+    }
     let targets = center.targets(layout);
     for (i, (target, label, bounds)) in targets.iter().enumerate() {
         let enabled = center.enabled(target);
@@ -36,7 +48,7 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
             canvas,
             *bounds,
             if i == center.selected {
-                Color::RGB(49, 100, 117)
+                Color::RGB(42, 77, 92)
             } else {
                 Color::RGB(33, 45, 58)
             },
@@ -50,12 +62,25 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
         } else {
             Color::RGB(139, 149, 159)
         };
-        if let Some((versions, update)) = center.row_versions(target) {
-            app_row(canvas, label, &versions, update, *bounds, color)?;
+        if let Some((name, description, status)) = center.row_content(target) {
+            if center.row_chosen(target) {
+                fill(canvas, Rect { w: 3, ..*bounds }, Color::RGB(93, 218, 201))?;
+            }
+            app_row(
+                canvas,
+                center.row_icon(target),
+                (name, description, &status),
+                *bounds,
+            )?;
         } else {
             text(canvas, label, *bounds, 1, color)?;
         }
     }
+    body(canvas, layout, center)
+}
+fn body(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<(), String> {
+    let width = i32::from(layout.width);
+    let height = i32::from(layout.height);
     let lines = center.lines(usize::from(layout.width) / 8 - 2);
     let (y, count) = if center.full_details() {
         (68, usize::from(layout.height.saturating_sub(124) / 12))
@@ -70,7 +95,7 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
         .take(count)
         .enumerate()
     {
-        text(
+        left(
             canvas,
             line,
             Rect {
@@ -79,14 +104,27 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
                 w: width - 16,
                 h: 12,
             },
-            1,
             Color::RGB(220, 224, 231),
+        )?;
+    }
+    if let Some(message) = center.empty_message() {
+        text(
+            canvas,
+            message,
+            Rect {
+                x: 8,
+                y: 130,
+                w: width - 16,
+                h: 32,
+            },
+            1,
+            Color::RGB(181, 199, 211),
         )?;
     }
     if center.full_details() || center.editing() {
         text(
             canvas,
-            &center.message,
+            center.footer(),
             Rect {
                 x: 4,
                 y: height - 12,
@@ -100,42 +138,87 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
     Ok(())
 }
 
+// Fit text explicitly so titles and long errors end with a visible ellipsis.
+fn left(canvas: &mut Screen, value: &str, bounds: Rect, color: Color) -> Result<(), String> {
+    let limit = usize::try_from(bounds.w / 8).map_err(|_| "Text width")?;
+    let value = value
+        .replace(['—', '–'], "-")
+        .replace(['’', '‘'], "'")
+        .replace(['“', '”'], "\"")
+        .replace('•', "-");
+    let shown = if value.chars().count() > limit && limit > 3 {
+        format!("{}...", value.chars().take(limit - 3).collect::<String>())
+    } else {
+        value.chars().take(limit).collect()
+    };
+    let w = i32::try_from(shown.chars().count()).map_err(|_| "Text width")? * 8;
+    text(canvas, &shown, Rect { w, ..bounds }, 1, color)
+}
+
 fn app_row(
     canvas: &mut Screen,
-    label: &str,
-    versions: &str,
-    update: bool,
+    icon: Option<&[u8]>,
+    (name, description, status): (&str, &str, &str),
     bounds: Rect,
-    color: Color,
 ) -> Result<(), String> {
-    text(canvas, label, Rect { h: 16, ..bounds }, 1, color)?;
-    let badge_width = if update { 144 } else { 0 };
-    let version_width = (i32::try_from(versions.chars().count()).unwrap_or(0) * 8 + 12)
-        .min(bounds.w - badge_width - 12);
-    let x = bounds.x + (bounds.w - version_width - badge_width) / 2;
-    let lower = Rect {
-        x,
-        y: bounds.y + 16,
-        w: version_width,
-        h: 16,
+    let icon_bounds = Rect {
+        x: bounds.x + 8,
+        y: bounds.y + 8,
+        w: 32,
+        h: 32,
     };
-    text(canvas, versions, lower, 1, color)?;
-    if update {
-        let badge = Rect {
-            x: x + version_width,
-            w: badge_width,
-            ..lower
-        };
-        fill(canvas, badge, Color::RGB(38, 96, 78))?;
+    if let Some(pixels) = icon {
+        draw_icon(canvas, pixels, icon_bounds)?;
+    } else {
+        fill(canvas, icon_bounds, Color::RGB(43, 93, 103))?;
         text(
             canvas,
-            "Update available",
-            badge,
-            1,
-            Color::RGB(139, 255, 188),
+            &name.chars().take(1).collect::<String>(),
+            icon_bounds,
+            2,
+            Color::RGB(210, 246, 237),
         )?;
     }
-    Ok(())
+    let text_bounds = Rect {
+        x: bounds.x + 50,
+        y: bounds.y + 2,
+        w: bounds.w - 58,
+        h: 14,
+    };
+    left(canvas, name, text_bounds, Color::RGB(245, 249, 251))?;
+    left(
+        canvas,
+        description,
+        Rect {
+            y: bounds.y + 17,
+            ..text_bounds
+        },
+        Color::RGB(172, 190, 205),
+    )?;
+    left(
+        canvas,
+        status,
+        Rect {
+            y: bounds.y + 32,
+            ..text_bounds
+        },
+        if status.starts_with("Update") {
+            Color::RGB(158, 243, 180)
+        } else {
+            Color::RGB(103, 215, 203)
+        },
+    )
+}
+fn draw_icon(canvas: &mut Screen, pixels: &[u8], bounds: Rect) -> Result<(), String> {
+    let creator = canvas.texture_creator();
+    let mut texture = creator
+        .create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGBA32, 32, 32)
+        .map_err(|e| e.to_string())?;
+    texture.set_blend_mode(sdl2::render::BlendMode::Blend);
+    texture
+        .update(None, pixels, 32 * 4)
+        .map_err(|e| e.to_string())?;
+    canvas.copy(&texture, None, super::rect(bounds)?)
 }
 
 #[cfg(test)]

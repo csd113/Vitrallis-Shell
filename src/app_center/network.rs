@@ -134,7 +134,7 @@ fn encode(s: &str) -> String {
     }
     out
 }
-pub fn catalog(fetch: &impl Fetch, repo: &Repository) -> Result<Vec<Package>, String> {
+pub fn catalog_document(fetch: &impl Fetch, repo: &Repository) -> Result<Vec<u8>, String> {
     let info = api(fetch, repo.as_str())?;
     let branch = metadata::text(&info["default_branch"], 255)?;
     let commit = api(
@@ -147,13 +147,29 @@ pub fn catalog(fetch: &impl Fetch, repo: &Repository) -> Result<Vec<Package>, St
         "https://raw.githubusercontent.com/{}/{sha}/apps.json",
         repo.as_str()
     );
-    metadata::catalog(repo, &fetch.fetch(&url, metadata::CATALOG_LIMIT)?)
+    fetch.fetch(&url, metadata::CATALOG_LIMIT)
 }
+#[cfg(test)]
+pub fn catalog(fetch: &impl Fetch, repo: &Repository) -> Result<Vec<Package>, String> {
+    metadata::catalog(repo, &catalog_document(fetch, repo)?)
+}
+pub struct Bundle {
+    pub files: Files,
+    pub modes: std::collections::BTreeMap<String, u32>,
+}
+#[cfg(test)]
 pub fn bundle(
     fetch: &impl Fetch,
     p: &Package,
-    mut progress: impl FnMut(String) -> Result<(), String>,
+    progress: impl FnMut(String) -> Result<(), String>,
 ) -> Result<Files, String> {
+    download(fetch, p, progress).map(|bundle| bundle.files)
+}
+pub fn download(
+    fetch: &impl Fetch,
+    p: &Package,
+    mut progress: impl FnMut(String) -> Result<(), String>,
+) -> Result<Bundle, String> {
     progress(format!("Checking source inventory: {}", p.name))?;
     // Resolve the exact directory tree without relying on a possibly truncated recursive repository tree.
     let mut tree = p.commit.clone();
@@ -180,6 +196,7 @@ pub fn bundle(
         &format!("{}/git/trees/{tree}?recursive=1", p.repository.as_str()),
     )?;
     let mut inventory = std::collections::BTreeMap::new();
+    let mut modes = std::collections::BTreeMap::new();
     for entry in tree_entries(&v)? {
         let name = metadata::text(&entry["path"], 240)?;
         metadata::path(name)?;
@@ -192,6 +209,16 @@ pub fn bundle(
         let size = entry["size"].as_u64().ok_or("Missing Git size")?;
         if inventory.insert(name, size).is_some() {
             return Err("Duplicate Git path".into());
+        }
+        if !name.starts_with("tests/") {
+            modes.insert(
+                name.to_owned(),
+                if entry["mode"] == "100755" {
+                    0o755
+                } else {
+                    0o644
+                },
+            );
         }
     }
     // Device packages always exclude app-local development tests.
@@ -218,27 +245,32 @@ pub fn bundle(
             p.directory,
             row.path
         );
-        let bytes = fetch.fetch_progress(&url, row.size, &mut |received| {
-            let received = downloaded + received;
-            let percent = if total == 0 {
-                100
-            } else {
-                received.saturating_mul(100) / total
-            };
-            progress(format!(
-                "Downloading: {received} / {total} bytes ({percent}%)\n{}",
-                p.name
-            ))
-        })?;
+        let bytes = fetch
+            .fetch_progress(&url, row.size, &mut |received| {
+                let received = downloaded + received;
+                let percent = if total == 0 {
+                    100
+                } else {
+                    received.saturating_mul(100) / total
+                };
+                progress(format!(
+                    "Downloading: {received} / {total} bytes ({percent}%)\n{}",
+                    p.name
+                ))
+            })
+            .map_err(|e| format!("Download failed for {}: {e}", row.path))?;
         if bytes.len() != row.size || super::storage::sha(&bytes) != row.sha256 {
-            return Err(format!("SHA-256/size mismatch: {}", row.path));
+            return Err(format!(
+                "Package invalid: SHA-256/size mismatch: {}",
+                row.path
+            ));
         }
         downloaded += bytes.len();
         files.insert(row.path.clone(), bytes);
     }
     progress(format!("Verifying {}", p.name))?;
     metadata::validate_bundle(p, &files)?;
-    Ok(files)
+    Ok(Bundle { files, modes })
 }
 fn tree_entries(v: &serde_json::Value) -> Result<&Vec<serde_json::Value>, String> {
     if v["truncated"].as_bool() != Some(false) {

@@ -114,9 +114,9 @@ A `v*` tag creates a **draft** GitHub release; prerelease tags are marked as
 prereleases. Existing drafts can receive reviewed artifacts, but the workflow
 refuses to modify an already published release. Review/test the complete draft
 before publishing. Change the workspace version only with explicit permission.
-Tag and executable version must match Cargo metadata. The current published
-standalone beta2.5 assets cannot satisfy the bundle contract; see
-[release readiness and blockers](releases.md).
+Tag and executable version must match Cargo metadata. Release beta2.6 uses this
+complete bundle contract; older standalone beta2.5 assets cannot satisfy it. See
+[release validation and assets](releases.md).
 
 ARM packaging also emits `bootstrap.py`, `install.py`, `uninstall.py`,
 `vitrallis-session.py`, and a `.sha256` sidecar for each. Initial installation

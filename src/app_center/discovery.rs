@@ -32,7 +32,23 @@ pub fn integrate(catalog: &mut Catalog) {
         },
     );
 }
-fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
+pub fn refresh_apps(apps: &[AppEntry]) -> Result<Vec<AppEntry>, String> {
+    let loc = Locations::current()?;
+    let mut catalog = Catalog {
+        apps: apps
+            .iter()
+            .filter(|a| a.source != crate::app::AppSource::AppCenter)
+            .cloned()
+            .collect(),
+        ..Catalog::default()
+    };
+    installed(&mut catalog, &loc)?;
+    for error in &catalog.diagnostics {
+        eprintln!("level=warn event=installed_app_discovery error={error:?}");
+    }
+    Ok(catalog.apps)
+}
+pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
     let root = loc.data.join("vitrallis/apps");
     storage::safe(&root)?;
     let entries = match std::fs::read_dir(&root) {

@@ -2,6 +2,8 @@ use super::*;
 use metadata::{Files, Package};
 use std::{collections::BTreeMap, path::Path};
 use storage::{FileData, Locations};
+#[path = "lifecycle_tests.rs"]
+mod lifecycle;
 fn fixture(name: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/app-center")
@@ -40,6 +42,9 @@ pub(super) fn generic() -> Result<(Package, Files), String> {
         repository: origin,
         id: v["id"].as_str().ok_or("id")?.into(),
         name: v["name"].as_str().ok_or("name")?.into(),
+        description: "Fixture application".into(),
+        changelog: None,
+        icon: None,
         version: metadata::version("0.1.0")?,
         entry: "main.py".into(),
         permissions: v["permissions"].clone(),
@@ -157,8 +162,8 @@ fn default_catalog_lists_both_apps_and_respects_installation_flags() -> Result<(
     assert_eq!(
         messages,
         [
-            "Choose Check to load available apps",
-            "Check finished: 2 entries. Select an entry for details",
+            "Refresh to load available apps",
+            "Refresh complete: 2 entries. Select an app.",
         ]
     );
     for package in &mut packages {
@@ -432,6 +437,7 @@ fn launcher_customizations_pending_and_stale_check() -> Result<(), String> {
     install::install(&loc, &checked)?;
     let root = loc.root(&p);
     let launcher = loc.state.join("launchers").join(&p.id);
+    let managed_launcher = storage::read(&launcher, 1024)?.ok_or("launcher")?;
     assert!(root.join("main.py").is_file());
     let custom = FileData {
         bytes: b"#!/bin/sh\n# custom\n".to_vec(),
@@ -439,9 +445,9 @@ fn launcher_customizations_pending_and_stale_check() -> Result<(), String> {
     };
     storage::atomic(&launcher, &custom)?;
     std::fs::remove_file(root.join("icon.png")).map_err(|e| e.to_string())?;
-    let repair = install::prepare(&loc, p.clone(), files.clone())?;
-    install::install(&loc, &repair)?;
+    assert!(install::prepare(&loc, p.clone(), files.clone()).is_err());
     assert_eq!(storage::read(&launcher, 1024)?, Some(custom));
+    storage::atomic(&launcher, &managed_launcher)?;
     storage::atomic(
         &root.join(".installation-pending"),
         &FileData {

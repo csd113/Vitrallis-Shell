@@ -206,6 +206,9 @@ pub struct Package {
     pub origin: Repository,
     pub id: String,
     pub name: String,
+    pub description: String,
+    pub changelog: Option<std::sync::Arc<str>>,
+    pub icon: Option<std::sync::Arc<Vec<u8>>>,
     pub version: Version,
     pub entry: String,
     pub permissions: Value,
@@ -220,8 +223,34 @@ impl Package {
     pub fn key(&self) -> String {
         format!("{}:{}", self.origin.as_str(), self.id)
     }
+    pub fn display_metadata(&self) -> Self {
+        Self {
+            origin: self.origin.clone(),
+            id: self.id.clone(),
+            name: self.name.clone(),
+            description: self.description.clone(),
+            changelog: self.changelog.clone(),
+            icon: self.icon.clone(),
+            version: self.version.clone(),
+            entry: self.entry.clone(),
+            permissions: self.permissions.clone(),
+            installable: self.installable,
+            notes: self.notes.clone(),
+            repository: self.repository.clone(),
+            commit: self.commit.clone(),
+            directory: self.directory.clone(),
+            files: Vec::new(),
+        }
+    }
 }
+#[cfg(test)]
 pub fn catalog(origin: &Repository, bytes: &[u8]) -> Result<Vec<Package>, String> {
+    catalog_entries(origin, bytes)?.into_iter().collect()
+}
+pub fn catalog_entries(
+    origin: &Repository,
+    bytes: &[u8],
+) -> Result<Vec<Result<Package, String>>, String> {
     let doc = json(bytes)?;
     fields(&doc, "schema_version apps")?;
     if doc["schema_version"].as_u64() != Some(1) {
@@ -232,15 +261,20 @@ pub fn catalog(origin: &Repository, bytes: &[u8]) -> Result<Vec<Package>, String
         .filter(|a| a.len() <= 1000)
         .ok_or("invalid app list")?;
     let mut ids = BTreeSet::new();
-    apps.iter()
-        .map(|v| {
-            let p = parse_package(origin, v)?;
-            if !ids.insert(p.id.clone()) {
-                return Err("Duplicate app ID".into());
-            }
-            Ok(p)
+    for v in apps {
+        if let Some(id) = v["id"].as_str()
+            && !ids.insert(id)
+        {
+            return Err("Duplicate app ID".into());
+        }
+    }
+    Ok(apps
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            parse_package(origin, v).map_err(|e| format!("App {} metadata invalid: {e}", i + 1))
         })
-        .collect()
+        .collect())
 }
 fn parse_package(origin: &Repository, v: &Value) -> Result<Package, String> {
     fields(
@@ -250,7 +284,7 @@ fn parse_package(origin: &Repository, v: &Value) -> Result<Package, String> {
     let id = text(&v["id"], 128)?.to_owned();
     identity(&id)?;
     let name = text(&v["name"], 1000)?.to_owned();
-    text(&v["description"], 1000)?;
+    let description = text(&v["description"], 1000)?.to_owned();
     let notes = text(&v["compatibility_notes"], 1000)?.to_owned();
     let version = version(text(&v["version"], 32)?)?;
     if v["runtime"] != "python" {
@@ -271,6 +305,9 @@ fn parse_package(origin: &Repository, v: &Value) -> Result<Package, String> {
         origin: origin.clone(),
         id,
         name,
+        description,
+        changelog: None,
+        icon: None,
         version,
         entry,
         permissions: v["permissions"].clone(),
@@ -409,7 +446,10 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
     {
         return Err("catalog/manifest disagreement".into());
     }
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(&files["icon.png"]));
+    validate_icon(&files["icon.png"])
+}
+pub(super) fn validate_icon(bytes: &[u8]) -> Result<(), String> {
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_limits(png::Limits {
         bytes: 4 * 1024 * 1024,
     });

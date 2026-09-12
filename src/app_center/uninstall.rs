@@ -37,12 +37,12 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), Str
             mode: 0o600,
         },
     )?;
-    transaction::apply(&journal, &writes)?;
-    std::fs::remove_file(marker).map_err(|e| e.to_string())?;
-    storage::sync(&root)?;
-    Ok(())
+    transaction::commit(&journal, &writes, &marker)
 }
-fn installed_entry(root: &Path, p: &metadata::Package) -> Result<std::path::PathBuf, String> {
+pub(super) fn installed_entry(
+    root: &Path,
+    p: &metadata::Package,
+) -> Result<std::path::PathBuf, String> {
     if let Some(file) = storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)? {
         let manifest = metadata::manifest(&file.bytes)?;
         if manifest["id"] != p.id {
@@ -52,18 +52,6 @@ fn installed_entry(root: &Path, p: &metadata::Package) -> Result<std::path::Path
     }
     metadata::path(&p.entry)?;
     Ok(root.join(&p.entry))
-}
-fn validate_owned_path(name: &str) -> Result<(), String> {
-    metadata::path(name)?;
-    if name.split('/').any(|c| {
-        matches!(
-            c.to_ascii_lowercase().as_str(),
-            ".vitrallis-receipt.json" | ".installation-pending" | ".venv" | "runtime"
-        )
-    }) {
-        return Err("Inventory collides with installer/runtime state".into());
-    }
-    Ok(())
 }
 fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
     let root = loc.root(p);
@@ -81,7 +69,7 @@ fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
             .ok_or("Invalid receipt")?
             .keys()
         {
-            validate_owned_path(name)?;
+            install::validate_owned_path(name)?;
             paths.insert(root.join(name));
         }
     } else {

@@ -67,13 +67,47 @@ fn record(journal: &Path, writes: &[Write]) -> Result<(), String> {
         },
     )
 }
-pub fn apply(journal: &Path, writes: &[Write]) -> Result<(), String> {
-    apply_with(journal, writes, |_| Ok(()))
+// Finalization is part of the transaction. A rolled-back update must remain
+// discoverable; only an unresolved rollback retains the incomplete marker.
+pub fn commit(journal: &Path, writes: &[Write], marker: &Path) -> Result<(), String> {
+    let marker_data = storage::read(marker, 1024)?.ok_or("Missing transaction marker")?;
+    let result = apply_validated(
+        journal,
+        writes,
+        |_| Ok(()),
+        || {
+            std::fs::remove_file(marker).map_err(|e| e.to_string())?;
+            storage::sync(marker.parent().ok_or("Missing marker parent")?)
+        },
+    );
+    if let Err(error) = result {
+        if recover(journal, |p| writes.iter().any(|w| w.path == p)).is_ok() {
+            match std::fs::remove_file(marker) {
+                Ok(()) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(format!("{error}; marker cleanup failed: {e}")),
+            }
+            storage::sync(marker.parent().ok_or("Missing marker parent")?)?;
+        } else {
+            storage::atomic(marker, &marker_data)?;
+        }
+        return Err(error);
+    }
+    Ok(())
 }
+#[cfg(test)]
 fn apply_with(
     journal: &Path,
     writes: &[Write],
+    after_write: impl FnMut(usize) -> Result<(), String>,
+) -> Result<(), String> {
+    apply_validated(journal, writes, after_write, || Ok(()))
+}
+fn apply_validated(
+    journal: &Path,
+    writes: &[Write],
     mut after_write: impl FnMut(usize) -> Result<(), String>,
+    finalize: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
     if storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)?.is_some() {
         return Err("Pending transaction must be recovered first".into());
@@ -92,18 +126,29 @@ fn apply_with(
             replace(&w.path, w.after.as_ref())?;
             after_write(i)?;
         }
+        for w in writes {
+            if storage::read(&w.path, metadata::BUNDLE_LIMIT)? != w.after {
+                return Err("Installed files failed final verification".into());
+            }
+        }
+        finalize()?;
+        std::fs::rename(journal.join("pending.json"), journal.join("completed.json"))
+            .map_err(|e| e.to_string())?;
+        storage::sync(journal)?;
         Ok(())
     })();
     if let Err(error) = result {
+        if journal.join("completed.json").exists() {
+            std::fs::rename(journal.join("completed.json"), journal.join("pending.json"))
+                .map_err(|e| format!("{error}; recovery journal could not be restored: {e}"))?;
+        }
         let rollback = rollback(writes);
         return Err(format!(
             "{error}; {}",
             rollback.map_or_else(|e| e, |()| "rolled back; repair on next check".into())
         ));
     }
-    std::fs::rename(journal.join("pending.json"), journal.join("completed.json"))
-        .map_err(|e| e.to_string())?;
-    storage::sync(journal)
+    Ok(())
 }
 fn rollback(writes: &[Write]) -> Result<(), String> {
     let mut conflicts = Vec::new();
@@ -139,7 +184,7 @@ pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, 
     let v = metadata::json(&file.bytes)?;
     let rows = v
         .as_array()
-        .filter(|a| a.len() <= 270)
+        .filter(|a| a.len() <= 2056)
         .ok_or("Invalid recovery journal")?;
     let mut writes = Vec::new();
     let mut seen = BTreeSet::new();
@@ -184,6 +229,49 @@ fn load_saved(journal: &Path, i: usize, kind: &str, v: &Value) -> Result<FileDat
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn finalization_failure_rolls_back_verified_files_and_commit_releases_marker()
+    -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let path = root.join("app");
+        let before = FileData {
+            bytes: b"old release".to_vec(),
+            mode: 0o755,
+        };
+        storage::atomic(&path, &before)?;
+        let writes = [plan(
+            path.clone(),
+            FileData {
+                bytes: b"new release".to_vec(),
+                mode: 0o755,
+            },
+        )?];
+        let journal = root.join("failed");
+        assert!(
+            apply_validated(
+                &journal,
+                &writes,
+                |_| Ok(()),
+                || Err("finalization failed".into())
+            )
+            .is_err()
+        );
+        assert_eq!(storage::read(&path, 100)?, Some(before));
+        assert!(recover(&journal, |p| p == path)?);
+        let marker = root.join(".installation-pending");
+        storage::atomic(
+            &marker,
+            &FileData {
+                bytes: b"pending".to_vec(),
+                mode: 0o600,
+            },
+        )?;
+        commit(&root.join("success"), &writes, &marker)?;
+        assert!(!marker.exists());
+        assert_eq!(storage::read(&path, 100)?, writes[0].after);
+        Ok(())
+    }
     #[test]
     fn deletions_roll_back_and_recover_without_overwriting_recreated_files() -> Result<(), String> {
         let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;

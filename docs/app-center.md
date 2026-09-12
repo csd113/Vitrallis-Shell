@@ -1,206 +1,182 @@
 # App Center
 
-App Center is a built-in Rust/SDL screen on desktop and PocketCHIP. Every Vitrallis
-installation includes **Terminal, Notepad, and Files** as native Rust utilities.
-They need no catalog, download, Python runtime, or App Center receipt, and cannot
-be removed through App Center. See [native applications](native-apps.md).
-Third-party packages and their artwork are acquired separately; no third-party
-package or catalog payload is embedded.
-The only built-in catalog setting is `csd113/Vitrallis-Apps`. Check resolves that
-repository's current default branch through GitHub, pins its commit, and fetches
-root `apps.json`. Check downloads only catalog metadata, including the pinned file
-inventory, sizes, and hashes. App payload files are downloaded only after the user
-selects an app and chooses Install (also used for updates and repairs).
+App Center is a native Rust/SDL screen for desktop and PocketCHIP. Terminal,
+Notepad and Files are bundled native utilities and cannot be removed here.
+Third-party apps come from configured GitHub catalogs; no catalog payload or
+third-party app is embedded in the shell.
 
-Open **App Center**, choose **Check**, select an app, then **Install**.
-Rows show installed/latest versions; **Details** shows the full status, origin,
-source, download size, compatibility notes, and declared requirements. Only one
-app can be selected at a time. Enter, Space, or a tap selects an app and replaces
-the previous selection; activating the selected row again clears it. Keyboard
-focus and paging do not change the selection. Details, Install, and Uninstall
-all use the same selected app, even when its row is on another page. Details is
-disabled until an app is selected. Up-to-date and unavailable apps can be selected
-for information; Install is enabled only when the selected app is ready, and
-Uninstall only when that app is installed.
-Download progress shows actual bytes received / total bytes and
-percentage, followed by Verifying and Installing. Cancel (or Escape while acquiring)
-stops the remaining downloads before installation; a stalled request can take up to
-its 30-second deadline to stop. Once filesystem commit starts, it finishes or rolls
-back safely. Check, editing, and installation
-cannot overlap. Progress and errors remain visible; Details also exposes long
-operation errors after an unsuccessful installation.
+## Browse and manage apps
 
-Up/down (or keypad 8/2) moves vertically through the app list, scrolling as needed.
-Left/right (or keypad 4/6) cycles the button rows: right from Home goes straight
-to Previous, Details, then Next, without traversing the list. Tab visits every
-visible control. Enter/keypad Enter activates, and Space
-toggles a focused app row. C checks and I installs outside text entry. Home/Escape
-returns when idle. Previous/Next, Page Up/Down, and the mouse wheel scroll lists
-and details. Touch and mouse activate only matching press/release targets. Every
-visible control has keyboard focus, including confirmation and paging buttons.
-The repository editor accepts SDL text input and includes an on-screen keyboard,
-Clear and Delete controls, and a visible insertion end for long batches.
+Open **App Center** and choose **Refresh** on first use. Later openings immediately
+show the saved catalog and check local installations without contacting repositories.
+**Refresh** fetches new remote catalog information. Installing, updating, removing,
+reopening, and checking installed state never trigger a remote catalog refresh.
 
-Select an installed app, open **Details**, and choose **Uninstall**. The confirmation
-defaults to **Cancel**; keyboard and touch use the same confirmation. Close the app
-before uninstalling. Uninstall needs no network requests and removes the receipt's
-app files, the managed launcher, and matching desktop entries. Other files,
-such as saves and app-local virtual environments not listed in the receipt, remain.
-Uninstall requires a validated receipt bound to the app ID and publisher. Removed
-files (including locally edited package files) are backed up in the transaction
-journal. Custom shortcuts pointing elsewhere are preserved. Uninstall failures
-roll back conditionally and keep the incomplete marker for recovery. The app list
-and home grid refresh after removal; the catalog app can be installed again.
+Rows show an icon, name, description, and either the available version, installed
+version, update transition, operation progress, or failure. Select a row, then use
+its primary **Install**, **Update**, **Repair**, or **Open** action. **Details**
+shows the selected app's description, installed and available versions, status,
+repository, requirements, download size and last operation error. **What's New**
+is accessible directly from Details before updating. Destructive **Remove** is
+separate from the primary action and always opens a Cancel-default confirmation.
 
-An **Update available** badge appears beside the latest version when an installable
-catalog entry has a newer numeric version than the installed app. Equal versions,
-downgrades, unknown local versions, and apps not yet installed have no badge. Details
-also displays the update indicator. Repairs at the same version remain selectable
-without claiming a newer version exists.
+**Search apps** matches names and descriptions. The adjacent filter cycles through
+**All**, **Installed**, and **Updates** and shows the matching count. Search's
+**Clear**, then **Search**, restores an empty query. No-results text explains how
+to clear search or choose All. Query, filter, selected app and browsing position
+survive app mutations. Returning from Details restores the list position. An
+updated app naturally leaves the Updates filter; that filter stays active.
 
-## Catalog sources
+Only one filesystem operation runs at a time. Browsing, paging, reading Details,
+viewing release notes, and searching remain available during an operation.
+Conflicting mutation/source actions are disabled. The active app shows progress;
+other rows remain present. Download progress reports actual bytes, then verification
+and installation. Cancel stops acquisition before commit. A stalled curl request
+can take up to its 30-second deadline to stop. Commit finishes or rolls back once
+filesystem mutation begins. Failures remain in the status area and the app's Details.
 
-**Sources** provides persistent Add, Edit, and Remove controls. Enter `owner/repo`
-or an HTTPS GitHub repository URL; whitespace, commas, or semicolons separate a
-batch. GitHub names normalize case, an optional `.git` suffix, and trailing URL
-slashes. The default appears exactly once and cannot be edited or removed.
-Custom sources supplement it. At most 32 catalogs are retained in
-`$XDG_CONFIG_HOME/vitrallis/app-center.json` (fallback `~/.config/vitrallis/`).
+Keyboard arrows/keypad 8/2 move vertically; left/right or keypad 4/6 cycle button
+rows. Tab reaches every visible control, including search, filters, paging,
+confirmation and on-screen keyboard keys. Enter/keypad Enter or Space activates.
+C refreshes and I installs outside text entry. Home returns to the shell. Escape
+backs out, declines a confirmation, or cancels acquisition on the app list.
+Page Up/Down and the mouse wheel scroll. Touch/mouse require a matching
+press/release target. Losing focus declines pending confirmations.
 
-Each catalog is fetched independently from its resolved default branch's root
-`apps.json`. A failing source remains visible as an error row alongside successful
-sources. No repository scraping, guessed package folders, or cached failed checks
-are used. Entries are keyed by catalog origin plus app ID. Duplicate IDs display
-`[!]` and selection asks explicitly which publisher to use. Installation receipts
-bind the app ID to both the catalog origin and source repository; an existing
-installation cannot silently switch publishers or repositories.
+## Repositories and cached metadata
 
-A configured catalog may supply files from its own repository. Another source
-repository requires the explicit **Details → Trust source** confirmation, then a
-new Check. Approvals are scoped to the originating catalog. Removing a catalog
-removes its approvals, invalidates checked results, and does not uninstall apps
-or remove saves. Re-add the same source to manage those installations again.
+**Sources** opens repository management. Add/Edit accept `owner/repo` or an HTTPS
+GitHub repository URL, with whitespace, commas or semicolons separating a batch.
+Names normalize case, optional `.git` suffixes, and trailing URL slashes. The
+built-in `csd113/Vitrallis-Apps` source appears once and cannot be removed or edited.
+Up to 32 configured sources are saved in
+`$XDG_CONFIG_HOME/vitrallis/app-center.json` (default `~/.config/vitrallis/`).
 
-## Package contract
+Each source resolves its current default branch and commit, then downloads root
+`apps.json`. Its last validated snapshot is saved independently under
+`$XDG_DATA_HOME/vitrallis/app-center/catalogs/`. A failed refresh preserves that
+source's previous catalog, including pinned inventories. Other sources continue
+working. A bad individual app becomes an unavailable diagnostic entry; malformed
+catalog structure, duplicate JSON keys or duplicate IDs reject that source's new
+snapshot. Repository errors are visible in source rows as well as diagnostic app
+rows. Source removal drops only that source's displayed rows and approvals; it
+does not uninstall apps or delete user data.
 
-The service implements catalog v1 and package `app.toml` manifest v1 as documented
-by [Vitrallis Apps](https://github.com/csd113/Vitrallis-Apps/blob/main/docs/creating-apps.md).
-Packages require `app.toml`, `main.py`, `icon.png`, `requirements.txt`,
-`README.md`, and a populated `assets/` directory. Source repositories also include
-`tests/`, which device packages must exclude. The declared Python
-entry must be in the inventory. Manifest ID, name, runtime, entry, version, and
-network/audio/storage declarations must agree with the catalog. TOML uses the
-standard Rust parser, including rejection of duplicate assignments and unknown
-v1 fields. Permissions describe app requirements; **apps are not sandboxed**.
+Entries are keyed by originating repository plus app ID. Duplicate IDs across
+sources require explicit publisher selection. Receipts bind installations to the
+app ID, catalog origin and package source; a different source cannot silently take
+over an installation. A separate package source requires **Details → Trust source**
+confirmation. Approvals apply to that originating catalog and are rechecked on
+installation. Cached availability is not proof that an offline download will work.
 
-Python packages install under `$XDG_DATA_HOME/vitrallis/apps/<id>` (fallback
-`~/.local/share/vitrallis/apps/<id>`). Shell discovery reads their manifests and
-uses locally generated launchers. Desktop/application shortcuts register the
-installed icon. An existing launcher or shortcut is preserved, including custom
-arguments. Unmanaged files and saves are not deleted. Locally edited managed files
-block replacement; restore or reconcile them before checking again. Same-version
-republishing and downgrades are blocked. Stable version components compare
-numerically, including components larger than machine integers.
+## Changelog and icon contract
 
-All source directories must use `apps/<app-slug>` with a lowercase hyphenated
-slug. Downloads use the catalog's validated `source.path`, repository, and commit;
-no package-specific paths, icons, version inference, or installation modes exist.
-Bitcoin uses the same manifest, inventory and ID-based storage as every other app.
-The publisher's `installable` flag remains authoritative; a disabled package stays
-disabled even when its manifest and bytes validate.
+The current [Vitrallis Apps catalog contract](https://github.com/csd113/Vitrallis-Apps/blob/cd1cbf913044bfe7edd3e2ade656a85b90b06e9c/docs/catalog-format.md)
+already inventories `CHANGELOG.md` and `icon.png` as pinned package files. App
+Center uses that convention directly: **no manifest or catalog schema version
+change, extra endpoint, or second changelog format is required**.
 
-Runtime detection tries an app-local `.venv/bin/python3` and existing system Python.
-Missing runtimes, Tk imports, and declared distributions block installation with a diagnostic. No pip, apt, global
-installation, remote install script, or app import runs during inspection. Python
-syntax is compiled without execution in the detected app runtime, off the UI
-thread. Source text currently must be UTF-8. Simple distribution names and exact
-pins need only Python's distribution metadata; complex PEP 508 constraints need
-an already installed `packaging` module. URL dependencies and extras require
-manual review. Toolkit requirements outside detected Tk imports and declared
-requirements remain the publisher's responsibility; no device certification is
-claimed.
+Publish `CHANGELOG.md` in the app directory and include its size and SHA-256 in the
+normal sorted `files` inventory. The publisher tooling's current release policy
+requires dated changelogs. Use UTF-8, newest release first, with a heading for the
+available version and optional older sections:
 
-## Verification and recovery
+```markdown
+# Changelog
 
-Catalogs are limited to 8 MiB and 1,000 apps per source. Packages allow 256 files,
-2 MiB per file, and 16 MiB total. Check retains metadata only, so there is no
-catalog-wide prepared-package RAM limit. Installed receipts and local hashes identify
-current apps and repairs without fetching payloads. Metadata rows are invalidated on
-checks/source edits or after an install batch. Source trust is rechecked on Install.
-Only the selected package is acquired and held in memory for its installation;
-each payload file is downloaded once during that operation. Runtime prerequisites,
-package `app.toml` agreement, and content validation run after acquisition.
-An installation plan older than 15 minutes is rejected before commit.
+## 1.2.3 — 2026-09-12
 
-After selection and before mutation, the service walks the pinned Git directory tree and verifies
-that the catalog lists its complete device-package inventory and sizes, then downloads and
-verifies every SHA-256. Current catalog v1 packages omit only the app-local `tests/`
-folder. Catalog inventories containing app-local tests or omitting other files are
-rejected. Development tests are never downloaded.
-Truncated Git trees, symlinks, submodules, special files,
-duplicate JSON keys, duplicate IDs/paths, file/directory collisions, case-colliding
-directories, traversal, invalid fields, and installer/runtime path collisions fail
-closed. Downloads use system `/usr/bin/curl`, HTTPS, fixed GitHub API/raw hosts,
-no redirects, verified TLS, ten-second connect and thirty-second total request
-deadlines. GitHub and each configured catalog are trust roots; checksums are not
-independent publisher signatures.
+- Describe the visible changes in this release.
+- Preserve paragraph breaks and short bullet lists.
 
-A cross-process file lock covers source saves, checks, installation, and recovery.
-Writes are staged, synced, and atomically renamed. Existing contents and modes
-are checked again before replacement. Receipts contain origin, source repository,
-commit, version, ID, and installed hashes. Backups and journals live below
-`$XDG_DATA_HOME/vitrallis/app-center/transactions/`; completed journals are retained.
-A `.installation-pending` marker prevents discovery from offering a partial install
-as healthy. Check marks incomplete installations as repairable. Selecting Install
-acquires and verifies the package, then recovers unfinished journals before preparing
-repair. Failed or cancelled acquisition never writes app files or install markers.
+## 1.2.2 — 2026-09-01
 
-Rollback restores a file only if it still matches this installation's recorded
-output. Later edits are preserved and conflicting recovery stops with a diagnostic.
-Do not remove markers or journals to bypass a failed install. Resolve the reported
-conflict using the retained before/after backups, then Check and repair. These are
-recoverable multi-file transactions, not a claim of atomic visibility across an
-entire directory. Filesystem validation rejects symlinks, hard links, special files,
-and unsafe writable ancestors; this is not isolation against a hostile process
-already running as the same user.
+- Earlier changes.
+```
 
-Running apps get a **Cancel-default Close and update** prompt. Confirmation is
-bound to that specific request. The worker matches the user's exact Python script
-argument and process start identity, rechecks identity before TERM, waits up to
-eight seconds, and skips an app that remains running. It never kills by broad name
-matching and does not relaunch updated apps. On Linux identity comes from `/proc`;
-other Unix hosts use bounded `ps`. Ambiguous whitespace-containing Python arguments
-on the latter hosts fail closed. Discovery refreshes after installation, retaining
-the selected launcher ID.
+On an explicit repository refresh, App Center fetches the pinned changelog (up to
+64 KiB) and icon (up to 256 KiB), verifies their inventory size/hash, and caches
+them by content hash. Unchanged presentation files are reused on later refreshes.
+Opening Details/What's New, browsing, and local scans make no presentation requests.
+Missing, oversized, invalid UTF-8 or control-filled changelogs show a readable
+no-release-notes message and cannot break the catalog. Markdown is displayed as
+plain, scrollable multiline text; links or embedded HTML are never executed.
+Icons are validated and reduced to 32×32 pixels off the UI thread. Decoded icons
+and release notes are shared between worker and screen rather than repeatedly
+cloned or loaded from disk during rendering.
 
-The shell updater is accessible only through **System Settings → More → Check for
-Updates**. Its separate
-installation confirmation and relaunch behavior remain in effect. App Center does
-not implement Python manager self-updates or a second shell updater.
+## Package acquisition and installation
 
-## Contract and validation
+Only the selected package payload is acquired. Downloads use the declared
+`source.repository`, full commit, and canonical `apps/<lowercase-hyphenated-slug>`
+path. Before downloading, the worker walks the pinned Git tree to verify the
+complete inventory and sizes. Device inventories exclude only app-local `tests/`.
+Every payload file is fetched from its pinned commit and checked against SHA-256;
+there is no mutable archive cache to reuse across releases. Pinned Git executable
+modes are retained. Untrusted paths, symlinks, submodules, special files, incomplete
+trees, collisions and reserved runtime/installer paths fail closed.
 
-The implementation follows Vitrallis Apps commit
-`a86ae57450d52fd779e0ddcdd794b57213ca8eb8` (catalog/schema, manifest specification,
-and publisher tooling). Test metadata is separate from runtime catalogs and is
-not embedded in production builds. See [the audit and validation report](app-center-validation.md).
+Catalog v1 and manifest v1 must agree on ID, name, version, Python runtime, entry
+and network/audio/storage requirements. Packages require `app.toml`, `main.py`,
+`icon.png`, `requirements.txt`, `README.md` and populated `assets/`. The declared
+entry must be an inventoried Python file. Runtime detection checks an existing
+app-local `.venv/bin/python3`, then system Python candidates. Declared distributions,
+Tk imports and syntax are checked without importing app code. App Center never
+runs pip, apt, publisher install scripts, or app code during installation checks.
+Permissions are requirements; applications are not sandboxed.
 
-| Reference behavior | Native implementation / fixture evidence |
-| --- | --- |
-| Installed/latest status, disabled rows, independent checks | `check_all`, metadata/network fixtures; disabled entries make no package requests |
-| Unchecked rows and sequential selected installs | screen selection tests, captured worker command, per-app batch error handling |
-| First install/update/repair | manifest-package fixtures, missing icon and pending-marker repair |
-| Numeric versions and local-copy protection | strict versions, downgrade, same-version inventory, origin and local-edit checks |
-| Pinned complete bundle, path/hash checks | Git-tree fixtures, malicious metadata, size/hash mismatch, reserved paths |
-| Runtime/dependency checks | real runtime syntax/dependency test; a source containing a file write is never executed |
-| Launchers, icons, shortcuts, saves, backups and receipts | install fixtures; custom launcher and unmanaged save retained |
-| Interrupted writes and conditional rollback | failure injection, repeatable recovery and later-edit conflict tests |
-| Running app confirmation and eight-second wait | Cancel/default/token tests, real owned test process, stale identity and timeout tests |
-| Keyboard/keypad/touch and 480×272/larger UI | target geometry/focus and text/gesture tests at 480×272 and 800×480 |
-| Manager self-update | existing Settings → Updates service, no Python updater process |
-| Additional catalogs | persistent default/batch normalization, scoped trust, per-source errors and explicit conflict selection |
+Installed packages live at `$XDG_DATA_HOME/vitrallis/apps/<id>` (default
+`~/.local/share/vitrallis/apps/<id>`). Receipts, generated launchers, application
+shortcuts and icons use this canonical installation. The managed launcher is
+regenerated from the current entry, runtime and source commit. A locally edited
+launcher blocks replacement and is preserved with a diagnostic. Custom desktop
+shortcuts remain user-owned. Unmanaged data and app-local virtual environments
+are retained; package code should keep user data outside its read-only installation.
 
-Run `scripts/validate.sh` for formatting, strict Clippy, Rust/Python tests, release
-build, SDL dummy-driver smoke, script syntax checks, and diff whitespace checks.
-Use `cargo +1.91.0 check --locked --workspace --all-features` for the declared MSRV.
-These host checks do not exercise hardware or deploy packages.
+Updates remove old receipt-owned files absent from the new inventory. Managed
+Python module caches are removed transactionally. Launchers use a release-specific
+bytecode-cache namespace and disable bytecode writes, so interpreter-wide or
+same-size/same-second caches cannot silently execute a previous release. Python
+startup/home/path overrides are excluded consistently with runtime preflight.
+Same-version republishing, downgrades, source switches and modified managed source
+files are rejected before replacement.
+
+Running-app detection reads the **installed manifest's entry**, even when the
+available version changes entry paths. **Close and update** defaults to Cancel.
+Confirmation matches the exact script and process start identity, then sends TERM
+and waits up to eight seconds. New or unclosed matching processes block mutation.
+Updated apps remain closed until the user opens them.
+
+## Transactions, discovery and recovery
+
+A cross-process lock covers source settings, refresh, install, remove and recovery.
+Writes are staged, synced and atomically renamed individually. A durable journal
+records before/after bytes and modes, including removals. Final readback verifies
+every planned output before marker cleanup and journal completion. A finalization
+failure participates in rollback. Successful rollback releases the incomplete
+marker; unresolved conflicts retain it and a recovery diagnostic.
+
+These are journaled multi-file transactions, not an atomic directory swap. A
+`.installation-pending` marker prevents launch/discovery of a partial installation.
+Recovery restores a path only if it still matches the transaction's recorded
+output; later user changes are preserved. Journals and backups remain under
+`$XDG_DATA_HOME/vitrallis/app-center/transactions/`. Do not delete markers or journals
+to bypass a recovery failure. Resolve the reported conflict and repair the app.
+
+After each mutation the worker refreshes the affected row's local status and the
+shell refreshes installed-app discovery independently of device-menu configuration.
+A broken PocketHome config therefore cannot prevent an otherwise valid new app
+from registering in the live Vitrallis menu. Refresh retains launcher selection
+by ID. Removal validates the receipt, refuses a running app, removes only owned
+package/support files and matching managed shortcuts, then updates the row/menu.
+
+Catalogs are bounded to 8 MiB and 1,000 apps per source. Packages allow 256 files,
+2 MiB per file and 16 MiB total. Transfer hosts are fixed GitHub API/raw HTTPS
+hosts with verified TLS, no redirects, ten-second connection and thirty-second
+request deadlines. Plans expire after 15 minutes. Hashes establish publisher
+content integrity, not an independent signature. Filesystem checks reject unsafe
+ancestors, links and special files; they do not isolate hostile same-user processes.
+No obsolete package-layout migrations or compatibility paths are provided.
+
+See [the validation report](app-center-validation.md) and
+[Docker simulator instructions](../tests/simulator/README.md).

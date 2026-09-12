@@ -96,14 +96,24 @@ pub fn check(loc: &Locations, p: Package) -> Result<Checked, String> {
 fn validate_paths(p: &Package) -> Result<(), String> {
     metadata::check_paths(p.files.iter().map(|f| f.path.as_str()))?;
     for file in &p.files {
-        if file.path.split('/').any(|c| {
-            matches!(
-                c.to_ascii_lowercase().as_str(),
-                ".vitrallis-receipt.json" | ".installation-pending" | ".venv" | "runtime"
-            )
-        }) {
-            return Err("Package path collides with installer/runtime state".into());
-        }
+        validate_owned_path(&file.path)?;
+    }
+    Ok(())
+}
+pub(super) fn validate_owned_path(name: &str) -> Result<(), String> {
+    metadata::path(name)?;
+    if name.split('/').any(|c| {
+        matches!(
+            c.to_ascii_lowercase().as_str(),
+            ".vitrallis-receipt.json"
+                | ".installation-pending"
+                | ".venv"
+                | "runtime"
+                | ".vitrallis-bytecode"
+                | "__pycache__"
+        )
+    }) {
+        return Err("Package path collides with installer/runtime state".into());
     }
     Ok(())
 }
@@ -150,6 +160,9 @@ pub(super) fn receipt(root: &Path) -> Result<Option<Value>, String> {
             .filter(|m| m.len() <= 256)
             .ok_or("Invalid receipt inventory")?;
         metadata::check_paths(files.keys().map(String::as_str))?;
+        for name in files.keys() {
+            validate_owned_path(name)?;
+        }
         for hash in files.values() {
             metadata::hex(metadata::text(hash, 64)?, 64)?;
         }
@@ -157,7 +170,16 @@ pub(super) fn receipt(root: &Path) -> Result<Option<Value>, String> {
     })
     .transpose()
 }
+#[cfg(test)]
 pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Planned, String> {
+    prepare_with_modes(loc, p, files, &std::collections::BTreeMap::new())
+}
+pub fn prepare_with_modes(
+    loc: &Locations,
+    p: Package,
+    files: Files,
+    modes: &std::collections::BTreeMap<String, u32>,
+) -> Result<Planned, String> {
     metadata::validate_bundle(&p, &files)?;
     validate_paths(&p)?;
     let root = loc.root(&p);
@@ -173,10 +195,11 @@ pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Planned, Str
             root.join(name),
             FileData {
                 bytes: bytes.clone(),
-                mode: 0o644,
+                mode: modes.get(name).copied().unwrap_or(0o644),
             },
         )?);
     }
+    obsolete(&root, &files, old_receipt.as_ref(), &mut writes)?;
     support(loc, &p, &runtime, &mut writes)?;
     let changed = writes.iter().any(|w| w.before != w.after);
     let pending = storage::read(&root.join(".installation-pending"), 1024)?.is_some();
@@ -207,6 +230,57 @@ pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Planned, Str
             created_at: Instant::now(),
         }),
     })
+}
+fn obsolete(
+    root: &Path,
+    files: &Files,
+    receipt: Option<&Value>,
+    writes: &mut Vec<Write>,
+) -> Result<(), String> {
+    let mut modules = std::collections::BTreeSet::new();
+    let old = receipt.and_then(|r| r["files"].as_object());
+    for name in files.keys().chain(old.into_iter().flat_map(|r| r.keys())) {
+        if old.is_some_and(|r| r.contains_key(name)) && !files.contains_key(name) {
+            writes.push(transaction::remove(root.join(name))?);
+        }
+        let path = Path::new(name);
+        if path.extension().is_some_and(|ext| ext == "py") {
+            let parent = root.join(path.parent().ok_or("Missing module parent")?);
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or("Invalid module name")?;
+            modules.insert((parent, stem.to_owned()));
+        }
+    }
+    // Python timestamp bytecode may remain valid across same-size, same-second
+    // replacements. Remove only caches belonging to managed source modules.
+    for (parent, stem) in modules {
+        let cache = parent.join("__pycache__");
+        storage::safe(&cache)?;
+        let entries = match std::fs::read_dir(&cache) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => return Err(e.to_string()),
+        };
+        let prefix = format!("{stem}.");
+        for (index, entry) in entries.enumerate() {
+            if index >= 1024 {
+                return Err("Python cache directory exceeds bounds".into());
+            }
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name();
+            if name.to_str().is_some_and(|n| {
+                n.starts_with(&prefix) && Path::new(n).extension().is_some_and(|ext| ext == "pyc")
+            }) {
+                writes.push(transaction::remove(entry.path())?);
+            }
+        }
+    }
+    if writes.len() > 2048 {
+        return Err("Installation transaction exceeds bounds".into());
+    }
+    Ok(())
 }
 fn protect(p: &Package, root: &Path, files: &Files, receipt: Option<&Value>) -> Result<(), String> {
     if let Some(r) = receipt {
@@ -263,14 +337,22 @@ fn support(
     let root = loc.root(p);
     let launch_path = loc.state.join("launchers").join(&p.id);
     let before = storage::read(&launch_path, metadata::FILE_LIMIT)?;
-    let after = before
-        .as_ref()
-        .filter(|d| d.mode & 0o111 != 0)
-        .cloned()
-        .unwrap_or(FileData {
-            bytes: runtime::launcher(runtime, &root.join(&p.entry))?,
-            mode: 0o755,
-        });
+    let after = FileData {
+        bytes: runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
+        mode: 0o755,
+    };
+    if let Some(old) = &before {
+        let old_entry = super::uninstall::installed_entry(&root, p)?;
+        let saved = receipt(&root)?;
+        let old_commit = saved
+            .as_ref()
+            .map_or(Ok(p.commit.as_str()), |r| metadata::text(&r["commit"], 40))?;
+        if old.bytes != after.bytes
+            && old.bytes != runtime::launcher(runtime, &old_entry, old_commit)?
+        {
+            return Err("App launcher was edited; preserve your changes and restore the managed launcher before updating".into());
+        }
+    }
     writes.push(Write {
         path: launch_path.clone(),
         before,
@@ -371,7 +453,5 @@ pub fn install(loc: &Locations, checked: &Planned) -> Result<(), String> {
             mode: 0o600,
         },
     )?;
-    transaction::apply(&journal, &prepared.writes)?;
-    std::fs::remove_file(marker).map_err(|e| e.to_string())?;
-    storage::sync(&root)
+    transaction::commit(&journal, &prepared.writes, &marker)
 }

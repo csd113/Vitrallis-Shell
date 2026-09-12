@@ -12,6 +12,15 @@ enum Page {
     Sources,
     Edit,
     Details,
+    Changelog,
+    Search,
+}
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum Filter {
+    #[default]
+    All,
+    Installed,
+    Updates,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
@@ -27,12 +36,17 @@ pub enum Target {
     Remove,
     Save,
     Cancel,
+    CancelOperation,
     Character(char),
     Delete,
     Clear,
     Details,
     Uninstall,
     Approve,
+    Search,
+    Filter,
+    Changelog,
+    Open,
     Confirm(bool),
 }
 #[derive(Debug)]
@@ -53,6 +67,12 @@ pub struct Center {
     pub open: bool,
     pub message: String,
     pub busy: bool,
+    pub launch: Option<String>,
+    operation: Option<String>,
+    errors: std::collections::BTreeMap<String, String>,
+    search: String,
+    filter: Filter,
+    app_start: usize,
     download_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub refresh: bool,
     readout: Readout,
@@ -73,8 +93,14 @@ impl Default for Center {
     fn default() -> Self {
         Self {
             open: false,
-            message: "Check for updates to load catalogs".into(),
+            message: "Refresh to load available apps".into(),
             busy: false,
+            launch: None,
+            operation: None,
+            errors: std::collections::BTreeMap::new(),
+            search: String::new(),
+            filter: Filter::All,
+            app_start: 0,
             download_cancel: None,
             refresh: false,
             readout: Readout::Status,
@@ -104,23 +130,65 @@ impl Center {
                 }
                 Err(e) => self.message = e,
             }
+        } else if !self.busy {
+            self.send(Command::Scan);
         }
     }
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
-        while let Some(update) = self.worker.as_ref().and_then(|w| w.receive.try_recv().ok()) {
+        loop {
+            let Some(worker) = &self.worker else {
+                break;
+            };
+            let update = match worker.receive.try_recv() {
+                Ok(update) => update,
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.worker = None;
+                    self.busy = false;
+                    self.download_cancel = None;
+                    self.confirmation = None;
+                    self.message = "App service stopped. Reopen App Center to reconnect; cached apps are kept.".into();
+                    return true;
+                }
+            };
             changed = true;
             match update {
                 Update::Sources(s) => self.sources = s,
                 Update::Rows(rows) => {
-                    self.refresh = true;
                     self.rows = rows;
-                    self.chosen = None;
+                    if !self
+                        .rows
+                        .iter()
+                        .any(|row| self.chosen.as_ref() == Some(&row.package.key()))
+                    {
+                        self.chosen = None;
+                    }
                     self.confirmation = None;
                     self.contact = None;
-                    self.start = 0;
                     self.row = self.row.min(self.rows.len().saturating_sub(1));
-                    self.selected = 0;
+                    if let Some(index) = self
+                        .rows
+                        .iter()
+                        .position(|row| self.chosen.as_ref() == Some(&row.package.key()))
+                    {
+                        self.row = index;
+                    }
+                    if self.page == Page::Apps {
+                        self.start = self.start.min(self.rows.len().saturating_sub(1));
+                    }
+                }
+                Update::Row(row) => {
+                    if let Some(old) = self
+                        .rows
+                        .iter_mut()
+                        .find(|r| r.package.key() == row.package.key())
+                    {
+                        *old = *row;
+                    }
+                    if self.page == Page::Apps {
+                        self.start = self.start.min(self.visible_rows().len().saturating_sub(1));
+                    }
                 }
                 Update::Progress(s) => {
                     self.message = s;
@@ -140,6 +208,16 @@ impl Center {
                     self.download_cancel = None;
                     self.confirmation = None;
                     self.refresh |= changed;
+                    if let Some(key) = self.operation.take() {
+                        match &result {
+                            Err(error) => {
+                                self.errors.insert(key, error.clone());
+                            }
+                            Ok(_) => {
+                                self.errors.remove(&key);
+                            }
+                        }
+                    }
                     self.message = result.unwrap_or_else(|e| e);
                     self.readout = Readout::Status;
                 }
@@ -153,6 +231,12 @@ impl Center {
             if matches!(command, Command::Install(_)) {
                 self.download_cancel = Some(std::sync::Arc::clone(&w.cancelled));
             }
+            self.operation = match &command {
+                Command::Install(keys) => keys.first().cloned(),
+                Command::Uninstall(key) => Some(key.clone()),
+                Command::Answer(_, _) => self.operation.take(),
+                _ => None,
+            };
             if matches!(command, Command::Check | Command::Install(_)) {
                 w.cancelled
                     .store(false, std::sync::atomic::Ordering::Relaxed);
@@ -160,7 +244,12 @@ impl Center {
             match w.send.send(command) {
                 Ok(()) => {
                     self.busy = true;
-                    self.message = "Working...".into();
+                    self.message = if self.operation.is_some() {
+                        "Preparing app operation..."
+                    } else {
+                        "Loading repository information..."
+                    }
+                    .into();
                 }
                 Err(e) => self.message = e.to_string(),
             }
@@ -176,14 +265,16 @@ impl Center {
         }
     }
     pub const fn editing(&self) -> bool {
-        matches!(self.page, Page::Edit) && self.open
+        matches!(self.page, Page::Edit | Page::Search) && self.open
     }
     pub const fn title(&self) -> &str {
         match self.page {
-            Page::Apps => "APP CENTER",
-            Page::Sources => "GITHUB CATALOGS",
-            Page::Edit => "EDIT REPOSITORIES",
-            Page::Details => "APP / SOURCE DETAILS",
+            Page::Apps => "App Center",
+            Page::Sources => "Repositories",
+            Page::Edit => "Edit repositories",
+            Page::Details => "App details",
+            Page::Changelog => "What's New",
+            Page::Search => "Find an app",
         }
     }
     pub fn details(&self) -> String {
@@ -192,13 +283,11 @@ impl Center {
             Confirmation::Running(_, s)=>s.clone(),
             Confirmation::Uninstall(i)=>self.rows.get(*i).map_or_else(String::new, |r| format!("Uninstall {}? App files and launchers will be removed and backed up. Other files will be kept. Close the app first.", r.package.name)),
             Confirmation::Publisher(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Duplicate app ID: {}. Explicitly select publisher {}?",r.package.id,r.package.origin.as_str())),
-            Confirmation::Trust(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Trust {} to supply executable app files for catalog {}? Apps are not sandboxed. Check again after approval.",r.package.repository.as_str(),r.package.origin.as_str())),
+            Confirmation::Trust(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Trust {} to supply executable app files for catalog {}? Apps are not sandboxed. ",r.package.repository.as_str(),r.package.origin.as_str())),
             Confirmation::Remove(i)=>format!("Remove {}? Installed apps and saves remain.",self.sources.catalogs[*i].as_str()),
         };
         }
-        if self.busy
-            || (self.readout == Readout::Status && matches!(self.page, Page::Apps | Page::Sources))
-        {
+        if self.readout == Readout::Status && matches!(self.page, Page::Apps | Page::Sources) {
             return self.message.clone();
         }
         if self.page == Page::Edit {
@@ -208,7 +297,23 @@ impl Center {
             );
         }
         if self.page == Page::Details {
-            return self.chosen_row().map_or_else(||self.message.clone(),|r|format!("{}\nID: {}\nCatalog: {}\nSource: {}\nInstalled: {} Latest: {}{}\nDownload: {} bytes\n{}\n{}\nRequirements: {}. Apps are not sandboxed.",r.package.name,r.package.id,r.package.origin.as_str(),r.package.repository.as_str(),r.installed,r.package.version,if r.update_available() { " [Update available]" } else { "" },r.download_size,r.status,r.package.notes,r.package.permissions));
+            return self.app_details();
+        }
+        if self.page == Page::Search {
+            return format!("Search names and descriptions\n{}", self.text);
+        }
+        if self.page == Page::Changelog {
+            return self.chosen_row().map_or_else(String::new, |r| {
+                format!(
+                    "{} - available {}\n\n{}",
+                    r.package.name,
+                    r.package.version,
+                    r.package
+                        .changelog
+                        .as_deref()
+                        .unwrap_or("No release notes are available for this version.")
+                )
+            });
         }
         if self.page == Page::Sources {
             return "Default catalog is always included. Customs supplement it.\nRemoving a source never uninstalls apps.".into();
@@ -220,6 +325,214 @@ impl Center {
             || self.message.clone(),
             |r| format!("{} | {}", r.package.origin.as_str(), r.status),
         )
+    }
+    fn app_details(&self) -> String {
+        use std::fmt::Write;
+        self.chosen_row().map_or_else(
+            || self.message.clone(),
+            |r| {
+                let summary: String = r.package.description.chars().take(120).collect();
+                let mut detail = format!(
+                    "{}\n{}\n\nInstalled: {}\nAvailable: {}{}\n{}",
+                    r.package.name,
+                    summary,
+                    r.installed,
+                    r.package.version,
+                    if r.update_available() {
+                        " - update available"
+                    } else {
+                        ""
+                    },
+                    r.status
+                );
+                if let Some(error) = self.errors.get(&r.package.key()) {
+                    let _ = write!(detail, "\n\nLAST OPERATION FAILED\n{error}");
+                }
+                if summary != r.package.description {
+                    let _ = write!(detail, "\n\nABOUT\n{}", r.package.description);
+                }
+                let _ = write!(
+                    detail,
+                    "\n\nREPOSITORY\n{}\n\nREQUIREMENTS\n{}\nDownload: {} KiB",
+                    r.package.origin.as_str(),
+                    r.package.notes,
+                    r.download_size.div_ceil(1024)
+                );
+                if r.package.repository != r.package.origin {
+                    let _ = write!(detail, "\nSource: {}", r.package.repository.as_str());
+                }
+                let requirements: Vec<_> = ["network", "audio", "storage"]
+                    .into_iter()
+                    .filter(|key| r.package.permissions[key].as_bool() == Some(true))
+                    .collect();
+                let _ = write!(
+                    detail,
+                    "\nUses: {}\nApps run with your user permissions.\n\nApp ID: {}",
+                    if requirements.is_empty() {
+                        "no declared services".into()
+                    } else {
+                        requirements.join(", ")
+                    },
+                    r.package.id
+                );
+                detail
+            },
+        )
+    }
+    fn primary(&self) -> (Target, &'static str) {
+        if self.busy && self.download_cancel.is_some() {
+            return (Target::CancelOperation, "Cancel");
+        }
+        self.chosen_row().map_or((Target::Install, "Install"), |r| {
+            if r.update_available() {
+                (Target::Install, "Update")
+            } else if r.ready && r.can_uninstall() {
+                (Target::Install, "Repair")
+            } else if r.ready {
+                (Target::Install, "Install")
+            } else if r.can_uninstall() {
+                (Target::Open, "Open")
+            } else {
+                (Target::Install, "Unavailable")
+            }
+        })
+    }
+    fn visible_rows(&self) -> Vec<usize> {
+        let query = self.search.to_lowercase();
+        self.rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| self.matches_query(r, &query))
+            .map(|(i, _)| i)
+            .collect()
+    }
+    fn matches_query(&self, row: &Row, query: &str) -> bool {
+        (query.is_empty()
+            || row.package.name.to_lowercase().contains(query)
+            || row.package.description.to_lowercase().contains(query))
+            && match self.filter {
+                Filter::All => true,
+                Filter::Installed => row.can_uninstall(),
+                Filter::Updates => row.update_available(),
+            }
+    }
+    pub fn empty_message(&self) -> Option<&'static str> {
+        if self.page != Page::Apps || !self.visible_rows().is_empty() {
+            return None;
+        }
+        Some(if !self.search.is_empty() || self.filter != Filter::All {
+            "No matches. Clear Search or choose All."
+        } else if self.busy {
+            "Loading apps..."
+        } else {
+            "No apps yet. Refresh to load repositories."
+        })
+    }
+    pub fn row_content(&self, target: &Target) -> Option<(&str, &str, String)> {
+        if self.page == Page::Sources {
+            let Target::Row(i) = target else {
+                return None;
+            };
+            let origin = self.sources.catalogs.get(*i)?;
+            let rows: Vec<_> = self
+                .rows
+                .iter()
+                .filter(|r| r.package.origin == *origin)
+                .collect();
+            let status = rows
+                .iter()
+                .find(|r| r.package.entry.is_empty())
+                .map_or_else(
+                    || {
+                        if rows.is_empty() {
+                            "Refresh to load this repository".into()
+                        } else {
+                            format!("{} apps available", rows.len())
+                        }
+                    },
+                    |r| r.status.clone(),
+                );
+            return Some((
+                origin.as_str(),
+                if *i == 0 {
+                    "Default repository - always included"
+                } else {
+                    "Custom repository"
+                },
+                status,
+            ));
+        }
+        if self.page != Page::Apps {
+            return None;
+        }
+        let Target::Row(i) = target else {
+            return None;
+        };
+        let r = self.rows.get(*i)?;
+        let state = if self.operation.as_ref() == Some(&r.package.key()) {
+            self.message
+                .lines()
+                .next()
+                .unwrap_or("Preparing")
+                .to_owned()
+        } else if self.errors.contains_key(&r.package.key()) {
+            "Failed - see Details".into()
+        } else if r.update_available() {
+            format!("Update: {} > {}", r.installed, r.package.version)
+        } else if r.can_uninstall() {
+            format!("Installed {}", r.installed)
+        } else if r.ready {
+            format!("Available {}", r.package.version)
+        } else {
+            "Unavailable - see Details".into()
+        };
+        Some((&r.package.name, &r.package.description, state))
+    }
+    pub fn row_icon(&self, target: &Target) -> Option<&[u8]> {
+        if self.page != Page::Apps {
+            return None;
+        }
+        let Target::Row(i) = target else {
+            return None;
+        };
+        self.rows
+            .get(*i)?
+            .package
+            .icon
+            .as_deref()
+            .map(Vec::as_slice)
+    }
+    pub fn detail_icon(&self) -> Option<&[u8]> {
+        if self.page != Page::Details || self.confirmation.is_some() {
+            return None;
+        }
+        self.chosen_row()?
+            .package
+            .icon
+            .as_deref()
+            .map(Vec::as_slice)
+    }
+    pub fn footer(&self) -> &str {
+        if self.confirmation.is_some() {
+            "Cancel is the safe default"
+        } else if self.busy {
+            &self.message
+        } else if self.editing() {
+            "Tab: next control | Enter: activate"
+        } else {
+            ""
+        }
+    }
+    pub fn row_chosen(&self, target: &Target) -> bool {
+        if self.page != Page::Apps {
+            return false;
+        }
+        let Target::Row(i) = target else {
+            return false;
+        };
+        self.rows
+            .get(*i)
+            .is_some_and(|r| self.chosen.as_ref() == Some(&r.package.key()))
     }
     pub fn lines(&self, width: usize) -> Vec<String> {
         let width = width.max(1);
@@ -285,11 +598,11 @@ impl Center {
         }
         let menu = match self.page {
             Page::Apps => vec![
-                (Target::Check, "Check"),
+                (Target::Check, "Refresh"),
                 if self.busy && self.download_cancel.is_some() {
-                    (Target::Cancel, "Cancel")
+                    (Target::CancelOperation, "Cancel")
                 } else {
-                    (Target::Install, "Install")
+                    self.primary()
                 },
                 (Target::Sources, "Sources"),
                 (Target::Home, "Home"),
@@ -308,9 +621,16 @@ impl Center {
                 (Target::Cancel, "Cancel"),
             ],
             Page::Details => vec![
-                (Target::Uninstall, "Uninstall"),
-                (Target::Approve, "Trust source"),
+                self.primary(),
+                (Target::Changelog, "What's New"),
                 (Target::Cancel, "Back"),
+            ],
+            Page::Changelog => vec![(Target::Cancel, "Back to details")],
+            Page::Search => vec![
+                (Target::Save, "Search"),
+                (Target::Clear, "Clear"),
+                (Target::Delete, "Delete"),
+                (Target::Cancel, "Cancel"),
             ],
         };
         let count = i32::try_from(menu.len()).unwrap_or(1);
@@ -332,14 +652,22 @@ impl Center {
     fn content_targets(&self, layout: &Layout, out: &mut Vec<(Target, String, Rect)>) {
         let width = i32::from(layout.width);
         let height = i32::from(layout.height);
-        if self.page == Page::Edit {
-            for (i, c) in "abcdefghijklmnopqrstuvwxyz0123456789-_/.:"
-                .chars()
-                .enumerate()
+        if matches!(self.page, Page::Edit | Page::Search) {
+            for (i, c) in (if self.page == Page::Search {
+                "abcdefghijklmnopqrstuvwxyz0123456789-_/. "
+            } else {
+                "abcdefghijklmnopqrstuvwxyz0123456789-_/.:"
+            })
+            .chars()
+            .enumerate()
             {
                 out.push((
                     Target::Character(c),
-                    c.to_string(),
+                    if c == ' ' {
+                        "Space".into()
+                    } else {
+                        c.to_string()
+                    },
                     Rect {
                         x: 8 + i32::try_from(i % 10).unwrap_or(0) * ((width - 16) / 10),
                         y: 108 + i32::try_from(i / 10).unwrap_or(0) * 28,
@@ -350,57 +678,7 @@ impl Center {
             }
             return;
         }
-        if self.page != Page::Details {
-            let count = if self.page == Page::Apps {
-                self.rows.len()
-            } else {
-                self.sources.catalogs.len()
-            };
-            for i in self.start..(self.start + Self::capacity(layout)).min(count) {
-                let label = if self.page == Page::Apps {
-                    let row = &self.rows[i];
-                    let selected = self.chosen.as_ref() == Some(&row.package.key());
-                    format!(
-                        "[{}] {} | {}",
-                        if selected {
-                            "X"
-                        } else if self
-                            .rows
-                            .iter()
-                            .filter(|r| r.package.id == row.package.id)
-                            .count()
-                            > 1
-                        {
-                            "!"
-                        } else {
-                            " "
-                        },
-                        row.package.name,
-                        if matches!(row.installed.as_str(), "not installed" | "unavailable") {
-                            row.installed.clone()
-                        } else {
-                            format!("installed {}", row.installed)
-                        },
-                    )
-                } else {
-                    format!(
-                        "{}{}",
-                        if i == 0 { "* " } else { "" },
-                        self.sources.catalogs[i].as_str()
-                    )
-                };
-                out.push((
-                    Target::Row(i),
-                    label,
-                    Rect {
-                        x: 8,
-                        y: 68 + i32::try_from(i - self.start).unwrap_or(0) * 38,
-                        w: width - 16,
-                        h: 34,
-                    },
-                ));
-            }
-        }
+        self.list_targets(layout, out);
         for (target, label, x) in [
             (Target::Previous, "Previous", 8),
             (Target::Next, "Next", width - 96),
@@ -428,9 +706,103 @@ impl Center {
                 },
             ));
         }
+        if self.page == Page::Details {
+            let (target, label) = if self.enabled(&Target::Approve) {
+                (Target::Approve, "Trust source")
+            } else {
+                (Target::Uninstall, "Remove")
+            };
+            out.push((
+                target,
+                label.into(),
+                Rect {
+                    x: width / 2 - 60,
+                    y: height - 58,
+                    w: 120,
+                    h: 30,
+                },
+            ));
+        }
+    }
+    fn list_targets(&self, layout: &Layout, out: &mut Vec<(Target, String, Rect)>) {
+        let width = i32::from(layout.width);
+        if matches!(self.page, Page::Apps | Page::Sources) {
+            let indices = if self.page == Page::Apps {
+                self.visible_rows()
+            } else {
+                (0..self.sources.catalogs.len()).collect()
+            };
+            if self.page == Page::Apps {
+                for (target, label, x, w) in [
+                    (
+                        Target::Search,
+                        if self.search.is_empty() {
+                            "Search apps...".into()
+                        } else {
+                            format!("Search: {}", self.search)
+                        },
+                        8,
+                        width * 2 / 3 - 12,
+                    ),
+                    (
+                        Target::Filter,
+                        format!("{:?} ({})", self.filter, indices.len()),
+                        width * 2 / 3,
+                        width / 3 - 8,
+                    ),
+                ] {
+                    out.push((target, label, Rect { x, y: 66, w, h: 26 }));
+                }
+            }
+            for (position, &i) in indices
+                .iter()
+                .enumerate()
+                .skip(self.start)
+                .take(Self::capacity(layout))
+            {
+                let label = if self.page == Page::Apps {
+                    let row = &self.rows[i];
+                    let selected = self.chosen.as_ref() == Some(&row.package.key());
+                    format!(
+                        "[{}] {}",
+                        if selected {
+                            "X"
+                        } else if self
+                            .rows
+                            .iter()
+                            .filter(|r| r.package.id == row.package.id)
+                            .count()
+                            > 1
+                        {
+                            "!"
+                        } else {
+                            " "
+                        },
+                        row.package.name,
+                    )
+                } else {
+                    format!(
+                        "{}{}",
+                        if i == 0 { "* " } else { "" },
+                        self.sources.catalogs[i].as_str()
+                    )
+                };
+                out.push((
+                    Target::Row(i),
+                    label,
+                    Rect {
+                        x: 8,
+                        y: if self.page == Page::Apps { 98 } else { 68 }
+                            + i32::try_from(position - self.start).unwrap_or(0) * 52,
+                        w: width - 16,
+                        h: 48,
+                    },
+                ));
+            }
+        }
     }
     fn capacity(layout: &Layout) -> usize {
-        usize::from(layout.height.saturating_sub(150) / 38).max(1)
+        usize::from(layout.height.saturating_sub(160) / 52).max(1)
     }
     pub fn enabled(&self, target: &Target) -> bool {
         if *target == Target::Home {
@@ -440,11 +812,35 @@ impl Center {
             return matches!(target, Target::Confirm(_));
         }
         if self.busy {
-            return *target == Target::Cancel && self.download_cancel.is_some();
+            if self.page == Page::Search
+                && matches!(
+                    target,
+                    Target::Save | Target::Clear | Target::Delete | Target::Character(_)
+                )
+            {
+                return true;
+            }
+            return matches!(
+                target,
+                Target::Row(_)
+                    | Target::Previous
+                    | Target::Next
+                    | Target::Details
+                    | Target::Changelog
+                    | Target::Search
+                    | Target::Filter
+                    | Target::Cancel
+            ) || *target == Target::CancelOperation && self.download_cancel.is_some();
         }
         match target {
             Target::Install => self.chosen_row().is_some_and(|row| row.ready),
-            Target::Details => self.chosen_row().is_some(),
+            Target::Details | Target::Changelog => self.chosen_row().is_some(),
+            Target::Open => self.chosen_row().is_some_and(|r| {
+                r.can_uninstall()
+                    && super::metadata::version(&r.installed).is_ok()
+                    && !r.status.starts_with("incomplete")
+            }),
+            Target::CancelOperation => false,
             Target::Uninstall => {
                 self.page == Page::Details && self.chosen_row().is_some_and(Row::can_uninstall)
             }
@@ -458,6 +854,9 @@ impl Center {
         }
     }
     pub fn event(&mut self, event: &Event, layout: &Layout) {
+        self.selected = self
+            .selected
+            .min(self.targets(layout).len().saturating_sub(1));
         if let Event::Window {
             win_event: WindowEvent::FocusLost,
             ..
@@ -474,13 +873,13 @@ impl Center {
                 ..
             }
         ) && self.editing()
-            && !self.busy
+            && (!self.busy || self.page == Page::Search)
         {
             self.text.pop();
             return;
         }
         if let Event::TextInput { text, .. } = event {
-            if self.editing() && !self.busy {
+            if self.editing() && (!self.busy || self.page == Page::Search) {
                 self.append(text);
             }
             return;
@@ -639,15 +1038,16 @@ impl Center {
             return;
         };
         if let Target::Row(index) = target {
-            let count = if self.page == Page::Apps {
-                self.rows.len()
+            let indices = if self.page == Page::Apps {
+                self.visible_rows()
             } else {
-                self.sources.catalogs.len()
+                (0..self.sources.catalogs.len()).collect()
             };
+            let position = indices.iter().position(|i| i == index).unwrap_or(0);
             let adjacent = if down {
-                index.checked_add(1).filter(|i| *i < count)
+                position.checked_add(1).filter(|i| *i < indices.len())
             } else {
-                index.checked_sub(1)
+                position.checked_sub(1)
             };
             if let Some(next) = adjacent {
                 if next < self.start {
@@ -659,7 +1059,7 @@ impl Center {
                 if let Some(i) = self
                     .targets(layout)
                     .iter()
-                    .position(|(t, _, _)| *t == Target::Row(next))
+                    .position(|(t, _, _)| *t == Target::Row(indices[next]))
                 {
                     self.selected = i;
                 }
@@ -691,9 +1091,16 @@ impl Center {
         }
     }
     const fn page(&mut self, page: Page) {
+        if matches!(self.page, Page::Apps) {
+            self.app_start = self.start;
+        }
         self.page = page;
         self.readout = Readout::Selection;
-        self.start = 0;
+        self.start = if matches!(page, Page::Apps) {
+            self.app_start
+        } else {
+            0
+        };
         self.selected = 0;
         self.contact = None;
     }
@@ -708,6 +1115,7 @@ impl Center {
         self.selected = 0;
         self.contact = None;
     }
+    #[cfg(test)]
     pub fn row_versions(&self, target: &Target) -> Option<(String, bool)> {
         if self.page != Page::Apps {
             return None;
@@ -720,8 +1128,6 @@ impl Center {
             .map(|r| (r.package.version.to_string(), r.update_available()))
     }
     fn check_catalogs(&mut self) {
-        self.chosen = None;
-        self.rows.clear();
         self.send(Command::Check);
     }
     fn activate(&mut self, target: Target, layout: &Layout) {
@@ -732,13 +1138,31 @@ impl Center {
         if !self.enabled(&target) {
             return;
         }
-        if target == Target::Cancel && self.busy {
+        if target == Target::Cancel && self.busy && self.page == Page::Apps {
             self.cancel_download();
             return;
         }
         match target {
             Target::Check => self.check_catalogs(),
             Target::Install => self.install_selected(),
+            Target::CancelOperation => self.cancel_download(),
+            Target::Open => {
+                self.launch = self.chosen_row().map(|r| r.package.id.clone());
+            }
+            Target::Changelog => self.page(Page::Changelog),
+            Target::Search => {
+                self.text = self.search.clone();
+                self.page(Page::Search);
+            }
+            Target::Filter => {
+                self.filter = match self.filter {
+                    Filter::All => Filter::Installed,
+                    Filter::Installed => Filter::Updates,
+                    Filter::Updates => Filter::All,
+                };
+                self.start = 0;
+                self.selected = 0;
+            }
             Target::Sources => {
                 self.row = 0;
                 self.page(Page::Sources);
@@ -750,6 +1174,7 @@ impl Center {
             Target::Cancel => match self.page {
                 Page::Apps => self.open = false,
                 Page::Edit => self.page(Page::Sources),
+                Page::Changelog => self.page(Page::Details),
                 _ => self.page(Page::Apps),
             },
             Target::Row(index) => {
@@ -773,16 +1198,7 @@ impl Center {
                 self.confirmation = Some(Confirmation::Remove(self.row));
                 self.selected = 0;
             }
-            Target::Save => {
-                let mut next = self.sources.clone();
-                match next.edit(self.edit, &self.text) {
-                    Ok(()) => {
-                        self.send(Command::Save(next));
-                        self.page(Page::Sources);
-                    }
-                    Err(e) => self.message = e,
-                }
-            }
+            Target::Save => self.save_text(),
             Target::Character(c) => self.append(&c.to_string()),
             Target::Delete => {
                 self.text.pop();
@@ -795,37 +1211,52 @@ impl Center {
                 self.selected = 0;
             }
             Target::Confirm(yes) => self.answer(yes),
-            Target::Previous => {
-                self.start = self.start.saturating_sub(if self.page == Page::Details {
-                    8
-                } else {
-                    Self::capacity(layout)
-                });
-                self.selected = 0;
+            Target::Previous => self.scroll(false, layout),
+            Target::Next => self.scroll(true, layout),
+        }
+    }
+    fn scroll(&mut self, forward: bool, layout: &Layout) {
+        let count = match self.page {
+            Page::Apps => self.visible_rows().len(),
+            Page::Sources => self.sources.catalogs.len(),
+            Page::Details | Page::Changelog => self.lines(usize::from(layout.width) / 8 - 2).len(),
+            Page::Edit | Page::Search => 0,
+        };
+        let step = if matches!(self.page, Page::Details | Page::Changelog) {
+            8
+        } else {
+            Self::capacity(layout)
+        };
+        if !forward {
+            self.start = self.start.saturating_sub(step);
+        } else if self.start + step < count {
+            self.start += step;
+        }
+        self.selected = 0;
+    }
+    fn save_text(&mut self) {
+        if self.page == Page::Search {
+            self.search = self.text.trim().to_owned();
+            self.app_start = 0;
+            self.page(Page::Apps);
+            return;
+        }
+        let mut next = self.sources.clone();
+        match next.edit(self.edit, &self.text) {
+            Ok(()) => {
+                self.send(Command::Save(next));
+                self.page(Page::Sources);
             }
-            Target::Next => {
-                let count = match self.page {
-                    Page::Apps => self.rows.len(),
-                    Page::Sources => self.sources.catalogs.len(),
-                    Page::Details => self.lines(usize::from(layout.width) / 8 - 2).len(),
-                    Page::Edit => 0,
-                };
-                let step = if self.page == Page::Details {
-                    8
-                } else {
-                    Self::capacity(layout)
-                };
-                if self.start + step < count {
-                    self.start += step;
-                }
-                self.selected = 0;
-            }
+            Err(e) => self.message = e,
         }
     }
     fn chosen_row(&self) -> Option<&Row> {
         self.rows
             .iter()
             .find(|row| self.chosen.as_ref() == Some(&row.package.key()))
+            .filter(|row| {
+                self.page != Page::Apps || self.matches_query(row, &self.search.to_lowercase())
+            })
     }
     fn show_details(&mut self) {
         if let Some(index) = self
@@ -894,14 +1325,14 @@ impl Center {
         self.selected = 0;
     }
     pub const fn detail_start(&self) -> usize {
-        if matches!(self.page, Page::Details) {
+        if matches!(self.page, Page::Details | Page::Changelog) {
             self.start
         } else {
             0
         }
     }
     pub const fn full_details(&self) -> bool {
-        self.confirmation.is_some() || matches!(self.page, Page::Details)
+        self.confirmation.is_some() || matches!(self.page, Page::Details | Page::Changelog)
     }
 }
 
@@ -937,11 +1368,16 @@ impl Center {
             ("sources", Page::Sources),
             ("editor", Page::Edit),
             ("details", Page::Details),
+            ("search", Page::Search),
+            ("changelog", Page::Changelog),
         ] {
             let mut center = Self::fixture()?;
             center.page(page);
-            if page == Page::Details {
+            if matches!(page, Page::Details | Page::Changelog) {
                 center.chosen = Some(center.rows[0].package.key());
+                center.rows[0].package.changelog = Some(
+                    "# Changelog\n\n## 1.1.0 - 2026-09-12\n\n- Clearer app controls.\n- Reliable updates.\n\n## 1.0.0 - 2026-09-01\n\n- First release.".into(),
+                );
             }
             center.text = "example/catalog;https://github.com/my/catalog".into();
             out.push((name, center));
@@ -994,41 +1430,27 @@ mod tests {
                 (Keycode::Kp8, Keycode::Kp2, Keycode::Kp4, Keycode::Kp6),
             ] {
                 let mut center = center()?;
-                assert!(
-                    !center
-                        .targets(&layout)
-                        .iter()
-                        .any(|(_, label, _)| label == "Shell")
-                );
-                center.event(&key(down), &layout);
-                assert_eq!(focused(&center, &layout), Target::Row(0));
-                center.event(&key(up), &layout);
-                assert_eq!(focused(&center, &layout), Target::Check);
-                for target in [
+                let cycle = [
+                    Target::Check,
                     Target::Install,
                     Target::Sources,
                     Target::Home,
+                    Target::Search,
+                    Target::Filter,
                     Target::Previous,
                     Target::Details,
                     Target::Next,
-                    Target::Check,
-                ] {
+                ];
+                for target in cycle.iter().cycle().skip(1).take(cycle.len()) {
                     center.event(&key(right), &layout);
-                    assert_eq!(focused(&center, &layout), target);
-                    assert_eq!(center.start, 0);
+                    assert_eq!(focused(&center, &layout), *target);
                 }
-                for target in [
-                    Target::Next,
-                    Target::Details,
-                    Target::Previous,
-                    Target::Home,
-                    Target::Sources,
-                    Target::Install,
-                    Target::Check,
-                ] {
+                for target in cycle.iter().rev() {
                     center.event(&key(left), &layout);
-                    assert_eq!(focused(&center, &layout), target);
+                    assert_eq!(focused(&center, &layout), *target);
                 }
+                center.event(&key(down), &layout);
+                assert_eq!(focused(&center, &layout), Target::Search);
                 for index in 0..center.rows.len() {
                     center.event(&key(down), &layout);
                     assert_eq!(focused(&center, &layout), Target::Row(index));
@@ -1040,16 +1462,16 @@ mod tests {
                 for index in (0..center.rows.len()).rev() {
                     center.event(&key(up), &layout);
                     assert_eq!(focused(&center, &layout), Target::Row(index));
-                    assert_eq!(center.row, index);
                 }
+                center.event(&key(up), &layout);
+                assert_eq!(focused(&center, &layout), Target::Search);
                 center.event(&key(up), &layout);
                 assert_eq!(focused(&center, &layout), Target::Check);
                 assert!(center.chosen.is_none());
                 center.rows.clear();
                 center.event(&key(down), &layout);
+                center.event(&key(down), &layout);
                 assert_eq!(focused(&center, &layout), Target::Previous);
-                center.event(&key(up), &layout);
-                assert_eq!(focused(&center, &layout), Target::Check);
             }
         }
         Ok(())
@@ -1059,6 +1481,7 @@ mod tests {
         let layout = Layout::home(480, 272)?;
         let mut center = center()?;
         assert_eq!(center.details(), center.message);
+        center.event(&key(Keycode::Down), &layout);
         center.event(&key(Keycode::Down), &layout);
         assert_eq!(
             center.details(),
@@ -1148,6 +1571,7 @@ mod tests {
             });
             assert!(!center.enabled(&Target::Details));
             center.event(&key(Keycode::Down), &layout);
+            center.event(&key(Keycode::Down), &layout);
             center.event(&key(Keycode::Return), &layout);
             tap(&mut center, Target::Details, &layout)?;
             assert!(center.details().starts_with("App 0\n"));
@@ -1170,9 +1594,11 @@ mod tests {
             );
             // Traverse another row without changing the explicit selection.
             center.event(&key(Keycode::Down), &layout);
+            center.event(&key(Keycode::Down), &layout);
             assert_eq!(center.row, 0);
             center.event(&key(Keycode::Up), &layout);
-            for _ in 0..5 {
+            center.event(&key(Keycode::Up), &layout);
+            for _ in 0..7 {
                 center.event(&key(Keycode::Right), &layout);
             }
             assert_eq!(focused(&center, &layout), Target::Details);
@@ -1180,7 +1606,7 @@ mod tests {
             assert!(center.details().starts_with("App 8\n"));
             assert!(!center.enabled(&Target::Install));
             assert!(center.enabled(&Target::Uninstall));
-            center.event(&key(Keycode::Return), &layout);
+            tap(&mut center, Target::Uninstall, &layout)?;
             assert!(center.details().starts_with("Uninstall App 8?"));
             assert_eq!(focused(&center, &layout), Target::Confirm(false));
             center.event(&key(Keycode::Return), &layout);
@@ -1193,8 +1619,8 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn deselection_and_catalog_refresh_disable_details_and_invalidate_uninstall()
-    -> Result<(), String> {
+    fn catalog_refresh_preserves_selection_and_invalidates_old_confirmation() -> Result<(), String>
+    {
         let layout = Layout::home(480, 272)?;
         let mut center = center()?;
         center.rows[1].installed = "1.0.0".into();
@@ -1223,11 +1649,11 @@ mod tests {
             .send(Update::Rows(replacement))
             .map_err(|e| e.to_string())?;
         center.poll();
-        assert!(center.chosen.is_none());
+        assert_eq!(center.chosen, Some(center.rows[7].package.key()));
         assert!(center.confirmation.is_none());
-        assert!(!center.enabled(&Target::Details));
+        assert!(center.enabled(&Target::Details));
         assert!(!center.enabled(&Target::Uninstall));
-        center.event(&key(Keycode::Return), &layout);
+        center.activate(Target::Confirm(true), &layout);
         assert!(commands.try_recv().is_err());
         Ok(())
     }
@@ -1281,6 +1707,7 @@ mod tests {
                     }
                 } else {
                     center.event(&key(Keycode::Down), &layout);
+                    center.event(&key(Keycode::Down), &layout);
                     center.event(&key(Keycode::Space), &layout);
                 }
                 assert!(center.chosen.as_ref() == Some(&current));
@@ -1329,8 +1756,13 @@ mod tests {
                 center
                     .targets(&layout)
                     .iter()
-                    .any(|(t, label, _)| *t == Target::Uninstall && label == "Uninstall")
+                    .any(|(t, label, _)| *t == Target::Uninstall && label == "Remove")
             );
+            center.selected = center
+                .targets(&layout)
+                .iter()
+                .position(|(target, _, _)| *target == Target::Uninstall)
+                .ok_or("Remove control")?;
             center.event(&key(Keycode::Return), &layout);
             assert!(matches!(
                 center.confirmation,
@@ -1378,7 +1810,7 @@ mod tests {
             assert!(
                 center
                     .details()
-                    .contains("Latest: 1.10.0 [Update available]")
+                    .contains("Available: 1.10.0 - update available")
             );
             let bounds = center
                 .targets(&layout)
@@ -1449,10 +1881,10 @@ mod tests {
                     .targets(&layout)
                     .into_iter()
                     .enumerate()
-                    .find(|(_, (t, _, _))| *t == Target::Cancel)
+                    .find(|(_, (t, _, _))| *t == Target::CancelOperation)
                     .ok_or("Cancel target")?;
                 assert_eq!(label, "Cancel");
-                assert!(center.enabled(&Target::Cancel));
+                assert!(center.enabled(&Target::CancelOperation));
                 for _ in 0..index {
                     center.event(&key(Keycode::Tab), &layout);
                 }
@@ -1504,7 +1936,14 @@ mod tests {
     #[test]
     fn home_leaves_every_page_even_when_busy_and_cancels_confirmation() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
-        for page in [Page::Apps, Page::Sources, Page::Edit, Page::Details] {
+        for page in [
+            Page::Apps,
+            Page::Sources,
+            Page::Edit,
+            Page::Details,
+            Page::Search,
+            Page::Changelog,
+        ] {
             for busy in [false, true] {
                 let mut center = center()?;
                 center.page(page);
@@ -1562,7 +2001,14 @@ mod tests {
         for (w, h) in [(480, 272), (800, 480)] {
             let layout = Layout::home(w, h)?;
             let mut center = center()?;
-            for page in [Page::Apps, Page::Sources, Page::Edit, Page::Details] {
+            for page in [
+                Page::Apps,
+                Page::Sources,
+                Page::Edit,
+                Page::Details,
+                Page::Search,
+                Page::Changelog,
+            ] {
                 center.page(page);
                 let targets = center.targets(&layout);
                 for (i, (_, _, r)) in targets.iter().enumerate() {
@@ -1696,6 +2142,76 @@ mod tests {
         center.selected = 0;
         center.event(&key(Keycode::Return), &layout);
         assert!(matches!(receive.try_recv(), Ok(Command::Answer(7, false))));
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod browsing_tests {
+    use super::*;
+    #[test]
+    fn mutation_preserves_search_filter_selection_and_details_scroll() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut center = Center::fixture()?;
+        center.search = "App".into();
+        center.filter = Filter::Installed;
+        center.rows[6].installed = "1.0.0".into();
+        center.chosen = Some(center.rows[6].package.key());
+        center.page(Page::Details);
+        center.start = 8;
+        let (send, _commands) = std::sync::mpsc::channel();
+        let (updates, receive) = std::sync::mpsc::channel();
+        center.worker = Some(Worker {
+            send,
+            receive,
+            cancelled: std::sync::Arc::default(),
+        });
+        let mut replacement = Center::fixture()?.rows.remove(6);
+        replacement.installed = "1.1.0".into();
+        updates
+            .send(Update::Row(Box::new(replacement)))
+            .map_err(|e| e.to_string())?;
+        center.poll();
+        assert_eq!(center.start, 8);
+        assert_eq!(center.search, "App");
+        assert_eq!(center.filter, Filter::Installed);
+        assert_eq!(center.chosen_row().ok_or("selection")?.installed, "1.1.0");
+        center.busy = true;
+        assert!(center.enabled(&Target::Changelog));
+        assert!(!center.enabled(&Target::Install));
+        center.activate(Target::Changelog, &layout);
+        assert!(center.details().contains("No release notes"));
+        center.activate(Target::Cancel, &layout);
+        assert_eq!(center.page, Page::Details);
+        Ok(())
+    }
+    #[test]
+    fn filters_and_touch_search_share_actions_and_empty_state_is_explained() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut center = Center::fixture()?;
+        center.rows[2].installed = "1.0.0".into();
+        center.chosen = Some(center.rows[2].package.key());
+        center.activate(Target::Filter, &layout);
+        assert_eq!(center.visible_rows(), [2]);
+        center.activate(Target::Search, &layout);
+        center.append("missing app");
+        center.activate(Target::Save, &layout);
+        assert!(
+            center
+                .empty_message()
+                .is_some_and(|s| s.contains("Clear Search"))
+        );
+        assert!(!center.enabled(&Target::Install));
+        assert!(!center.enabled(&Target::Open));
+        assert!(!center.enabled(&Target::Details));
+        center.activate(Target::Search, &layout);
+        center.activate(Target::Clear, &layout);
+        center.activate(Target::Save, &layout);
+        assert_eq!(center.visible_rows(), [2]);
+        assert_eq!(
+            center.chosen_row().ok_or("preserved selection")?.installed,
+            "1.0.0"
+        );
         Ok(())
     }
 }

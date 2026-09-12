@@ -18,7 +18,7 @@ A compact Rust + SDL2 launcher for PocketCHIP and desktop Linux. Open a terminal
 
 ## Install on PocketCHIP
 
-**Beta · publication pending.** This checkout prepares the command below. The currently published `v0.1.0-beta2.5` assets contain only a standalone shell; they cannot satisfy the four-binary installer. The bootstrap must be published on `main`, and a reviewed release must contain the complete bundle and matching helpers before this command can finish. See [release readiness](docs/releases.md).
+**Beta.** Release `v0.1.0-beta2.6` uses a complete bundle containing the shell, Terminal, Notepad and Files, plus matching installation/removal helpers. The command below selects a published compatible release. Physical PocketCHIP validation of this complete installation remains pending; see [release validation and assets](docs/releases.md).
 
 On a compatible device, open a terminal as your **normal desktop user**, save any Vitrallis work, close its session, and copy this entire line:
 

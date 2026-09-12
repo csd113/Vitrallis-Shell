@@ -108,12 +108,24 @@ fn probe(program: &Path, script: &str, tk: bool, deps: &[String]) -> Result<(), 
         }
     }
 }
-pub fn launcher(runtime: &Runtime, entry: &Path) -> Result<Vec<u8>, String> {
+pub fn launcher(runtime: &Runtime, entry: &Path, commit: &str) -> Result<Vec<u8>, String> {
     fn quote(s: &str) -> String {
         format!("'{}'", s.replace('\'', "'\\''"))
     }
     use std::fmt::Write;
+    super::metadata::hex(commit, 40)?;
+    let cache = entry
+        .parent()
+        .ok_or("Missing entry parent")?
+        .join(".vitrallis-bytecode")
+        .join(commit);
     let mut s = String::from("#!/bin/sh\n");
+    s.push_str("unset PYTHONHOME PYTHONPATH PYTHONSTARTUP\nexport PYTHONNOUSERSITE=1\nexport PYTHONDONTWRITEBYTECODE=1\n");
+    let _ = writeln!(
+        s,
+        "export PYTHONPYCACHEPREFIX={}",
+        quote(cache.to_str().ok_or("Cache path must be UTF-8")?)
+    );
     let program = runtime
         .program
         .to_str()

@@ -39,7 +39,7 @@ commands where host execution cannot represent the ARM device. They exercise:
 
 A staged command test proves command sequencing, cleanup and local installation
 behavior. It does **not** prove that a compatible release exists at a live URL.
-[Release readiness](releases.md) records that separate publication blocker.
+[Release validation](releases.md) records the separate release asset checks.
 
 ## Visual and device scope
 
@@ -54,7 +54,7 @@ update/relaunch, offline removal/purge, rollback on actual storage, and enduranc
 [Historical hardware evidence](history/device-validation.md) retains earlier
 Marshmallow integration observations. The scopes must remain distinct.
 
-## Repository lifecycle validation — 2026-09-12
+## Repository lifecycle validation before beta2.6 — 2026-09-12
 
 | Check | Result and scope |
 | --- | --- |
@@ -66,6 +66,7 @@ Marshmallow integration observations. The scopes must remain distinct.
 | Markdown and repository forms | All 26 maintained Markdown files passed local path/anchor checks. Both workflows and all three issue-template YAML files parsed. README HTML from GitHub's Markdown API was reviewed locally at 390px and 1100px widths; commands stayed copyable, the page did not overflow, and Uninstall was the final section. |
 | Live URLs | The bootstrap URL returned HTTP 404. Official release metadata confirmed published beta2.5 has standalone binaries only; public one-line installation remains blocked. No live installer was executed. |
 
-No physical device was connected. Version numbers and the dependency lockfile
-were unchanged. GitHub publication requires the separate review and authorization
-recorded in [release readiness](releases.md).
+No physical device was connected during that repository audit. Version numbers and
+the dependency lockfile were unchanged in that pass. The later App Center audit is
+recorded in [App Center validation](app-center-validation.md), and the separately
+authorized beta2.6 release is documented in [release validation](releases.md).

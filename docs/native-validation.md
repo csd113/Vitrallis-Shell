@@ -2,8 +2,9 @@
 
 The Shell workspace now ships Terminal, Notepad and Files as native Rust/SDL2
 binaries, with shared UI/filesystem components and normal launcher supervision.
-The workspace version remains **0.1.0-beta2.5**. Validation used the current branch
-without a release, deployment or physical PocketCHIP connection.
+This native-application audit used workspace version **0.1.0-beta2.5**, before the
+separately authorized [beta2.6 release](releases.md). It did not publish a release,
+deploy software or connect to a physical PocketCHIP.
 
 ## Implementation and limits
 

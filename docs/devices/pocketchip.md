@@ -27,8 +27,8 @@ back. It never reads or sends a GitHub token.
 For a reviewed local copy of `bootstrap.py`, `python3 bootstrap.py --stable`
 excludes prereleases. `--release` selects an exact published `v`-prefixed version;
 that release must have the current complete asset inventory. No raw-binary format
-fallback or automatic build exists. [Release readiness](../releases.md) records
-why published beta2.5 cannot satisfy this installer.
+fallback or automatic build exists. [Release assets](../releases.md) documents the
+complete beta2.6 inventory and why older standalone beta2.5 assets do not qualify.
 
 The bundle, its SHA-256 sidecar, `install.py`, `uninstall.py`,
 `vitrallis-session.py`, and each helper's sidecar come from the **same release**.
