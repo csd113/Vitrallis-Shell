@@ -1,7 +1,7 @@
 //! Bounded regular-file IO and durable conditional writes. No symlink traversal.
 use sha2::{Digest, Sha256};
 #[cfg(unix)]
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -94,7 +94,13 @@ pub fn read(path: &Path, limit: usize) -> Result<Option<FileData>, String> {
 }
 pub fn directory(path: &Path) -> Result<(), String> {
     safe(path)?;
-    fs::create_dir_all(path).map_err(|e| e.to_string())?;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    // Apply to every new ancestor as well, even with a group-writable umask.
+    // Existing directories retain their permissions and must pass safe().
+    #[cfg(unix)]
+    builder.mode(0o755);
+    builder.create(path).map_err(|e| e.to_string())?;
     safe(path)
 }
 pub fn sync(path: &Path) -> Result<(), String> {

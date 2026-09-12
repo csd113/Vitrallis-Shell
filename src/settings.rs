@@ -53,8 +53,27 @@ pub enum TimezoneState {
     Reading,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum PowerTransition {
+    Requested(Power),
+    Submitted(Power),
+}
+impl PowerTransition {
+    pub const fn message(self) -> &'static str {
+        match self {
+            Self::Requested(Power::Reboot) | Self::Submitted(Power::Reboot) => {
+                "Device is rebooting"
+            }
+            Self::Requested(Power::Shutdown) | Self::Submitted(Power::Shutdown) => {
+                "Device is shutting down"
+            }
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Settings {
+    pub power_transition: Option<PowerTransition>,
     pub updater: crate::updater::Updater,
     pub update_confirmation: Option<Instant>,
     pub timezone: TimezoneState,

@@ -118,6 +118,10 @@ impl Center {
                     self.selected = 0;
                 }
                 Update::Progress(s) => self.message = s,
+                Update::Confirm(id, s) if !self.open => {
+                    self.send(Command::Answer(id, false));
+                    self.message = s;
+                }
                 Update::Confirm(id, s) => {
                     self.confirmation = Some(Confirmation::Running(id, s));
                     self.selected = 0;
@@ -400,6 +404,9 @@ impl Center {
         usize::from(layout.height.saturating_sub(150) / 38).max(1)
     }
     pub fn enabled(&self, target: &Target) -> bool {
+        if *target == Target::Home {
+            return true;
+        }
         if self.confirmation.is_some() {
             return matches!(target, Target::Confirm(_));
         }
@@ -546,7 +553,8 @@ impl Center {
         {
             self.contact = None;
             match *key {
-                Keycode::Escape | Keycode::Home => self.activate(Target::Cancel, layout),
+                Keycode::Home => self.activate(Target::Home, layout),
+                Keycode::Escape => self.activate(Target::Cancel, layout),
                 Keycode::Up | Keycode::Kp8 | Keycode::Left | Keycode::Kp4 => {
                     self.selected = self
                         .selected
@@ -614,7 +622,10 @@ impl Center {
                 self.open = false;
                 self.request = Some(Destination::ShellUpdates);
             }
-            Target::Home => self.open = false,
+            Target::Home => {
+                self.lost_focus();
+                self.open = false;
+            }
             Target::Cancel => match self.page {
                 Page::Apps => self.open = false,
                 Page::Edit => self.page(Page::Sources),
@@ -818,6 +829,58 @@ mod tests {
         Center::fixture()
     }
     #[test]
+    fn home_leaves_every_page_even_when_busy_and_cancels_confirmation() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        for page in [Page::Apps, Page::Sources, Page::Edit, Page::Details] {
+            for busy in [false, true] {
+                let mut center = center()?;
+                center.page(page);
+                center.busy = busy;
+                center.confirmation = Some(Confirmation::Publisher(0));
+                center.event(&key(Keycode::Home), &layout);
+                assert!(!center.open);
+                assert!(center.confirmation.is_none());
+                assert!(center.checked.is_empty());
+                assert_eq!(center.busy, busy);
+            }
+        }
+        let mut center = center()?;
+        center.busy = true;
+        assert!(center.enabled(&Target::Home));
+        center.activate(Target::Home, &layout);
+        assert!(!center.open);
+        assert!(center.busy);
+        Ok(())
+    }
+
+    #[test]
+    fn leaving_declines_running_app_prompts_including_late_worker_requests() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let (send, commands) = std::sync::mpsc::channel();
+        let (updates, receive) = std::sync::mpsc::channel();
+        let mut center = center()?;
+        center.worker = Some(Worker { send, receive });
+        center.busy = true;
+        center.confirmation = Some(Confirmation::Running(1, "Close app?".into()));
+        center.event(&key(Keycode::Home), &layout);
+        assert!(matches!(commands.try_recv(), Ok(Command::Answer(1, false))));
+        updates
+            .send(Update::Confirm(2, "Close another app?".into()))
+            .map_err(|e| e.to_string())?;
+        assert!(center.poll());
+        assert!(matches!(commands.try_recv(), Ok(Command::Answer(2, false))));
+        assert!(!center.open);
+        assert!(center.confirmation.is_none());
+        updates
+            .send(Update::Done(Ok(()), true))
+            .map_err(|e| e.to_string())?;
+        assert!(center.poll());
+        assert!(!center.busy);
+        assert!(center.refresh);
+        Ok(())
+    }
+
+    #[test]
     fn every_visible_control_has_keyboard_focus_at_both_sizes() -> Result<(), String> {
         for (w, h) in [(480, 272), (800, 480)] {
             let layout = Layout::home(w, h)?;
@@ -912,7 +975,8 @@ mod tests {
             center.busy = true;
             center.event(&key(Keycode::I), &layout);
             center.event(&key(Keycode::Home), &layout);
-            assert!(center.open);
+            assert!(!center.open);
+            assert!(center.busy);
         }
         Ok(())
     }

@@ -400,6 +400,46 @@ fn legacy_path_support_customizations_pending_and_stale_check() -> Result<(), St
 }
 #[cfg(unix)]
 #[test]
+fn directory_creation_keeps_new_ancestors_safe_and_existing_modes() -> Result<(), String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let (_scratch, loc) = locations()?;
+    // Keep the fixture root safe when running this regression with umask 002.
+    std::fs::set_permissions(&loc.home, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    let existing = loc.home.join("private");
+    std::fs::create_dir(&existing).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&existing, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    let nested = existing.join("new/applications");
+    storage::directory(&nested)?;
+    for path in [&existing, &existing.join("new"), &nested] {
+        let mode = std::fs::metadata(path).map_err(|e| e.to_string())?.mode();
+        assert_eq!(mode & 0o022, 0);
+    }
+    assert_eq!(
+        std::fs::metadata(&existing)
+            .map_err(|e| e.to_string())?
+            .mode()
+            & 0o777,
+        0o700
+    );
+    std::fs::set_permissions(&nested, std::fs::Permissions::from_mode(0o775))
+        .map_err(|e| e.to_string())?;
+    let refused = nested.join("refused");
+    assert!(storage::directory(&refused).is_err());
+    assert!(!refused.exists());
+    assert_eq!(
+        std::fs::metadata(&nested)
+            .map_err(|e| e.to_string())?
+            .mode()
+            & 0o777,
+        0o775
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
 fn symlink_hardlink_and_lock_checks_fail_before_writes() -> Result<(), String> {
     use std::os::unix::fs::symlink;
     let (_scratch, loc) = locations()?;

@@ -215,9 +215,21 @@ pub fn render(
     state: &Launcher,
     icons: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
+    if let Some(power) = state.settings.power_transition {
+        return system::power_splash(canvas, layout, power.message());
+    }
     if state.app_center.open {
         return app_center::panel(canvas, layout, &state.app_center);
     }
+    render_launcher(canvas, layout, state, icons)
+}
+
+fn render_launcher(
+    canvas: &mut Screen,
+    layout: &Layout,
+    state: &Launcher,
+    icons: &[Option<Texture<'_>>],
+) -> Result<(), String> {
     let [red, green, blue] = state.preferences.color;
     canvas.set_draw_color(Color::RGB(red, green, blue));
     canvas.clear();
@@ -628,6 +640,70 @@ mod system_tests {
         Ok(())
     }
 
+    fn update_samples(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &mut Launcher,
+        textures: &[Option<Texture<'_>>],
+        output: &std::path::Path,
+        (w, h): (u32, u32),
+    ) -> Result<(), String> {
+        state.settings.updater.state =
+            crate::updater::State::Available(crate::updater::tests::release()?);
+        render(canvas, layout, state, textures)?;
+        screenshot(
+            canvas,
+            &output.join(format!("update-available-{w}x{h}.bmp")),
+        )?;
+        state.settings.input(Action::SelectAndActivate(1));
+        render(canvas, layout, state, textures)?;
+        screenshot(canvas, &output.join(format!("update-confirm-{w}x{h}.bmp")))?;
+        state.settings.input(Action::Back);
+        state.settings.updater.state = crate::updater::State::Downloading {
+            received: 2_500_000,
+            total: 10_000_000,
+        };
+        render(canvas, layout, state, textures)?;
+        screenshot(
+            canvas,
+            &output.join(format!("update-downloading-{w}x{h}.bmp")),
+        )?;
+        state.settings.updater.state = crate::updater::State::Failed(
+                "Update check failed: Version 1.10.0 available; No shell build is available for this platform".into()
+            );
+        render(canvas, layout, state, textures)?;
+        screenshot(canvas, &output.join(format!("update-error-{w}x{h}.bmp")))?;
+        state.settings.updater.state = crate::updater::State::Installed {
+            version: semver::Version::new(1, 10, 0),
+            durable: true,
+        };
+        render(canvas, layout, state, textures)?;
+        screenshot(
+            canvas,
+            &output.join(format!("update-installed-{w}x{h}.bmp")),
+        )?;
+        Ok(())
+    }
+
+    fn power_samples(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &mut Launcher,
+        output: &std::path::Path,
+    ) -> Result<(), String> {
+        use crate::{platform::system::Power, settings::PowerTransition};
+        for (name, power) in [("reboot", Power::Reboot), ("shutdown", Power::Shutdown)] {
+            state.settings.power_transition = Some(PowerTransition::Requested(power));
+            render(canvas, layout, state, &[])?;
+            screenshot(
+                canvas,
+                &output.join(format!("{name}-{}x{}.bmp", layout.width, layout.height)),
+            )?;
+        }
+        state.settings.power_transition = None;
+        Ok(())
+    }
+
     #[test]
     fn system_panels_render_at_device_and_scaled_sizes() -> Result<(), String> {
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
@@ -668,6 +744,7 @@ mod system_tests {
                 power_controls: true,
                 ..Status::default()
             };
+            power_samples(&mut canvas, &layout, &mut state, output)?;
             state.settings.network_available = true;
             state.settings.input(Action::System);
             let creator = canvas.texture_creator();
@@ -680,31 +757,7 @@ mod system_tests {
             state.settings.input(Action::SelectAndActivate(3));
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("updates-{w}x{h}.bmp")))?;
-            state.settings.updater.state =
-                crate::updater::State::Available(crate::updater::tests::release()?);
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(
-                &canvas,
-                &output.join(format!("update-available-{w}x{h}.bmp")),
-            )?;
-            state.settings.input(Action::SelectAndActivate(1));
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("update-confirm-{w}x{h}.bmp")))?;
-            state.settings.input(Action::Back);
-            state.settings.updater.state = crate::updater::State::Failed(
-                "Update check failed: Version 1.10.0 available; No shell build is available for this platform".into()
-            );
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("update-error-{w}x{h}.bmp")))?;
-            state.settings.updater.state = crate::updater::State::Installed {
-                version: semver::Version::new(1, 10, 0),
-                durable: true,
-            };
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(
-                &canvas,
-                &output.join(format!("update-installed-{w}x{h}.bmp")),
-            )?;
+            update_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
             state.settings.input(Action::Back);
             state.settings.input(Action::SelectAndActivate(1));
             render(&mut canvas, &layout, &state, &textures)?;

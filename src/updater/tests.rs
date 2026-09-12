@@ -17,7 +17,10 @@ impl Transport for Mock {
         if bytes.len() as u64 > limit {
             return Err("fixture exceeds download limit".into());
         }
-        output.write_all(bytes).map_err(|e| e.to_string())
+        for chunk in bytes.chunks(2) {
+            output.write_all(chunk).map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 }
 fn target() -> Result<Target, String> {
@@ -155,7 +158,28 @@ fn pocketchip_beta_selects_the_standard_arm_artifact_and_verifies_download()
         .write(true)
         .create_new(true)
         .open(scratch.0.join("download"))?;
-    download(&transport, &release, &mut file)?;
+    let mut samples = Vec::new();
+    download(&transport, &release, &mut file, &mut |state| {
+        samples.push(state);
+    })?;
+    assert!(matches!(
+        samples.as_slice(),
+        [
+            State::Downloading {
+                received: 2,
+                total: 5
+            },
+            State::Downloading {
+                received: 4,
+                total: 5
+            },
+            State::Downloading {
+                received: 5,
+                total: 5
+            },
+            State::Installing,
+        ]
+    ));
     assert_eq!(std::fs::read(scratch.0.join("download"))?, b"shell");
     Ok(())
 }
@@ -242,7 +266,7 @@ fn downloads_require_complete_verified_bytes() -> Result<(), Box<dyn std::error:
             requests: RefCell::default(),
         };
         assert_eq!(
-            download(&transport, &release, &mut file).is_ok(),
+            download(&transport, &release, &mut file, &mut |_| {}).is_ok(),
             index == 0
         );
         assert_eq!(
@@ -292,7 +316,7 @@ fn checksum_sidecars_must_match_name_size_and_any_api_digest()
             .create_new(true)
             .open(scratch.0.join(index.to_string()))?;
         assert_eq!(
-            download(&transport, &release, &mut file).is_ok(),
+            download(&transport, &release, &mut file, &mut |_| {}).is_ok(),
             index == 0
         );
     }
@@ -339,6 +363,7 @@ fn disconnected_worker_and_network_failure_are_visible_and_retryable() {
     let mut updater = Updater {
         state: State::Checking,
         result: Some(receiver),
+        ..Updater::default()
     };
     assert!(updater.poll());
     assert!(matches!(updater.state, State::Failed(_)));
@@ -364,5 +389,77 @@ fn pagination_finds_newer_versions_and_never_accepts_partial_results()
         .responses
         .insert(second, Err("network interrupted on page two".into()));
     assert!(check(&transport, "1.0.0", target).is_err_and(|error| error.contains("page two")));
+    Ok(())
+}
+
+#[test]
+fn progress_counts_successful_partial_writes_only() {
+    let mut output = [0_u8; 3];
+    let mut samples = Vec::new();
+    let mut progress = |state| samples.push(state);
+    let mut writer = DownloadWriter {
+        output: &mut &mut output[..],
+        received: 0,
+        total: 5,
+        progress: &mut progress,
+    };
+    assert!(writer.write_all(b"shell").is_err());
+    assert_eq!(samples.len(), 1);
+    assert!(matches!(
+        samples[0],
+        State::Downloading {
+            received: 3,
+            total: 5
+        }
+    ));
+    assert_eq!(&output, b"she");
+}
+
+#[test]
+fn polling_uses_latest_progress_and_keeps_worker_until_terminal_result()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let mut updater = Updater {
+        state: State::Checking,
+        result: Some(receiver),
+        ..Updater::default()
+    };
+    for received in [1, 2, 4] {
+        *updater.progress.lock().map_err(|_| "progress lock")? =
+            Some(State::Downloading { received, total: 5 });
+    }
+    assert!(updater.poll());
+    assert!(matches!(
+        updater.state,
+        State::Downloading {
+            received: 4,
+            total: 5
+        }
+    ));
+    assert!(updater.state.busy());
+    assert!(!updater.poll());
+    *updater.progress.lock().map_err(|_| "progress lock")? = Some(State::Installing);
+    assert!(updater.poll());
+    assert!(matches!(updater.state, State::Installing));
+    sender.send(State::Failed("interrupted".into()))?;
+    assert!(updater.poll());
+    assert!(matches!(updater.state, State::Failed(_)));
+    assert!(!updater.poll());
+    Ok(())
+}
+
+#[test]
+fn sizes_and_progress_use_decimal_megabytes() -> Result<(), String> {
+    let mut release = release()?;
+    release.binary.size = 12_500_000;
+    assert!(State::Available(release).detail().contains("12.50 MB"));
+    let state = State::Downloading {
+        received: 2_500_000,
+        total: 10_000_000,
+    };
+    assert_eq!(
+        state.detail(),
+        "Downloading shell update: 25%\n2.50 / 10.00 MB"
+    );
     Ok(())
 }

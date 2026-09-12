@@ -12,6 +12,13 @@ No eligible published release, inaccessible/private releases, malformed metadata
 missing builds, and network errors produce a useful failure instead of claiming
 that the shell is current. No GitHub token is read or sent.
 
+Available updates show the executable download size in decimal MB (1 MB =
+1,000,000 bytes), including on the install confirmation. During download, the
+progress bar and percentage follow actual bytes received, with downloaded/total
+MB shown beneath. The bar does not advance while the connection stalls. After
+the transfer completes, the status changes to verification and installation;
+100% downloaded does not mean installation has succeeded.
+
 **Install Update** opens a second confirmation with **Cancel** selected. Escape,
 Home, focus loss, or a 15-second timeout cancels confirmation. Checking and
 installation run on a worker thread; leaving settings does not cancel an active

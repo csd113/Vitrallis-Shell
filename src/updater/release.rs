@@ -20,6 +20,12 @@ pub struct Release {
     pub(super) checksum: Option<Asset>,
 }
 
+impl Release {
+    pub fn download_size_mb(&self) -> String {
+        super::megabytes(self.binary.size)
+    }
+}
+
 pub(super) fn latest<'a>(
     releases: &'a [Value],
     current: &Version,

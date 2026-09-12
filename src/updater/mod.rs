@@ -8,8 +8,11 @@ use semver::Version;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
-    io::{Read, Seek, SeekFrom},
-    sync::mpsc::{self, Receiver, TryRecvError},
+    io::{self, Read, Seek, SeekFrom, Write},
+    sync::{
+        Arc, Mutex,
+        mpsc::{self, Receiver, TryRecvError},
+    },
     thread,
 };
 use transport::{Curl, Transport};
@@ -23,6 +26,10 @@ pub enum State {
     Checking,
     Current,
     Available(Release),
+    Downloading {
+        received: u64,
+        total: u64,
+    },
     Installing,
     Installed {
         version: Version,
@@ -32,15 +39,32 @@ pub enum State {
 }
 impl State {
     pub const fn busy(&self) -> bool {
-        matches!(self, Self::Checking | Self::Installing)
+        matches!(
+            self,
+            Self::Checking | Self::Downloading { .. } | Self::Installing
+        )
     }
     pub fn detail(&self) -> String {
         match self {
             Self::Idle => "Check the official shell releases".into(),
             Self::Checking => "Checking GitHub for shell updates...".into(),
             Self::Current => "Vitrallis is up to date.".into(),
-            Self::Available(release) => format!("New version available: {}", release.version),
-            Self::Installing => "Downloading and verifying shell update...".into(),
+            Self::Available(release) => format!(
+                "New version available: {}\nDownload size: {} MB",
+                release.version,
+                megabytes(release.binary.size)
+            ),
+            Self::Downloading { received, total } => format!(
+                "Downloading shell update: {}%\n{} / {} MB",
+                received
+                    .saturating_mul(100)
+                    .checked_div(*total)
+                    .unwrap_or(0)
+                    .min(100),
+                megabytes(*received),
+                megabytes(*total)
+            ),
+            Self::Installing => "Verifying and installing shell update...".into(),
             Self::Installed {
                 version,
                 durable: true,
@@ -57,13 +81,14 @@ impl State {
 pub struct Updater {
     pub state: State,
     result: Option<Receiver<State>>,
+    progress: Arc<Mutex<Option<State>>>,
 }
 impl Updater {
     pub fn check(&mut self) {
         if self.state.busy() || matches!(self.state, State::Installed { .. }) {
             return;
         }
-        self.start(State::Checking, || {
+        self.start(State::Checking, |_| {
             check(&Curl, VERSION, Target::current)
                 .unwrap_or_else(|error| State::Failed(format!("Update check failed: {error}")))
         });
@@ -73,22 +98,41 @@ impl Updater {
             return;
         };
         let release = release.clone();
-        self.start(State::Installing, move || {
-            install(&Curl, &release).map_or_else(
-                |error| State::Failed(format!("Update failed: {error}")),
-                |durable| State::Installed {
-                    version: release.version,
-                    durable,
-                },
-            )
-        });
+        self.start(
+            State::Downloading {
+                received: 0,
+                total: release.binary.size,
+            },
+            move |progress| {
+                install(&Curl, &release, &mut |state| {
+                    // Replace the previous sample so the UI always reads the latest byte count.
+                    if let Ok(mut latest) = progress.lock() {
+                        *latest = Some(state);
+                    }
+                })
+                .map_or_else(
+                    |error| State::Failed(format!("Update failed: {error}")),
+                    |durable| State::Installed {
+                        version: release.version,
+                        durable,
+                    },
+                )
+            },
+        );
     }
-    fn start(&mut self, state: State, work: impl FnOnce() -> State + Send + 'static) {
+    fn start(
+        &mut self,
+        state: State,
+        work: impl FnOnce(&Mutex<Option<State>>) -> State + Send + 'static,
+    ) {
         let (send, receive) = mpsc::sync_channel(1);
+        self.progress = Arc::default();
+        let progress = Arc::clone(&self.progress);
         match thread::Builder::new()
             .name("shell-update".into())
             .spawn(move || {
-                let _ = send.send(work());
+                let result = work(&progress);
+                let _ = send.send(result);
             }) {
             Ok(_) => {
                 self.state = state;
@@ -105,7 +149,15 @@ impl Updater {
         };
         self.state = match receiver.try_recv() {
             Ok(state) => state,
-            Err(TryRecvError::Empty) => return false,
+            Err(TryRecvError::Empty) => {
+                let Ok(mut latest) = self.progress.lock() else {
+                    return false;
+                };
+                let Some(state) = latest.take() else {
+                    return false;
+                };
+                state
+            }
             Err(TryRecvError::Disconnected) => {
                 State::Failed("Shell update worker stopped; check again".into())
             }
@@ -113,7 +165,9 @@ impl Updater {
         if let State::Failed(error) = &self.state {
             eprintln!("level=warning event=shell_update_failed message={error:?}");
         }
-        self.result = None;
+        if !self.state.busy() {
+            self.result = None;
+        }
         true
     }
 }
@@ -154,14 +208,18 @@ fn check(
 }
 
 #[cfg(unix)]
-fn install(transport: &impl Transport, release: &Release) -> Result<bool, String> {
+fn install(
+    transport: &impl Transport,
+    release: &Release,
+    progress: &mut dyn FnMut(State),
+) -> Result<bool, String> {
     let target = Target::current()?;
     if target.artifact() != release.name {
         return Err("Update platform changed; check again".into());
     }
     let installation = crate::platform::update::Installation::current()?;
     let mut file = installation.payload()?;
-    download(transport, release, &mut file)?;
+    download(transport, release, &mut file, progress)?;
     file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut header = [0; 64];
     file.read_exact(&mut header)
@@ -171,7 +229,11 @@ fn install(transport: &impl Transport, release: &Release) -> Result<bool, String
     installation.commit()
 }
 #[cfg(not(unix))]
-fn install(_transport: &impl Transport, _release: &Release) -> Result<bool, String> {
+fn install(
+    _transport: &impl Transport,
+    _release: &Release,
+    _progress: &mut dyn FnMut(State),
+) -> Result<bool, String> {
     Err("Shell installation is unsupported on this operating system".into())
 }
 
@@ -179,6 +241,7 @@ fn download(
     transport: &impl Transport,
     release: &Release,
     file: &mut std::fs::File,
+    progress: &mut dyn FnMut(State),
 ) -> Result<(), String> {
     let mut expected = release.binary.digest.clone();
     if let Some(asset) = &release.checksum {
@@ -192,10 +255,20 @@ fn download(
         expected = Some(checksum);
     }
     let expected = expected.ok_or("No checksum available; install refused")?;
-    transport.fetch(&release.binary.url, release.binary.size, file)?;
+    transport.fetch(
+        &release.binary.url,
+        release.binary.size,
+        &mut DownloadWriter {
+            output: file,
+            received: 0,
+            total: release.binary.size,
+            progress,
+        },
+    )?;
     if file.metadata().map_err(|e| e.to_string())?.len() != release.binary.size {
         return Err("Shell download is incomplete".into());
     }
+    progress(State::Installing);
     file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut hash = Sha256::new();
     let mut buffer = [0; 16384];
@@ -238,6 +311,35 @@ fn hex_digest(bytes: &[u8]) -> String {
             ]
         })
         .collect()
+}
+
+// Decimal megabytes, rounded to two places without floating-point conversions.
+fn megabytes(bytes: u64) -> String {
+    let hundredths = bytes.saturating_add(5_000) / 10_000;
+    format!("{}.{:02}", hundredths / 100, hundredths % 100)
+}
+
+struct DownloadWriter<'a> {
+    output: &'a mut dyn Write,
+    received: u64,
+    total: u64,
+    progress: &'a mut dyn FnMut(State),
+}
+impl Write for DownloadWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let count = self.output.write(bytes)?;
+        self.received += count as u64;
+        if count != 0 {
+            (self.progress)(State::Downloading {
+                received: self.received,
+                total: self.total,
+            });
+        }
+        Ok(count)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.output.flush()
+    }
 }
 
 #[cfg(test)]

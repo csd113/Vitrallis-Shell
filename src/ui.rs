@@ -98,7 +98,7 @@ fn event_loop(
             state.running = child.running_ids();
             render(canvas, layout, &state, &textures)?;
             canvas.present();
-            dirty = false;
+            dirty = submit_power_after_present(&mut worker, &mut state.settings);
             next_frame = Instant::now() + Duration::from_millis(16);
         }
         let event = wait_event(&mut events, state.phase, next_poll, dirty);
@@ -403,6 +403,9 @@ fn translate_action(
     pointer: &mut PointerInput,
     worker: &mut Option<crate::platform::system::Worker>,
 ) -> (Option<Action>, bool) {
+    if state.settings.power_transition.is_some() {
+        return (None, false);
+    }
     if state.app_center.open {
         state.app_center.event(event, layout);
         return (None, true);
@@ -435,6 +438,9 @@ fn refresh_system(
         if let Some(update) = worker.update() {
             settings.status = update.status;
             if let Some(result) = update.result {
+                if result.is_err() {
+                    settings.power_transition = None;
+                }
                 settings.applying = None;
                 let previous = std::mem::take(&mut settings.timezone);
                 if let crate::settings::TimezoneState::Applying(index) = previous
@@ -463,7 +469,8 @@ fn refresh_system(
             dirty = true;
         }
     }
-    if worker.as_ref().is_some_and(|worker| !worker.pending) {
+    if settings.power_transition.is_none() && worker.as_ref().is_some_and(|worker| !worker.pending)
+    {
         for index in 0..2 {
             if let Some(value) = settings.queued[index].take() {
                 let command = if index == 0 {
@@ -488,6 +495,16 @@ fn submit_setting(
     worker: &mut Option<crate::platform::system::Worker>,
     settings: &mut crate::settings::Settings,
 ) {
+    if settings.power_transition.is_some() {
+        return;
+    }
+    if let Some(crate::settings::Request::Control(crate::platform::system::Control::Power(power))) =
+        request
+    {
+        settings.power_transition = Some(crate::settings::PowerTransition::Requested(power));
+        settings.queued = [None; 2];
+        return;
+    }
     match request {
         Some(crate::settings::Request::CheckUpdates) => settings.updater.check(),
         Some(crate::settings::Request::InstallUpdate) => settings.updater.install(),
@@ -542,6 +559,34 @@ fn submit_setting(
         None => {}
     }
 }
+// Called only after presenting the acknowledgement frame, before any power command.
+fn submit_power_after_present(
+    worker: &mut Option<crate::platform::system::Worker>,
+    settings: &mut crate::settings::Settings,
+) -> bool {
+    use crate::{platform::system::Control, settings::PowerTransition};
+    let Some(PowerTransition::Requested(power)) = settings.power_transition else {
+        return false;
+    };
+    let result = worker
+        .as_mut()
+        .ok_or_else(|| "System controls unavailable".to_owned())
+        .and_then(|worker| worker.submit(Control::Power(power)));
+    match result {
+        Ok(()) => {
+            settings.power_transition = Some(PowerTransition::Submitted(power));
+            settings.pending = true;
+            false
+        }
+        Err(error) => {
+            settings.power_transition = None;
+            settings.open = true;
+            settings.message = error;
+            true
+        }
+    }
+}
+
 fn open_timezone(state: &mut Launcher, child: &mut impl Processes, index: usize) {
     let result = state
         .settings
@@ -928,5 +973,102 @@ mod tests {
             .ok_or("lost first tap after app return")?;
         assert_eq!(state.input(action), Some(0));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod power_tests {
+    use super::*;
+    use crate::{
+        platform::system::{Control, Power, Status, System, Worker},
+        settings::{PowerTransition, Request, Settings},
+    };
+    use std::sync::mpsc;
+
+    #[derive(Clone)]
+    struct Backend {
+        commands: mpsc::Sender<Control>,
+        fail: bool,
+    }
+    impl System for Backend {
+        fn refresh(&mut self) -> Status {
+            Status::default()
+        }
+        fn control(&mut self, command: Control, _: &mut Status) -> Result<(), String> {
+            self.commands
+                .send(command)
+                .map_err(|error| error.to_string())?;
+            if self.fail {
+                Err("Power request denied".into())
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn power_waits_for_splash_and_is_submitted_once_with_failure_recovery() -> Result<(), String> {
+        for power in [Power::Reboot, Power::Shutdown] {
+            for fail in [false, true] {
+                let (send, received) = mpsc::channel();
+                let mut worker = Some(Worker::start(Backend {
+                    commands: send,
+                    fail,
+                })?);
+                let mut settings = Settings::default();
+                settings.show();
+                submit_setting(
+                    Some(Request::Control(Control::Power(power))),
+                    &mut worker,
+                    &mut settings,
+                );
+                assert!(matches!(
+                    settings.power_transition,
+                    Some(PowerTransition::Requested(_))
+                ));
+                assert!(received.try_recv().is_err());
+                assert!(!submit_power_after_present(&mut worker, &mut settings));
+                assert_eq!(
+                    received
+                        .recv_timeout(Duration::from_secs(3))
+                        .map_err(|e| e.to_string())?,
+                    Control::Power(power)
+                );
+                submit_setting(
+                    Some(Request::Control(Control::Power(power))),
+                    &mut worker,
+                    &mut settings,
+                );
+                assert!(!submit_power_after_present(&mut worker, &mut settings));
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while settings.pending {
+                    refresh_system(&mut worker, &mut settings);
+                    if Instant::now() >= deadline {
+                        return Err("power worker timeout".into());
+                    }
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                assert!(received.try_recv().is_err());
+                assert_eq!(settings.power_transition.is_none(), fail);
+                if fail {
+                    assert_eq!(settings.message, "Power request denied");
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn unavailable_power_controls_restore_settings() {
+        let mut settings = Settings::default();
+        submit_setting(
+            Some(Request::Control(Control::Power(Power::Shutdown))),
+            &mut None,
+            &mut settings,
+        );
+        assert!(submit_power_after_present(&mut None, &mut settings));
+        assert!(settings.power_transition.is_none());
+        assert!(settings.open);
+        assert_eq!(settings.message, "System controls unavailable");
     }
 }

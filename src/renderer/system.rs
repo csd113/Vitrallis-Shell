@@ -703,8 +703,9 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
     let detail = if confirming {
         match &settings.updater.state {
             State::Available(release) => format!(
-                "Install Vitrallis Shell {}?\nOnly the shell executable will be replaced.\nRelaunch after installation.",
-                release.version
+                "Install Vitrallis Shell {}?\nDownload size: {} MB\nOnly the shell executable will be replaced.\nRelaunch after installation.",
+                release.version,
+                release.download_size_mb()
             ),
             _ => "Update no longer available. Cancel and check again.".into(),
         }
@@ -717,8 +718,11 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
     let capacity = usize::try_from(layout.title.w / (8 * layout.text_scale))
         .map_err(|_| "update text width")?
         .max(1);
-    let max_lines = usize::try_from((geometry.controls[2].y - top - 8) / line_height)
-        .map_err(|_| "update text height")?;
+    let downloading = matches!(settings.updater.state, State::Downloading { .. });
+    let progress_height = if downloading { 20 } else { 0 };
+    let max_lines =
+        usize::try_from((geometry.controls[2].y - top - 8 - progress_height) / line_height)
+            .map_err(|_| "update text height")?;
     let lines = update_lines(&message, capacity);
     for (index, line) in lines.iter().take(max_lines).enumerate() {
         label(
@@ -734,12 +738,36 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
             INK,
         )?;
     }
+    if let State::Downloading { received, total } = settings.updater.state {
+        let track = Rect {
+            x: layout.title.x,
+            y: geometry.controls[2].y - 24,
+            w: layout.title.w,
+            h: 12,
+        };
+        fill(canvas, track, TRACK)?;
+        let width = u64::try_from(track.w)
+            .map_err(|_| "update progress width")?
+            .saturating_mul(received.min(total))
+            .checked_div(total)
+            .unwrap_or(0);
+        if width > 0 {
+            fill(
+                canvas,
+                Rect {
+                    w: i32::try_from(width).map_err(|_| "update progress width")?,
+                    ..track
+                },
+                ACCENT,
+            )?;
+        }
+    }
     let action = if confirming {
         "Confirm Install"
     } else {
         match settings.updater.state {
             State::Available(_) => "Install Update",
-            State::Checking | State::Installing => "Please wait...",
+            State::Checking | State::Downloading { .. } | State::Installing => "Please wait...",
             State::Installed { .. } => "Relaunch required",
             _ => "Check for Updates",
         }
@@ -788,4 +816,33 @@ fn update_lines(message: &str, capacity: usize) -> Vec<String> {
         }
     }
     lines
+}
+
+pub(super) fn power_splash(
+    canvas: &mut Screen,
+    layout: &Layout,
+    message: &str,
+) -> Result<(), String> {
+    canvas.set_draw_color(Color::RGB(12, 23, 33));
+    canvas.clear();
+    let center = i32::from(layout.height) / 2;
+    for (title, y, color) in [
+        ("VITRALLIS", center - 36 * layout.text_scale, ACCENT),
+        (message, center - 8 * layout.text_scale, INK),
+        ("Please wait...", center + 20 * layout.text_scale, MUTED),
+    ] {
+        text(
+            canvas,
+            title,
+            Rect {
+                x: layout.title.x,
+                y,
+                w: layout.title.w,
+                h: 16 * layout.text_scale,
+            },
+            layout.text_scale,
+            color,
+        )?;
+    }
+    Ok(())
 }
