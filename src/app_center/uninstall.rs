@@ -10,7 +10,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), String> {
+pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<Option<String>, String> {
     use running::Processes;
     metadata::identity(&package.id)?;
     let root = loc.root(package);
@@ -19,7 +19,7 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), Str
         return Err("Close the app before uninstalling; no files were removed".into());
     }
     install::recover(loc, package)?;
-    let writes = plan(loc, package)?;
+    let (writes, warning) = plan(loc, package)?;
     if !running::Native.list(&entry)?.is_empty() {
         return Err("App started again; uninstall cancelled".into());
     }
@@ -39,7 +39,8 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), Str
     )?;
     transaction::apply(&journal, &writes)?;
     std::fs::remove_file(marker).map_err(|e| e.to_string())?;
-    storage::sync(&root)
+    storage::sync(&root)?;
+    Ok(warning)
 }
 fn installed_entry(root: &Path, p: &metadata::Package) -> Result<std::path::PathBuf, String> {
     if p.legacy() {
@@ -67,7 +68,7 @@ fn validate_owned_path(name: &str) -> Result<(), String> {
     }
     Ok(())
 }
-fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
+fn plan(loc: &Locations, p: &metadata::Package) -> Result<(Vec<Write>, Option<String>), String> {
     let root = loc.root(p);
     let receipt = install::receipt(&root)?;
     let mut paths = BTreeSet::new();
@@ -129,12 +130,18 @@ fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
         .into_iter()
         .map(transaction::remove)
         .collect::<Result<Vec<_>, _>>()?;
-    if p.legacy() {
-        remove_menu(loc, &launcher, &mut writes)?;
-    }
+    // Match installation: optional PocketHome integration must pass all normal
+    // storage checks, but an unsafe menu must not block native app removal.
+    let warning = if p.legacy() {
+        remove_menu(loc, &launcher, &mut writes)
+            .err()
+            .map(|error| format!("PocketHome shortcut may remain; menu unchanged: {error}"))
+    } else {
+        None
+    };
     // Keep ownership metadata until the remaining removals have succeeded.
     writes.push(transaction::remove(root.join(".vitrallis-receipt.json"))?);
-    Ok(writes)
+    Ok((writes, warning))
 }
 fn remove_menu(loc: &Locations, launcher: &Path, writes: &mut Vec<Write>) -> Result<(), String> {
     let path = loc.home.join(".pocket-home/config.json");

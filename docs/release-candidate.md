@@ -1,3 +1,26 @@
+# Vitrallis 0.1.0-beta2.4
+
+This prerelease fixes Bitcoin uninstall when the optional PocketHome menu has
+unsafe permissions, links, or malformed contents. That menu remains untouched
+and App Center warns that a Marshmallow shortcut may remain; native app removal
+still requires the existing filesystem, receipt, and running-process checks.
+
+App Center now has one explicit app selection. Details, Install, and Uninstall
+use that selection even after paging or moving keyboard focus. Up-to-date and
+unavailable apps can be selected for information; Install is enabled only when
+the selected app is ready, and Uninstall only when it is installed. A catalog
+refresh clears selection and invalidates any stale uninstall confirmation.
+
+Validation covers keyboard and touch across multiple pages at both device
+sizes, selection changes, unsafe PocketHome menus, legacy installs with and
+without receipts, and unchanged mandatory security checks. The full host gate
+includes formatting, strict Clippy, 146 unit and 6 integration tests, 40 Python
+tests, release build, SDL smoke, shell syntax, and diff checks. Physical
+PocketCHIP validation remains pending. Release CI builds Linux x86-64 and ARMv7
+executables with SHA-256 sidecars and validates ARM startup/rendering under QEMU.
+
+---
+
 # Vitrallis 0.1.0-beta2.3
 
 This prerelease adds receipt-scoped app uninstall with confirmation, backups,

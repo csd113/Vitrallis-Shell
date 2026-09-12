@@ -1,6 +1,6 @@
 # Vitrallis Shell
 
-**0.1.0-beta2.3 release candidate — not production-ready.** Portable SDL2 launcher
+**0.1.0-beta2.4 release candidate — not production-ready.** Portable SDL2 launcher
 for embedded Linux, tested on a Debian 13 PocketCHIP with Marshmallow recovery.
 See [current release validation](docs/release-candidate.md),
 [toolchain/dependency policy](docs/dependencies.md),

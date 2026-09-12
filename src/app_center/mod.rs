@@ -84,11 +84,11 @@ fn service(
     ));
     while let Ok(command) = commands.recv() {
         let mut changed = false;
-        let success = match &command {
+        let mut success = String::from(match &command {
             Command::Uninstall(_) => "App uninstalled. Other data kept; removed files backed up.",
             Command::Install(_) => "Installed; apps remain closed. Check again for current status",
             _ => "Ready. Selections are unchecked by default",
-        };
+        });
         let result = (|| {
             let _lock = storage::Lock::take(&loc.state)?;
             match command {
@@ -150,9 +150,14 @@ fn service(
                         row.package.name
                     )));
                     changed = true;
-                    uninstall::uninstall(loc, &row.package)?;
+                    let warning = uninstall::uninstall(loc, &row.package)?;
                     row.installed = "not installed".into();
                     row.status = "not installed; other data retained".into();
+                    if let Some(warning) = warning {
+                        success = format!("App uninstalled. {warning}");
+                        row.status.push_str("; ");
+                        row.status.push_str(&warning);
+                    }
                     row.ready = row.package.installable;
                     let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
                 }
@@ -162,7 +167,7 @@ fn service(
             }
             Ok(())
         })();
-        let _ = updates.send(Update::Done(result.map(|()| success.into()), changed));
+        let _ = updates.send(Update::Done(result.map(|()| success), changed));
     }
 }
 fn install_one(

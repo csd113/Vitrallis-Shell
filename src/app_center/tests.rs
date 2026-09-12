@@ -1239,7 +1239,7 @@ fn uninstall_bitcoin_removes_only_its_menu_entries_and_supports_legacy_installat
             std::fs::remove_file(root.join(".vitrallis-receipt.json"))
                 .map_err(|e| e.to_string())?;
         }
-        uninstall::uninstall(&loc, &p)?;
+        assert!(uninstall::uninstall(&loc, &p)?.is_none());
         for name in ["bitcoin.py", "launch", "bitcoin.png", "icon.png"] {
             assert!(!root.join(name).exists(), "{name}");
         }
@@ -1248,6 +1248,99 @@ fn uninstall_bitcoin_removes_only_its_menu_entries_and_supports_legacy_installat
             menu["pages"][0]["items"],
             serde_json::json!([{"name":"Bitcoin CAD","shell":"/another/launch"}])
         );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn unsafe_optional_pockethome_menu_does_not_block_uninstall() -> Result<(), String> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+    for problem in [
+        "directory permissions",
+        "file permissions",
+        "symlink",
+        "invalid JSON",
+    ] {
+        for receipt in [true, false] {
+            let (_scratch, loc) = locations()?;
+            let p = metadata::catalog(
+                &sources::Repository::parse(sources::DEFAULT)?,
+                &std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?,
+            )?
+            .remove(0);
+            let files = Files::from([
+                (
+                    "bitcoin.py".into(),
+                    format!("VERSION = '{}'\n", p.version).into_bytes(),
+                ),
+                ("icon.png".into(), fixture_icon()?),
+            ]);
+            let p = inventory(p, &files);
+            let directory = loc.home.join(".pocket-home");
+            let config = directory.join("config.json");
+            storage::atomic(
+                &config,
+                &FileData {
+                    bytes: br#"{"pages":[{"name":"Apps","items":[]}]}"#.to_vec(),
+                    mode: 0o600,
+                },
+            )?;
+            install::install(&loc, &install::prepare(&loc, p.clone(), files)?)?;
+            let root = loc.root(&p);
+            if !receipt {
+                std::fs::remove_file(root.join(".vitrallis-receipt.json"))
+                    .map_err(|e| e.to_string())?;
+            }
+            match problem {
+                "directory permissions" => {
+                    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o775))
+                }
+                "file permissions" => {
+                    std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o664))
+                }
+                "symlink" => {
+                    let target = loc.home.join("other-menu");
+                    std::fs::rename(&directory, &target).map_err(|e| e.to_string())?;
+                    symlink(&target, &directory)
+                }
+                _ => std::fs::write(&config, b"invalid JSON"),
+            }
+            .map_err(|e| e.to_string())?;
+            let before = std::fs::read(&config).map_err(|e| e.to_string())?;
+            let dir_mode = std::fs::symlink_metadata(&directory)
+                .map_err(|e| e.to_string())?
+                .mode();
+            let file_mode = std::fs::metadata(&config)
+                .map_err(|e| e.to_string())?
+                .mode();
+            let warning = uninstall::uninstall(&loc, &p)?.ok_or("missing menu warning")?;
+            assert!(warning.contains("PocketHome shortcut may remain; menu unchanged"));
+            assert_eq!(std::fs::read(&config).map_err(|e| e.to_string())?, before);
+            assert_eq!(
+                std::fs::symlink_metadata(&directory)
+                    .map_err(|e| e.to_string())?
+                    .mode(),
+                dir_mode
+            );
+            assert_eq!(
+                std::fs::metadata(&config)
+                    .map_err(|e| e.to_string())?
+                    .mode(),
+                file_mode
+            );
+            for name in [
+                "bitcoin.py",
+                "launch",
+                "bitcoin.png",
+                "icon.png",
+                ".vitrallis-receipt.json",
+                ".installation-pending",
+            ] {
+                assert!(!root.join(name).exists(), "{name}");
+            }
+            assert_eq!(install::check(&loc, p)?.installed, "not installed");
+        }
     }
     Ok(())
 }

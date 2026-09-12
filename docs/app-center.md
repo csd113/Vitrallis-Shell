@@ -8,16 +8,21 @@ root `apps.json`. Check downloads only catalog metadata, including the pinned fi
 inventory, sizes, and hashes. App payload files are downloaded only after the user
 selects an app and chooses Install (also used for updates and repairs).
 
-Open **App Center**, choose **Check**, select the desired rows, then **Install**.
+Open **App Center**, choose **Check**, select an app, then **Install**.
 Rows show installed/latest versions; **Details** shows the full status, origin,
-source, download size, compatibility notes, and declared requirements. Selections
-start unchecked. Download progress shows actual bytes received / total bytes and
+source, download size, compatibility notes, and declared requirements. Only one
+app can be selected at a time. Enter, Space, or a tap selects an app and replaces
+the previous selection; activating the selected row again clears it. Keyboard
+focus and paging do not change the selection. Details, Install, and Uninstall
+all use the same selected app, even when its row is on another page. Details is
+disabled until an app is selected. Up-to-date and unavailable apps can be selected
+for information; Install is enabled only when the selected app is ready, and
+Uninstall only when that app is installed.
+Download progress shows actual bytes received / total bytes and
 percentage, followed by Verifying and Installing. Cancel (or Escape while acquiring)
 stops the remaining downloads before installation; a stalled request can take up to
 its 30-second deadline to stop. Once filesystem commit starts, it finishes or rolls
-back safely. Cancelling a batch skips its remaining apps.
-Install processes the selected apps in order. A failed app does not prevent the
-remaining selected apps from being attempted. Check, editing, and installation
+back safely. Check, editing, and installation
 cannot overlap. Progress and errors remain visible; Details also exposes long
 operation errors after an unsuccessful installation.
 
@@ -37,6 +42,10 @@ defaults to **Cancel**; keyboard and touch use the same confirmation. Close the 
 before uninstalling. Uninstall needs no network requests and removes the receipt's
 app files, the managed launcher, and matching desktop/PocketHome entries. Other
 files, such as saves and app-local runtimes not listed in the receipt, remain.
+PocketHome menu cleanup is optional, just as registration is during installation.
+If that menu has unsafe permissions, links, or invalid contents, uninstall leaves
+it untouched and reports that a Marshmallow shortcut may remain. App files and
+managed launchers still require the full filesystem checks before removal.
 Removed files (including locally edited package files) are backed up in the existing
 transaction journal. Custom shortcuts pointing elsewhere are preserved. A legacy
 Bitcoin installation without a receipt uses the reviewed fixed adapter paths and
