@@ -73,13 +73,15 @@ pub fn icons<'a>(
             if remaining == 0 {
                 return None;
             }
-            let builtin: Option<&[u8]> = if app.id == crate::app_center::TILE_ID {
-                Some(include_bytes!("../assets/system/apps.png"))
-            } else if app.is_system_settings() {
-                Some(include_bytes!("../assets/system/gear.png"))
-            } else {
-                None
-            };
+            let builtin: Option<&[u8]> = crate::native::icon(app).or_else(|| {
+                if app.id == crate::app_center::TILE_ID {
+                    Some(include_bytes!("../assets/system/apps.png").as_slice())
+                } else if app.is_system_settings() {
+                    Some(include_bytes!("../assets/system/gear.png").as_slice())
+                } else {
+                    None
+                }
+            });
             let result = if let Some(bytes) = builtin {
                 decode_icon(bytes).and_then(|surface| {
                     creator

@@ -1,0 +1,17 @@
+[package]
+name = "vitrallis-native"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Shared compact SDL utilities for native Vitrallis applications"
+repository = "https://github.com/csd113/Vitrallis-Shell"
+license = "LicenseRef-Proprietary"
+keywords = ["embedded", "sdl2", "utilities"]
+categories = ["gui"]
+publish = false
+
+[dependencies]
+sdl2.workspace = true
+font8x8.workspace = true
+libc.workspace = true
+sha2.workspace = true

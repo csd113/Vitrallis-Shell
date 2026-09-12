@@ -63,7 +63,7 @@ impl Target {
         })
     }
     pub fn artifact(self) -> String {
-        format!("vitrallis-{}-glibc2.36", self.triple)
+        format!("vitrallis-{}-glibc2.36.vtrbundle", self.triple)
     }
     pub fn verify_header(self, bytes: &[u8]) -> Result<(), String> {
         if bytes.len() < 52

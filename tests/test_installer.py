@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import fcntl
 import os
@@ -35,11 +36,15 @@ class Installer(unittest.TestCase):
         header = bytearray(84)
         header[:7] = b'\x7fELF\x01\x01\x01'
         struct.pack_into('<HHIIIIIHHH', header, 16, 2, 40, 1, 0, 52, 0, 0x05000400, 52, 32, 1)
-        self.binary.write_bytes(header)
+        self.payload = bytes(header)
+        self.binary.write_bytes(m.MAGIC + b''.join(struct.pack('<Q', len(header)) + hashlib.sha256(header).digest() + header for _ in m.BINARIES))
         self.target = self.home / '.local/share/vitrallis'
 
     def install(self):
-        m.install(self.binary, self.source, self.home)
+        # Tiny ARM header fixtures cannot execute on the host; real bounded
+        # version probes are tested separately with owned executable fixtures.
+        with patch.object(m, 'verify_versions'):
+            m.install(self.binary, self.source, self.home)
 
     def test_preserves_menu_and_idempotent_install(self):
         self.config.chmod(0o600)
@@ -50,7 +55,7 @@ class Installer(unittest.TestCase):
         self.assertEqual(config['pages'][0]['items'][0], self.original['pages'][0]['items'][0])
         self.assertEqual(len(config['pages'][0]['items']), 2)
         self.assertFalse((self.target / '.installation-pending').exists())
-        self.assertTrue((self.target / 'vitrallis').stat().st_mode & 0o111)
+        self.assertTrue((self.target / 'current/vitrallis').stat().st_mode & 0o111)
         self.assertEqual(self.config.stat().st_mode & 0o777, 0o600)
 
     def test_group_writable_umask_does_not_make_new_ota_directories_unsafe(self):
@@ -61,7 +66,7 @@ class Installer(unittest.TestCase):
             os.umask(previous)
         for path in (self.home / '.local', self.home / '.local/share', self.target):
             self.assertEqual(path.stat().st_mode & 0o777, 0o755)
-        self.assertEqual((self.target / 'vitrallis').stat().st_mode & 0o777, 0o755)
+        self.assertEqual((self.target / 'current/vitrallis').stat().st_mode & 0o777, 0o755)
 
     def test_existing_directory_permissions_are_preserved(self):
         self.target.mkdir(parents=True, mode=0o700)
@@ -112,7 +117,7 @@ class Installer(unittest.TestCase):
             with self.assertRaises(OSError):
                 self.install()
         self.assertEqual(self.config.read_bytes(), original)
-        self.assertFalse((self.target / 'vitrallis').exists())
+        self.assertFalse((self.target / 'current/vitrallis').exists())
         self.install()
         self.assertFalse((self.target / '.installation-pending').exists())
 
@@ -132,22 +137,24 @@ class Installer(unittest.TestCase):
         failed = []
         def write(path, *args):
             real(path, *args)
-            if path == self.target / 'vitrallis' and not failed:
+            if path == self.target / 'vitrallis-session.py' and not failed:
                 failed.append(True)
                 raise OSError('directory fsync failure')
         with patch.object(m, 'atomic', side_effect=write):
             with self.assertRaises(OSError):
                 self.install()
-        self.assertFalse((self.target / 'vitrallis').exists())
+        self.assertFalse((self.target / 'current/vitrallis').exists())
         self.assertTrue((self.target / '.installation-pending').exists())
         self.install()
 
     def test_concurrent_installer_is_rejected(self):
-        with (self.config.parent / 'vitrallis-install.lock').open('a+') as lock:
+        stage = self.target / '.vitrallis-update'
+        stage.mkdir(parents=True, mode=0o700)
+        with (stage / 'lock').open('a+') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             with self.assertRaises(BlockingIOError):
                 self.install()
-        self.assertFalse(self.target.exists())
+        self.assertFalse((self.target / 'current').exists())
 
     def test_malformed_config_and_marker_fail_before_installation(self):
         for value in ([], None, 'text', 42):
@@ -183,6 +190,56 @@ class Installer(unittest.TestCase):
         self.assertEqual(self.config.read_text(), 'concurrent user edit')
         self.assertTrue((self.target / '.installation-pending').exists())
 
+    def test_incomplete_corrupt_or_foreign_companion_never_changes_current(self):
+        self.install()
+        current = os.readlink(self.target / 'current')
+        original = self.binary.read_bytes()
+        for bad in (original[:-1], original + b'extra', original[:-1] + bytes([original[-1] ^ 1])):
+            self.binary.write_bytes(bad)
+            with self.assertRaises(ValueError):
+                self.install()
+            self.assertEqual(os.readlink(self.target / 'current'), current)
+            for name in m.BINARIES:
+                self.assertEqual((self.target / 'current' / name).read_bytes(), self.payload)
+        self.binary.write_bytes(original)
+
+    def test_failed_pointer_sync_rolls_back_the_whole_generation(self):
+        self.install()
+        old = os.readlink(self.target / 'current')
+        changed = self.payload + b'new generation'
+        self.binary.write_bytes(m.MAGIC + b''.join(struct.pack('<Q', len(changed)) + hashlib.sha256(changed).digest() + changed for _ in m.BINARIES))
+        real = m.atomic_pointer
+        failed = []
+        def publish(path, value):
+            real(path, value)
+            if path == self.target / 'current' and not failed:
+                failed.append(True)
+                raise OSError('injected pointer durability error')
+        with patch.object(m, 'atomic_pointer', side_effect=publish):
+            with self.assertRaises(OSError):
+                self.install()
+        self.assertEqual(os.readlink(self.target / 'current'), old)
+        for name in m.BINARIES:
+            self.assertEqual((self.target / 'current' / name).read_bytes(), self.payload)
+        self.assertTrue((self.target / '.installation-pending').exists())
+        self.install()
+        self.assertNotEqual(os.readlink(self.target / 'current'), old)
+
+    def test_bounded_version_probes_reject_mixed_versions_and_output_floods(self):
+        generation = self.source / 'probes'
+        generation.mkdir()
+        for name in m.BINARIES:
+            path = generation / name
+            path.write_text('#!/bin/sh\nprintf "' + name + ' 0.1.0-test\\n"\n')
+            path.chmod(0o755)
+        m.verify_versions(generation)
+        (generation / 'vitrallis-files').write_text('#!/bin/sh\nprintf "vitrallis-files 0.2.0\\n"\n')
+        with self.assertRaisesRegex(ValueError, 'version mismatch'):
+            m.verify_versions(generation)
+        (generation / 'vitrallis-files').write_text('#!/bin/sh\nwhile :; do printf "output flood"; done\n')
+        with self.assertRaises(subprocess.SubprocessError):
+            m.verify_versions(generation)
+
     def run_installer(self, script, *args):
         # Exercise the actual CLI, but only against this fixture HOME. Mock the
         # normal-user check so the same staging test also works in root-run CI.
@@ -190,7 +247,11 @@ class Installer(unittest.TestCase):
             'import runpy, sys\n'
             'from unittest.mock import patch\n'
             'sys.argv = sys.argv[1:]\n'
-            "with patch('os.geteuid', return_value=1000):\n"
+            'def probe(args, **kwargs):\n'
+            '    from pathlib import Path\n'
+            '    kwargs["stdout"].write((Path(args[0]).name + " 0.1.0-test\\n").encode())\n'
+
+            "with patch('os.geteuid', return_value=1000), patch('subprocess.run', side_effect=probe):\n"
             "    runpy.run_path(sys.argv[0], run_name='__main__')\n"
         )
         return subprocess.run(
@@ -209,7 +270,8 @@ class Installer(unittest.TestCase):
         entry = canonical / 'install.py'
         result = self.run_installer(entry, str(self.binary.relative_to(self.home)))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.target / 'vitrallis').read_bytes(), self.binary.read_bytes())
+        for name in m.BINARIES:
+            self.assertEqual((self.target / 'current' / name).read_bytes(), self.payload)
         self.assertEqual((self.target / 'vitrallis-session.py').read_bytes(), (DEVICE / 'vitrallis-session.py').read_bytes())
         self.assertIn(str(self.target), result.stdout)
         self.assertFalse((self.target / '.installation-pending').exists())

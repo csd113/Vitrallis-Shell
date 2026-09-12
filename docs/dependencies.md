@@ -6,11 +6,10 @@ release baseline uses the latest 1.91 patch. Rust 1.91.0 is also checked separat
 workspace packages should inherit `version`, `edition`, `rust-version` and
 shared dependencies. Python-only applications do not require Rust.
 
-The 2026-09-10 audit covers all four direct dependencies, the complete Cargo
+The historical 2026-09-10 audit below covered all four direct dependencies, the complete Cargo
 lockfile, features, optional/build/dev dependencies, external Store code and
 build/CI tooling. There are no owned pip/npm dependencies, Python SDK package,
-Git Cargo dependencies, build script dependencies, or additional workspace
-members. Python scripts use the standard library. The Store uses standard-library
+Git Cargo dependencies, build script dependencies, at that time. The native-application additions below supersede that workspace inventory. Python scripts use the standard library. The Store uses standard-library
 Tk with an existing app-local runtime; do not upgrade global/device Python or
 Debian packages for this release.
 
@@ -116,3 +115,37 @@ or workspace version was changed. HTTP uses the existing optional system curl
 approach; SHA-256 and PNG verification reuse existing crates. Runtime Python is
 probed only for the apps being checked; there is no Python/Tk App Center UI or
 updater dependency. Python runtime probes use system Python or an app-local virtual environment.
+
+
+## Bundled native utilities
+
+`vitrallis-native` reuses SDL2 0.38, font8x8 and the existing SHA-256 crate for
+bounded Notepad save-conflict checks. The app binaries have no GUI
+framework, async runtime, HTTP stack, Python runtime or embedded server.
+`libc` was already transitive; it is now direct in the shared crate and Terminal
+for a small documented POSIX boundary (exclusive rename/no-follow flags,
+private socket ownership, PTY creation, poll, resize, controlling terminal).
+The shell retains its existing `unsafe_code = "forbid"` policy.
+
+Terminal adds **vt100 0.16.2** for maintained ANSI/VT state rather than an ad-hoc
+parser. Its new transitive crates are **vte 0.15.0**, **unicode-width 0.2.2**, and
+**arrayvec 0.7.8**. Source review found vte's std-enabled OSC accumulator uses a
+Vec; the adapter caps control strings at 4 KiB and discards excess through their
+terminator. Terminal replies, scrollback, geometry and PTY queues have separate
+bounds. The parser sources contain no application-owned unsafe boundary; vte's
+upstream implementation remains part of the dependency trust boundary.
+
+`portable-pty 0.9.0` was evaluated. Its cross-platform process abstraction adds
+several dependencies unnecessary for the supported POSIX hosts, including a
+second bitflags major version rejected by this workspace's strict Cargo lint.
+A focused openpty/setsid/TIOCSCTTY adapter therefore uses existing libc. The
+post-fork callback performs only documented async-signal-safe OS calls. An owned
+child guard kills/reaps on every early failure and shutdown. Linux ARMv7 and
+AArch64 compilation plus real host PTY tests exercise the platform boundary.
+
+The workspace remains Rust 1.91, has one version of each dependency, and adds
+no native library requirement beyond SDL2 and normal POSIX libc/libutil.
+Versioned references: [vt100 0.16.2](https://docs.rs/vt100/0.16.2/vt100/),
+[vte 0.15.0](https://docs.rs/vte/0.15.0/vte/),
+[portable-pty 0.9.0](https://docs.rs/portable-pty/0.9.0/portable_pty/).
+Resource measurements are recorded in [native validation](native-validation.md).

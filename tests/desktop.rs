@@ -81,9 +81,9 @@ fn imported_catalog_is_read_only_and_missing_icons_render_safely()
         .output()?;
     assert!(listed.status.success());
     let catalog: serde_json::Value = serde_json::from_slice(&listed.stdout)?;
-    assert_eq!(catalog["apps"][1]["name"], "Real Label");
-    assert_eq!(catalog["apps"][2]["name"], "Broken");
-    assert!(catalog["apps"][2]["unavailable"].is_string());
+    assert_eq!(catalog["apps"][4]["name"], "Real Label");
+    assert_eq!(catalog["apps"][5]["name"], "Broken");
+    assert!(catalog["apps"][5]["unavailable"].is_string());
     let frame = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
         .env("SDL_VIDEODRIVER", "dummy")
         .arg("--app-config")
@@ -186,7 +186,7 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
         Ok(serde_json::from_slice(&output.stdout)?)
     };
     let desktop = list(&mut command)?;
-    assert_eq!(desktop["apps"].as_array().ok_or("missing apps")?.len(), 1);
+    assert_eq!(desktop["apps"].as_array().ok_or("missing apps")?.len(), 4);
     assert!(
         desktop["diagnostics"]
             .as_array()
@@ -195,8 +195,8 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
     );
     command.arg("--pocketchip");
     let fallback = list(&mut command)?;
-    assert_eq!(fallback["apps"][0]["id"], "vitrallis-app-center");
-    assert_eq!(fallback["apps"][1]["name"], "Default");
+    assert_eq!(fallback["apps"][3]["id"], "vitrallis-app-center");
+    assert_eq!(fallback["apps"][4]["name"], "Default");
     assert!(!user_config.exists());
 
     let user = serde_json::to_vec(&serde_json::json!({"pages": [{"name": "Apps", "items": [
@@ -207,34 +207,34 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
     let configured = list(&mut command)?;
     assert_eq!(
         configured["apps"].as_array().ok_or("missing apps")?.len(),
-        3
+        6
     );
-    assert_eq!(configured["apps"][1]["name"], "Terminal");
+    assert_eq!(configured["apps"][4]["name"], "Terminal");
     assert_eq!(
-        configured["apps"][1]["args"],
+        configured["apps"][4]["args"],
         serde_json::json!(["--no-remote"])
     );
 
     let device = list(&mut command)?;
-    assert_eq!(device["apps"].as_array().ok_or("missing apps")?.len(), 3);
-    assert_eq!(device["apps"][1]["id"], configured["apps"][1]["id"]);
+    assert_eq!(device["apps"].as_array().ok_or("missing apps")?.len(), 6);
+    assert_eq!(device["apps"][4]["id"], configured["apps"][4]["id"]);
     assert_eq!(
-        device["apps"][1]["args"],
+        device["apps"][4]["args"],
         serde_json::json!(["--no-remote"])
     );
-    assert_eq!(device["apps"][2]["name"], "Vitrallis");
-    assert_eq!(device["apps"][0]["id"], "vitrallis-app-center");
+    assert_eq!(device["apps"][5]["name"], "Vitrallis");
+    assert_eq!(device["apps"][3]["id"], "vitrallis-app-center");
 
     command.env("VITRALLIS_SESSION", "1");
     let session = list(&mut command)?;
-    assert_eq!(session["apps"].as_array().ok_or("missing apps")?.len(), 3);
-    assert_eq!(session["apps"][2]["id"], "vitrallis-return-marshmallow");
-    assert_eq!(session["apps"][2]["entry"], "/usr/bin/systemctl");
+    assert_eq!(session["apps"].as_array().ok_or("missing apps")?.len(), 6);
+    assert_eq!(session["apps"][5]["id"], "vitrallis-return-marshmallow");
+    assert_eq!(session["apps"][5]["entry"], "/usr/bin/systemctl");
     assert_eq!(
-        session["apps"][2]["args"],
+        session["apps"][5]["args"],
         serde_json::json!(["--user", "stop", "vitrallis-session.service"])
     );
-    assert_eq!(session["apps"][0]["id"], "vitrallis-app-center");
+    assert_eq!(session["apps"][3]["id"], "vitrallis-app-center");
     assert_eq!(std::fs::read(&default_config)?, default);
     assert_eq!(std::fs::read(&user_config)?, user);
     Ok(())
@@ -269,9 +269,9 @@ fn fifo_catalog_is_rejected_without_blocking() -> Result<(), Box<dyn std::error:
     assert!(output.status.success());
     let catalog: serde_json::Value = serde_json::from_slice(&output.stdout)?;
     let apps = catalog["apps"].as_array().ok_or("missing apps")?;
-    assert_eq!(apps.len(), 1);
-    assert_eq!(apps[0]["id"], "vitrallis-app-center");
-    assert!(apps[0]["unavailable"].is_null());
+    assert_eq!(apps.len(), 4);
+    assert_eq!(apps[3]["id"], "vitrallis-app-center");
+    assert!(apps[3]["unavailable"].is_null());
     assert!(String::from_utf8_lossy(&output.stderr).contains("regular file"));
     Ok(())
 }

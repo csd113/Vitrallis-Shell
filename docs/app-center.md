@@ -1,7 +1,11 @@
 # App Center
 
-App Center is a built-in Rust/SDL screen on desktop and PocketCHIP. A fresh shell
-contains **no installed apps, app sources, embedded catalog manifest, or app artwork**.
+App Center is a built-in Rust/SDL screen on desktop and PocketCHIP. Every Vitrallis
+installation includes **Terminal, Notepad, and Files** as native Rust utilities.
+They need no catalog, download, Python runtime, or App Center receipt, and cannot
+be removed through App Center. See [native applications](native-apps.md).
+Third-party packages and their artwork are acquired separately; no third-party
+package or catalog payload is embedded.
 The only built-in catalog setting is `csd113/Vitrallis-Apps`. Check resolves that
 repository's current default branch through GitHub, pins its commit, and fetches
 root `apps.json`. Check downloads only catalog metadata, including the pinned file

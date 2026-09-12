@@ -75,6 +75,7 @@ fn event_loop(
     let mut worker = system_worker(platform, &mut state);
     let mut events = sdl.event_pump()?;
     let mut child = ProcessSet::<crate::process::NativeProcess>::default();
+    let broker = crate::native::broker(&mut state)?;
     let mut pointer = PointerInput::default();
     let mut accept_after = Instant::now();
     let mut dirty = false;
@@ -93,6 +94,7 @@ fn event_loop(
             dirty = true;
         }
         dirty |= refresh_shell(&mut state, &mut child);
+        dirty |= open_native(&broker, canvas, layout, &mut state, &textures, &mut child)?;
         if dirty && Instant::now() >= next_frame {
             state.running = child.running_ids();
             render(canvas, layout, &state, &textures)?;
@@ -133,18 +135,13 @@ fn event_loop(
                 eprintln!("level=info event=app_exited status={status:?}");
                 refresh_utility(&mut state, &mut worker, child.exited_active);
                 let raise = app_exited(&mut state, status, child.exited_active);
-                let catalog_changed =
-                    state.phase == Phase::Ready && reload_catalog(config, &mut state);
+                let catalog_changed = refresh_exit_catalog(sdl, config, &mut state, &mut pointer);
                 if catalog_changed {
                     textures = artwork(&creator, &state);
-                    sdl.mouse().show_cursor(state.preferences.show_cursor);
                 }
                 last_wait_error = None;
                 if child.exited_active {
                     accept_after = Instant::now();
-                }
-                if catalog_changed {
-                    pointer.clear();
                 }
                 if raise && platform.raise_after_exit() {
                     canvas.window_mut().raise();
@@ -172,6 +169,43 @@ fn event_loop(
     }
 }
 
+fn refresh_exit_catalog(
+    sdl: &sdl2::Sdl,
+    config: &Config,
+    state: &mut Launcher,
+    pointer: &mut PointerInput,
+) -> bool {
+    let changed = state.phase == Phase::Ready && reload_catalog(config, state);
+    if changed {
+        sdl.mouse().show_cursor(state.preferences.show_cursor);
+        pointer.clear();
+    }
+    changed
+}
+
+fn open_native(
+    broker: &vitrallis_native::ipc::Broker,
+    canvas: &mut Screen,
+    layout: &Layout,
+    state: &mut Launcher,
+    icons: &[Option<Texture<'_>>],
+    child: &mut ProcessSet,
+) -> Result<bool, String> {
+    match crate::native::requested(broker, state) {
+        Ok(Some(index)) => {
+            render(canvas, layout, state, icons)?;
+            canvas.present();
+            process::activate(state, child, index);
+            state.apps[index].manifest.args.clear();
+            Ok(true)
+        }
+        Ok(None) => Ok(false),
+        Err(error) => {
+            state.failed(error);
+            Ok(true)
+        }
+    }
+}
 fn poll_children(
     child: &mut ProcessSet,
     next_poll: &mut Instant,
@@ -363,7 +397,8 @@ fn system_worker(
 }
 
 fn reload_catalog(config: &Config, state: &mut Launcher) -> bool {
-    let result = crate::discovery::refresh(config).and_then(|catalog| {
+    let result = crate::discovery::refresh(config).and_then(|mut catalog| {
+        crate::native::inherit_runtime(&mut catalog.apps, &state.apps);
         if catalog.apps.is_empty() && !catalog.diagnostics.is_empty() {
             return Err("catalogue unavailable; keeping previous apps".into());
         }
@@ -612,6 +647,7 @@ fn open_timezone(state: &mut Launcher, child: &mut impl Processes, index: usize)
 fn open_calibration(state: &mut Launcher, child: &mut impl Processes) {
     state.settings.network = crate::settings::NetworkState::Idle;
     let app = crate::app::AppEntry {
+        source: crate::app::AppSource::System,
         id: "vitrallis-touch-calibration".into(),
         name: "Touch calibration".into(),
         icon: None,

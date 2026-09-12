@@ -20,6 +20,7 @@ pub fn integrate(catalog: &mut Catalog) {
     catalog.apps.insert(
         0,
         AppEntry {
+            source: crate::app::AppSource::System,
             id: super::TILE_ID.into(),
             name: "App Center".into(),
             icon: None,
@@ -65,6 +66,7 @@ fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
                 storage::read(&launch, metadata::FILE_LIMIT)?.is_some_and(|d| d.mode & 0o111 != 0);
             let pending = storage::read(&path.join(".installation-pending"), 1024)?.is_some();
             Ok(Some(AppEntry {
+                source: crate::app::AppSource::AppCenter,
                 id: id.into(),
                 name: metadata::text(&v["name"], 1000)?.into(),
                 icon: Some(path.join("icon.png")),

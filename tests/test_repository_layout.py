@@ -72,11 +72,10 @@ class SourcePackage(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='vitrallis source package ') as temp:
             output = Path(temp).resolve() / 'package output'
             result = subprocess.run([
-                'cargo', 'package', '--allow-dirty', '--no-verify', '--locked', '--offline',
-                '--manifest-path', str(ROOT / 'Cargo.toml'), '--target-dir', str(output),
+                'python3', str(ROOT / 'scripts/package-source.py'), '--output', str(output / 'source.tar.gz'),
             ], cwd=ROOT, capture_output=True, text=True, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
-            archives = list((output / 'package').glob('*.crate'))
+            archives = list(output.glob('*.tar.gz'))
             self.assertEqual(len(archives), 1)
             required = {
                 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'README.md',
@@ -91,6 +90,12 @@ class SourcePackage(unittest.TestCase):
             }
             required.update('assets/system/' + name + '.png'
                             for name in ('gear', 'wifi', 'sun', 'speaker', 'power', 'restart'))
+            required.update(f'apps/{app}/{name}' for app in ('terminal','notepad','files')
+                            for name in ('Cargo.toml','src/main.rs','src/lib.rs'))
+            required.update({'crates/vitrallis-native/Cargo.toml','crates/vitrallis-native/src/lib.rs',
+                             'src/native.rs','src/updater/bundle.rs','scripts/package-source.py'})
+            required.update('assets/native/' + name + extension
+                            for name in ('terminal','notepad','files') for extension in ('.png','.svg'))
             with tarfile.open(archives[0], 'r:gz') as archive:
                 members = {member.name.split('/', 1)[1]: member
                            for member in archive.getmembers()}
@@ -104,9 +109,29 @@ class SourcePackage(unittest.TestCase):
                         'scripts/apply-store-patch.py', 'integration/pocketchip-store.patch',
                         'src/discovery/marshmallow.rs', 'src/discovery/store.rs',
                     })
-                for name in required - {'Cargo.toml'}:
+                for name in required:
                     with archive.extractfile(members[name]) as stream:
                         self.assertEqual(stream.read(), (ROOT / name).read_bytes(), name)
+                extracted = Path(temp) / 'extracted workspace with spaces'
+                for name, member in members.items():
+                    self.assertFalse(Path(name).is_absolute())
+                    self.assertNotIn('..', Path(name).parts)
+                    destination = extracted / name
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with archive.extractfile(member) as stream:
+                        destination.write_bytes(stream.read())
+                    destination.chmod(member.mode & 0o777)
+            target = Path(os.environ.get('CARGO_TARGET_DIR', str(ROOT / 'target'))).resolve() / 'source-archive-check'
+            rebuilt = subprocess.run([
+                'cargo', 'build', '--workspace', '--all-features', '--locked', '--offline',
+                '--target-dir', str(target),
+            ], cwd=extracted, capture_output=True, text=True, check=False)
+            self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr)
+            for name in ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files'):
+                binary = target / 'debug' / name
+                self.assertTrue(binary.is_file(), str(binary))
+                result = subprocess.run([str(binary), '--version'], capture_output=True, text=True, check=True)
+                self.assertTrue(result.stdout.startswith(name + ' '), result.stdout)
 
 
 

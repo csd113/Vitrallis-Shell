@@ -4,7 +4,7 @@ use serde_json::Value;
 
 pub(super) const API: &str = "https://api.github.com/repos/csd113/Vitrallis-Shell/releases";
 const DOWNLOADS: &str = "https://github.com/csd113/Vitrallis-Shell/releases/download";
-pub(super) const MAX_BINARY: u64 = 64 * 1024 * 1024;
+pub(super) const MAX_BINARY: u64 = super::bundle::MAX_BUNDLE;
 
 #[derive(Debug, Clone)]
 pub struct Asset {

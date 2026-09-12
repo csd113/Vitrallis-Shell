@@ -76,12 +76,24 @@ def log_chunk(path, data):
 
 
 def supervise(base):
-    binary = base / 'vitrallis'
-    regular(binary)
     marker = base / '.installation-pending'
     regular(marker)
     if marker.exists():
         raise RuntimeError('Vitrallis installation incomplete; rerun installer')
+    current = base / 'current'
+    if not current.is_symlink():
+        raise RuntimeError('Missing native build pointer: ' + str(current))
+    relative = Path(os.readlink(current))
+    if (len(relative.parts) != 2 or relative.parts[0] != 'generations'
+            or len(relative.parts[1]) != 64
+            or any(c not in '0123456789abcdef' for c in relative.parts[1])):
+        raise RuntimeError('Invalid native build pointer')
+    for name in ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files'):
+        executable = base / relative / name
+        regular(executable)
+        if not executable.is_file() or not os.access(executable, os.X_OK):
+            raise RuntimeError('Missing bundled executable: ' + str(executable))
+    binary = base / relative / 'vitrallis'
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise RuntimeError('Missing executable: ' + str(binary))
     log = base / 'session.log'

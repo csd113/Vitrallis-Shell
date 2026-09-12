@@ -15,7 +15,8 @@ name = "vitrallis"
 path = "src/main.rs"
 
 [workspace]
-members = ["."]
+members = [".", "crates/vitrallis-native", "apps/terminal", "apps/notepad", "apps/files"]
+default-members = ["."]
 resolver = "3"
 
 [workspace.package]
@@ -24,6 +25,7 @@ edition = "2024"
 rust-version = "1.91"
 
 [dependencies]
+vitrallis-native.workspace = true
 sdl2.workspace = true
 font8x8.workspace = true
 serde_json.workspace = true
@@ -34,6 +36,9 @@ serde.workspace = true
 toml.workspace = true
 
 [workspace.dependencies]
+vitrallis-native = { path = "crates/vitrallis-native" }
+libc = "0.2"
+vt100 = "0.16.2"
 sdl2 = { version = "0.38.0", features = ["use-pkgconfig"] }
 font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
 serde_json = "1.0.151"

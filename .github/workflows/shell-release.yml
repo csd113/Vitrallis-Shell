@@ -22,12 +22,12 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Validate shell
         run: sh scripts/validate.sh
-      - name: Package shell only
+      - name: Package shell and native applications
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: >-
           python3 scripts/package-shell-release.py
-          --binary target/release/vitrallis
+          --bin-dir target/release
           --target x86_64-unknown-linux-gnu
           --output target/shell-release
           --tag "$RELEASE_TAG"
@@ -45,8 +45,11 @@ jobs:
           rustup target add armv7-unknown-linux-gnueabihf
           cargo build --locked --release --workspace --all-features --target armv7-unknown-linux-gnueabihf
           SDL_VIDEODRIVER=dummy qemu-arm target/armv7-unknown-linux-gnueabihf/release/vitrallis --demo --size 480x272 --screenshot target/arm-frame.bmp
+          for app in vitrallis-terminal vitrallis-notepad vitrallis-files; do
+            SDL_VIDEODRIVER=dummy qemu-arm "target/armv7-unknown-linux-gnueabihf/release/$app" --size 480x272 --smoke-test
+          done
           python3 scripts/package-shell-release.py \
-            --binary target/armv7-unknown-linux-gnueabihf/release/vitrallis \
+            --bin-dir target/armv7-unknown-linux-gnueabihf/release \
             --target armv7-unknown-linux-gnueabihf --runner /usr/bin/qemu-arm \
             --output target/arm-shell-release --tag "$RELEASE_TAG"
       - name: Create draft for maintainer review
@@ -61,5 +64,5 @@ jobs:
           else
             gh release create "$RELEASE_TAG" target/shell-release/* target/arm-shell-release/* \
               --verify-tag --draft --title "$RELEASE_TAG" \
-              --notes "Vitrallis Shell executables and SHA-256 checksums for Linux x86-64 and ARMv7. Requires glibc 2.36+ and SDL2 2.26.5+. Review and test artifacts before publishing."
+              --notes "Vitrallis Shell, Terminal, Notepad and Files bundles with SHA-256 checksums for Linux x86-64 and ARMv7. Requires glibc 2.36+ and SDL2 2.26.5+. Review and test artifacts before publishing."
           fi

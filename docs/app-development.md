@@ -1,9 +1,21 @@
 # Application and package development
 
 Follow the [project engineering policy](../AGENTS.md). The current Vitrallis
-application contract is catalog v1 plus `app.toml` manifest v1 from
+third-party package contract is catalog v1 plus `app.toml` manifest v1 from
 [Vitrallis Apps](https://github.com/csd113/Vitrallis-Apps/blob/main/docs/creating-apps.md).
 App Center parses this contract directly in Rust; there is no public Python SDK.
+
+## Bundled native applications
+
+The Shell workspace owns `apps/terminal`, `apps/notepad`, and `apps/files`, plus
+`crates/vitrallis-native`. These are native binaries, not manifest-v1 packages.
+The fixed native registry supplies stable IDs, same-generation executables,
+original embedded icons and diagnostics. The shell's existing process owner
+handles launch, resume, delivery and reaping. Build all members with
+`cargo build --workspace --locked`; plain `cargo run` still starts the shell.
+See [native architecture and controls](native-apps.md) before extending a bundled
+utility. The `apps/<slug>` package instructions below refer to the separate
+Vitrallis Apps repository, not these Rust workspace directories.
 
 ## Package layout
 

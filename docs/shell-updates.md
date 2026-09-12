@@ -12,7 +12,7 @@ No eligible published release, inaccessible/private releases, malformed metadata
 missing builds, and network errors produce a useful failure instead of claiming
 that the shell is current. No GitHub token is read or sent.
 
-Available updates show the executable download size in decimal MB (1 MB =
+Available updates show the complete bundle download size in decimal MB (1 MB =
 1,000,000 bytes), including on the install confirmation. During download, the
 progress bar and percentage follow actual bytes received, with downloaded/total
 MB shown beneath. The bar does not advance while the connection stalls. After
@@ -29,13 +29,11 @@ session environment so the PocketCHIP supervisor remains attached. The installed
 SHA-256 and filesystem safety checks run again before execution. Failed attempts
 show a diagnostic and retain the relaunch button for retry. Close running apps and
 wait for App Center/system operations to finish before relaunching; the action
-does not kill apps or interrupt an installation. Builds with the older inactive
-"Relaunch required" label must be closed and started through their existing
-launcher/session mechanism once.
+does not kill apps or interrupt an installation.
 
-Only the running shell executable is replaced. The updater does not enumerate,
-check, download or change installed applications, catalogues, preferences,
-session scripts, system packages or App Center contents.
+The updater replaces the shell and its three bundled native applications as one
+complete build generation. It does not change App Center packages, user documents,
+catalogs, preferences, session scripts or system packages.
 
 ## Platform and installation contract
 
@@ -53,32 +51,52 @@ Curl's configuration file is disabled, redirects require HTTPS, and requests
 have connection, total-time, low-speed and byte limits. Missing curl or TLS/network
 failures are visible. The transport does not execute release-provided commands.
 
-An install requires a regular, single-link shell executable in an installation
-directory with matching ownership and safe permissions. The user must be able
-to write that directory; read-only or administrator-owned installations need
-their administrator's normal installation process. No privilege escalation is
-attempted. The adapter resolves the running executable, rather than accepting a
-release-provided or environment-provided destination.
+An install requires a managed layout owned by the current user:
 
-A private `.vitrallis-shell-update` directory beside the executable contains:
+```text
+~/.local/share/vitrallis/
+  generations/<bundle-sha256>/
+    vitrallis
+    vitrallis-terminal
+    vitrallis-notepad
+    vitrallis-files
+  current -> generations/<active-bundle-sha256>
+  previous -> generations/<previous-bundle-sha256>
+  .vitrallis-update/lock
+```
 
-- `lock`: a persistent OS-locked file, released automatically on process exit;
-- `download`: a temporary, size-limited payload, removed after failures;
-- `previous`: the last working shell backup, retained for manual recovery.
+The running executable must resolve physically inside the active generation.
+All four files must be regular, single-link executables with matching ownership
+and safe modes; installation directories and pointers are validated. Read-only
+or administrator-owned installs need the administrator's installation process.
+No privilege escalation or release-provided destination is accepted.
 
-An interrupted payload is discarded at the next locked installation attempt.
-Concurrent updater instances are rejected. Symlink staging directories and unsafe
-ownership/permissions are rejected. Before replacement, the installer verifies
-exact download length, SHA-256, ELF architecture, and the executable's bounded
-`--version` startup probe (which also checks native loader/library compatibility).
-The staged file and backup are synced before an atomic rename over the installed
-shell. Directory sync follows the rename; if it fails, the UI explicitly reports
-that replacement happened but disk durability is uncertain. A failure before
-rename leaves the installed shell in place. The backup is retained even after
-success; an administrator can restore it with a same-filesystem staged copy and
-rename while the shell is stopped. Updater-owned temporary files are cleaned on
-ordinary failures, and stale downloads after abrupt process termination are
-cleaned on retry. The tiny lock file and backup intentionally remain.
+Installer and updater share `.vitrallis-update/lock`. The updater streams the
+bounded download there, verifies whole-bundle SHA-256 and exact length, extracts
+only the four fixed binary names into a private generation, checks each digest
+and ELF target, and runs each bounded `--version` probe. All versions must match.
+There are no archive paths, compression, executable install hooks or optional
+missing companion files. Download and temporary generation cleanup runs on
+failure and the next locked attempt after interruption.
+
+Only after all four binaries pass does the updater sync the generation, retain
+the previous pointer, and atomically rename the new `current` symlink. A failure
+before this final rename leaves the entire active build unchanged. A sync failure
+after the rename is explicitly reported as installed with uncertain durability.
+Running apps keep their old physical generation and locate companions there;
+relaunch starts the verified new generation. Previous generations are retained,
+not pruned while processes may still use them.
+
+For manual rollback, stop Vitrallis and its native apps, verify all four binaries
+under `previous`, and replace `current` atomically with that relative generation
+link. Do not copy individual binaries between generations. Retain the installation
+backups and markers until any interrupted helper/config transaction is repaired.
+There is no general shell uninstall command. Restore the saved device menu and
+shortcut, stop the session and apps, then remove only the owned `generations`,
+`current`, `previous`, `.vitrallis-update`, session/launch files and installation
+receipt. Preserve `apps/`, `app-center/`, installation backups and user documents:
+they may share the enclosing `~/.local/share/vitrallis` directory. Resolve any
+pending installation marker before removing its recovery information.
 
 Filesystem crash guarantees depend on the filesystem and storage honoring sync
 and atomic rename. Processes with the same account's full filesystem access are
@@ -101,14 +119,14 @@ its matching assets for review. Review/test the complete draft before publishing
 mark prerelease versions as prereleases. Change the workspace version only with
 explicit user permission. Tag and executable version must match Cargo metadata.
 
-Artifacts are raw executables (no archive extraction):
+Artifacts are complete, uncompressed Vitrallis bundles:
 
 ```
-vitrallis-<target-triple>-glibc2.36
-vitrallis-<target-triple>-glibc2.36.sha256
+vitrallis-<target-triple>-glibc2.36.vtrbundle
+vitrallis-<target-triple>-glibc2.36.vtrbundle.sha256
 ```
 
-The sidecar is exactly one SHA-256 line naming that executable. GitHub's asset
+The sidecar is exactly one SHA-256 line naming that bundle. GitHub's asset
 `sha256:` digest is accepted as well; if both are available they must agree.
 The updater refuses artifacts without either verification source. Only uploaded
 assets with an exact expected name, size and official repository download URL
@@ -116,11 +134,11 @@ are eligible; duplicate or incomplete assets are rejected.
 
 To add another supported architecture, build on a matching glibc 2.36/SDL2 2.26.5
 baseline, run the same validation, then use `scripts/package-shell-release.py`
-with its explicit `--target`, `--binary`, `--output` and `--tag` arguments. Packaging
-runs the built executable's `--version`, either natively or through an explicitly
+with its explicit `--target`, `--bin-dir`, `--output` and `--tag` arguments. Packaging
+runs every built executable's `--version`, either natively or through an explicitly
 provided local emulator executable such as `--runner /usr/bin/qemu-arm`. The
 runner is invoked directly without shell parsing. The existing ARM cross-build helper
-can supply the binary, but its image-matched libraries must satisfy this release
+can supply all four binaries, but its image-matched libraries must satisfy this release
 ABI contract. Never relabel a newer ABI build as glibc 2.36. Upload both files to
 the reviewed draft before publication. Additional architectures are opt-in and
 are never inferred from device names.
@@ -133,16 +151,14 @@ Settings tests cover explicit confirmation, cancellation and navigation.
 Protocol references: [GitHub releases API](https://docs.github.com/en/rest/releases/releases)
 and [curl options](https://curl.se/docs/manpage.html).
 
-## One-time transition from the original beta updater
+## Bundle format
 
-The original beta.1 and initially published beta.2 updater excluded every
-prerelease. Those installed executables cannot discover this correction through
-GitHub metadata alone. Install the refreshed beta.2 shell once using the existing
-[device installer](devices/pocketchip.md), then relaunch Vitrallis. Future newer
-beta versions are available through **More → Check for Updates**.
-
-The corrected ARM download is
-`vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36` and its matching `.sha256` file.
-The older `vitrallis-pocketchip-armv7-glibc2.36-sdl2.32.4` manual artifact is
-superseded. This correction keeps version `0.1.0-beta.2`; an older beta.2 binary
-also needs the one-time replacement because equal versions are not updates.
+`src/updater/bundle.rs`, the release packager and device installer share one fixed
+format: the 16 bytes `VITRALLIS-BUNDLE`, then four records in the order shell,
+Terminal, Notepad, Files. Each record contains an unsigned 64-bit little-endian
+size, 32 raw SHA-256 bytes, then that executable's bytes. Each executable is
+64 bytes–64 MiB; truncation, bad hashes, wrong target and trailing bytes fail.
+The maximum total is 256 MiB plus 176 header bytes. Names never come from input.
+There are no legacy raw-executable readers or migration paths. Install the current
+complete bundle with the current installer when replacing an obsolete pre-release
+layout; equal versions do not become self-updates.

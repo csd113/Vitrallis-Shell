@@ -23,6 +23,7 @@ pub fn demo_apps(executable: &Path) -> Vec<AppEntry> {
     ]
     .into_iter()
     .map(|(id, name, mode)| AppEntry {
+        source: crate::app::AppSource::Demo,
         id: id.into(),
         name: name.into(),
         icon: None,

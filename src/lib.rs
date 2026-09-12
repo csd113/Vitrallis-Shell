@@ -6,6 +6,7 @@ mod discovery;
 mod input;
 mod launcher;
 mod layout;
+mod native;
 mod navigation;
 mod platform;
 mod preferences;

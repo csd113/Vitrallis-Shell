@@ -84,6 +84,7 @@ fn parse_entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
     };
     // Validate untrusted fields before searching for executables, or launching.
     let mut app = AppEntry {
+        source: crate::app::AppSource::Device,
         id: stable_id(name, shell),
         name: name.into(),
         icon: Some(paths.asset(if icon.is_empty() {

@@ -68,6 +68,7 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
         crate::platform::pocketchip::recovery::integrate(&mut catalog, &home);
     }
     crate::app_center::integrate(&mut catalog);
+    crate::native::integrate(&mut catalog)?;
     if config.pocketchip {
         for app in &mut catalog.apps {
             crate::platform::pocketchip::PocketChip.prepare_app(app);
@@ -81,7 +82,7 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
 
 pub fn print(catalog: &Catalog) {
     let apps: Vec<_> = catalog.apps.iter().map(|app| serde_json::json!({
-        "id": app.id, "name": app.name, "icon": app.icon,
+        "id": app.id, "name": app.name, "icon": app.icon, "source": format!("{:?}",app.source),
         "runtime": app.manifest.runtime, "entry": app.manifest.entry,
         "args": app.manifest.args.iter().map(|s| s.to_string_lossy()).collect::<Vec<_>>(),
         "cwd": app.manifest.cwd, "environment_keys": app.manifest.env.keys().map(|s| s.to_string_lossy()).collect::<Vec<_>>(),

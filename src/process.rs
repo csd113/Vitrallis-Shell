@@ -48,6 +48,9 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
 
 pub trait Processes {
     fn start(&mut self, app: &AppEntry) -> Result<(), String>;
+    fn deliver(&mut self, _app: &AppEntry) -> Result<(), String> {
+        Ok(())
+    }
     fn waits_for_window(&self) -> bool {
         false
     }
@@ -111,6 +114,7 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
             // A window can close before the next scheduled child poll. Reap it
             // now so activation does not try to resume an already exited app.
             if self.members[index].1.poll()?.is_none() {
+                self.members[index].1.deliver(app)?;
                 self.members[index].1.focus()?;
                 self.active = Some(app.id.clone());
                 self.resume = Some(Resume {
@@ -234,14 +238,36 @@ pub struct NativeProcess {
     child: Option<Child>,
     window_hint: Option<crate::platform::AppWindow>,
     focus_result: Option<mpsc::Receiver<Result<FocusResult, String>>>,
+    native_socket: Option<std::path::PathBuf>,
 }
 impl Processes for NativeProcess {
-    fn waits_for_window(&self) -> bool {
-        std::env::var_os("VITRALLIS_SESSION").as_deref() == Some(std::ffi::OsStr::new("1"))
-            && !matches!(
-                self.window_hint,
-                Some(crate::platform::AppWindow::Calibration)
+    fn deliver(&mut self, app: &AppEntry) -> Result<(), String> {
+        if app.source == crate::app::AppSource::Native
+            && app.id == "io.vitrallis.notepad"
+            && !app.manifest.args.is_empty()
+        {
+            let path = app.manifest.args.get(1).ok_or("Missing native open path")?;
+            let broker = app
+                .manifest
+                .env
+                .get(std::ffi::OsStr::new(vitrallis_native::ipc::ENV))
+                .ok_or("Native request service is unavailable")?;
+            vitrallis_native::ipc::forward(
+                std::path::Path::new(broker),
+                std::path::Path::new(path),
             )
+            .map_err(|e| format!("Notepad cannot accept the file yet: {e}"))?;
+        }
+        Ok(())
+    }
+
+    fn waits_for_window(&self) -> bool {
+        self.native_socket.is_some()
+            || std::env::var_os("VITRALLIS_SESSION").as_deref() == Some(std::ffi::OsStr::new("1"))
+                && !matches!(
+                    self.window_hint,
+                    Some(crate::platform::AppWindow::Calibration)
+                )
     }
     fn focus(&mut self) -> Result<(), String> {
         let child = self.child.as_ref().ok_or("no running app")?;
@@ -250,8 +276,23 @@ impl Processes for NativeProcess {
         }
         let pid = child.id();
         let hint = self.window_hint;
+        let native = self.native_socket.clone();
         self.focus_result = Some(request_focus(move || {
-            let result = crate::platform::focus_application(pid, hint);
+            let result = native.map_or_else(
+                || crate::platform::focus_application(pid, hint),
+                |path| match vitrallis_native::ipc::focus(&path) {
+                    Ok(()) => Ok(FocusResult::Focused),
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                        ) =>
+                    {
+                        Ok(FocusResult::Missing)
+                    }
+                    Err(e) => Err(e.to_string()),
+                },
+            );
             eprintln!("level=info event=app_resume pid={pid} result={result:?}");
             result
         })?);
@@ -273,6 +314,8 @@ impl Processes for NativeProcess {
         if self.child.is_some() {
             return Err("a child is already running".into());
         }
+        self.native_socket = None;
+        self.focus_result = None;
         if let Some(reason) = &app.unavailable {
             return Err(format!("{}: {reason}", app.name));
         }
@@ -286,6 +329,28 @@ impl Processes for NativeProcess {
             app.manifest.cwd,
             app.manifest.env.keys().collect::<Vec<_>>()
         );
+        if app.source == crate::app::AppSource::Native
+            && let Some(native) = vitrallis_native::APPLICATIONS
+                .iter()
+                .find(|native| native.id == app.id)
+            && let Some(broker) = app
+                .manifest
+                .env
+                .get(std::ffi::OsStr::new(vitrallis_native::ipc::ENV))
+        {
+            let name = native
+                .executable
+                .strip_prefix("vitrallis-")
+                .ok_or("Invalid native executable identity")?;
+            let broker = std::path::Path::new(broker);
+            vitrallis_native::ipc::clear_inbox(broker, name).map_err(|e| e.to_string())?;
+            self.native_socket = Some(
+                broker
+                    .parent()
+                    .ok_or("Invalid native broker directory")?
+                    .join(name),
+            );
+        }
         let child = command(app)?
             .spawn()
             .map_err(|e| format!("{}: {e}", app.name))?;
@@ -412,6 +477,7 @@ mod tests {
     };
     fn app() -> AppEntry {
         AppEntry {
+            source: crate::app::AppSource::Demo,
             id: "test".into(),
             name: "Test".into(),
             icon: None,
@@ -503,6 +569,7 @@ mod tests {
             focus_result: Some(receive),
             child: None,
             window_hint: None,
+            native_socket: None,
         };
         assert_eq!(process.poll_focus()?, None);
         release.send(()).map_err(|error| error.to_string())?;
@@ -770,6 +837,7 @@ mod lifecycle_tests {
     use std::time::{Duration, Instant};
     fn fixture() -> AppEntry {
         AppEntry {
+            source: crate::app::AppSource::Demo,
             id: "cycles".into(),
             name: "Cycles".into(),
             icon: None,
@@ -878,6 +946,80 @@ mod lifecycle_tests {
         assert!(process.poll().is_err());
         assert_eq!(state.phase, Phase::Running);
         assert!(state.input(Action::Activate).is_none());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod native_tests {
+    use super::*;
+    use crate::app::{AppManifest, AppSource};
+    use std::os::unix::{ffi::OsStrExt, net::UnixDatagram};
+
+    #[test]
+    fn native_focus_and_notepad_delivery_preserve_the_owned_child()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let broker = vitrallis_native::ipc::Broker::new()?;
+        for native in vitrallis_native::APPLICATIONS {
+            let mut app = AppEntry {
+                id: native.id.into(),
+                name: native.name.into(),
+                source: AppSource::Native,
+                icon: None,
+                unavailable: None,
+                manifest: AppManifest {
+                    entry: "/bin/sh".into(),
+                    args: vec!["-c".into(), "exec sleep 30".into()],
+                    env: [(
+                        vitrallis_native::ipc::ENV.into(),
+                        broker.path.clone().into_os_string(),
+                    )]
+                    .into(),
+                    ..AppManifest::default()
+                },
+            };
+            let mut process = NativeProcess::default();
+            process.start(&app)?;
+            let pid = process.child.as_ref().ok_or("Missing owned child")?.id();
+            let socket =
+                UnixDatagram::bind(process.native_socket.as_ref().ok_or("No native inbox")?)?;
+            socket.set_read_timeout(Some(Duration::from_secs(3)))?;
+            process.focus()?;
+            let mut bytes = [0; 1024];
+            assert_eq!(socket.recv(&mut bytes)?, 0);
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                if let Some(result) = process.poll_focus()? {
+                    assert_eq!(result, FocusResult::Focused);
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    return Err("Native focus timed out".into());
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            if native.id == "io.vitrallis.notepad" {
+                let path = std::path::Path::new("/notes/a file with $ and ' characters");
+                app.manifest.args = vec!["--".into(), path.into()];
+                process.deliver(&app)?;
+                let count = socket.recv(&mut bytes)?;
+                assert_eq!(&bytes[..count], path.as_os_str().as_bytes());
+            }
+            assert_eq!(
+                process.child.as_ref().ok_or("Lost process ownership")?.id(),
+                pid
+            );
+            assert!(process.start(&app).is_err());
+            process.child.as_mut().ok_or("Missing child")?.kill()?;
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while process.poll()?.is_none() {
+                if Instant::now() >= deadline {
+                    return Err("Native child was not reaped".into());
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(process.child.is_none());
+        }
         Ok(())
     }
 }

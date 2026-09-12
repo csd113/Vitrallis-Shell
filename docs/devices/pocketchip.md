@@ -28,17 +28,24 @@ with the device. Do not use macOS SDL. Changing `VITRALLIS_ARM_GLIBC` requires
 validating the new target image; this Debian 13 result does not prove original
 Jessie compatibility.
 
-Copy the ARM binary and both `devices/pocketchip/install.py` and
+Package the four ARM binaries using `scripts/package-shell-release.py --bin-dir
+ target/armv7-unknown-linux-gnueabihf/release --target armv7-unknown-linux-gnueabihf
+ --runner /usr/bin/qemu-arm --output target/arm-release --tag v<VERSION>` on a
+Linux host with the matching ARM loader/SDL runtime (join these arguments on one
+command line). `<VERSION>` must be the unchanged workspace version. A reviewed
+release's `.vtrbundle` and checksum are also suitable. See [bundle packaging](../shell-updates.md).
+
+Copy the complete ARM `.vtrbundle` and both `devices/pocketchip/install.py` and
 `devices/pocketchip/vitrallis-session.py` to a staging directory on the
 PocketCHIP. Keep the two Python files together: the installer resolves its
 session helper beside its own file, independent of the caller's working
 directory. After closing a previous Vitrallis session, run as the normal user:
 
 ```sh
-python3 /absolute/path/to/staging/install.py /absolute/path/to/arm/vitrallis
+python3 /absolute/path/to/staging/install.py /absolute/path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle
 ```
 
-The installer checks the ELF architecture, validates the PocketHome menu and paths before mutation, refuses symlinks/unmanaged or edited installed files, preserves the menu file permissions, refuses edited desktop shortcuts and symlinked backup roots, preserves previous files under `~/.local/share/vitrallis-backups/`, and installs under `~/.local/share/vitrallis/`. It adds an app menu entry and `~/.local/share/applications/vitrallis.desktop`. It does not modify Awesome, greetd, X startup, kernel/input calibration, recovery services, system packages or Marshmallow's binary. The original user config was also copied off-device before testing.
+The installer checks every bundled ELF architecture, per-file checksum and bounded matching-version startup probe, validates the PocketHome menu and paths before mutation, refuses symlinks/unmanaged or edited installed files, preserves the menu file permissions, refuses edited desktop shortcuts and symlinked backup roots, preserves previous files under `~/.local/share/vitrallis-backups/`, and installs under `~/.local/share/vitrallis/`. It adds an app menu entry and `~/.local/share/applications/vitrallis.desktop`. It does not modify Awesome, greetd, X startup, kernel/input calibration, recovery services, system packages or Marshmallow's binary. The original user config was also copied off-device before testing.
 
 New directories are created without group/other write permission, including
 intermediate `.local` and `share` directories, even with `umask 002`. Existing
@@ -107,6 +114,25 @@ If later opting into startup, remove the marked optional block over serial befor
 
 See [the compatibility report](../compatibility-step3.md) for what was actually tested, including limits. These instructions do not establish cold-start or physical-key validation without recorded evidence.
 
+## Complete native build generations
+
+Terminal, Notepad and Files install together with the shell beneath
+`~/.local/share/vitrallis/generations/<bundle-sha256>/`. `current` selects the
+complete active build and `previous` retains the prior generation. The session
+helper checks the complete inventory before starting the physical generation's
+shell. Installation publishes `current` only after all binaries and helper/config
+writes succeed; `.installation-pending` blocks incomplete helper transactions.
+Installer and self-updater share `.vitrallis-update/lock`. Never update just one
+native executable. See [native controls](../native-apps.md) and
+[update/rollback behavior](../shell-updates.md).
+
+The native utilities have not been tested on physical PocketCHIP hardware in this
+change. Earlier hardware evidence describes the shell/device integration at the
+time of those reports. Native ARM execution, real screen readability, physical
+keyboard/touch, PTY commands, idle CPU/RAM, large-directory behavior and Home/
+resume still require explicit device validation. No device connection is needed
+for host tests or packaging.
+
 ## Existing preferences and settings
 
-Vitrallis reads `background` (six uppercase RGB hex digits or a PNG/BMP asset path), `showclock`, `timeformat` (`ampm`), and `cursor` from the PocketHome document. App order follows its Apps item order. Use Marshmallow's existing personalization controls or carefully edit that user document with a backup; Vitrallis refreshes it after app return, and rejects malformed refreshes while keeping the last valid catalogue. It does not overwrite Marshmallow's preferences. A configured `wifiCommand` supplies the Wi-Fi connection manager inside System Settings, using the same validated, shell-free command parser as app entries. The System Settings tile and footer open the same slider/control screen; F1 is unbound. Both touch and keypad use 10% steps, with live drag updates. PocketCHIP brightness maps its native levels 1–10 to 10–100%, keeping the screen lit at the minimum.
+Vitrallis reads `background` (six uppercase RGB hex digits or a PNG/BMP asset path), `showclock`, `timeformat` (`ampm`), and `cursor` from the PocketHome document. The three native utility tiles precede discovered device/App Center entries; device app order follows its Apps item order. Use Marshmallow's existing personalization controls or carefully edit that user document with a backup; Vitrallis refreshes it after app return, and rejects malformed refreshes while keeping the last valid catalogue. It does not overwrite Marshmallow's preferences. A configured `wifiCommand` supplies the Wi-Fi connection manager inside System Settings, using the same validated, shell-free command parser as app entries. The System Settings tile and footer open the same slider/control screen; F1 is unbound. Both touch and keypad use 10% steps, with live drag updates. PocketCHIP brightness maps its native levels 1–10 to 10–100%, keeping the screen lit at the minimum.

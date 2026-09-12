@@ -11,9 +11,19 @@ pub struct AppManifest {
     pub env: BTreeMap<OsString, OsString>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppSource {
+    Native,
+    AppCenter,
+    Device,
+    System,
+    Demo,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppEntry {
     pub id: String,
+    pub source: AppSource,
     pub name: String,
     pub icon: Option<PathBuf>,
     pub manifest: AppManifest,

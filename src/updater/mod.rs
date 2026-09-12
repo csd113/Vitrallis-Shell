@@ -1,4 +1,5 @@
 //! Shell-only self-update orchestration. No app discovery, configuration or manifests.
+pub mod bundle;
 mod release;
 mod transport;
 
@@ -254,17 +255,13 @@ fn install(
     if target.artifact() != release.name {
         return Err("Update platform changed; check again".into());
     }
-    let installation = crate::platform::update::Installation::current()?;
+    let mut installation = crate::platform::update::Installation::current()?;
     let mut file = installation.payload()?;
     let sha256 = download(transport, release, &mut file, progress)?;
     file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
-    let mut header = [0; 64];
-    file.read_exact(&mut header)
-        .map_err(|_| "Incomplete executable header")?;
-    target.verify_header(&header)?;
-    installation.ready(file, &release.version)?;
+    installation.ready(file, &release.version, target, sha256)?;
     let durable = installation.commit()?;
-    Ok((durable, installation.relaunch_target(sha256)))
+    Ok((durable, installation.relaunch_target()?))
 }
 #[cfg(not(unix))]
 fn install(

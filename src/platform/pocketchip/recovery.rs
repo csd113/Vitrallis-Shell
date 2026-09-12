@@ -10,6 +10,7 @@ pub fn integrate(catalog: &mut Catalog, home: &Path) {
         let launcher = home.join(".local/share/vitrallis/launch");
         catalog.apps.retain(|app| app.manifest.entry != launcher);
         catalog.apps.push(AppEntry {
+            source: crate::app::AppSource::System,
             id: "vitrallis-return-marshmallow".into(),
             name: "Marshmallow".into(),
             icon: None,

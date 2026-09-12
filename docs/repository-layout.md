@@ -9,10 +9,16 @@ devices/pocketchip/
   install.py                  Canonical user installer
   vitrallis-session.py         Awesome/systemd session and recovery
   run-pocketchip.sh            Launch the installed user session
+apps/{terminal,notepad,files}/  First-party Rust binary/library workspace packages
+crates/vitrallis-native/       Small SDL UI, document, browser, filesystem and IPC helpers
+assets/native/                Original SVG sources and embedded 128px PNG icons
 scripts/
+  package-shell-release.py    Complete four-binary bundle and checksum
+  package-source.py           Complete Cargo workspace source archive
   validate.sh                 Shared host validation
   build-pocketchip.sh         Host cross-build tooling for the target ABI
 src/
+  native.rs                   Built-in registry integration and supervised open requests
   config.rs                   CLI selection and filesystem conventions
   discovery/
     catalog.rs                Bounded catalog file loading and source precedence
@@ -54,7 +60,7 @@ from `discovery::pockethome::parse_catalog`. The latter understands PocketHome's
 Apps-page schema, JUCE command tokenization, stable device-menu IDs and display
 preferences. This is an integration boundary with the independent PocketCHIP OS.
 It is loaded by PocketCHIP mode or an explicit `--app-config`; desktop startup
-uses App Center's manifest discovery. `platform/pocketchip/recovery.rs` supplies
+combines the native registry with App Center's manifest discovery. `platform/pocketchip/recovery.rs` supplies
 the supervised session's return-to-Marshmallow tile.
 
 Follow [AGENTS.md](../AGENTS.md) when replacing an implementation. Current callers
@@ -88,5 +94,12 @@ out of Git.
 Native App Center lives in `src/app_center/`: strict catalog/manifest metadata,
 GitHub transport, source settings, runtime/process checks, transactional installer,
 discovery, and SDL screen state. `src/renderer/app_center.rs` renders its shared
-keyboard/touch target model. Runtime catalogs and app assets are fetched; no apps
-are compiled into the shell. See [App Center](app-center.md).
+keyboard/touch target model. Third-party catalogs and app assets are fetched.
+Bundled applications are separate executables resolved from the running shell's
+immutable build directory. See [native applications](native-apps.md) and
+[App Center](app-center.md).
+
+The root package alone is not a distributable source workspace. Use
+`python3 scripts/package-source.py --output target/vitrallis-source.tar.gz` to
+archive all Cargo-owned files, original workspace manifests and the shared lockfile.
+The source-package test verifies inclusion of every native member and icon.

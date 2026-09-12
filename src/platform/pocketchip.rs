@@ -565,6 +565,7 @@ pub fn timezone_app(zone: &str) -> Result<crate::app::AppEntry, String> {
     // LXTerminal parses --command with GLib shell quoting. Quote both arguments.
     let quote = |text: &str| format!("'{}'", text.replace('\'', "'\\''"));
     Ok(crate::app::AppEntry {
+        source: crate::app::AppSource::System,
         id: "vitrallis-timezone-authentication".into(),
         name: "Time zone authentication".into(),
         icon: None,

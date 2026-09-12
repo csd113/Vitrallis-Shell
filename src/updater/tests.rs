@@ -138,7 +138,10 @@ fn pocketchip_beta_selects_the_standard_arm_artifact_and_verifies_download()
 -> Result<(), Box<dyn std::error::Error>> {
     let arm = || Target::for_triple("armv7-unknown-linux-gnueabihf");
     let name = arm()?.artifact();
-    assert_eq!(name, "vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36");
+    assert_eq!(
+        name,
+        "vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle"
+    );
     let mut value = metadata("0.1.0-beta.2")?;
     value["prerelease"] = true.into();
     assert!(check(&mock(&[value.clone()])?, "0.1.0-beta.1", arm).is_err());

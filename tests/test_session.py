@@ -60,6 +60,25 @@ class Session(unittest.TestCase):
                     s.supervise(root)
                 awesome.assert_not_called()
 
+    def test_missing_native_companion_or_escaped_pointer_never_changes_home(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(s, 'awesome') as awesome:
+            root = Path(temp).resolve()
+            generation = root / 'generations' / ('a' * 64)
+            generation.mkdir(parents=True)
+            (root / 'current').symlink_to('generations/' + 'a' * 64)
+            for name in ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad'):
+                path = generation / name
+                path.write_text('#!/bin/sh\nexit 0\n')
+                path.chmod(0o755)
+            with self.assertRaisesRegex(RuntimeError, 'vitrallis-files'):
+                s.supervise(root)
+            awesome.assert_not_called()
+            (root / 'current').unlink()
+            (root / 'current').symlink_to('../../outside')
+            with self.assertRaisesRegex(RuntimeError, 'Invalid native build pointer'):
+                s.supervise(root)
+            awesome.assert_not_called()
+
     def test_run_resolves_binary_beside_the_session_script(self):
         with tempfile.TemporaryDirectory() as temp:
             script = Path(temp).resolve() / 'installed session with spaces/vitrallis-session.py'

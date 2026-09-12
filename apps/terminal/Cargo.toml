@@ -1,0 +1,17 @@
+[package]
+name = "vitrallis-terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Native Vitrallis PTY terminal"
+repository = "https://github.com/csd113/Vitrallis-Shell"
+license = "LicenseRef-Proprietary"
+keywords = ["embedded", "sdl2", "utilities"]
+categories = ["gui"]
+publish = false
+
+[dependencies]
+vitrallis-native.workspace = true
+sdl2.workspace = true
+libc.workspace = true
+vt100.workspace = true

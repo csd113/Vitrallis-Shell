@@ -1,0 +1,15 @@
+[package]
+name = "vitrallis-notepad"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Native Vitrallis plain text editor"
+repository = "https://github.com/csd113/Vitrallis-Shell"
+license = "LicenseRef-Proprietary"
+keywords = ["embedded", "sdl2", "utilities"]
+categories = ["gui"]
+publish = false
+
+[dependencies]
+vitrallis-native.workspace = true
+sdl2.workspace = true

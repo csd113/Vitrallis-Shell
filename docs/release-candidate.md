@@ -1,3 +1,6 @@
+> Historical candidate evidence below predates the native utilities. Current native
+> functionality and validation are recorded in [native applications](native-apps.md).
+
 # Vitrallis 0.1.0-beta2.5
 
 This prerelease standardizes App Center on catalog v1 and manifest v1 packages
@@ -81,8 +84,9 @@ and checks ARM startup and rendering under Cortex-A8 QEMU.
 # Vitrallis 0.1.0-beta2.1
 
 This prerelease adds the native Rust App Center for PocketCHIP OTA testing.
-Catalog manifests are fetched from GitHub at runtime. No applications, catalog
-manifests, or application artwork are bundled; app files and assets are fetched
+Third-party catalog manifests are fetched from GitHub at runtime. Terminal,
+Notepad and Files now ship as native workspace binaries with original icons;
+third-party app files and assets are fetched
 only when installing the associated app. Existing installed apps are preserved.
 
 The App Center includes repository management, verified sequential installations,
