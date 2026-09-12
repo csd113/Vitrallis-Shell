@@ -40,6 +40,26 @@ python3 /absolute/path/to/staging/install.py /absolute/path/to/arm/vitrallis
 
 The installer checks the ELF architecture, validates the PocketHome menu and paths before mutation, refuses symlinks/unmanaged or edited installed files, preserves the menu file permissions, refuses edited desktop shortcuts and symlinked backup roots, preserves previous files under `~/.local/share/vitrallis-backups/`, and installs under `~/.local/share/vitrallis/`. It adds an app menu entry and `~/.local/share/applications/vitrallis.desktop`. It does not modify Awesome, greetd, X startup, kernel/input calibration, recovery services, system packages or Marshmallow's binary. The original user config was also copied off-device before testing.
 
+New directories are created without group/other write permission, including
+intermediate `.local` and `share` directories, even with `umask 002`. Existing
+directory permissions are preserved. Older installer versions inherited the
+umask and could create mode `775` directories that the shell OTA updater refuses.
+If OTA reports unsafe installation-directory ownership/permissions, inspect the
+running executable and its parents before changing permissions:
+
+```sh
+id
+stat -c '%U:%G %a %n' "$HOME" "$HOME/.local" "$HOME/.local/share" \
+  "$HOME/.local/share/vitrallis" "$HOME/.local/share/vitrallis/vitrallis"
+```
+
+The installation directory and executable must have matching ownership, and
+neither may be group/other-writable. Ancestors must also meet the updater's
+[ownership and permission checks](../shell-updates.md). Repair only the confirmed
+incorrect paths; do not recursively change home-directory ownership or disable
+the updater's checks. This is a permissions repair and does not require replacing
+the running shell before retrying OTA.
+
 The original `scripts/install-pocketchip.py` entry point remains a forwarding
 shim. It locates the canonical installer in a source checkout. For standalone
 use, put `install.py` and `vitrallis-session.py` beside the downloaded

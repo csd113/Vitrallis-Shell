@@ -53,6 +53,21 @@ class Installer(unittest.TestCase):
         self.assertTrue((self.target / 'vitrallis').stat().st_mode & 0o111)
         self.assertEqual(self.config.stat().st_mode & 0o777, 0o600)
 
+    def test_group_writable_umask_does_not_make_new_ota_directories_unsafe(self):
+        previous = os.umask(0o002)
+        try:
+            self.install()
+        finally:
+            os.umask(previous)
+        for path in (self.home / '.local', self.home / '.local/share', self.target):
+            self.assertEqual(path.stat().st_mode & 0o777, 0o755)
+        self.assertEqual((self.target / 'vitrallis').stat().st_mode & 0o777, 0o755)
+
+    def test_existing_directory_permissions_are_preserved(self):
+        self.target.mkdir(parents=True, mode=0o700)
+        self.install()
+        self.assertEqual(self.target.stat().st_mode & 0o777, 0o700)
+
     def test_edited_desktop_shortcut_is_preserved(self):
         self.install()
         desktop = self.home / '.local/share/applications/vitrallis.desktop'

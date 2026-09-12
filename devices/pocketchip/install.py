@@ -36,9 +36,26 @@ def read_file(path, limit=2 * 1024 * 1024):
     return data
 
 
+def make_directories(path, mode=0o755):
+    # Path.mkdir(parents=True) creates intermediate directories with 0777
+    # masked by the caller's umask. With umask 002 that leaves OTA ancestors
+    # group-writable. Apply an explicit safe mode to every new directory;
+    # preserve existing directory permissions for the owner to review.
+    if path.is_symlink():
+        raise ValueError('Refusing symlink: ' + str(path))
+    if path.is_dir():
+        return
+    make_directories(path.parent)
+    try:
+        path.mkdir(mode=mode)
+    except FileExistsError:
+        if path.is_symlink() or not path.is_dir():
+            raise ValueError('Expected a directory: ' + str(path))
+
+
 def atomic(path, data, mode):
     safe(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    make_directories(path.parent)
     fd, temp = tempfile.mkstemp(prefix='.vitrallis-', dir=path.parent)
     try:
         with os.fdopen(fd, 'wb') as stream:
@@ -156,7 +173,8 @@ def install_locked(binary, source, home):
         previous[path] = (read_file(path, 64 * 1024 * 1024), stat.S_IMODE(path.stat().st_mode)) if path.exists() else None
     backup = home / '.local/share/vitrallis-backups' / str(time.time_ns())
     safe(backup / 'paths.json')
-    backup.mkdir(parents=True, mode=0o700)
+    make_directories(backup.parent)
+    backup.mkdir(mode=0o700)
     for index, (path, old) in enumerate(previous.items()):
         if old is not None:
             atomic(backup / str(index), old[0], 0o600)
