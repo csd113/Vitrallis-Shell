@@ -57,7 +57,7 @@ impl Worker {
         let worker_cancelled = Arc::clone(&cancelled);
         thread::Builder::new()
             .name("app-center".into())
-            .spawn(move || service(&loc, &commands, &updates, &worker_cancelled))
+            .spawn(move || service(&loc, &commands, &updates, &worker_cancelled, &network::Curl))
             .map_err(|e| e.to_string())?;
         Ok(Self {
             send,
@@ -71,6 +71,7 @@ fn service(
     commands: &Receiver<Command>,
     updates: &Sender<Update>,
     cancelled: &AtomicBool,
+    fetch: &impl network::Fetch,
 ) {
     let mut rows = Vec::new();
     let initial = Sources::load(&loc.sources);
@@ -79,12 +80,13 @@ fn service(
         let _ = updates.send(Update::Sources(sources.clone()));
     }
     let _ = updates.send(Update::Done(
-        initial.map(|_| "Ready. Selections are unchecked by default".into()),
+        initial.map(|_| "Choose Check to load available apps".into()),
         false,
     ));
     while let Ok(command) = commands.recv() {
         let mut changed = false;
-        let success = String::from(match &command {
+        let mut success = String::from(match &command {
+            Command::Save(_) => "Sources saved. Choose Check to load available apps",
             Command::Uninstall(_) => "App uninstalled. Other data kept; removed files backed up.",
             Command::Install(_) => "Installed; apps remain closed. Check again for current status",
             _ => "Ready. Selections are unchecked by default",
@@ -97,9 +99,17 @@ fn service(
                     let sources = Sources::load(&loc.sources)?;
                     expected_sources = Some(sources.clone());
                     let _ = updates.send(Update::Sources(sources.clone()));
-                    rows = check_all(loc, &sources, &network::Curl, |s| {
+                    rows = check_all(loc, &sources, fetch, |s| {
                         let _ = updates.send(Update::Progress(s));
                     });
+                    success = if rows.is_empty() {
+                        "Check finished: catalogs contain no apps".into()
+                    } else {
+                        format!(
+                            "Check finished: {} entries. Select an entry for details",
+                            rows.len()
+                        )
+                    };
                     let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
                 }
                 Command::Save(sources) => {
@@ -120,15 +130,8 @@ fn service(
                             errors.push("Check is no longer valid".into());
                             continue;
                         };
-                        let result = install_one(
-                            loc,
-                            &sources,
-                            row,
-                            commands,
-                            updates,
-                            cancelled,
-                            &network::Curl,
-                        );
+                        let result =
+                            install_one(loc, &sources, row, commands, updates, cancelled, fetch);
                         match result {
                             Ok(()) => changed = true,
                             Err(e) => errors.push(format!("{}: {e}", row.package.name)),

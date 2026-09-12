@@ -114,13 +114,75 @@ fn sources_normalize_persist_batch_and_keep_default() -> Result<(), String> {
     Ok(())
 }
 #[test]
+fn default_catalog_lists_both_apps_and_respects_installation_flags() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let origin = sources::Repository::parse(sources::DEFAULT)?;
+    let mut packages = metadata::catalog(
+        &origin,
+        include_bytes!("../../tests/fixtures/app-center/catalog.json"),
+    )?;
+    let mut fetch = transport(&packages[0], &Files::new())?;
+    replace_catalog(&mut fetch, &packages[0], &packages)?;
+
+    let rows = check_all(&loc, &Sources::default(), &fetch, |_| ());
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.package.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Bitcoin Dashboard", "Vitrallis Debug"]
+    );
+    assert!(rows.iter().all(|row| row.ready && row.package.installable));
+    assert_eq!(fetch.requests.borrow().len(), 3);
+    assert!(!loc.state.exists());
+
+    // Exercise the same worker messages consumed by the screen after Check.
+    let (send, commands) = mpsc::channel();
+    let (updates, receive) = mpsc::channel();
+    send.send(Command::Check).map_err(|e| e.to_string())?;
+    drop(send);
+    service(&loc, &commands, &updates, &AtomicBool::new(false), &fetch);
+    drop(updates);
+    let mut displayed_names = Vec::new();
+    let mut messages = Vec::new();
+    for update in receive {
+        match update {
+            Update::Rows(rows) => {
+                displayed_names = rows.into_iter().map(|row| row.package.name).collect();
+            }
+            Update::Done(result, _) => messages.push(result?),
+            _ => (),
+        }
+    }
+    assert_eq!(displayed_names, ["Bitcoin Dashboard", "Vitrallis Debug"]);
+    assert_eq!(
+        messages,
+        [
+            "Choose Check to load available apps",
+            "Check finished: 2 entries. Select an entry for details",
+        ]
+    );
+    for package in &mut packages {
+        package.installable = false;
+    }
+    replace_catalog(&mut fetch, &packages[0], &packages)?;
+    let disabled = check_all(&loc, &Sources::default(), &fetch, |_| ());
+    assert_eq!(disabled.len(), 2);
+    assert!(
+        disabled
+            .iter()
+            .all(|row| !row.ready && row.status.starts_with("Disabled:"))
+    );
+    Ok(())
+}
+
+#[test]
 fn actual_catalog_and_manifest_contracts_reject_malicious_metadata() -> Result<(), String> {
     let bytes = std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?;
     let origin = sources::Repository::parse(sources::DEFAULT)?;
     let p = metadata::catalog(&origin, &bytes)?;
     assert_eq!(p[0].directory, "apps/bitcoin-dashboard");
     assert_eq!(p[0].entry, "main.py");
-    assert!(!p[0].installable);
+    assert!(p[0].installable);
     assert!(metadata::json(br#"{"a":1,"a":2}"#).is_err());
     assert!(metadata::json(br#"{"nested":{"a":1,"a":2}}"#).is_err());
     for names in [
