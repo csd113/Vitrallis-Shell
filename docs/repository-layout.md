@@ -6,14 +6,16 @@ responsibilities. A matching screen size does not establish device support.
 
 ```text
 devices/pocketchip/
+  bootstrap.py                Bounded release download and verification
   install.py                  Canonical user installer
+  uninstall.py                Offline receipt-based removal and recovery
   vitrallis-session.py         Awesome/systemd session and recovery
   run-pocketchip.sh            Launch the installed user session
 apps/{terminal,notepad,files}/  First-party Rust binary/library workspace packages
 crates/vitrallis-native/       Small SDL UI, document, browser, filesystem and IPC helpers
 assets/native/                Original SVG sources and embedded 128px PNG icons
 scripts/
-  package-shell-release.py    Complete four-binary bundle and checksum
+  package-shell-release.py    Four-binary bundle, PocketCHIP helpers and checksums
   package-source.py           Complete Cargo workspace source archive
   validate.sh                 Shared host validation
   build-pocketchip.sh         Host cross-build tooling for the target ABI
@@ -34,7 +36,7 @@ src/
     pocketchip/
       display.rs              X timeout and time-zone settings
       recovery.rs             Marshmallow return-to-home catalog entry
-assets/system/                Shared embedded artwork and provenance
+assets/system/                Shared embedded artwork and asset guidance
 docs/devices/
   pocketchip.md               Installation, selection, and recovery
   pocketchip/                 Settings, Store, and device validation notes
@@ -51,8 +53,8 @@ generic mode supplies local time with hardware controls unavailable.
 A device's **installer**, recovery/session helper, and device-only templates
 belong in `devices/<device>/`, with setup and limitations in `docs/devices/`.
 PocketCHIP's `install.py` also contains its current rollback/repair logic;
-there is no general uninstall command. Keep its sibling
-`vitrallis-session.py` when staging or copying the installer. See the
+the installer and self-contained offline uninstaller share filesystem guards. Keep
+`install.py`, `uninstall.py` and `vitrallis-session.py` together when staging. See the
 [PocketCHIP guide](devices/pocketchip.md) for the payload and recovery instructions.
 
 `discovery::catalog::CatalogFile` handles bounded device-menu reads separately
@@ -63,7 +65,7 @@ It is loaded by PocketCHIP mode or an explicit `--app-config`; desktop startup
 combines the native registry with App Center's manifest discovery. `platform/pocketchip/recovery.rs` supplies
 the supervised session's return-to-Marshmallow tile.
 
-Follow [AGENTS.md](../AGENTS.md) when replacing an implementation. Current callers
+Follow [CONTRIBUTING.md](../CONTRIBUTING.md) when replacing an implementation. Current callers
 must use the replacement directly; superseded entry points and formats are removed.
 
 For a **display profile**, use the existing `src/config.rs` and `src/layout.rs`
@@ -85,9 +87,9 @@ use from another working directory, including paths with spaces. Runtime
 PocketHome asset lookup keeps its existing precedence; shared system icons are
 embedded from `assets/system/` at build time.
 
-Root Cargo/toolchain files and the original project reference retain their
-standard locations. Historical reports and `docs/evidence/` remain useful
-validation records. Build outputs, Python caches, local environment files, and
+Root Cargo/toolchain and contributor files retain standard locations. Design
+guidance lives in `docs/design.md`; consolidated historical observations and
+`docs/evidence/` retain useful validation records. Build outputs, Python caches, local environment files, and
 private keys are already ignored; keep device sysroots and local credentials
 out of Git.
 

@@ -1,92 +1,82 @@
 # Vitrallis Shell
 
-**0.1.0-beta2.5 release candidate — not production-ready.** Portable SDL2 launcher
-for embedded Linux, tested on a Debian 13 PocketCHIP with Marshmallow recovery.
-See [current application-contract validation](docs/app-center-validation.md),
-[toolchain/dependency policy](docs/dependencies.md),
-[app developer quickstart](docs/app-development.md) and
-[beta security model](docs/security.md). The [repository layout guide](docs/repository-layout.md)
-explains device adapters, installers, reusable display layouts, and shared tooling.
-The original project reference is a design document. The third-party package
-contract is manifest v1; a public Python SDK is not provided.
+**Small screens. Big possibilities.**
 
-Every installation includes native Rust/SDL2 Terminal, Notepad and Files, with original icons and offline operation. [Native controls, architecture and resource measurements](docs/native-apps.md) describe these utilities. App Center installs and discovers separately distributed manifest v1 applications. PocketCHIP mode also reads the device’s existing PocketHome/Marshmallow menu for system applications without modifying Marshmallow. It runs as a separate SDL2 launcher, with an optional supervised PocketCHIP launch target that preserves Marshmallow as the normal boot default.
+A compact Rust + SDL2 launcher for PocketCHIP and desktop Linux. Open a terminal, jot down a note, browse your files, and make a small screen feel useful again. Vitrallis runs alongside Marshmallow, with a way home when you need it.
 
-Build with Rust 1.91.1 (minimum 1.91), SDL2 development libraries, and pkg-config:
+[![Validate](https://github.com/csd113/Vitrallis-Shell/actions/workflows/validate.yml/badge.svg)](https://github.com/csd113/Vitrallis-Shell/actions/workflows/validate.yml) [![Releases](https://img.shields.io/github/v/release/csd113/Vitrallis-Shell?include_prereleases&label=release)](https://github.com/csd113/Vitrallis-Shell/releases)
+
+![Vitrallis at 480×272: Terminal, Notepad, Files and App Center, with Terminal selected](docs/images/shell-480x272.png)
+
+*Current desktop build rendered at 480×272; hardware status is unavailable.*
+
+- **Three native essentials:** Terminal with a real PTY, a text-editing Notepad, and Files for browsing and everyday file operations. All ship with the shell and work offline.
+- **Room to explore:** App Center checks GitHub catalogs and installs selected manifest packages, with source trust, checksums, and local-edit protection.
+- **Keys or touch:** visible selection and shared activation across native controls, with confirmations for destructive actions.
+- **PocketCHIP integration:** brightness, volume, status, Wi-Fi utility access, and a supervised session that restores Marshmallow's Home binding on exit.
+- **Whole-build updates:** System Settings updates the shell and all three native utilities together when a compatible newer release is available.
+
+## Install on PocketCHIP
+
+**Beta · publication pending.** This checkout prepares the command below. The currently published `v0.1.0-beta2.5` assets contain only a standalone shell; they cannot satisfy the four-binary installer. The bootstrap must be published on `main`, and a reviewed release must contain the complete bundle and matching helpers before this command can finish. See [release readiness](docs/releases.md).
+
+On a compatible device, open a terminal as your **normal desktop user**, save any Vitrallis work, close its session, and copy this entire line:
+
+```sh
+(set -eu; t=$(mktemp); trap 'rm -f "$t"' 0; trap 'exit 130' 1 2 15; curl -q -fSL --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 30 --max-filesize 262144 https://raw.githubusercontent.com/csd113/Vitrallis-Shell/main/devices/pocketchip/bootstrap.py -o "$t"; python3 "$t")
+```
+
+Requires Debian 12+ **armhf**, glibc 2.36+, SDL2 2.26.5+, Python 3.8+, HTTPS curl with CA certificates, PocketHome/Marshmallow, Awesome 4.x and a working systemd user session. The recorded device tests used Debian 13; the original Jessie image is unsupported. No Git, Rust compiler, build tools, or sudo are needed on the device. Missing runtime dependencies produce an error; the installer does not install system packages.
+
+The bootstrap includes published beta prereleases when choosing the newest compatible bundle. It verifies the bundle, checksums, and helpers from **one release**, then installs all four binaries under `~/.local/share/vitrallis/`. It adds a Marshmallow menu item and desktop shortcut, saves installation backups, and installs an offline uninstaller. Marshmallow stays the normal boot default. [Installation details, stable-only selection, and recovery](docs/devices/pocketchip.md).
+
+## First launch and controls
+
+Reload Marshmallow's Apps menu and choose **Vitrallis**, or run `~/.local/share/vitrallis/launch` from a terminal in the existing graphical session.
+
+| Action | Control |
+| --- | --- |
+| Select an app | Arrow keys |
+| Open or resume it | Enter, click, or tap |
+| Change page | Page Up / Page Down or header arrows |
+| Return from an app | Physical Home in the supervised PocketCHIP session |
+| Return to the original home | Select the Marshmallow tile |
+| Update the native build | System Settings → More → Check for Updates |
+
+Running apps remain open when you return Home. Save and close them before stopping or removing the session. Native utility menus and dialogs have visible keyboard focus; see [Terminal, Notepad and Files controls](docs/native-apps.md). App Center has [its own navigation and package guide](docs/app-center.md).
+
+## Compatibility and beta limits
+
+The shell's PocketCHIP integration has [recorded Debian 13 hardware evidence](docs/history/device-validation.md). Current native utilities and lifecycle changes have host tests; complete-bundle installation, removal, updates, physical input and native-app behavior still need fresh PocketCHIP validation. Emulation and desktop previews do not establish it.
+
+Linux release packaging targets x86-64 and ARMv7 with the ABI requirements above. macOS is a development host; Linux artifacts cannot install there. Other devices need a platform adapter and validation. A matching screen size alone is not support.
+
+Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Catalog availability and runtime dependencies belong to each publisher. Some packages are disabled by their publisher. Fonts do not provide full Unicode shaping; Bluetooth controls, a public Python SDK, and signed publisher packages are future work. See the [trust model](docs/security.md) and [design roadmap](docs/design.md).
+
+## Documentation and development
+
+Start with the [documentation index](docs/README.md), [PocketCHIP guide](docs/devices/pocketchip.md), or [app developer guide](docs/app-development.md).
+
+Host development uses the pinned Rust 1.91.1 toolchain (minimum 1.91), SDL2 development libraries, and pkg-config:
 
 ```sh
 cargo build --workspace --locked
 cargo run --locked
-# Preview an exported PocketHome configuration and its assets on a desktop:
-cargo run --locked -- --app-config /absolute/config.json --assets /absolute/assets --size 480x272
-# Print normalized entries and discovery diagnostics without opening a window:
-cargo run --locked -- --app-config /absolute/config.json --assets /absolute/assets --list-apps
-# Explicit, self-contained test fixtures:
-cargo run --locked -- --demo
-SDL_VIDEODRIVER=dummy cargo run --locked -- --smoke-test
+sh scripts/validate.sh
 ```
 
-`--pocketchip` selects the PocketCHIP system backend, fullscreen and a 480×272 default. Default desktop size is 800×480. `--size WIDTHxHEIGHT` changes the proportional layout independently of hardware selection. Keyboard, mouse, and touch handling uses the events delivered by SDL; dimensions do not select input capabilities. `--screenshot NEW.bmp` writes the initial frame and exits, refusing to overwrite an existing file.
+The workspace build includes all native utilities. [Contributor guidance](CONTRIBUTING.md) covers setup, focused changes, validation, and pull requests. Please use the [bug and feature forms](https://github.com/csd113/Vitrallis-Shell/issues/new/choose) for feedback and the [security reporting policy](SECURITY.md) for security concerns.
 
-PocketCHIP discovery first reads `~/.pocket-home/config.json`. Only when it is absent does it read the default asset configuration. Asset lookup checks `/usr/share/pocket-home/`, then `../../assets/` relative to the launcher's working directory, then that working directory. Explicit `--app-config` and `--assets` override these locations. A broken user config is reported rather than silently replaced or merged with defaults. All `Apps` pages contribute their `items` in configured order. A configured `wifiCommand` provides the System Settings tile; its Wi-Fi control opens that existing connection manager. Runtime discovery never writes source metadata; the explicit installer backs up and adds only a Vitrallis shortcut.
+**License:** the workspace is marked `LicenseRef-Proprietary` in [Cargo metadata](Cargo.toml). No open-source license grant is included in this repository. Ask the maintainer about reuse; dependency licenses remain their own.
 
-Arrows traverse the ordered 3×2 grid across page boundaries. Page Up/Down and the header arrows change pages, retaining the local slot when possible and clamping on a partial last page. Enter opens the selection. Mouse and touch require a matching press/release target. Repeated keydown and synthesized touch mouse events are ignored. Selection and page survive app exit. Escape/Home clear idle feedback. The supervised PocketCHIP session temporarily routes the physical Home key through Awesome; Enter/tapping the selected running app resumes its window.
+## Uninstall
 
-Home returns to the grid while owned apps keep running, marked with an asterisk. Selecting a running app resumes it; other tiles can launch another app. A reopen requested during process shutdown waits asynchronously for the old child to be reaped, then starts exactly one replacement. Window discovery retries for up to ten seconds; a missing window alone never triggers a duplicate process. Launching state blocks duplicate activation; a 400 ms input cooldown covers launch attempts. Returning focus or reaping the active app ends that cooldown so the first fresh tap is accepted. An exit discovered after the grid already regained focus does not discard a new touch unless the catalogue changed. Spawn failures show a dismissible error panel; Enter/tap dismisses before a retry. App output is inherited, and stderr logs discovery source, app identity, command, arguments, cwd, environment **keys**, PID, exit and cleanup diagnostics. Avoid placing secrets in command arguments. Unavailable apps retain their labels and icons with a warning mark; the catalogue refreshes on app exit when the grid is ready, and after native App Center installs while retaining selection.
-
-The launcher polls and reaps each owned child, retains selection, and requests foreground focus when the active app exits. Background app exits do not steal focus. Unix children receive their own process group. The PocketCHIP backend starts LXTerminal with `--no-remote` so Terminal and Wi-Fi windows do not share a server outside their own launch lifecycle. `/bin/kill` is an optional cleanup helper for remaining members of that group on direct-child exit or launcher shutdown; shutdown also kills/waits for the direct child. Close apps before closing Vitrallis to avoid losing their work. Apps reusing already-running external processes are outside direct-child ownership; the supervisor never claims ownership merely because a window has a matching title. The optional user systemd session supervises forced launcher termination and cleans the entire session cgroup, then restores Marshmallow. Manual direct invocation still lacks this outer supervisor.
-
-`AppEntry` contains a stable ID, source category, display name, icon and availability diagnostic. `AppManifest` contains optional runtime, absolute entry, arguments, cwd and per-child environment. An absent runtime executes the entry directly; a runtime receives the entry as its first argument. Existing PocketHome `name`/`icon`/`shell` entries need no changes. Device menu items accept only the OS `name`, `icon`, and `shell` fields; App Center applications use manifest packages; bundled utilities use the native workspace registry. Discovery preserves the pinned JUCE command tokenizer's double-quote grouping and literal argument quotes; it does not silently interpret shell syntax. Use an explicit shell command only when intended by metadata.
-
-`src/discovery/` separates catalog file loading and executable lookup from the PocketHome format adapter. Native App Center services live in `src/app_center/`; the PocketCHIP adapter preserves Marshmallow recovery. `src/config.rs` handles device-menu paths; App Center storage uses `$XDG_DATA_HOME/vitrallis/apps` (fallback `~/.local/share/vitrallis/apps`). App Center fetches the default catalog and custom GitHub catalogs at runtime, verifies packages, and installs only selected apps. Terminal, Notepad, and Files ship with original icons in every installation and work offline. These native utilities are independent of App Center; see the [native applications guide](docs/native-apps.md). See the [native App Center guide](docs/app-center.md) for sources, controls, trust, and recovery. See the [repository layout](docs/repository-layout.md), [App Center setup and safety](docs/devices/pocketchip/store.md), and [installation, selection and recovery](docs/devices/pocketchip.md).
-
-PNG and bounded uncompressed BMP icons are decoded once per changed catalogue, retaining aspect ratio. The existing `background` color/PNG/BMP wallpaper, `showclock`, `timeformat` and `cursor` preferences are read without mutation. Missing icons use Marshmallow's default asset when available; broken/unsupported images use a built-in placeholder and log a warning. SVG/JPEG parity and full Unicode/font parity remain future work. No reference artwork is bundled. `serde_json` handles metadata and `png` handles the actual shipped icons. Retained icon textures are capped at 16 MiB; excess artwork uses placeholders. [Dependency exceptions](docs/dependencies.md) explain why the required strict Clippy policy currently prevents the newest PNG/compression versions.
-
-See [current application-contract audit](docs/app-center-validation.md) for fresh validation and limits. [Candidate validation](docs/release-candidate.md) and the [Step 3 hardware compatibility report](docs/compatibility-step3.md) record earlier results. The [Step 2 report](docs/compatibility-step2.md) and earlier device notes are historical.
-
-The System Settings tile and footer open the same settings screen. Brightness and volume use 10% steps for touch and left/right keypad input; up/down selects a control. Dragging updates the control live, coalesces pending changes, and filters small touch jitter. PocketCHIP brightness spans 10–100%, matching its ten lit hardware levels; volume spans 0–100%. Wi-Fi opens the configured connection manager and returns to settings on exit. Restart/power-off require a separate confirmation with Cancel selected initially. Escape/Home or the footer returns. F1 has no binding. SDL Power opens the panel when delivered to the application; the supervised Awesome session supplies the physical Home binding.
-
-All native System Settings actions support keys and touch. Navigate down to the
-footer, use Left/Right to select its visible buttons, and press Enter. In the
-main settings footer, Left moves from **More** to **Back**; **More**, time-zone,
-and update pages also have selectable Back controls. Up returns to the controls
-above. In the time-zone list, Left/Right or Page Up/Down changes pages; Down from
-the last visible zone reaches Previous / Back / Next. Calibration can be launched
-or cancelled using keys, but measuring the touchscreen requires touching its
-targets. External utilities retain their own input controls.
-
-Choose **More → Check for Updates** to check and install verified **Vitrallis Shell** releases. Beta builds receive newer published prereleases and stable releases; stable builds receive stable releases. Installation requires separate confirmation and a relaunch; all bundled native utilities update with the shell; App Center packages and user files are untouched. See [shell updates, release artifacts, and recovery](docs/shell-updates.md).
-
-Choose **More** in System Settings for screen timeout (Never, 30 seconds, 1, 2, 5, 10, or 30 minutes), time-zone selection, and touchscreen calibration. The settings header shows the running build version. Time-zone changes use the device’s existing password authentication when required; calibration opens the installed PocketCHIP utility. See [settings controls and device validation](docs/devices/pocketchip/settings.md) for persistence, recovery, and current limits.
-
-App activation displays an “Opening…” panel until the app takes focus. Window discovery retries for up to 30 seconds; an app that remains alive without a window returns to the grid with a retry hint, retaining ownership and avoiding duplicate processes.
-
-The status bar shows the Wi-Fi IPv4 address (USB IPv4 fallback), plus a filled battery icon and percentage, a charging/external-power bolt, a Wi-Fi connection icon, and local time in the configured 12/24-hour format. Low battery is amber; off/disconnected/unavailable Wi-Fi has a slash. System Settings uses embedded GPT Image artwork with transparent edges. Unavailable battery reads `--`. Bluetooth is omitted because this image has no validated backend. Desktop mode exposes time and no hardware controls. PocketCHIP reads the kernel AXP20x battery sysfs interface when present (legacy images can use optional `i2cget`), plus installed `nmcli`, `amixer`, `systemctl` and backlight sysfs. It does not install hardware packages or permissions. All hardware work runs off the UI thread, full refresh is ten seconds after the preceding refresh, and commands have bounded output and a two-second timeout. See [system audit and validation](docs/devices/pocketchip/system-status.md) for exact mechanisms, assumptions, test evidence, and remaining parity gaps.
-
-## Development and release checks
-
-Follow the project-wide [engineering rules in AGENTS.md](AGENTS.md), including the pre-release policy requiring removal of superseded implementations. The current [application development guide](docs/app-development.md) defines the package integration.
-
-Install SDL2 development libraries and pkg-config on the development host. Rustup
-selects the checked-in Rust 1.91.1 toolchain automatically. Run:
+**Save your work first.** Removal stops only a verified Vitrallis-owned session, closes its apps, and restores temporary Home bindings. Run as the same normal user; no network connection is needed:
 
 ```sh
-sh scripts/validate.sh
-# Additional release dependency checks (optional host tools):
-cargo audit
-cargo outdated --workspace
-cargo tree --duplicates
+python3 "$HOME/.local/share/vitrallis/uninstall.py"
 ```
 
-The validation script runs strict Clippy, workspace and Python tests, release
-build, SDL smoke test and diff checks. See [ARM setup](docs/devices/pocketchip.md) for the
-separate image-matched cross build. Keep `Cargo.lock`; application release builds
-use `--locked`. No global Python dependency installation is necessary.
+Add `--dry-run` to inspect first. Add `--purge` to also remove the default Vitrallis preferences and session logs; deletion requires typing `PURGE`. Purge still keeps third-party apps, saves, App Center transaction backups, installation backups, user documents, system packages, and Marshmallow. Custom XDG locations and edited or unrecognized files are preserved. Matching shortcuts and the exact optional startup block are removed without restoring entire configuration files.
 
-The renderer, input and catalogue state are independent of platform controls.
-`platform::System` supplies typed status/control operations and `Platform` supplies
-window and process-launch policy. Add a new SBC backend there and select it at configuration entry;
-first supply missing-data behavior, mock tests, actual resolution/ABI validation,
-and a reversible session adapter. PocketCHIP's Awesome/Tk focus integration is
-specific to that session. A public SDK and general window identity protocol are
-future work, not an existing abstraction to depend on.
+A tiny update lock remains for safe concurrency. After successful removal the uninstaller itself is gone; running the line again reports a missing script and changes nothing. For interrupted or partial installs, retained paths, and the local recovery command, see [offline removal and recovery](docs/devices/pocketchip.md#offline-removal-and-recovery).

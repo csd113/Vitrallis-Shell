@@ -203,4 +203,4 @@ not embedded in production builds. See [the audit and validation report](app-cen
 Run `scripts/validate.sh` for formatting, strict Clippy, Rust/Python tests, release
 build, SDL dummy-driver smoke, script syntax checks, and diff whitespace checks.
 Use `cargo +1.91.0 check --locked --workspace --all-features` for the declared MSRV.
-Hardware interaction, deployment, and upstream changes are outside this work.
+These host checks do not exercise hardware or deploy packages.

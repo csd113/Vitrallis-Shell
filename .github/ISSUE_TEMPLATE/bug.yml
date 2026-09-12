@@ -1,0 +1,35 @@
+name: Bug report
+description: Help reproduce a problem in Vitrallis.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: "For sensitive security concerns, follow [SECURITY.md](https://github.com/csd113/Vitrallis-Shell/blob/main/SECURITY.md). Save work before trying session or removal steps."
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Include the output of vitrallis --version and whether this is a release or source build.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Device, OS version, architecture, SDL2 version if known, and installation method. Distinguish physical hardware from host/emulator testing.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps and expected behavior
+      description: Give the smallest repeatable example and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and evidence
+      description: Include relevant errors or screenshots. Remove credentials, private paths and personal data from logs.
+    validations:
+      required: true

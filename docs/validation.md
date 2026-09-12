@@ -1,44 +1,71 @@
-> Historical validation record; earlier application formats and version claims below are not current requirements. See [current application-contract validation](app-center-validation.md).
+# Validation
 
-> Historical Step 1 results. Current release evidence is in [release-candidate.md](release-candidate.md).
+Run the complete host gate from the repository root:
 
-# Step 1 validation report
+```sh
+sh scripts/validate.sh
+```
 
-Validated on the development Mac with Rust/Cargo 1.98.1 and SDL2 2.32.72. No PocketCHIP connection, USB enumeration, SSH, live-device commands, deployment, or startup changes occurred. No commit was created. The original `Vitrallis_Project_Reference.md` was preserved.
+It runs these required Rust checks, with the lockfile enforced where applicable:
 
-## Commands and outcomes
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -D clippy::nursery -D clippy::cargo
+cargo test --workspace --all-features
+```
 
-| Command/check | Result |
+It also checks the workspace, runs Python unittest discovery, builds all four
+release binaries, verifies their versions, exercises SDL dummy-driver smoke tests
+at 480×272 and 800×480, checks shell/Python syntax and local Markdown links, and
+runs `git diff --check`. Rust tests intentionally exclude the separately invoked
+online application-contract test. SDL2 development libraries and pkg-config are
+host prerequisites; native application/runtime tests use normal-user fixtures.
+
+## Installation and removal fixtures
+
+Python tests isolate filesystem writes in temporary HOME directories, including
+paths with spaces. They mock release downloads, runtime preflight and session
+commands where host execution cannot represent the ARM device. They exercise:
+
+- Complete bundle install, repeat install, removal and reinstall; all four binaries.
+- Failed/truncated/corrupt downloads, absent or duplicate helpers/checksums,
+  wrong ABI and version disagreement before publication.
+- Edited menu fields, shortcuts, helpers, generation content and retained data.
+- Symlinks, hardlinks, malformed receipts, escaping pointers and unsafe paths.
+- Shared locks, failed writes, interruption recovery and later-edit conflicts.
+- Dry runs, default data preservation and literal purge confirmation.
+- The literal README shell commands with mocked transport/session boundaries.
+- Release inventory and complete source-archive rebuild from another directory.
+
+A staged command test proves command sequencing, cleanup and local installation
+behavior. It does **not** prove that a compatible release exists at a live URL.
+[Release readiness](releases.md) records that separate publication blocker.
+
+## Visual and device scope
+
+The README image is a genuine current desktop-build SDL render at 480×272,
+exported through `--screenshot`. Preview its Markdown at desktop and narrow/mobile
+widths; the image must scale and command blocks must remain copyable.
+
+No current physical-device validation is implied. Before certifying PocketCHIP,
+check real input and readable controls, ABI/startup, PTY behavior, Home/resume,
+update/relaunch, offline removal/purge, rollback on actual storage, and endurance.
+[Native validation](native-validation.md) retains host/container measurements.
+[Historical hardware evidence](history/device-validation.md) retains earlier
+Marshmallow integration observations. The scopes must remain distinct.
+
+## Repository lifecycle validation — 2026-09-12
+
+| Check | Result and scope |
 | --- | --- |
-| `cargo fmt --all --check` | Passed after formatting the newly created Rust files with `cargo fmt --all` |
-| `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -D clippy::nursery -D clippy::cargo` | Passed, no lint suppressions added |
-| `cargo test --workspace --all-features` | Passed: 11 unit tests, 2 integration tests; no failures |
-| `cargo build --locked --workspace --all-features` | Passed, development-host binary |
-| `cargo build --locked --release --workspace --all-features` | Passed, optimized development-host binary |
-| `SDL_VIDEODRIVER=dummy cargo run -- --smoke-test` | Passed: SDL Enter event → spawn → successful exit/reap → rendered Ready state |
-| `cargo run -- --smoke-test` and `target/release/vitrallis --smoke-test` | Passed using a real native desktop window |
-| SDL dummy screenshots at 480×272, 800×480, 1024×600, 1280×720 | Generated successfully; 480, 800 and 1280 frames visually inspected for layout/text/focus |
-| `sh -n devices/pocketchip/run-pocketchip.sh` | Passed syntax check only; script not executed |
-| `git diff --check` | Passed; new untracked text files additionally checked using `git diff --no-index --check` against `/dev/null` |
-| Source review for unsafe blocks, `unwrap()`, `expect()`, lint suppressions | None in owned production code |
+| `sh scripts/validate.sh` | Passed on macOS: formatting, workspace check, strict Clippy, 183 Rust tests passed (one explicit online test ignored), 77 Python tests, four-binary release build/version checks, SDL smokes, shell/Python syntax, local links and diff whitespace. |
+| Python 3.8 / Linux | 64 installer, uninstaller, bootstrap and session tests passed in an isolated, network-disabled `python:3.8-slim` container as an unprivileged user. Runtime, network and session boundaries use fixtures. All four device scripts also passed Python 3.8 syntax parsing. |
+| Literal README commands | Passed install, reinstall, dry run and removal with temporary HOME and mocked transport/session/runtime probes. Failed initial downloads were not executed; temporary scripts were cleaned. Corrupt release assets prevented installation. |
+| Interruption and edit preservation | Passed rollback, later-edit conflict, committed cleanup retry, and actual local CLI recovery after the installer helper had already been removed. Dry runs leave no import caches in the installation. |
+| Release packaging | Nine fixture tests passed, including the four-binary inventory, exact helper bytes/checksums, ARM hard-float rejection and tag/version agreement. No new real ARM artifacts or remote CI result is claimed. |
+| Markdown and repository forms | All 26 maintained Markdown files passed local path/anchor checks. Both workflows and all three issue-template YAML files parsed. README HTML from GitHub's Markdown API was reviewed locally at 390px and 1100px widths; commands stayed copyable, the page did not overflow, and Uninstall was the final section. |
+| Live URLs | The bootstrap URL returned HTTP 404. Official release metadata confirmed published beta2.5 has standalone binaries only; public one-line installation remains blocked. No live installer was executed. |
 
-Unit tests cover malformed app data, duplicate/empty catalogs, invalid configuration, flat-grid navigation, launch guards/recovery, a mock platform profile, four display resolutions, touch/gap/boundary hit testing, input translation and repeated/synthetic event exclusion, bounded BMP headers, structured command arguments/cwd, failed spawn recovery, and a real child returning exit status 7 and being reaped. Integration tests execute the actual binary using SDL's dummy video backend, validate launch/exit logs and rendered BMP dimensions/content, and ensure screenshot output cannot overwrite an existing file.
-
-## Files created or changed
-
-- Changed: `README.md`.
-- Created foundation: `.gitignore`, `Cargo.toml`, `Cargo.lock`.
-- Created entry/core: `src/main.rs`, `src/lib.rs`, `src/app.rs`, `src/launcher.rs`, `src/navigation.rs`.
-- Created layout/input/rendering: `src/config.rs`, `src/layout.rs`, `src/input.rs`, `src/renderer.rs`, `src/ui.rs`.
-- Created lifecycle/platform: `src/process.rs`, `src/platform/mod.rs`, `src/platform/generic.rs`, `src/platform/pocketchip.rs`.
-- Created tests: `tests/desktop.rs` (unit tests are colocated with their modules).
-- Created documentation: `docs/marshmallow-step1.md`, `docs/devices/pocketchip/validation.md`, `docs/validation.md`.
-- Created future manual-use helper: `devices/pocketchip/run-pocketchip.sh`.
-
-Generated build output and final QA frames reside under ignored `target/`; temporary reference downloads and early QA frames are outside the repository. No copied third-party assets, device logs, or local configuration are included.
-
-## Limits of this evidence
-
-The project builds and runs on the development host. It has **not** been cross-linked or executed on ARM/PocketCHIP; no matching offline target sysroot was available. Rust 1.85 minimum compatibility is declared but was not independently tested. The real device's ABI/native library compatibility, six executable locations, application cwd/environment requirements, fullscreen stacking, physical Home key, touchscreen mapping and low-resource performance remain unverified.
-
-The Step 1 launcher tracks one direct foreground child; it does not provide cross-process singleton enforcement, running-window refocus, daemon/descendant supervision, authentication, default-session management, app discovery or full Marshmallow parity. Orderly shell exit terminates its direct child. The exact manual launch and later validation checklist are in [historical device validation](devices/pocketchip/validation.md).
+No physical device was connected. Version numbers and the dependency lockfile
+were unchanged. GitHub publication requires the separate review and authorization
+recorded in [release readiness](releases.md).

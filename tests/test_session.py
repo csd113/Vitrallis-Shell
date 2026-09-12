@@ -1,4 +1,5 @@
 import importlib.util
+import fcntl
 import os
 from pathlib import Path
 import shutil
@@ -87,6 +88,56 @@ class Session(unittest.TestCase):
                     patch.object(s, 'supervise', return_value=17) as supervise:
                 self.assertEqual(s.main(), 17)
                 supervise.assert_called_once_with(script.parent)
+
+    def test_stop_rechecks_identity_and_restores_bindings(self):
+        script = Path('/home/chip/.local/share/vitrallis/vitrallis-session.py')
+        with patch.object(s, 'owned_session', side_effect=[('12', '42'), ('12', '42'), None]), \
+                patch.object(s.subprocess, 'run') as run, patch.object(s, 'awesome') as awesome:
+            self.assertTrue(s.stop_owned(script))
+            self.assertEqual(run.call_args.args[0], ['/usr/bin/systemctl', '--user', 'stop', 'vitrallis-session.service'])
+            awesome.assert_called_once_with(s.RESTORE_HOOK)
+        with patch.object(s, 'owned_session', side_effect=[('12', '42'), ('12', '43')]), \
+                patch.object(s.subprocess, 'run') as run, self.assertRaisesRegex(ValueError, 'changed'):
+            s.stop_owned(script)
+        run.assert_not_called()
+        with patch.object(s, 'owned_session', return_value=('12', '42')), patch.object(s.subprocess, 'run') as run:
+            self.assertTrue(s.stop_owned(script, dry_run=True))
+            run.assert_not_called()
+
+    def test_launch_cannot_race_exclusive_update_or_removal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary).resolve()
+            stage = base / '.vitrallis-update'
+            stage.mkdir()
+            with (stage / 'lock').open('w') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                with patch.object(s.subprocess, 'run') as run, self.assertRaises(BlockingIOError):
+                    s.launch(base / 'vitrallis-session.py')
+                run.assert_not_called()
+            (stage / 'removal').mkdir()
+            with patch.object(s, 'awesome') as awesome, self.assertRaisesRegex(RuntimeError, 'removal'):
+                s.supervise(base)
+            awesome.assert_not_called()
+
+    def test_session_ownership_requires_exact_transient_unit_and_process(self):
+        script = Path('/home/chip/.local/share/vitrallis/vitrallis-session.py')
+        state = dict(LoadState='loaded', ActiveState='active', Transient='no', MainPID='23')
+        with patch.object(s, 'unit_state', return_value=state), self.assertRaisesRegex(ValueError, 'unrelated'):
+            s.owned_session(script)
+        state['Transient'] = 'yes'
+        with tempfile.TemporaryDirectory() as temporary:
+            proc = Path(temporary).resolve()
+            process = proc / '23'
+            process.mkdir()
+            (process / 'cmdline').write_bytes(b'/usr/bin/python3\0' + os.fsencode(script) + b'\0run\0')
+            (process / 'stat').write_text('23 (python3) ' + ' '.join(['0'] * 19 + ['42']))
+            with patch.object(s, 'unit_state', return_value=state), patch.object(s, 'Path', side_effect=lambda value: proc if value == '/proc' else Path(value)):
+                self.assertEqual(s.owned_session(script), ('23', '42'))
+                (process / 'cmdline').write_bytes(b'/usr/bin/python3\0unrelated.py\0')
+                with self.assertRaisesRegex(ValueError, 'not owned'):
+                    s.owned_session(script)
+        with patch.object(s, 'unit_state', return_value={'LoadState': 'not-found'}):
+            self.assertIsNone(s.owned_session(script))
 
     def test_run_wrapper_preserves_environment_arguments_cwd_and_exit_status(self):
         with tempfile.TemporaryDirectory() as temp:

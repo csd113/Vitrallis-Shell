@@ -68,7 +68,7 @@ class BuildPaths(unittest.TestCase):
 
 
 class SourcePackage(unittest.TestCase):
-    def test_archive_contains_installation_pair_and_embedded_assets(self):
+    def test_archive_contains_installation_helpers_and_embedded_assets(self):
         with tempfile.TemporaryDirectory(prefix='vitrallis source package ') as temp:
             output = Path(temp).resolve() / 'package output'
             result = subprocess.run([
@@ -82,6 +82,9 @@ class SourcePackage(unittest.TestCase):
                 'scripts/build-pocketchip.sh',
                 'scripts/validate.sh', 'devices/pocketchip/install.py',
                 'devices/pocketchip/vitrallis-session.py',
+                'devices/pocketchip/bootstrap.py', 'devices/pocketchip/uninstall.py',
+                'CONTRIBUTING.md', 'SECURITY.md', 'docs/images/shell-480x272.png',
+                'scripts/check-doc-links.py',
                 'devices/pocketchip/run-pocketchip.sh',
                 'docs/devices/pocketchip.md', 'docs/repository-layout.md',
                 'src/layout.rs', 'src/renderer.rs', 'src/renderer/system.rs',

@@ -1,0 +1,23 @@
+name: Feature request
+description: Describe a use case that Vitrallis could serve better.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: Describe the task, device, and current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed behavior
+      description: Explain the simplest useful change, including keyboard and touch use where relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and tradeoffs
+      description: Include existing workflows, dependencies, or compatibility considerations.

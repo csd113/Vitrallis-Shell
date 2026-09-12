@@ -1,12 +1,15 @@
 #!/usr/bin/python3
 """Reversible Awesome launch target, supervised by the existing user systemd."""
 import os
+import fcntl
 from pathlib import Path
 import selectors
+import resource
 import signal
 import stat
 import subprocess
 import sys
+import tempfile
 
 UNIT = 'vitrallis-session'
 LIMIT = 128 * 1024
@@ -80,6 +83,9 @@ def supervise(base):
     regular(marker)
     if marker.exists():
         raise RuntimeError('Vitrallis installation incomplete; rerun installer')
+    removal = base / '.vitrallis-update/removal'
+    if removal.exists() or removal.is_symlink():
+        raise RuntimeError('Vitrallis removal is pending; rerun the local uninstaller')
     current = base / 'current'
     if not current.is_symlink():
         raise RuntimeError('Missing native build pointer: ' + str(current))
@@ -144,18 +150,86 @@ def launch_command(script, env):
     return args
 
 
+def unit_state():
+    def limits():
+        resource.setrlimit(resource.RLIMIT_FSIZE, (4096, 4096))
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    with tempfile.TemporaryFile() as output:
+        subprocess.run(['/usr/bin/systemctl', '--user', 'show', UNIT + '.service',
+                        '--property=LoadState,ActiveState,Transient,MainPID'],
+                       stdin=subprocess.DEVNULL, stdout=output, stderr=output,
+                       timeout=8, check=True, preexec_fn=limits)
+        output.seek(0)
+        text = output.read(4097).decode('utf-8')
+    return dict(line.split('=', 1) for line in text.splitlines() if '=' in line)
+
+
+def owned_session(script):
+    state = unit_state()
+    if state.get('LoadState') == 'not-found':
+        return None
+    if state.get('Transient') != 'yes':
+        raise ValueError('Refusing to stop an unrelated vitrallis-session unit')
+    if state.get('ActiveState') in ('inactive', 'failed') and state.get('MainPID') == '0':
+        return None
+    pid = state.get('MainPID', '')
+    if not pid.isdigit() or int(pid) <= 1:
+        raise ValueError('Cannot establish Vitrallis session ownership')
+    proc = Path('/proc') / pid
+    expected = ['/usr/bin/python3', str(script), 'run']
+    with (proc / 'cmdline').open('rb') as stream:
+        command = stream.read(4097)
+    if (proc.stat().st_uid != os.getuid() or len(command) > 4096
+            or command != b'\0'.join(os.fsencode(a) for a in expected) + b'\0'):
+        raise ValueError('Refusing to stop a session not owned by this installation')
+    # Process start identity protects against a PID being reused between checks.
+    identity = (proc / 'stat').read_text().rsplit(')', 1)[1].split()[19]
+    return pid, identity
+
+
+def stop_owned(script, dry_run=False):
+    identity = owned_session(script)
+    if identity is None:
+        return False
+    if dry_run:
+        return True
+    if owned_session(script) != identity:
+        raise ValueError('Session changed before stop; retry')
+    subprocess.run(['/usr/bin/systemctl', '--user', 'stop', UNIT + '.service'],
+                   stdin=subprocess.DEVNULL, timeout=12, check=True)
+    if owned_session(script) is not None:
+        raise RuntimeError('Vitrallis session is still running')
+    # Also restore explicitly while the existing graphical session is available.
+    # The unit's ExecStopPost performs this restoration on crashes as well.
+    awesome(RESTORE_HOOK)
+    return True
+
+
+def launch(script):
+    lock_path = script.parent / '.vitrallis-update/lock'
+    regular(lock_path)
+    fd = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'r') as lock:
+        info = os.fstat(lock.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+            raise ValueError('Unsafe session/update lock')
+        fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        return subprocess.run(launch_command(script, os.environ), check=False).returncode
+
+
 def main():
     script = Path(__file__).resolve()
     action = sys.argv[1] if len(sys.argv) == 2 else 'launch' if len(sys.argv) == 1 else ''
     if action == 'launch':
-        return subprocess.run(launch_command(script, os.environ), check=False).returncode
+        return launch(script)
     if action == 'run':
         return supervise(script.parent)
     if action == 'restore':
         awesome(RESTORE_HOOK)
         return 0
     if action == 'stop':
-        return subprocess.run(['/usr/bin/systemctl', '--user', 'stop', UNIT], check=False).returncode
+        stop_owned(script)
+        return 0
     raise ValueError('Usage: vitrallis-session.py [launch|stop|run|restore]')
 
 

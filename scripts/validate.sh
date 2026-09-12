@@ -22,4 +22,5 @@ for script in scripts/*.sh devices/pocketchip/*.sh; do
     sh -n "$script"
 done
 python3 -m compileall -q scripts devices
+python3 scripts/check-doc-links.py
 git diff --check

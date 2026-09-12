@@ -91,12 +91,9 @@ For manual rollback, stop Vitrallis and its native apps, verify all four binarie
 under `previous`, and replace `current` atomically with that relative generation
 link. Do not copy individual binaries between generations. Retain the installation
 backups and markers until any interrupted helper/config transaction is repaired.
-There is no general shell uninstall command. Restore the saved device menu and
-shortcut, stop the session and apps, then remove only the owned `generations`,
-`current`, `previous`, `.vitrallis-update`, session/launch files and installation
-receipt. Preserve `apps/`, `app-center/`, installation backups and user documents:
-they may share the enclosing `~/.local/share/vitrallis` directory. Resolve any
-pending installation marker before removing its recovery information.
+Use the installed [offline uninstaller](devices/pocketchip.md#offline-removal-and-recovery)
+for receipt-based removal. It preserves apps, saves, backups and later edits,
+shares the update lock, and can recover a pending helper/removal transaction.
 
 Filesystem crash guarantees depend on the filesystem and storage honoring sync
 and atomic rename. Processes with the same account's full filesystem access are
@@ -113,11 +110,19 @@ SDL frame under QEMU with the Cortex-A8 CPU model. Both architectures are packag
 with the exact updater filenames and SHA-256 sidecars. No manual ARM rename or
 image-specific SDL download is required for each release.
 
-A `v*` tag creates a **draft** GitHub release. For an explicitly authorized rebuild
-of an existing version, successful builds return that release to draft and replace
-its matching assets for review. Review/test the complete draft before publishing;
-mark prerelease versions as prereleases. Change the workspace version only with
-explicit user permission. Tag and executable version must match Cargo metadata.
+A `v*` tag creates a **draft** GitHub release; prerelease tags are marked as
+prereleases. Existing drafts can receive reviewed artifacts, but the workflow
+refuses to modify an already published release. Review/test the complete draft
+before publishing. Change the workspace version only with explicit permission.
+Tag and executable version must match Cargo metadata. The current published
+standalone beta2.5 assets cannot satisfy the bundle contract; see
+[release readiness and blockers](releases.md).
+
+ARM packaging also emits `bootstrap.py`, `install.py`, `uninstall.py`,
+`vitrallis-session.py`, and a `.sha256` sidecar for each. Initial installation
+fetches the matching helpers from the same release as the bundle. Native OTA
+updates do not replace these helpers; rerun the reviewed bootstrap with the
+session closed when updating installation tooling.
 
 Artifacts are complete, uncompressed Vitrallis bundles:
 
@@ -139,7 +144,7 @@ runs every built executable's `--version`, either natively or through an explici
 provided local emulator executable such as `--runner /usr/bin/qemu-arm`. The
 runner is invoked directly without shell parsing. The existing ARM cross-build helper
 can supply all four binaries, but its image-matched libraries must satisfy this release
-ABI contract. Never relabel a newer ABI build as glibc 2.36. Upload both files to
+ABI contract. Never relabel a newer ABI build as glibc 2.36. Upload the bundle/checksum and, for ARMv7, all matching helper assets to
 the reviewed draft before publication. Additional architectures are opt-in and
 are never inferred from device names.
 

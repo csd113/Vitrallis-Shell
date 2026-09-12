@@ -1,93 +1,118 @@
-# Reversible PocketCHIP installation and session selection
+# PocketCHIP installation and recovery
 
-This integration targets the inspected Awesome 4.x session with a systemd user manager. Marshmallow remains installed, running as the fallback home, and the normal boot default. Vitrallis is an additional launch target, not a login manager or an OS replacement.
+Vitrallis is an additional launch target inside the existing Awesome session.
+Marshmallow remains installed and remains the normal boot default. The supported
+installer consumes one complete native bundle, never a source build or standalone
+shell executable. Start with the [README installation command](../../README.md#install-on-pocketchip).
 
-Build with the pinned Rust **1.91.1** toolchain. A Rust 1.91 MSRV, edition 2024
-and resolver 3 apply to every owned workspace package. Host builds require
-SDL2 development libraries and pkg-config. For PocketCHIP, use little-endian
-ARMv7 hard-float and the actual image's libc/SDL ABI:
+## Prerequisites and release selection
 
-```sh
-rustup target add --toolchain 1.91.1 armv7-unknown-linux-gnueabihf
-# Optional cross-linker on the development host, isolated from global tools:
-cargo +stable install cargo-zigbuild --version 0.23.4 --locked --root target/cross-tools
-# Install/use Zig 0.16.0 on the host; the script never installs device packages.
-PATH="$PWD/target/cross-tools/bin:$PATH" \
-  PKG_CONFIG_LIBDIR=/absolute/path/to/private-arm-libs/pkgconfig \
-  sh scripts/build-pocketchip.sh
+Use the normal desktop account on Debian 12+ ARMv7 hard-float (`armhf`), glibc
+2.36+, SDL2 2.26.5+, Python 3.8+, `/usr/bin/curl` with HTTPS and valid CA certificates,
+Awesome 4.x, PocketHome/Marshmallow and a systemd user manager. The recorded
+physical image was Debian 13; original Jessie is unsupported. Missing packages
+must be resolved separately by the device owner. Installation never uses sudo,
+apt, pip, Git, Rust, or device build tools.
+
+The README line executes Python only after curl exits successfully and removes
+the temporary download on success, failure, or a handled interruption. HTTPS-only
+redirects, connection and total deadlines, and a size limit constrain that first
+request. The bootstrap then reads at most five pages of 30 official GitHub
+releases, with bounded requests. It skips drafts and releases without the current
+ARM bundle, choosing the highest semantic version among compatible published
+releases, including beta prereleases. A release that advertises the bundle but
+has missing, duplicate, corrupt or mismatched helpers fails instead of falling
+back. It never reads or sends a GitHub token.
+
+For a reviewed local copy of `bootstrap.py`, `python3 bootstrap.py --stable`
+excludes prereleases. `--release` selects an exact published `v`-prefixed version;
+that release must have the current complete asset inventory. No raw-binary format
+fallback or automatic build exists. [Release readiness](../releases.md) records
+why published beta2.5 cannot satisfy this installer.
+
+The bundle, its SHA-256 sidecar, `install.py`, `uninstall.py`,
+`vitrallis-session.py`, and each helper's sidecar come from the **same release**.
+All sizes, exact download URLs and checksums are checked before helper execution.
+If GitHub supplies an asset digest it must agree. HTTPS GitHub publication is the
+trust root; these hashes are not independent signatures.
+
+## Installed files and repeat runs
+
+Save and close Vitrallis apps and stop the previous session before reinstalling.
+The installer checks the OS/ABI and runtime libraries, validates every bundled
+ARM EABI5 hard-float executable, verifies per-file hashes, and probes all four
+matching versions with bounded output and time. The bootstrap also binds that
+version to the selected release tag.
+
+```text
+~/.local/share/vitrallis/
+  generations/<bundle-sha256>/
+    vitrallis
+    vitrallis-terminal
+    vitrallis-notepad
+    vitrallis-files
+  current -> generations/<active-bundle-sha256>
+  previous -> generations/<previous-bundle-sha256>
+  launch
+  install.py
+  uninstall.py
+  vitrallis-session.py
+  installed.json
+  .vitrallis-update/lock
 ```
 
-The private `sdl2.pc` must declare `Name`, `Description`, `Version: 2.32.4`, and
-`Libs: -L/absolute/path/to/private-arm-libs -lSDL2`; the matching `libSDL2.so`
-comes from the inspected target image. Keep the copied native library outside
-Git. This release was cross-linked using Zig 0.16.0/cargo-zigbuild 0.23.4 and
-`armv7-unknown-linux-gnueabihf.2.36`. The script clears host `PKG_CONFIG_PATH` and
-requires the explicit private target directory. It cannot authenticate an
-arbitrary supplied sysroot: review the input and compare the library SHA-256
-with the device. Do not use macOS SDL. Changing `VITRALLIS_ARM_GLIBC` requires
-validating the new target image; this Debian 13 result does not prove original
-Jessie compatibility.
+The installer adds `~/.local/share/applications/vitrallis.desktop` and one matching
+Vitrallis entry to `~/.pocket-home/config.json`. It keeps unrelated menu content
+and file permissions. Helpers and shortcuts are bound to receipt hashes;
+local edits block replacement. Symlinks, hardlinks, special files, unsafe ownership
+and writable ancestors are rejected before protected writes. Newly created
+directories have explicit safe permissions even with a permissive umask.
 
-Package the four ARM binaries using `scripts/package-shell-release.py --bin-dir
- target/armv7-unknown-linux-gnueabihf/release --target armv7-unknown-linux-gnueabihf
- --runner /usr/bin/qemu-arm --output target/arm-release --tag v<VERSION>` on a
-Linux host with the matching ARM loader/SDL runtime (join these arguments on one
-command line). `<VERSION>` must be the unchanged workspace version. A reviewed
-release's `.vtrbundle` and checksum are also suitable. See [bundle packaging](../shell-updates.md).
+Installer, shell updater and uninstaller share `.vitrallis-update/lock`. Files
+are staged, synced and renamed; `current` is published only after the complete
+helper/menu transaction succeeds. Repeat installation of the same bundle is safe.
+The previous generation and `~/.local/share/vitrallis-backups/` are retained.
+An interrupted installation leaves `.installation-pending`; rerun the matching
+installer to repair it, or use the offline uninstaller. Do not remove markers to
+bypass validation. Edited files require review, not a forced overwrite.
 
-Copy the complete ARM `.vtrbundle` and both `devices/pocketchip/install.py` and
-`devices/pocketchip/vitrallis-session.py` to a staging directory on the
-PocketCHIP. Keep the two Python files together: the installer resolves its
-session helper beside its own file, independent of the caller's working
-directory. After closing a previous Vitrallis session, run as the normal user:
+No Awesome startup file, greetd/login configuration, calibration, system package,
+Marshmallow binary or recovery service is replaced. Root-owned or obsolete
+unreceipted installations require manual reconciliation; the installer does not
+infer ownership or migrate a superseded layout.
 
-```sh
-python3 /absolute/path/to/staging/install.py /absolute/path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle
-```
+## Launch and return home
 
-The installer checks every bundled ELF architecture, per-file checksum and bounded matching-version startup probe, validates the PocketHome menu and paths before mutation, refuses symlinks/unmanaged or edited installed files, preserves the menu file permissions, refuses edited desktop shortcuts and symlinked backup roots, preserves previous files under `~/.local/share/vitrallis-backups/`, and installs under `~/.local/share/vitrallis/`. It adds an app menu entry and `~/.local/share/applications/vitrallis.desktop`. It does not modify Awesome, greetd, X startup, kernel/input calibration, recovery services, system packages or Marshmallow's binary. The original user config was also copied off-device before testing.
-
-New directories are created without group/other write permission, including
-intermediate `.local` and `share` directories, even with `umask 002`. Existing
-directory permissions are preserved. Older installer versions inherited the
-umask and could create mode `775` directories that the shell OTA updater refuses.
-If OTA reports unsafe installation-directory ownership/permissions, inspect the
-running executable and its parents before changing permissions:
-
-```sh
-id
-stat -c '%U:%G %a %n' "$HOME" "$HOME/.local" "$HOME/.local/share" \
-  "$HOME/.local/share/vitrallis" "$HOME/.local/share/vitrallis/vitrallis"
-```
-
-The installation directory and executable must have matching ownership, and
-neither may be group/other-writable. Ancestors must also meet the updater's
-[ownership and permission checks](../shell-updates.md). Repair only the confirmed
-incorrect paths; do not recursively change home-directory ownership or disable
-the updater's checks. This is a permissions repair and does not require replacing
-the running shell before retrying OTA.
-
-## Select Vitrallis or Marshmallow
-
-From a terminal inside the existing graphical session:
+From a terminal in the existing graphical session:
 
 ```sh
 ~/.local/share/vitrallis/launch
 ```
 
-Or select **Vitrallis** from Marshmallow's Apps menu after its menu has been reloaded. No session/boot changes are necessary. The session launcher requires the existing `DISPLAY`, `XAUTHORITY` and `DBUS_SESSION_BUS_ADDRESS`; do not guess another user's X authorization. It starts a single transient user systemd unit and refuses a duplicate active session.
+The launcher requires that session's `DISPLAY`, `XAUTHORITY` and
+`DBUS_SESSION_BUS_ADDRESS`. It starts a transient `vitrallis-session.service` in
+the systemd user manager, with cgroup cleanup, a five-second stop timeout and no
+automatic restart. The physical Home/Power key temporarily routes through Awesome
+to Vitrallis. Selecting Marshmallow stops the owned session and restores the
+saved Home bindings. Two session logs are limited to 128 KiB each.
 
-The session temporarily routes Awesome's physical Home/Power key to Vitrallis. It leaves the remaining window-manager shortcuts intact. In Vitrallis, select **Marshmallow** to stop the Vitrallis unit and return to the original home. A terminal can always request the same operation:
+To stop from the installed helper:
 
 ```sh
-systemctl --user stop vitrallis-session.service
+python3 "$HOME/.local/share/vitrallis/vitrallis-session.py" stop
 ```
 
-The unit uses `KillMode=control-group`, a five-second stop timeout and no automatic restart. Descendants, including applications that leave the launcher's Unix process group, are still in its systemd cgroup. Closing the Vitrallis window, launcher crashes and supervisor crashes trigger cleanup and `ExecStopPost` restoration of the saved Awesome key bindings. Both home launchers remain separate processes. Two rotated session logs at `~/.local/share/vitrallis/session.log` and `.log.1` are bounded to 128 KiB each.
+Stopping verifies the transient user unit, exact supervisor argv, process owner
+and process start identity; it never kills processes by name. It checks that the
+unit stopped and restores the saved bindings. Launcher/supervisor crash recovery
+also uses systemd's `ExecStopPost` helper. Marshmallow and serial login remain
+available independently.
 
-## Optional reversible default
+## Optional startup
 
-The inspected device uses greetd's `initial_session` to run `startx`; it does not provide a graphical session chooser. Do not replace that working configuration. If you choose to start Vitrallis automatically later, first back up `~/.config/awesome/rc.lua` and append an explicitly marked block after its existing startup code:
+Automatic startup is opt-in and is not installed by the bootstrap. If wanted,
+back up `~/.config/awesome/rc.lua`, preserve its `launch_home_screen()` call, and
+append exactly this block after the existing startup code:
 
 ```lua
 -- BEGIN optional Vitrallis startup
@@ -98,41 +123,68 @@ end)
 -- END optional Vitrallis startup
 ```
 
-Keep the existing `launch_home_screen()` call. The five-second one-shot starts Vitrallis after the existing session starts; failure leaves Marshmallow available and does not relaunch indefinitely. To restore Marshmallow as the only default home, remove precisely that marked block (preserving unrelated later edits), or restore the backup only if no intervening edits need preserving. This opt-in block was not installed during the task; normal boot remains Marshmallow.
+It starts once after five seconds; failure leaves Marshmallow available. Removal
+recognizes precisely this block and preserves surrounding edits. A customized
+block is retained for manual review. Do not restore an entire old `rc.lua` over
+later changes.
 
-## Recovery
+## Offline removal and recovery
 
-If Vitrallis fails, stop its user unit as above; the independent Marshmallow process and USB serial login remain available. Over the inspected USB serial console, log in as the device user and run:
+The [README's final command](../../README.md#uninstall) invokes the locally
+installed uninstaller. `--dry-run` validates and lists actions without stopping
+sessions or writing files. Save work before actual removal: stopping the session
+closes its owned applications. An unrelated or unidentifiable session blocks
+removal; it is never stopped by broad name matching.
+
+Removal validates the receipt and pending-install receipt, fixed managed paths,
+generation contents and relative pointers under the update lock. Whole-generation
+hashes identify current and OTA-installed builds without following pointers into
+arbitrary directories. Missing/edited generations and modified helper/shortcut
+files are preserved. Reconcile an edited session helper before removal; it is
+not executed to stop the session. Matching menu items are removed from the current document;
+matching desktop/autostart shortcuts and the exact optional startup block are
+removed. Known incomplete download and binary staging files are removed under the same
+lock. Unknown contents are never recursively erased.
+
+A private removal journal stages each file by rename, records its identity and
+syncs changes. A write failure restores staged files conditionally; a later edit
+blocks conflicting rollback and retains recovery evidence. After interruption,
+rerun the installed uninstaller. Its normal entry stays in place until journal cleanup finishes, and it can run
+even after the installer helper has been removed. A local recovery copy is also kept inside
+the pending transaction:
 
 ```sh
-XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user stop vitrallis-session.service
+python3 "$HOME/.local/share/vitrallis/.vitrallis-update/removal/uninstall.py"
 ```
 
-If a window manager restart erased the temporary hook state, its original `rc.lua` still supplies Marshmallow's Home binding. Reboot starts the unchanged original session. If an installer was interrupted, rerun the same reviewed installer; do not remove `.installation-pending` just to launch incomplete files. Preserve `vitrallis-backups` until satisfied with the installation.
+The journal completes a committed removal or rolls back an unfinished one before
+retrying. Preserve it if recovery reports a conflict. A successful removal deletes
+the helpers themselves; the README command then reports a missing file if repeated,
+with no further changes. The retained lock inode prevents overlapping operations
+from accidentally locking different files. Reinstallation can reuse it.
 
-If later opting into startup, remove the marked optional block over serial before rebooting to recover. No change to boot media, recovery mode, autologin, calibration or SSH authentication policy is required.
+By default, removal keeps all user data, App Center packages and saves,
+`~/.local/share/vitrallis/app-center/` transaction backups,
+`~/.local/share/vitrallis-backups/`, custom XDG locations, system packages,
+Marshmallow and unrelated files. `--purge` additionally removes **only** these
+regular, safely owned files, after you type `PURGE`:
 
-See [the compatibility report](../compatibility-step3.md) for what was actually tested, including limits. These instructions do not establish cold-start or physical-key validation without recorded evidence.
+- `~/.local/share/vitrallis/session.log`
+- `~/.local/share/vitrallis/session.log.1`
+- `~/.config/vitrallis/screen-timeout`
+- `~/.config/vitrallis/app-center.json`
 
-## Complete native build generations
+It does not walk arbitrary data/config directories. Inspect the dry run before
+purging. App-specific removal remains in [App Center](../app-center.md).
 
-Terminal, Notepad and Files install together with the shell beneath
-`~/.local/share/vitrallis/generations/<bundle-sha256>/`. `current` selects the
-complete active build and `previous` retains the prior generation. The session
-helper checks the complete inventory before starting the physical generation's
-shell. Installation publishes `current` only after all binaries and helper/config
-writes succeed; `.installation-pending` blocks incomplete helper transactions.
-Installer and self-updater share `.vitrallis-update/lock`. Never update just one
-native executable. See [native controls](../native-apps.md) and
-[update/rollback behavior](../shell-updates.md).
+## Build and validation boundaries
 
-The native utilities have not been tested on physical PocketCHIP hardware in this
-change. Earlier hardware evidence describes the shell/device integration at the
-time of those reports. Native ARM execution, real screen readability, physical
-keyboard/touch, PTY commands, idle CPU/RAM, large-directory behavior and Home/
-resume still require explicit device validation. No device connection is needed
-for host tests or packaging.
+Development hosts can build against a reviewed ARM sysroot using
+`scripts/build-pocketchip.sh`; release CI builds against Debian 12's ABI baseline.
+See [release packaging](../shell-updates.md#publishing-compatible-releases).
+Never substitute host SDL libraries or relabel a newer ABI as glibc 2.36.
 
-## Existing preferences and settings
-
-Vitrallis reads `background` (six uppercase RGB hex digits or a PNG/BMP asset path), `showclock`, `timeformat` (`ampm`), and `cursor` from the PocketHome document. The three native utility tiles precede discovered device/App Center entries; device app order follows its Apps item order. Use Marshmallow's existing personalization controls or carefully edit that user document with a backup; Vitrallis refreshes it after app return, and rejects malformed refreshes while keeping the last valid catalogue. It does not overwrite Marshmallow's preferences. A configured `wifiCommand` supplies the Wi-Fi connection manager inside System Settings, using the same validated, shell-free command parser as app entries. The System Settings tile and footer open the same slider/control screen; F1 is unbound. Both touch and keypad use 10% steps, with live drag updates. PocketCHIP brightness maps its native levels 1–10 to 10–100%, keeping the screen lit at the minimum.
+[Historical device evidence](../history/device-validation.md) covers earlier shell
+integration. [Native validation](../native-validation.md) and the current
+[host test suite](../validation.md) have separate scopes. The current installer,
+uninstaller and native bundle still need fresh physical PocketCHIP validation.

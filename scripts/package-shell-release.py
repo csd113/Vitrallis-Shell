@@ -14,6 +14,7 @@ TARGETS = {'x86_64-unknown-linux-gnu': (2, 62),
 BINARIES = ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files')
 MAGIC = b'VITRALLIS-BUNDLE'
 ROOT = Path(__file__).resolve().parents[1]
+POCKETCHIP_HELPERS = ('bootstrap.py', 'install.py', 'uninstall.py', 'vitrallis-session.py')
 
 
 def inventory(directory, target, version, runner):
@@ -29,6 +30,12 @@ def inventory(directory, target, version, runner):
                     or int.from_bytes(header[16:18], 'little') not in (2, 3)
                     or int.from_bytes(header[18:20], 'little') != machine):
                 raise ValueError('Executable does not match the release target: ' + name)
+            if target == 'armv7-unknown-linux-gnueabihf':
+                _, _, elf_version, _, phoff, _, flags, ehsize, phsize, phcount = struct.unpack_from('<HHIIIIIHHH', header, 16)
+                if (elf_version != 1 or flags & 0xff000000 != 0x05000000 or flags & 0x600 != 0x400
+                        or ehsize != 52 or phsize != 32 or not phcount or phoff < 52
+                        or phoff + phsize * phcount > binary.stat().st_size):
+                    raise ValueError('Executable does not have the ARM EABI5 hard-float ABI: ' + name)
             stream.seek(0)
             digest = hashlib.file_digest(stream, 'sha256').digest()
         command = ([str(runner)] if runner is not None else []) + [str(binary.resolve()), '--version']
@@ -73,6 +80,15 @@ def package(directory, target, output, tag, runner=None):
         with artifact.open('rb') as stream:
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         (stage / (name + '.sha256')).write_text(digest + '  ' + name + '\n')
+        if target == 'armv7-unknown-linux-gnueabihf':
+            for helper in POCKETCHIP_HELPERS:
+                source = ROOT / 'devices/pocketchip' / helper
+                if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= 256 * 1024:
+                    raise ValueError('Missing or unsafe PocketCHIP helper: ' + helper)
+                data = source.read_bytes()
+                compile(data, str(source), 'exec')
+                (stage / helper).write_bytes(data)
+                (stage / (helper + '.sha256')).write_text(hashlib.sha256(data).hexdigest() + '  ' + helper + '\n')
         stage.rename(output)
 
 

@@ -98,8 +98,9 @@ class ShellRelease(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_arm_beta_uses_explicit_emulator_for_every_executable(self):
+        self.data = bytearray(84)
         self.data[:7] = b'\x7fELF\x01\x01\x01'
-        self.data[18:20] = b'\x28\x00'
+        struct.pack_into('<HHIIIIIHHH', self.data, 16, 2, 40, 1, 0, 52, 0, 0x05000400, 52, 32, 1)
         self.write_binaries()
         self.version('0.1.0-beta.2')
         runner = Path('/local emulator/qemu-arm')
@@ -107,6 +108,27 @@ class ShellRelease(unittest.TestCase):
         self.contents('vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle')
         for i, binary in enumerate(RELEASE.BINARIES, 1):
             self.assertEqual(self.check.call_args_list[i].args[0], [str(runner), str((self.binaries / binary).resolve()), '--version'])
+
+    def test_arm_release_contains_matching_helpers_and_sidecars(self):
+        self.data = bytearray(84)
+        self.data[:7] = b'\x7fELF\x01\x01\x01'
+        struct.pack_into('<HHIIIIIHHH', self.data, 16, 2, 40, 1, 0, 52, 0, 0x05000400, 52, 32, 1)
+        self.write_binaries()
+        self.package('armv7-unknown-linux-gnueabihf')
+        for name in RELEASE.POCKETCHIP_HELPERS:
+            data = (self.output / name).read_bytes()
+            self.assertEqual(data, (ROOT / 'devices/pocketchip' / name).read_bytes())
+            self.assertEqual((self.output / (name + '.sha256')).read_text(), hashlib.sha256(data).hexdigest() + '  ' + name + '\n')
+        self.assertEqual(len(list(self.output.iterdir())), 10)
+
+    def test_arm_soft_float_is_rejected(self):
+        self.data = bytearray(84)
+        self.data[:7] = b'\x7fELF\x01\x01\x01'
+        struct.pack_into('<HHIIIIIHHH', self.data, 16, 2, 40, 1, 0, 52, 0, 0x05000200, 52, 32, 1)
+        self.write_binaries()
+        with self.assertRaisesRegex(ValueError, 'hard-float'):
+            self.package('armv7-unknown-linux-gnueabihf')
+        self.assertFalse(self.output.exists())
 
     def test_existing_output_is_never_overwritten(self):
         self.output.mkdir()

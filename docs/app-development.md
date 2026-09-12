@@ -1,6 +1,6 @@
 # Application and package development
 
-Follow the [project engineering policy](../AGENTS.md). The current Vitrallis
+Follow the [project engineering policy](../CONTRIBUTING.md). The current Vitrallis
 third-party package contract is catalog v1 plus `app.toml` manifest v1 from
 [Vitrallis Apps](https://github.com/csd113/Vitrallis-Apps/blob/main/docs/creating-apps.md).
 App Center parses this contract directly in Rust; there is no public Python SDK.

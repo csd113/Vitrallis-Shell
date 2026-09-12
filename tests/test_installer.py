@@ -31,7 +31,11 @@ class Installer(unittest.TestCase):
         self.config.write_text(json.dumps(self.original))
         self.source = self.home / 'source with spaces'
         self.source.mkdir()
-        (self.source / 'vitrallis-session.py').write_text('# reviewed script')
+        for name in m.HELPERS:
+            shutil.copyfile(DEVICE / name, self.source / name)
+        self.addCleanup(patch.stopall)
+        patch.object(m, 'preflight').start()
+        patch.object(m, 'require_stopped_session').start()
         self.binary = self.source / 'binary'
         header = bytearray(84)
         header[:7] = b'\x7fELF\x01\x01\x01'
@@ -240,19 +244,40 @@ class Installer(unittest.TestCase):
         with self.assertRaises(subprocess.SubprocessError):
             m.verify_versions(generation)
 
+    def test_menu_edit_during_bundle_staging_is_not_overwritten(self):
+        def edit(*args):
+            config = json.loads(self.config.read_bytes())
+            config['late edit'] = 'preserve'
+            self.config.write_text(json.dumps(config))
+        with patch.object(m, 'verify_versions', side_effect=edit):
+            with self.assertRaisesRegex(ValueError, 'menu changed'):
+                m.install(self.binary, self.source, self.home)
+        self.assertEqual(json.loads(self.config.read_bytes())['late edit'], 'preserve')
+        self.assertFalse((self.target / 'current').exists())
+
+    def test_partial_desktop_commit_is_repairable_from_pending_receipt(self):
+        self.install()
+        receipt = json.loads((self.target / 'installed.json').read_bytes())
+        desktop = self.home / '.local/share/applications/vitrallis.desktop'
+        desktop.write_text('new staged shortcut')
+        pending = dict(receipt, desktop_sha256=hashlib.sha256(desktop.read_bytes()).hexdigest())
+        (self.target / '.installation-pending').write_text(json.dumps({'schema': 1, 'receipt': pending, 'hashes': {}}))
+        self.install()
+        self.assertTrue(desktop.read_text().startswith('[Desktop Entry]'))
+
     def run_installer(self, script, *args):
         # Exercise the actual CLI, but only against this fixture HOME. Mock the
         # normal-user check so the same staging test also works in root-run CI.
         runner = (
-            'import runpy, sys\n'
+            'import importlib.util, sys\n'
             'from unittest.mock import patch\n'
-            'sys.argv = sys.argv[1:]\n'
-            'def probe(args, **kwargs):\n'
-            '    from pathlib import Path\n'
-            '    kwargs["stdout"].write((Path(args[0]).name + " 0.1.0-test\\n").encode())\n'
-
-            "with patch('os.geteuid', return_value=1000), patch('subprocess.run', side_effect=probe):\n"
-            "    runpy.run_path(sys.argv[0], run_name='__main__')\n"
+            'from pathlib import Path\n'
+            'script, bundle = sys.argv[1:3]\n'
+            "spec = importlib.util.spec_from_file_location('device_install', script)\n"
+            'module = importlib.util.module_from_spec(spec)\n'
+            'spec.loader.exec_module(module)\n'
+            "with patch.object(module, 'preflight'), patch.object(module, 'require_stopped_session'), patch.object(module, 'verify_versions'):\n"
+            '    module.install(Path(bundle), Path(script).parent, Path.home())\n'
         )
         return subprocess.run(
             [sys.executable, '-c', runner, str(script), *args],
@@ -265,7 +290,7 @@ class Installer(unittest.TestCase):
         stage.mkdir()
         canonical = stage / 'devices/pocketchip' if layout == 'checkout' else stage
         canonical.mkdir(parents=True, exist_ok=True)
-        for name in ('install.py', 'vitrallis-session.py'):
+        for name in m.HELPERS:
             shutil.copyfile(DEVICE / name, canonical / name)
         entry = canonical / 'install.py'
         result = self.run_installer(entry, str(self.binary.relative_to(self.home)))
@@ -279,7 +304,7 @@ class Installer(unittest.TestCase):
     def test_checkout_installer_stages_from_unrelated_cwd_with_spaces(self):
         self.stage_and_install('checkout')
 
-    def test_canonical_pair_stages_from_unrelated_cwd_with_spaces(self):
+    def test_canonical_helpers_stage_from_unrelated_cwd_with_spaces(self):
         self.stage_and_install('canonical')
 
     def test_missing_adjacent_session_fails_before_installing_files(self):
@@ -292,6 +317,47 @@ class Installer(unittest.TestCase):
         self.assertIn('vitrallis-session.py', result.stderr)
         self.assertEqual(self.config.read_bytes(), before)
         self.assertFalse(self.target.exists())
+
+
+class Preflight(unittest.TestCase):
+    def setUp(self):
+        from unittest.mock import Mock
+        self.addCleanup(patch.stopall)
+        patch.object(m.os, 'geteuid', return_value=1000).start()
+        patch.object(m.platform, 'system', return_value='Linux').start()
+        patch.object(m.platform, 'machine', return_value='armv7l').start()
+        patch.object(m.Path, 'read_text', return_value='ID=debian\nVERSION_ID="13"\n').start()
+        patch.object(m.os, 'access', return_value=True).start()
+        self.answers = {'dpkg': 'armhf\n', 'getconf': 'glibc 2.36\n',
+                        'awesome': 'awesome v4.3\n', 'systemctl': 'inactive\n'}
+        patch.object(m.subprocess, 'check_output', side_effect=lambda args, **kwargs: self.answers[Path(args[0]).name]).start()
+        self.sdl = Mock()
+        def version(pointer):
+            pointer._obj.major, pointer._obj.minor, pointer._obj.patch = (2, 26, 5)
+        self.sdl.SDL_GetVersion.side_effect = version
+        patch.object(m.ctypes, 'CDLL', return_value=self.sdl).start()
+
+    def test_supported_runtime(self):
+        m.preflight()
+
+    def test_wrong_os_architecture_abi_or_runtime_is_rejected(self):
+        cases = [('dpkg', 'armel'), ('getconf', 'glibc 2.35'), ('awesome', 'awesome v3.5'), ('systemctl', 'active')]
+        for command, bad in cases:
+            original = self.answers[command]
+            self.answers[command] = bad
+            with self.assertRaises(ValueError):
+                m.preflight()
+            self.answers[command] = original
+        with patch.object(m.platform, 'machine', return_value='aarch64'), self.assertRaisesRegex(ValueError, '32-bit'):
+            m.preflight()
+        with patch.object(m.Path, 'read_text', return_value='ID=debian\nVERSION_ID=8'), self.assertRaisesRegex(ValueError, 'Jessie'):
+            m.preflight()
+        with patch.object(m.os, 'geteuid', return_value=0), self.assertRaisesRegex(ValueError, 'normal desktop user'):
+            m.preflight()
+        with patch.object(m.ctypes, 'CDLL', side_effect=OSError('missing SDL2')), self.assertRaises(OSError):
+            m.preflight()
+        with patch.object(m.os, 'access', return_value=False), self.assertRaisesRegex(ValueError, 'prerequisite'):
+            m.preflight()
 
 
 class BoundedInputs(unittest.TestCase):

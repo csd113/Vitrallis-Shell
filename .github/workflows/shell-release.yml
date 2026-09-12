@@ -59,10 +59,15 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" --draft
+            test "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = true || {
+              echo "Refusing to modify a published release. Review a separately authorized release version." >&2
+              exit 1
+            }
             gh release upload "$RELEASE_TAG" target/shell-release/* target/arm-shell-release/* --clobber
           else
-            gh release create "$RELEASE_TAG" target/shell-release/* target/arm-shell-release/* \
+            prerelease_flag=
+            case "$RELEASE_TAG" in *-*) prerelease_flag=--prerelease ;; esac
+            gh release create "$RELEASE_TAG" $prerelease_flag target/shell-release/* target/arm-shell-release/* \
               --verify-tag --draft --title "$RELEASE_TAG" \
-              --notes "Vitrallis Shell, Terminal, Notepad and Files bundles with SHA-256 checksums for Linux x86-64 and ARMv7. Requires glibc 2.36+ and SDL2 2.26.5+. Review and test artifacts before publishing."
+              --notes "Vitrallis Shell, Terminal, Notepad and Files bundles with SHA-256 checksums for Linux x86-64 and ARMv7, plus matching PocketCHIP installation/removal helpers. Requires glibc 2.36+ and SDL2 2.26.5+. Review and test artifacts before publishing."
           fi
