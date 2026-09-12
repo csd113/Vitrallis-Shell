@@ -28,6 +28,9 @@ class Uninstaller(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(u, 'session', return_value=False).start()
         self.install()
+        # Match the installed CLI's location so recovery copies fixture-owned
+        # helpers, including in containers whose checkout belongs to the host.
+        patch.object(u, '__file__', str(self.target / 'uninstall.py')).start()
 
     def remove(self, **kwargs):
         with contextlib.redirect_stdout(self.output):
