@@ -11,6 +11,7 @@ mod storage;
 #[cfg(test)]
 mod tests;
 mod transaction;
+mod uninstall;
 pub use discovery::integrate;
 pub use screen::Center;
 pub const TILE_ID: &str = "vitrallis-app-center";
@@ -30,6 +31,7 @@ enum Command {
     Check,
     Save(Sources),
     Install(Vec<String>),
+    Uninstall(String),
     Answer(u64, bool),
 }
 #[derive(Debug)]
@@ -38,7 +40,7 @@ enum Update {
     Progress(String),
     Rows(Vec<Row>),
     Confirm(u64, String),
-    Done(Result<(), String>, bool),
+    Done(Result<String, String>, bool),
 }
 #[derive(Debug)]
 struct Worker {
@@ -76,9 +78,17 @@ fn service(
     if let Ok(sources) = &initial {
         let _ = updates.send(Update::Sources(sources.clone()));
     }
-    let _ = updates.send(Update::Done(initial.map(|_| ()), false));
+    let _ = updates.send(Update::Done(
+        initial.map(|_| "Ready. Selections are unchecked by default".into()),
+        false,
+    ));
     while let Ok(command) = commands.recv() {
         let mut changed = false;
+        let success = match &command {
+            Command::Uninstall(_) => "App uninstalled. Other data kept; removed files backed up.",
+            Command::Install(_) => "Installed; apps remain closed. Check again for current status",
+            _ => "Ready. Selections are unchecked by default",
+        };
         let result = (|| {
             let _lock = storage::Lock::take(&loc.state)?;
             match command {
@@ -130,13 +140,29 @@ fn service(
                         return Err(errors.join("; "));
                     }
                 }
+                Command::Uninstall(key) => {
+                    let row = rows
+                        .iter_mut()
+                        .find(|r| r.package.key() == key)
+                        .ok_or("Check is no longer valid")?;
+                    let _ = updates.send(Update::Progress(format!(
+                        "Uninstalling {}",
+                        row.package.name
+                    )));
+                    changed = true;
+                    uninstall::uninstall(loc, &row.package)?;
+                    row.installed = "not installed".into();
+                    row.status = "not installed; other data retained".into();
+                    row.ready = row.package.installable;
+                    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+                }
                 Command::Answer(_, _) => {
                     return Err("No running-app confirmation is pending".into());
                 }
             }
             Ok(())
         })();
-        let _ = updates.send(Update::Done(result, changed));
+        let _ = updates.send(Update::Done(result.map(|()| success.into()), changed));
     }
 }
 fn install_one(
@@ -314,5 +340,17 @@ impl From<&Checked> for Row {
             ready: c.ready,
             download_size: c.package.files.iter().map(|f| f.size).sum(),
         }
+    }
+}
+
+impl Row {
+    fn can_uninstall(&self) -> bool {
+        !self.package.entry.is_empty()
+            && !matches!(self.installed.as_str(), "not installed" | "unavailable")
+    }
+    fn update_available(&self) -> bool {
+        self.package.installable
+            && metadata::version(&self.installed)
+                .is_ok_and(|installed| self.package.version > installed)
     }
 }

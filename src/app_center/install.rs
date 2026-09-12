@@ -171,7 +171,7 @@ fn legacy_label(loc: &Locations, bytes: &[u8]) -> Result<String, String> {
     }
     Ok("local / unknown".into())
 }
-fn receipt(root: &Path) -> Result<Option<Value>, String> {
+pub(super) fn receipt(root: &Path) -> Result<Option<Value>, String> {
     storage::read(
         &root.join(".vitrallis-receipt.json"),
         metadata::CATALOG_LIMIT,
@@ -226,7 +226,7 @@ pub fn prepare(loc: &Locations, p: Package, files: Files) -> Result<Planned, Str
         )?);
     }
     let menu_warning = support(loc, &p, &runtime, &files, &mut writes)?;
-    let changed = writes.iter().any(|w| w.before.as_ref() != Some(&w.after));
+    let changed = writes.iter().any(|w| w.before != w.after);
     let pending = storage::read(&root.join(".installation-pending"), 1024)?.is_some();
     let receipt = serde_json::json!({"version":p.version.to_string(),"origin":p.origin.as_str(),"repository":p.repository.as_str(),"commit":p.commit,"id":p.id,"files":source_files.iter().map(|(k,v)|(k.clone(),Value::String(storage::sha(v)))).collect::<serde_json::Map<_,_>>()});
     writes.push(transaction::plan(
@@ -359,7 +359,7 @@ fn support(
             writes.push(Write {
                 path: root.join(name),
                 before,
-                after,
+                after: Some(after),
             });
         }
     }
@@ -381,7 +381,7 @@ fn support(
         writes.push(Write {
             path: launch_path.clone(),
             before,
-            after,
+            after: Some(after),
         });
     }
     let icon = root.join(if p.legacy() {
@@ -414,7 +414,7 @@ fn support(
         writes.push(Write {
             path,
             before,
-            after,
+            after: Some(after),
         });
     }
     // PocketHome registration is optional: native discovery already exposes the app.
@@ -426,7 +426,7 @@ fn support(
     }
     Ok(None)
 }
-fn desktop_quote(path: &Path) -> Result<String, String> {
+pub(super) fn desktop_quote(path: &Path) -> Result<String, String> {
     let s = path.to_str().ok_or("Desktop path must be UTF-8")?;
     if s.contains('%') {
         return Err("Desktop paths containing % are unsupported".into());
@@ -480,16 +480,16 @@ fn menu(loc: &Locations, root: &Path, writes: &mut Vec<Write>) -> Result<(), Str
         );
         writes.push(Write {
             path,
-            after: FileData {
+            after: Some(FileData {
                 bytes: serde_json::to_vec_pretty(&v).map_err(|e| e.to_string())?,
                 mode: before.mode,
-            },
+            }),
             before: Some(before),
         });
     }
     Ok(())
 }
-fn journal_root(loc: &Locations, p: &Package) -> PathBuf {
+pub(super) fn journal_root(loc: &Locations, p: &Package) -> PathBuf {
     loc.state
         .join("transactions")
         .join(storage::sha(p.key().as_bytes()))

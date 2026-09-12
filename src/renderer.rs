@@ -248,11 +248,7 @@ fn render_launcher(
         &if state.settings.open {
             format!("SYSTEM SETTINGS {}", env!("CARGO_PKG_VERSION"))
         } else {
-            format!(
-                "VITRALLIS {}/{}",
-                state.page_start() / layout.tiles.len() + 1,
-                state.page_count()
-            )
+            "VITRALLIS".into()
         },
         Rect {
             h: layout.title.h / 2,
@@ -283,8 +279,9 @@ fn render_launcher(
         text(
             canvas,
             label,
-            // Keep the arrows in the title row above the system status.
+            // Inset the arrow glyphs while keeping the full header touch targets.
             Rect {
+                y: bounds.y + 4 * layout.text_scale,
                 h: bounds.h / 2,
                 ..bounds
             },

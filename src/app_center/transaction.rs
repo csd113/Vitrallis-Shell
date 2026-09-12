@@ -12,15 +12,34 @@ use std::{
 pub struct Write {
     pub path: PathBuf,
     pub before: Option<FileData>,
-    pub after: FileData,
+    pub after: Option<FileData>,
 }
 pub fn plan(path: PathBuf, after: FileData) -> Result<Write, String> {
     let before = storage::read(&path, metadata::BUNDLE_LIMIT)?;
     Ok(Write {
         path,
         before,
-        after,
+        after: Some(after),
     })
+}
+pub fn remove(path: PathBuf) -> Result<Write, String> {
+    let before = storage::read(&path, metadata::FILE_LIMIT)?;
+    Ok(Write {
+        path,
+        before,
+        after: None,
+    })
+}
+fn replace(path: &Path, data: Option<&FileData>) -> Result<(), String> {
+    if let Some(data) = data {
+        return storage::atomic(path, data);
+    }
+    storage::safe(path)?;
+    match std::fs::remove_file(path) {
+        Ok(()) => storage::sync(path.parent().ok_or("Missing parent")?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 fn value(data: Option<&FileData>) -> Value {
     data.map_or(
@@ -35,8 +54,10 @@ fn record(journal: &Path, writes: &[Write]) -> Result<(), String> {
         if let Some(old) = &w.before {
             storage::atomic(&journal.join(format!("{i}.before")), old)?;
         }
-        storage::atomic(&journal.join(format!("{i}.after")), &w.after)?;
-        rows.push(serde_json::json!({"path":w.path,"before":value(w.before.as_ref()),"after":value(Some(&w.after))}));
+        if let Some(after) = &w.after {
+            storage::atomic(&journal.join(format!("{i}.after")), after)?;
+        }
+        rows.push(serde_json::json!({"path":w.path,"before":value(w.before.as_ref()),"after":value(w.after.as_ref())}));
     }
     storage::atomic(
         &journal.join("pending.json"),
@@ -68,7 +89,7 @@ fn apply_with(
             if storage::read(&w.path, metadata::BUNDLE_LIMIT)? != w.before {
                 return Err("File changed during installation".into());
             }
-            storage::atomic(&w.path, &w.after)?;
+            replace(&w.path, w.after.as_ref())?;
             after_write(i)?;
         }
         Ok(())
@@ -91,7 +112,7 @@ fn rollback(writes: &[Write]) -> Result<(), String> {
         if current == w.before {
             continue;
         }
-        if current.as_ref() != Some(&w.after) {
+        if current != w.after {
             conflicts.push(w.path.display().to_string());
             continue;
         }
@@ -134,7 +155,11 @@ pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, 
         } else {
             Some(load_saved(journal, i, "before", &row["before"])?)
         };
-        let after = load_saved(journal, i, "after", &row["after"])?;
+        let after = if row["after"].is_null() {
+            None
+        } else {
+            Some(load_saved(journal, i, "after", &row["after"])?)
+        };
         writes.push(Write {
             path,
             before,
@@ -159,6 +184,44 @@ fn load_saved(journal: &Path, i: usize, kind: &str, v: &Value) -> Result<FileDat
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn deletions_roll_back_and_recover_without_overwriting_recreated_files() -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let first = root.join("first");
+        let second = root.join("second");
+        let journal = root.join("journal");
+        let old = FileData {
+            bytes: b"owned app file".to_vec(),
+            mode: 0o600,
+        };
+        storage::atomic(&first, &old)?;
+        storage::atomic(&second, &old)?;
+        let writes = vec![remove(first.clone())?, remove(second.clone())?];
+        assert!(apply_with(&journal, &writes, |_| Err("disk failure".into())).is_err());
+        assert_eq!(storage::read(&first, 100)?, Some(old.clone()));
+        assert_eq!(storage::read(&second, 100)?, Some(old.clone()));
+        assert!(recover(&journal, |p| p == first || p == second)?);
+        let crash = root.join("crash");
+        record(&crash, &writes)?;
+        replace(&first, None)?;
+        assert!(recover(&crash, |p| p == first || p == second)?);
+        assert_eq!(storage::read(&first, 100)?, Some(old));
+        let later = FileData {
+            bytes: b"new user file".to_vec(),
+            mode: 0o600,
+        };
+        assert!(
+            apply_with(&journal, &writes, |_| {
+                storage::atomic(&first, &later)?;
+                Err("interrupted".into())
+            })
+            .is_err()
+        );
+        assert_eq!(storage::read(&first, 100)?, Some(later));
+        assert!(recover(&journal, |p| p == first || p == second).is_err());
+        Ok(())
+    }
     #[test]
     fn rollback_preserves_later_edits_and_recovery_is_repeatable() -> Result<(), String> {
         let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;

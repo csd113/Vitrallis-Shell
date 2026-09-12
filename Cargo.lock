@@ -361,7 +361,7 @@ checksum = "579a42fc0b8e0c63b76519a339be31bed574929511fa53c1a3acae26eb258f29"
 
 [[package]]
 name = "vitrallis-shell"
-version = "0.1.0-beta2.2"
+version = "0.1.0-beta2.3"
 dependencies = [
  "font8x8",
  "png",

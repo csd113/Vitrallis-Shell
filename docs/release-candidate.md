@@ -1,3 +1,26 @@
+# Vitrallis 0.1.0-beta2.3
+
+This prerelease adds receipt-scoped app uninstall with confirmation, backups,
+rollback, and preservation of unrelated data. App rows and details show an
+**Update available** badge beside a newer version. It also includes the safe
+shell relaunch fix following shell installation.
+
+App Center no longer links to the shell updater; use **System Settings → More →
+Check for Updates**. A single readout below the paging/details buttons shows app
+status or the latest operation result. Up/down traverses and scrolls app rows;
+left/right cycles button rows, including Home → Previous → Details → Next so a
+long list cannot block access. The home title omits page numbers and its arrows
+are inset from the screen edge.
+
+Local validation passed `sh scripts/validate.sh`: full formatting, strict Clippy,
+142 unit and 6 integration tests, 40 Python tests, release build, SDL smoke,
+shell syntax, and diff checks. App Center and home screenshots were inspected
+at 480×272 and 800×480. Physical PocketCHIP validation of this release remains
+pending. Release CI builds Linux x86-64 and ARMv7 artifacts with SHA-256 sidecars
+and checks ARM startup and rendering under Cortex-A8 QEMU.
+
+---
+
 # Vitrallis 0.1.0-beta2.1
 
 This prerelease adds the native Rust App Center for PocketCHIP OTA testing.

@@ -1137,3 +1137,193 @@ fn bitcoin_device_inventory_omits_tests_but_rejects_unsafe_git_entries() -> Resu
     }
     Ok(())
 }
+
+#[test]
+fn uninstall_removes_receipted_app_and_shortcuts_preserving_data_and_other_apps()
+-> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    install::install(&loc, &install::prepare(&loc, p.clone(), files.clone())?)?;
+    let root = loc.root(&p);
+    let save = root.join("save.json");
+    storage::atomic(
+        &save,
+        &FileData {
+            bytes: b"user data".to_vec(),
+            mode: 0o600,
+        },
+    )?;
+    let other = loc.data.join("vitrallis/apps/org.example.other/main.py");
+    storage::atomic(
+        &other,
+        &FileData {
+            bytes: b"other app".to_vec(),
+            mode: 0o644,
+        },
+    )?;
+    let custom = loc.home.join("Desktop").join(format!("{}.desktop", p.id));
+    storage::atomic(
+        &custom,
+        &FileData {
+            bytes: b"[Desktop Entry]\nExec=/custom/program\n".to_vec(),
+            mode: 0o755,
+        },
+    )?;
+    uninstall::uninstall(&loc, &p)?;
+    for name in files.keys() {
+        assert!(!root.join(name).exists(), "{name}");
+    }
+    assert!(!root.join(".vitrallis-receipt.json").exists());
+    assert!(!root.join(".installation-pending").exists());
+    assert!(!loc.state.join("launchers").join(&p.id).exists());
+    assert!(
+        !loc.data
+            .join("applications")
+            .join(format!("{}.desktop", p.id))
+            .exists()
+    );
+    assert!(custom.is_file());
+    assert_eq!(
+        std::fs::read(save).map_err(|e| e.to_string())?,
+        b"user data"
+    );
+    assert_eq!(
+        std::fs::read(other).map_err(|e| e.to_string())?,
+        b"other app"
+    );
+    let checked = install::check(&loc, p.clone())?;
+    assert_eq!(checked.installed, "not installed");
+    assert!(checked.ready);
+    assert!(!Row::from(&checked).can_uninstall());
+    assert!(!Row::from(&checked).update_available());
+    install::install(&loc, &install::prepare(&loc, p, files)?)?;
+    assert!(root.join("main.py").is_file());
+    Ok(())
+}
+
+#[test]
+fn uninstall_bitcoin_removes_only_its_menu_entries_and_supports_legacy_installations()
+-> Result<(), String> {
+    for receipt in [true, false] {
+        let (_scratch, loc) = locations()?;
+        let p = metadata::catalog(
+            &sources::Repository::parse(sources::DEFAULT)?,
+            &std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?,
+        )?
+        .remove(0);
+        let files = Files::from([
+            (
+                "bitcoin.py".into(),
+                format!("VERSION = '{}'\n", p.version).into_bytes(),
+            ),
+            ("icon.png".into(), fixture_icon()?),
+        ]);
+        let p = inventory(p, &files);
+        let menu = loc.home.join(".pocket-home/config.json");
+        storage::atomic(&menu, &FileData { bytes: br#"{"pages":[{"name":"Apps","items":[{"name":"Bitcoin CAD","shell":"/another/launch"}]}]}"#.to_vec(), mode: 0o600 })?;
+        install::install(&loc, &install::prepare(&loc, p.clone(), files)?)?;
+        let root = loc.root(&p);
+        let mut contents = metadata::json(&std::fs::read(&menu).map_err(|e| e.to_string())?)?;
+        contents["pages"][0]["items"]
+            .as_array_mut()
+            .ok_or("items")?
+            .push(serde_json::json!({"name":"Bitcoin CAD","shell":root.join("launch")}));
+        storage::atomic(
+            &menu,
+            &FileData {
+                bytes: serde_json::to_vec(&contents).map_err(|e| e.to_string())?,
+                mode: 0o600,
+            },
+        )?;
+        if !receipt {
+            std::fs::remove_file(root.join(".vitrallis-receipt.json"))
+                .map_err(|e| e.to_string())?;
+        }
+        uninstall::uninstall(&loc, &p)?;
+        for name in ["bitcoin.py", "launch", "bitcoin.png", "icon.png"] {
+            assert!(!root.join(name).exists(), "{name}");
+        }
+        let menu = metadata::json(&std::fs::read(menu).map_err(|e| e.to_string())?)?;
+        assert_eq!(
+            menu["pages"][0]["items"],
+            serde_json::json!([{"name":"Bitcoin CAD","shell":"/another/launch"}])
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn uninstall_rejects_source_switches_unsafe_files_and_modified_receipts_before_removal()
+-> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    install::install(&loc, &install::prepare(&loc, p.clone(), files)?)?;
+    let root = loc.root(&p);
+    let mut foreign = p.clone();
+    foreign.origin = sources::Repository::parse("another/catalog")?;
+    assert!(uninstall::uninstall(&loc, &foreign).is_err());
+    let receipt = root.join(".vitrallis-receipt.json");
+    let before = storage::read(&receipt, metadata::CATALOG_LIMIT)?.ok_or("receipt")?;
+    let mut modified = metadata::json(&before.bytes)?;
+    modified["files"]["../outside"] = "0".repeat(64).into();
+    storage::atomic(
+        &receipt,
+        &FileData {
+            bytes: serde_json::to_vec(&modified).map_err(|e| e.to_string())?,
+            mode: before.mode,
+        },
+    )?;
+    assert!(uninstall::uninstall(&loc, &p).is_err());
+    storage::atomic(&receipt, &before)?;
+    let main = root.join("main.py");
+    let saved = storage::read(&main, metadata::FILE_LIMIT)?.ok_or("main")?;
+    std::fs::remove_file(&main).map_err(|e| e.to_string())?;
+    std::os::unix::fs::symlink(root.join("README.md"), &main).map_err(|e| e.to_string())?;
+    assert!(uninstall::uninstall(&loc, &p).is_err());
+    assert!(root.join("README.md").exists());
+    assert!(!root.join(".installation-pending").exists());
+    std::fs::remove_file(&main).map_err(|e| e.to_string())?;
+    storage::atomic(&main, &saved)?;
+    assert!(root.join("app.toml").is_file());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn uninstall_refuses_a_running_app_without_removing_files() -> Result<(), String> {
+    use running::Processes;
+    struct Child(std::process::Child);
+    impl Drop for Child {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let (_scratch, loc) = locations()?;
+    let (p, mut files) = generic()?;
+    files.insert("main.py".into(), b"import time\ntime.sleep(30)\n".to_vec());
+    let p = inventory(p, &files);
+    install::install(&loc, &install::prepare(&loc, p.clone(), files)?)?;
+    let entry = loc.root(&p).join("main.py");
+    let mut child = Child(
+        std::process::Command::new("/usr/bin/python3")
+            .arg(&entry)
+            .spawn()
+            .map_err(|e| e.to_string())?,
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    while running::Native.list(&entry)?.is_empty() {
+        if std::time::Instant::now() > deadline {
+            return Err("running app not detected".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let result = uninstall::uninstall(&loc, &p);
+    assert!(result.is_err_and(|e| e.contains("Close the app")));
+    assert!(child.0.try_wait().map_err(|e| e.to_string())?.is_none());
+    assert!(entry.is_file());
+    assert!(loc.root(&p).join(".vitrallis-receipt.json").is_file());
+    assert!(!loc.root(&p).join(".installation-pending").exists());
+    Ok(())
+}

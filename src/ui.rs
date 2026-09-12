@@ -209,11 +209,6 @@ fn refresh_app_center(
     *dirty |= state.app_center.poll();
     let artwork_changed =
         std::mem::take(&mut state.app_center.refresh) && reload_catalog(config, state);
-    if state.app_center.request.take().is_some() {
-        state.settings.show();
-        state.settings.page = crate::settings::Page::Updates;
-        *dirty = true;
-    }
     let input = sdl.video()?.text_input();
     if state.app_center.editing() && !input.is_active() {
         input.start();

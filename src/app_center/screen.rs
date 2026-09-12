@@ -19,7 +19,6 @@ pub enum Target {
     Check,
     Install,
     Sources,
-    Shell,
     Home,
     Row(usize),
     Previous,
@@ -33,6 +32,7 @@ pub enum Target {
     Delete,
     Clear,
     Details,
+    Uninstall,
     Approve,
     Confirm(bool),
 }
@@ -42,10 +42,12 @@ enum Confirmation {
     Publisher(usize),
     Trust(usize),
     Remove(usize),
+    Uninstall(usize),
 }
-#[derive(Debug)]
-pub enum Destination {
-    ShellUpdates,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Readout {
+    Status,
+    Selection,
 }
 #[derive(Debug)]
 pub struct Center {
@@ -54,7 +56,7 @@ pub struct Center {
     pub busy: bool,
     download_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub refresh: bool,
-    pub request: Option<Destination>,
+    readout: Readout,
     pub selected: usize,
     pub text: String,
     page: Page,
@@ -76,7 +78,7 @@ impl Default for Center {
             busy: false,
             download_cancel: None,
             refresh: false,
-            request: None,
+            readout: Readout::Status,
             selected: 0,
             text: String::new(),
             page: Page::Apps,
@@ -119,7 +121,10 @@ impl Center {
                     self.row = self.row.min(self.rows.len().saturating_sub(1));
                     self.selected = 0;
                 }
-                Update::Progress(s) => self.message = s,
+                Update::Progress(s) => {
+                    self.message = s;
+                    self.readout = Readout::Status;
+                }
                 Update::Confirm(id, s) if !self.open => {
                     self.send(Command::Answer(id, false));
                     self.message = s;
@@ -134,23 +139,15 @@ impl Center {
                     self.download_cancel = None;
                     self.confirmation = None;
                     self.refresh |= changed;
-                    self.message = result.map_or_else(
-                        |e| e,
-                        |()| {
-                            if changed {
-                                "Installed; apps remain closed. Check again for current status"
-                                    .into()
-                            } else {
-                                "Ready. Selections are unchecked by default".into()
-                            }
-                        },
-                    );
+                    self.message = result.unwrap_or_else(|e| e);
+                    self.readout = Readout::Status;
                 }
             }
         }
         changed
     }
     fn send(&mut self, command: Command) {
+        self.readout = Readout::Status;
         if let Some(w) = &self.worker {
             if matches!(command, Command::Install(_)) {
                 self.download_cancel = Some(std::sync::Arc::clone(&w.cancelled));
@@ -192,12 +189,15 @@ impl Center {
         if let Some(c) = &self.confirmation {
             return match c {
             Confirmation::Running(_, s)=>s.clone(),
+            Confirmation::Uninstall(i)=>self.rows.get(*i).map_or_else(String::new, |r| format!("Uninstall {}? App files and launchers will be removed and backed up. Other files will be kept. Close the app first.", r.package.name)),
             Confirmation::Publisher(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Duplicate app ID: {}. Explicitly select publisher {}?",r.package.id,r.package.origin.as_str())),
             Confirmation::Trust(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Trust {} to supply executable app files for catalog {}? Apps are not sandboxed. Check again after approval.",r.package.repository.as_str(),r.package.origin.as_str())),
             Confirmation::Remove(i)=>format!("Remove {}? Installed apps and saves remain.",self.sources.catalogs[*i].as_str()),
         };
         }
-        if self.busy {
+        if self.busy
+            || (self.readout == Readout::Status && matches!(self.page, Page::Apps | Page::Sources))
+        {
             return self.message.clone();
         }
         if self.page == Page::Edit {
@@ -207,7 +207,7 @@ impl Center {
             );
         }
         if self.page == Page::Details {
-            return self.rows.get(self.row).map_or_else(||self.message.clone(),|r|format!("{}\nID: {}\nCatalog: {}\nSource: {}\nInstalled: {} Latest: {}\nDownload: {} bytes\n{}\n{}\nRequirements: {}. Apps are not sandboxed.",r.package.name,r.package.id,r.package.origin.as_str(),r.package.repository.as_str(),r.installed,r.package.version,r.download_size,r.status,r.package.notes,r.package.permissions));
+            return self.rows.get(self.row).map_or_else(||self.message.clone(),|r|format!("{}\nID: {}\nCatalog: {}\nSource: {}\nInstalled: {} Latest: {}{}\nDownload: {} bytes\n{}\n{}\nRequirements: {}. Apps are not sandboxed.",r.package.name,r.package.id,r.package.origin.as_str(),r.package.repository.as_str(),r.installed,r.package.version,if r.update_available() { " [Update available]" } else { "" },r.download_size,r.status,r.package.notes,r.package.permissions));
         }
         if self.page == Page::Sources {
             return "Default catalog is always included. Customs supplement it.\nRemoving a source never uninstalls apps.".into();
@@ -256,6 +256,8 @@ impl Center {
                     Target::Confirm(true),
                     if matches!(self.confirmation, Some(Confirmation::Running(_, _))) {
                         "Close and update"
+                    } else if matches!(self.confirmation, Some(Confirmation::Uninstall(_))) {
+                        "Uninstall"
                     } else {
                         "Confirm"
                     },
@@ -286,7 +288,6 @@ impl Center {
                     (Target::Install, "Install")
                 },
                 (Target::Sources, "Sources"),
-                (Target::Shell, "Shell"),
                 (Target::Home, "Home"),
             ],
             Page::Sources => vec![
@@ -302,7 +303,11 @@ impl Center {
                 (Target::Character(';'), "; batch"),
                 (Target::Cancel, "Cancel"),
             ],
-            Page::Details => vec![(Target::Approve, "Trust source"), (Target::Cancel, "Back")],
+            Page::Details => vec![
+                (Target::Uninstall, "Uninstall"),
+                (Target::Approve, "Trust source"),
+                (Target::Cancel, "Back"),
+            ],
         };
         let count = i32::try_from(menu.len()).unwrap_or(1);
         for (i, (target, label)) in menu.into_iter().enumerate() {
@@ -352,7 +357,7 @@ impl Center {
                     let row = &self.rows[i];
                     let selected = self.checked.contains(&row.package.key());
                     format!(
-                        "[{}] {} | {} > {}",
+                        "[{}] {} | {}",
                         if selected {
                             "X"
                         } else if self
@@ -367,8 +372,11 @@ impl Center {
                             " "
                         },
                         row.package.name,
-                        row.installed,
-                        row.package.version
+                        if matches!(row.installed.as_str(), "not installed" | "unavailable") {
+                            row.installed.clone()
+                        } else {
+                            format!("installed {}", row.installed)
+                        },
                     )
                 } else {
                     format!(
@@ -398,7 +406,7 @@ impl Center {
                 label.into(),
                 Rect {
                     x,
-                    y: height - 44,
+                    y: height - 58,
                     w: 88,
                     h: 30,
                 },
@@ -410,7 +418,7 @@ impl Center {
                 "Details".into(),
                 Rect {
                     x: width / 2 - 44,
-                    y: height - 44,
+                    y: height - 58,
                     w: 88,
                     h: 30,
                 },
@@ -432,6 +440,7 @@ impl Center {
         }
         match target {
             Target::Install => !self.checked.is_empty(),
+            Target::Uninstall => self.rows.get(self.row).is_some_and(Row::can_uninstall),
             Target::Edit | Target::Remove => self.row > 0 && self.row < self.sources.catalogs.len(),
             Target::Approve => self.rows.get(self.row).is_some_and(|r| {
                 !self
@@ -572,13 +581,11 @@ impl Center {
             match *key {
                 Keycode::Home => self.activate(Target::Home, layout),
                 Keycode::Escape => self.activate(Target::Cancel, layout),
-                Keycode::Up | Keycode::Kp8 | Keycode::Left | Keycode::Kp4 => {
-                    self.selected = self
-                        .selected
-                        .checked_sub(1)
-                        .unwrap_or_else(|| targets.len().saturating_sub(1));
-                }
-                Keycode::Down | Keycode::Kp2 | Keycode::Right | Keycode::Kp6 | Keycode::Tab => {
+                Keycode::Up | Keycode::Kp8 => self.vertical(false, layout, targets),
+                Keycode::Down | Keycode::Kp2 => self.vertical(true, layout, targets),
+                Keycode::Left | Keycode::Kp4 => self.horizontal(false, targets),
+                Keycode::Right | Keycode::Kp6 => self.horizontal(true, targets),
+                Keycode::Tab => {
                     self.selected = (self.selected + 1) % targets.len().max(1);
                 }
                 Keycode::Space if self.editing() => (),
@@ -596,9 +603,75 @@ impl Center {
                 Keycode::I if !self.editing() => self.activate(Target::Install, layout),
                 _ => (),
             }
-            if let Some((Target::Row(i), _, _)) = targets.get(self.selected) {
+            if let Some((Target::Row(i), _, _)) = self.targets(layout).get(self.selected) {
                 self.row = *i;
+                self.readout = Readout::Selection;
             }
+        }
+    }
+    fn horizontal(&mut self, forward: bool, targets: &[(Target, String, Rect)]) {
+        // Button rows form a separate cycle, so paging controls remain reachable
+        // without traversing the app list. Order follows the visible layout.
+        let mut buttons: Vec<_> = targets
+            .iter()
+            .enumerate()
+            .filter(|(_, (target, _, _))| !matches!(target, Target::Row(_)))
+            .collect();
+        buttons.sort_by_key(|(_, (_, _, r))| (r.y, r.x));
+        if let Some(index) = buttons.iter().position(|(i, _)| *i == self.selected) {
+            let next = if forward {
+                (index + 1) % buttons.len()
+            } else {
+                (index + buttons.len() - 1) % buttons.len()
+            };
+            self.selected = buttons[next].0;
+        }
+    }
+    fn vertical(&mut self, down: bool, layout: &Layout, targets: &[(Target, String, Rect)]) {
+        let Some((target, _, current)) = targets.get(self.selected) else {
+            return;
+        };
+        if let Target::Row(index) = target {
+            let count = if self.page == Page::Apps {
+                self.rows.len()
+            } else {
+                self.sources.catalogs.len()
+            };
+            let adjacent = if down {
+                index.checked_add(1).filter(|i| *i < count)
+            } else {
+                index.checked_sub(1)
+            };
+            if let Some(next) = adjacent {
+                if next < self.start {
+                    self.start = next;
+                }
+                if next >= self.start + Self::capacity(layout) {
+                    self.start = next + 1 - Self::capacity(layout);
+                }
+                if let Some(i) = self
+                    .targets(layout)
+                    .iter()
+                    .position(|(t, _, _)| *t == Target::Row(next))
+                {
+                    self.selected = i;
+                }
+                return;
+            }
+        }
+        let next = targets
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, _, r))| {
+                if down {
+                    r.y > current.y
+                } else {
+                    r.y < current.y
+                }
+            })
+            .min_by_key(|(_, (_, _, r))| ((r.y - current.y).abs(), (r.x - current.x).abs()));
+        if let Some((index, _)) = next {
+            self.selected = index;
         }
     }
     fn append(&mut self, text: &str) {
@@ -612,6 +685,7 @@ impl Center {
     }
     const fn page(&mut self, page: Page) {
         self.page = page;
+        self.readout = Readout::Selection;
         self.start = 0;
         self.selected = 0;
         self.contact = None;
@@ -621,6 +695,22 @@ impl Center {
             cancelled.store(true, std::sync::atomic::Ordering::Relaxed);
         }
         self.message = "Cancelling download; any commit already started will finish safely".into();
+    }
+    fn confirm_uninstall(&mut self) {
+        self.confirmation = Some(Confirmation::Uninstall(self.row));
+        self.selected = 0;
+        self.contact = None;
+    }
+    pub fn row_versions(&self, target: &Target) -> Option<(String, bool)> {
+        if self.page != Page::Apps {
+            return None;
+        }
+        let Target::Row(index) = target else {
+            return None;
+        };
+        self.rows
+            .get(*index)
+            .map(|r| (r.package.version.to_string(), r.update_available()))
     }
     fn check_catalogs(&mut self) {
         self.checked.clear();
@@ -646,10 +736,6 @@ impl Center {
                 self.row = 0;
                 self.page(Page::Sources);
             }
-            Target::Shell => {
-                self.open = false;
-                self.request = Some(Destination::ShellUpdates);
-            }
             Target::Home => {
                 self.lost_focus();
                 self.open = false;
@@ -660,6 +746,7 @@ impl Center {
                 _ => self.page(Page::Apps),
             },
             Target::Row(index) => {
+                self.readout = Readout::Selection;
                 self.row = index;
                 if self.page == Page::Apps {
                     self.toggle(index);
@@ -695,6 +782,7 @@ impl Center {
             }
             Target::Clear => self.text.clear(),
             Target::Details => self.page(Page::Details),
+            Target::Uninstall => self.confirm_uninstall(),
             Target::Approve => {
                 self.confirmation = Some(Confirmation::Trust(self.row));
                 self.selected = 0;
@@ -770,6 +858,11 @@ impl Center {
                         .insert((r.package.origin.clone(), r.package.repository.clone()));
                     self.send(Command::Save(next));
                 }
+                Confirmation::Uninstall(i) if yes => {
+                    if let Some(row) = self.rows.get(i) {
+                        self.send(Command::Uninstall(row.package.key()));
+                    }
+                }
                 Confirmation::Remove(i) if yes => {
                     let mut next = self.sources.clone();
                     next.remove(i);
@@ -832,6 +925,15 @@ impl Center {
             out.push((name, center));
         }
         let mut center = Self::fixture()?;
+        center.rows[0].installed = "1.0.0".into();
+        center.rows[0].package.name = "Bitcoin Dashboard".into();
+        out.push(("update-badge", center));
+        let mut center = Self::fixture()?;
+        center.rows[0].installed = "1.0.0".into();
+        center.page(Page::Details);
+        center.confirm_uninstall();
+        out.push(("uninstall", center));
+        let mut center = Self::fixture()?;
         center.confirmation = Some(Confirmation::Running(
             1,
             "Close and update? Unsaved work may be lost. App: Example app".into(),
@@ -857,6 +959,233 @@ mod tests {
     fn center() -> Result<Center, String> {
         Center::fixture()
     }
+    fn focused(center: &Center, layout: &Layout) -> Target {
+        center.targets(layout)[center.selected].0
+    }
+    #[test]
+    fn directional_navigation_follows_rows_and_bypasses_long_lists() -> Result<(), String> {
+        for (w, h) in [(480, 272), (800, 480)] {
+            let layout = Layout::home(w, h)?;
+            for (up, down, left, right) in [
+                (Keycode::Up, Keycode::Down, Keycode::Left, Keycode::Right),
+                (Keycode::Kp8, Keycode::Kp2, Keycode::Kp4, Keycode::Kp6),
+            ] {
+                let mut center = center()?;
+                assert!(
+                    !center
+                        .targets(&layout)
+                        .iter()
+                        .any(|(_, label, _)| label == "Shell")
+                );
+                center.event(&key(down), &layout);
+                assert_eq!(focused(&center, &layout), Target::Row(0));
+                center.event(&key(up), &layout);
+                assert_eq!(focused(&center, &layout), Target::Check);
+                for target in [
+                    Target::Install,
+                    Target::Sources,
+                    Target::Home,
+                    Target::Previous,
+                    Target::Details,
+                    Target::Next,
+                    Target::Check,
+                ] {
+                    center.event(&key(right), &layout);
+                    assert_eq!(focused(&center, &layout), target);
+                    assert_eq!(center.start, 0);
+                }
+                for target in [
+                    Target::Next,
+                    Target::Details,
+                    Target::Previous,
+                    Target::Home,
+                    Target::Sources,
+                    Target::Install,
+                    Target::Check,
+                ] {
+                    center.event(&key(left), &layout);
+                    assert_eq!(focused(&center, &layout), target);
+                }
+                for index in 0..center.rows.len() {
+                    center.event(&key(down), &layout);
+                    assert_eq!(focused(&center, &layout), Target::Row(index));
+                    assert_eq!(center.row, index);
+                }
+                assert!(center.start > 0);
+                center.event(&key(down), &layout);
+                assert_eq!(focused(&center, &layout), Target::Previous);
+                for index in (0..center.rows.len()).rev() {
+                    center.event(&key(up), &layout);
+                    assert_eq!(focused(&center, &layout), Target::Row(index));
+                    assert_eq!(center.row, index);
+                }
+                center.event(&key(up), &layout);
+                assert_eq!(focused(&center, &layout), Target::Check);
+                assert!(center.checked.is_empty());
+                center.rows.clear();
+                center.event(&key(down), &layout);
+                assert_eq!(focused(&center, &layout), Target::Previous);
+                center.event(&key(up), &layout);
+                assert_eq!(focused(&center, &layout), Target::Check);
+            }
+        }
+        Ok(())
+    }
+    #[test]
+    fn single_readout_switches_between_row_status_and_operation_results() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut center = center()?;
+        assert_eq!(center.details(), center.message);
+        center.event(&key(Keycode::Down), &layout);
+        assert_eq!(
+            center.details(),
+            format!("{} | ready", super::super::sources::DEFAULT)
+        );
+        let (send, _commands) = std::sync::mpsc::channel();
+        let (updates, receive) = std::sync::mpsc::channel();
+        center.worker = Some(Worker {
+            send,
+            receive,
+            cancelled: std::sync::Arc::default(),
+        });
+        updates
+            .send(Update::Progress("Downloading 5 / 10 bytes (50%)".into()))
+            .map_err(|e| e.to_string())?;
+        center.poll();
+        assert_eq!(center.details(), "Downloading 5 / 10 bytes (50%)");
+        updates
+            .send(Update::Done(Err("Download failed".into()), false))
+            .map_err(|e| e.to_string())?;
+        center.poll();
+        assert_eq!(center.details(), "Download failed");
+        center.event(&key(Keycode::Down), &layout);
+        assert!(center.details().ends_with(" | ready"));
+        updates
+            .send(Update::Done(Ok("App uninstalled".into()), true))
+            .map_err(|e| e.to_string())?;
+        center.poll();
+        assert_eq!(center.details(), "App uninstalled");
+        Ok(())
+    }
+    #[test]
+    fn uninstall_details_confirmation_is_safe_and_dispatches_once() -> Result<(), String> {
+        for (w, h) in [(480, 272), (800, 480)] {
+            let layout = Layout::home(w, h)?;
+            let mut center = center()?;
+            let (send, commands) = std::sync::mpsc::channel();
+            let (_updates, receive) = std::sync::mpsc::channel();
+            center.worker = Some(Worker {
+                send,
+                receive,
+                cancelled: std::sync::Arc::default(),
+            });
+            center.rows[0].installed = "1.0.0".into();
+            center.rows[0].ready = false; // Current apps are still uninstallable.
+            let key_value = center.rows[0].package.key();
+            center.activate(Target::Row(0), &layout);
+            center.activate(Target::Details, &layout);
+            assert!(center.enabled(&Target::Uninstall));
+            assert!(
+                center
+                    .targets(&layout)
+                    .iter()
+                    .any(|(t, label, _)| *t == Target::Uninstall && label == "Uninstall")
+            );
+            center.event(&key(Keycode::Return), &layout);
+            assert!(matches!(
+                center.confirmation,
+                Some(Confirmation::Uninstall(0))
+            ));
+            center.event(&key(Keycode::Return), &layout);
+            assert!(center.confirmation.is_none());
+            assert!(commands.try_recv().is_err());
+            center.activate(Target::Uninstall, &layout);
+            center.lost_focus();
+            assert!(center.confirmation.is_none());
+            center.activate(Target::Uninstall, &layout);
+            center.event(&key(Keycode::Right), &layout);
+            center.event(&key(Keycode::Return), &layout);
+            assert!(matches!(commands.try_recv(), Ok(Command::Uninstall(key)) if key == key_value));
+            assert!(center.busy);
+            center.event(&key(Keycode::Return), &layout);
+            assert!(commands.try_recv().is_err());
+        }
+        Ok(())
+    }
+    #[test]
+    fn uninstall_touch_uses_the_same_confirmation_and_new_versions_have_badges()
+    -> Result<(), String> {
+        for (w, h) in [(480, 272), (800, 480)] {
+            let layout = Layout::home(w, h)?;
+            let mut center = center()?;
+            center.rows[0].package.version = super::super::metadata::version("1.10.0")?;
+            for (installed, update) in [
+                ("not installed", false),
+                ("local / unknown", false),
+                ("1.9.0", true),
+                ("1.10.0", false),
+                ("2.0.0", false),
+            ] {
+                center.rows[0].installed = installed.into();
+                let (version, badge) = center.row_versions(&Target::Row(0)).ok_or("row")?;
+                assert_eq!(version, "1.10.0");
+                assert_eq!(badge, update);
+            }
+            center.rows[0].installed = "1.9.0".into();
+            center.page(Page::Details);
+            assert!(
+                center
+                    .details()
+                    .contains("Latest: 1.10.0 [Update available]")
+            );
+            let bounds = center
+                .targets(&layout)
+                .into_iter()
+                .find(|(t, _, _)| *t == Target::Uninstall)
+                .ok_or("Uninstall")?
+                .2;
+            let x = f32::from(u16::try_from(bounds.x + bounds.w / 2).map_err(|e| e.to_string())?)
+                / f32::from(w);
+            let y = f32::from(u16::try_from(bounds.y + bounds.h / 2).map_err(|e| e.to_string())?)
+                / f32::from(h);
+            let up = Event::FingerUp {
+                timestamp: 0,
+                touch_id: 1,
+                finger_id: 1,
+                x,
+                y,
+                dx: 0.,
+                dy: 0.,
+                pressure: 0.,
+            };
+            center.event(&up, &layout);
+            assert!(center.confirmation.is_none());
+            center.event(
+                &Event::FingerDown {
+                    timestamp: 0,
+                    touch_id: 1,
+                    finger_id: 1,
+                    x,
+                    y,
+                    dx: 0.,
+                    dy: 0.,
+                    pressure: 1.,
+                },
+                &layout,
+            );
+            center.event(&up, &layout);
+            assert!(matches!(
+                center.confirmation,
+                Some(Confirmation::Uninstall(0))
+            ));
+            assert_eq!(center.selected, 0);
+            center.answer(false);
+            center.rows[0].installed = "not installed".into();
+            assert!(!center.enabled(&Target::Uninstall));
+        }
+        Ok(())
+    }
+
     #[test]
     fn download_cancel_is_visible_and_shared_by_keyboard_and_touch() -> Result<(), String> {
         for (w, h) in [(480, 272), (800, 480)] {
@@ -978,7 +1307,7 @@ mod tests {
         assert!(!center.open);
         assert!(center.confirmation.is_none());
         updates
-            .send(Update::Done(Ok(()), true))
+            .send(Update::Done(Ok("Done".into()), true))
             .map_err(|e| e.to_string())?;
         assert!(center.poll());
         assert!(!center.busy);

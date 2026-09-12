@@ -45,17 +45,16 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
             canvas.set_draw_color(Color::RGB(120, 240, 220));
             canvas.draw_rect(super::rect(*bounds)?)?;
         }
-        text(
-            canvas,
-            label,
-            *bounds,
-            1,
-            if enabled {
-                Color::RGB(239, 241, 245)
-            } else {
-                Color::RGB(139, 149, 159)
-            },
-        )?;
+        let color = if enabled {
+            Color::RGB(239, 241, 245)
+        } else {
+            Color::RGB(139, 149, 159)
+        };
+        if let Some((versions, update)) = center.row_versions(target) {
+            app_row(canvas, label, &versions, update, *bounds, color)?;
+        } else {
+            text(canvas, label, *bounds, 1, color)?;
+        }
     }
     let lines = center.lines(usize::from(layout.width) / 8 - 2);
     let (y, count) = if center.full_details() {
@@ -63,7 +62,7 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
     } else if center.editing() {
         (68, 3)
     } else {
-        (height - 82, 2)
+        (height - 26, 2)
     };
     for (i, line) in lines
         .iter()
@@ -84,7 +83,7 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
             Color::RGB(220, 224, 231),
         )?;
     }
-    {
+    if center.full_details() || center.editing() {
         text(
             canvas,
             &center.message,
@@ -96,6 +95,44 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
             },
             1,
             Color::RGB(239, 206, 129),
+        )?;
+    }
+    Ok(())
+}
+
+fn app_row(
+    canvas: &mut Screen,
+    label: &str,
+    versions: &str,
+    update: bool,
+    bounds: Rect,
+    color: Color,
+) -> Result<(), String> {
+    text(canvas, label, Rect { h: 16, ..bounds }, 1, color)?;
+    let badge_width = if update { 144 } else { 0 };
+    let version_width = (i32::try_from(versions.chars().count()).unwrap_or(0) * 8 + 12)
+        .min(bounds.w - badge_width - 12);
+    let x = bounds.x + (bounds.w - version_width - badge_width) / 2;
+    let lower = Rect {
+        x,
+        y: bounds.y + 16,
+        w: version_width,
+        h: 16,
+    };
+    text(canvas, versions, lower, 1, color)?;
+    if update {
+        let badge = Rect {
+            x: x + version_width,
+            w: badge_width,
+            ..lower
+        };
+        fill(canvas, badge, Color::RGB(38, 96, 78))?;
+        text(
+            canvas,
+            "Update available",
+            badge,
+            1,
+            Color::RGB(139, 255, 188),
         )?;
     }
     Ok(())

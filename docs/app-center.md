@@ -21,13 +21,34 @@ remaining selected apps from being attempted. Check, editing, and installation
 cannot overlap. Progress and errors remain visible; Details also exposes long
 operation errors after an unsuccessful installation.
 
-Arrows/keypad/Tab move the visible focus; Enter/keypad Enter activates, and Space
+Up/down (or keypad 8/2) moves vertically through the app list, scrolling as needed.
+Left/right (or keypad 4/6) cycles the button rows: right from Home goes straight
+to Previous, Details, then Next, without traversing the list. Tab visits every
+visible control. Enter/keypad Enter activates, and Space
 toggles a focused app row. C checks and I installs outside text entry. Home/Escape
 returns when idle. Previous/Next, Page Up/Down, and the mouse wheel scroll lists
 and details. Touch and mouse activate only matching press/release targets. Every
 visible control has keyboard focus, including confirmation and paging buttons.
 The repository editor accepts SDL text input and includes an on-screen keyboard,
 Clear and Delete controls, and a visible insertion end for long batches.
+
+Select an installed app, open **Details**, and choose **Uninstall**. The confirmation
+defaults to **Cancel**; keyboard and touch use the same confirmation. Close the app
+before uninstalling. Uninstall needs no network requests and removes the receipt's
+app files, the managed launcher, and matching desktop/PocketHome entries. Other
+files, such as saves and app-local runtimes not listed in the receipt, remain.
+Removed files (including locally edited package files) are backed up in the existing
+transaction journal. Custom shortcuts pointing elsewhere are preserved. A legacy
+Bitcoin installation without a receipt uses the reviewed fixed adapter paths and
+removes other catalog files only when their local hashes match. Uninstall failures
+roll back conditionally and keep the incomplete marker for recovery. The app list
+and home grid refresh after removal; the catalog app can be installed again.
+
+An **Update available** badge appears beside the latest version when an installable
+catalog entry has a newer numeric version than the installed app. Equal versions,
+downgrades, unknown local versions, and apps not yet installed have no badge. Details
+also displays the update indicator. Repairs at the same version remain selectable
+without claiming a newer version exists.
 
 ## Catalog sources
 
@@ -155,7 +176,8 @@ other Unix hosts use bounded `ps`. Ambiguous whitespace-containing Python argume
 on the latter hosts fail closed. Discovery refreshes after installation, retaining
 the selected launcher ID.
 
-**Shell** opens the existing verified shell updater. Its separate
+The shell updater is accessible only through **System Settings → More → Check for
+Updates**. Its separate
 installation confirmation and relaunch behavior remain in effect. App Center does
 not implement Python manager self-updates or a second shell updater.
 
