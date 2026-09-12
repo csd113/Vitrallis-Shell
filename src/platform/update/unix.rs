@@ -110,6 +110,12 @@ impl Installation {
             lock,
         })
     }
+    pub fn relaunch_target(&self, sha256: [u8; 32]) -> super::Relaunch {
+        super::Relaunch {
+            executable: self.target.clone(),
+            sha256,
+        }
+    }
     pub fn payload(&self) -> Result<File, String> {
         OpenOptions::new()
             .read(true)
@@ -185,6 +191,45 @@ impl Installation {
         File::open(&self.stage)?.sync_all()
     }
 }
+fn relaunch_command(
+    target: &super::Relaunch,
+    args: impl IntoIterator<Item = std::ffi::OsString>,
+) -> Result<(Installation, std::process::Command), String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let installation = Installation::open(&target.executable).map_err(|e| e.to_string())?;
+    let mut file = File::open(&installation.target)
+        .map_err(|e| e.to_string())?
+        .take(installation.original.len().saturating_add(1));
+    let mut hash = Sha256::new();
+    let mut bytes = [0; 16384];
+    loop {
+        let count = file.read(&mut bytes).map_err(|e| e.to_string())?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&bytes[..count]);
+    }
+    let digest: [u8; 32] = hash.finalize().into();
+    if digest != target.sha256 {
+        return Err("Installed shell changed since update; relaunch refused".into());
+    }
+    installation.unchanged().map_err(|e| e.to_string())?;
+    let mut command = std::process::Command::new(&installation.target);
+    command.args(args);
+    Ok((installation, command))
+}
+pub(super) fn relaunch(
+    target: &super::Relaunch,
+    args: impl IntoIterator<Item = std::ffi::OsString>,
+) -> Result<(), String> {
+    use std::os::unix::process::CommandExt;
+    let (_installation, mut command) = relaunch_command(target, args)?;
+    // Keep the PID and inherited session environment: the PocketCHIP supervisor
+    // must not observe an exit and tear down its systemd control group.
+    Err(format!("Cannot relaunch shell: {}", command.exec()))
+}
+
 fn same_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
     left.is_file() && right.is_file() && left.dev() == right.dev() && left.ino() == right.ino()
 }

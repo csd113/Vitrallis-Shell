@@ -2,7 +2,7 @@
 mod release;
 mod transport;
 
-use crate::platform::update::Target;
+use crate::platform::update::{Relaunch, Target};
 use release::Release;
 use semver::Version;
 use serde_json::Value;
@@ -34,6 +34,7 @@ pub enum State {
     Installed {
         version: Version,
         durable: bool,
+        relaunch: Relaunch,
     },
     Failed(String),
 }
@@ -68,6 +69,7 @@ impl State {
             Self::Installed {
                 version,
                 durable: true,
+                ..
             } => format!("Shell updated to {version}. Relaunch required."),
             Self::Installed { durable: false, .. } => {
                 "Shell replaced; disk sync failed. Backup retained.".into()
@@ -81,9 +83,43 @@ impl State {
 pub struct Updater {
     pub state: State,
     result: Option<Receiver<State>>,
+    relaunch_requested: bool,
+    relaunch_error: Option<String>,
     progress: Arc<Mutex<Option<State>>>,
 }
 impl Updater {
+    pub fn detail(&self) -> String {
+        self.relaunch_error
+            .clone()
+            .unwrap_or_else(|| self.state.detail())
+    }
+    pub const fn request_relaunch(&mut self) {
+        if matches!(self.state, State::Installed { .. }) {
+            self.relaunch_requested = true;
+        }
+    }
+    pub fn relaunch_if_requested(&mut self, blocked: bool) -> bool {
+        self.relaunch_with(blocked, Relaunch::execute)
+    }
+    fn relaunch_with(
+        &mut self,
+        blocked: bool,
+        execute: impl FnOnce(&Relaunch) -> Result<(), String>,
+    ) -> bool {
+        if !std::mem::take(&mut self.relaunch_requested) {
+            return false;
+        }
+        let State::Installed { relaunch, .. } = &self.state else {
+            return false;
+        };
+        let result = if blocked {
+            Err("Close running apps and wait for operations to finish, then select Relaunch Shell again".into())
+        } else {
+            execute(relaunch)
+        };
+        self.relaunch_error = result.err();
+        true
+    }
     pub fn check(&mut self) {
         if self.state.busy() || matches!(self.state, State::Installed { .. }) {
             return;
@@ -112,9 +148,10 @@ impl Updater {
                 })
                 .map_or_else(
                     |error| State::Failed(format!("Update failed: {error}")),
-                    |durable| State::Installed {
+                    |(durable, relaunch)| State::Installed {
                         version: release.version,
                         durable,
+                        relaunch,
                     },
                 )
             },
@@ -212,28 +249,29 @@ fn install(
     transport: &impl Transport,
     release: &Release,
     progress: &mut dyn FnMut(State),
-) -> Result<bool, String> {
+) -> Result<(bool, Relaunch), String> {
     let target = Target::current()?;
     if target.artifact() != release.name {
         return Err("Update platform changed; check again".into());
     }
     let installation = crate::platform::update::Installation::current()?;
     let mut file = installation.payload()?;
-    download(transport, release, &mut file, progress)?;
+    let sha256 = download(transport, release, &mut file, progress)?;
     file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut header = [0; 64];
     file.read_exact(&mut header)
         .map_err(|_| "Incomplete executable header")?;
     target.verify_header(&header)?;
     installation.ready(file, &release.version)?;
-    installation.commit()
+    let durable = installation.commit()?;
+    Ok((durable, installation.relaunch_target(sha256)))
 }
 #[cfg(not(unix))]
 fn install(
     _transport: &impl Transport,
     _release: &Release,
     _progress: &mut dyn FnMut(State),
-) -> Result<bool, String> {
+) -> Result<(bool, Relaunch), String> {
     Err("Shell installation is unsupported on this operating system".into())
 }
 
@@ -242,7 +280,7 @@ fn download(
     release: &Release,
     file: &mut std::fs::File,
     progress: &mut dyn FnMut(State),
-) -> Result<(), String> {
+) -> Result<[u8; 32], String> {
     let mut expected = release.binary.digest.clone();
     if let Some(asset) = &release.checksum {
         let mut bytes = Vec::new();
@@ -281,10 +319,11 @@ fn download(
         }
         hash.update(&buffer[..count]);
     }
-    if hex_digest(&hash.finalize()) != expected {
+    let digest: [u8; 32] = hash.finalize().into();
+    if hex_digest(&digest) != expected {
         return Err("Shell SHA-256 verification failed; install refused".into());
     }
-    Ok(())
+    Ok(digest)
 }
 fn verify_bytes(bytes: &[u8], asset: &release::Asset) -> Result<(), String> {
     if bytes.len() as u64 != asset.size {

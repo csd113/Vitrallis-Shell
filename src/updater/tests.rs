@@ -463,3 +463,36 @@ fn sizes_and_progress_use_decimal_megabytes() -> Result<(), String> {
     );
     Ok(())
 }
+
+#[test]
+fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
+    let mut updater = Updater::default();
+    updater.request_relaunch();
+    assert!(!updater.relaunch_with(false, |_| panic!("not installed")));
+    updater.state = State::Installed {
+        version: Version::new(1, 2, 3),
+        durable: true,
+        relaunch: Relaunch {
+            executable: "/installed/vitrallis".into(),
+            sha256: [0; 32],
+        },
+    };
+    assert!(!updater.relaunch_with(false, |_| panic!("not requested")));
+    updater.request_relaunch();
+    assert!(updater.relaunch_with(true, |_| panic!("operation in progress")));
+    assert!(updater.detail().contains("Close running apps"));
+    updater.request_relaunch();
+    assert!(updater.relaunch_with(false, |target| {
+        assert_eq!(
+            target.executable,
+            std::path::Path::new("/installed/vitrallis")
+        );
+        Err("exec failed".into())
+    }));
+    assert_eq!(updater.detail(), "exec failed");
+    assert!(matches!(updater.state, State::Installed { .. }));
+    assert!(!updater.relaunch_with(false, |_| panic!("duplicate attempt")));
+    updater.request_relaunch();
+    assert!(updater.relaunch_with(false, |_| Ok(())));
+    assert!(updater.relaunch_error.is_none());
+}

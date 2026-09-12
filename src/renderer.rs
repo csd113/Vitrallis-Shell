@@ -683,6 +683,10 @@ mod system_tests {
         state.settings.updater.state = crate::updater::State::Installed {
             version: semver::Version::new(1, 10, 0),
             durable: true,
+            relaunch: crate::platform::update::Relaunch {
+                executable: "/fixture/vitrallis".into(),
+                sha256: [0; 32],
+            },
         };
         render(canvas, layout, state, textures)?;
         screenshot(

@@ -92,8 +92,7 @@ fn event_loop(
             textures = artwork(&creator, &state);
             dirty = true;
         }
-        dirty |= refresh_timezone(&mut state, &mut child);
-        dirty |= refresh_focus(&mut child, &mut state);
+        dirty |= refresh_shell(&mut state, &mut child);
         if dirty && Instant::now() >= next_frame {
             state.running = child.running_ids();
             render(canvas, layout, &state, &textures)?;
@@ -182,6 +181,13 @@ fn poll_children(
     } else {
         Ok(None)
     }
+}
+
+fn refresh_shell(state: &mut Launcher, child: &mut ProcessSet) -> bool {
+    let dirty = refresh_timezone(state, child) | refresh_focus(child, state);
+    state.settings.updater.relaunch_if_requested(
+        state.app_center.busy || child.has_children() || state.settings.pending,
+    ) || dirty
 }
 
 fn refresh_timezone(state: &mut Launcher, child: &mut ProcessSet) -> bool {
@@ -508,6 +514,7 @@ fn submit_setting(
     match request {
         Some(crate::settings::Request::CheckUpdates) => settings.updater.check(),
         Some(crate::settings::Request::InstallUpdate) => settings.updater.install(),
+        Some(crate::settings::Request::RelaunchUpdate) => settings.updater.request_relaunch(),
         Some(crate::settings::Request::Calibration) => {
             settings.network = crate::settings::NetworkState::CalibrationRequested;
         }

@@ -22,10 +22,16 @@ the transfer completes, the status changes to verification and installation;
 **Install Update** opens a second confirmation with **Cancel** selected. Escape,
 Home, focus loss, or a 15-second timeout cancels confirmation. Checking and
 installation run on a worker thread; leaving settings does not cancel an active
-installation. The original shell keeps running. Success requires a relaunch:
-close Vitrallis and start it through the existing launcher/session mechanism.
-Automatic relaunch is deliberately omitted because the shell owns live child
-processes and device sessions have their own supervisor lifecycle.
+installation. The original shell keeps running until **Relaunch Shell** is selected
+by keyboard, mouse, or touch. Relaunch executes the verified installed replacement
+at its saved installation path, preserving the process ID, launch arguments, and
+session environment so the PocketCHIP supervisor remains attached. The installed
+SHA-256 and filesystem safety checks run again before execution. Failed attempts
+show a diagnostic and retain the relaunch button for retry. Close running apps and
+wait for App Center/system operations to finish before relaunching; the action
+does not kill apps or interrupt an installation. Builds with the older inactive
+"Relaunch required" label must be closed and started through their existing
+launcher/session mechanism once.
 
 Only the running shell executable is replaced. The updater does not enumerate,
 check, download or change installed applications, catalogues, preferences,

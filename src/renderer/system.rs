@@ -710,7 +710,7 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
             _ => "Update no longer available. Cancel and check again.".into(),
         }
     } else {
-        settings.updater.state.detail()
+        settings.updater.detail()
     };
     let message = format!("Running Vitrallis Shell {VERSION}\n{detail}");
     let top = layout.title.h + 8;
@@ -768,7 +768,7 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
         match settings.updater.state {
             State::Available(_) => "Install Update",
             State::Checking | State::Downloading { .. } | State::Installing => "Please wait...",
-            State::Installed { .. } => "Relaunch required",
+            State::Installed { .. } => "Relaunch Shell",
             _ => "Check for Updates",
         }
     };

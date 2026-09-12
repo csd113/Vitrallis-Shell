@@ -219,6 +219,57 @@ mod tests {
         }
     }
     #[test]
+    fn relaunch_uses_matched_mouse_and_touch_activation() -> Result<(), String> {
+        for (width, height) in [(480, 272), (800, 480)] {
+            let layout = Layout::home(width, height)?;
+            let button = PanelLayout::new(&layout).confirmation[1];
+            let (x, y) = (button.x + 5, button.y + 5);
+            let mut settings = Settings::default();
+            settings.show();
+            settings.page(Page::Updates);
+            settings.updater.state = crate::updater::State::Installed {
+                version: semver::Version::new(1, 2, 3),
+                durable: true,
+                relaunch: crate::platform::update::Relaunch {
+                    executable: "/installed/vitrallis".into(),
+                    sha256: [0; 32],
+                },
+            };
+            assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
+            assert_eq!(settings.event(&mouse(true, x, y), &layout), None);
+            assert_eq!(
+                settings.event(&mouse(false, x, y), &layout),
+                Some(Request::RelaunchUpdate)
+            );
+            let x = f32::from(u16::try_from(x).map_err(|e| e.to_string())?) / f32::from(width);
+            let y = f32::from(u16::try_from(y).map_err(|e| e.to_string())?) / f32::from(height);
+            let down = Event::FingerDown {
+                timestamp: 0,
+                touch_id: 1,
+                finger_id: 7,
+                x,
+                y,
+                dx: 0.,
+                dy: 0.,
+                pressure: 1.,
+            };
+            let up = Event::FingerUp {
+                timestamp: 0,
+                touch_id: 1,
+                finger_id: 7,
+                x,
+                y,
+                dx: 0.,
+                dy: 0.,
+                pressure: 0.,
+            };
+            assert_eq!(settings.event(&up, &layout), None);
+            assert_eq!(settings.event(&down, &layout), None);
+            assert_eq!(settings.event(&up, &layout), Some(Request::RelaunchUpdate));
+        }
+        Ok(())
+    }
+    #[test]
     fn more_page_touch_timeout_zones_and_cancel_use_matching_releases() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let mut settings = Settings::default();

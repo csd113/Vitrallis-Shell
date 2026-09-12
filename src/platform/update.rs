@@ -4,6 +4,25 @@ mod unix;
 #[cfg(unix)]
 pub use unix::Installation;
 
+/// The validated installation path survives Linux's `/proc/self/exe` deletion suffix.
+#[derive(Debug)]
+pub struct Relaunch {
+    pub executable: std::path::PathBuf,
+    pub sha256: [u8; 32],
+}
+impl Relaunch {
+    pub fn execute(&self) -> Result<(), String> {
+        #[cfg(unix)]
+        {
+            unix::relaunch(self, std::env::args_os().skip(1))
+        }
+        #[cfg(not(unix))]
+        {
+            Err("Shell relaunch is unsupported on this operating system".into())
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Target {
     triple: &'static str,

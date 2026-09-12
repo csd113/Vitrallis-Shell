@@ -42,7 +42,9 @@ impl Settings {
                     self.update_confirmation = Some(Instant::now());
                     self.selected = 0; // A second Enter always cancels.
                     self.clear_pointer();
-                } else if !matches!(self.updater.state, State::Installed { .. }) {
+                } else if matches!(self.updater.state, State::Installed { .. }) {
+                    return Some(Request::RelaunchUpdate);
+                } else {
                     return Some(Request::CheckUpdates);
                 }
             }
@@ -55,6 +57,32 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn installed_button_requests_relaunch_for_keyboard_and_pointer_actions() {
+        let mut settings = Settings::default();
+        settings.show();
+        settings.page(Page::Updates);
+        settings.updater.state = State::Installed {
+            version: semver::Version::new(1, 2, 3),
+            durable: true,
+            relaunch: crate::platform::update::Relaunch {
+                executable: "/installed/vitrallis".into(),
+                sha256: [0; 32],
+            },
+        };
+        settings.input(Action::Move(Direction::Right));
+        assert_eq!(
+            settings.input(Action::Activate),
+            Some(Request::RelaunchUpdate)
+        );
+        assert_eq!(
+            settings.input(Action::SelectAndActivate(1)),
+            Some(Request::RelaunchUpdate)
+        );
+        assert!(settings.update_confirmation.is_none());
+        assert_eq!(settings.input(Action::SelectAndActivate(0)), None);
+        assert_eq!(settings.page, Page::Device);
+    }
     #[test]
     fn check_is_explicit_and_navigation_does_not_start_a_worker() {
         let mut settings = Settings::default();

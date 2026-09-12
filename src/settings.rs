@@ -22,6 +22,7 @@ pub enum Request {
     Calibration,
     CheckUpdates,
     InstallUpdate,
+    RelaunchUpdate,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
