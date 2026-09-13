@@ -18,7 +18,7 @@ On a compatible device, open a terminal as your normal desktop user. The bootstr
 for a published release can be fetched with:
 
 ```sh
-(set -eu; t=$(mktemp); trap 'rm -f "$t"' 0; trap 'exit 130' 1 2 15; curl -q -fSL --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 30 --max-filesize 262144 https://raw.githubusercontent.com/csd113/Vitrallis-Shell/main/integrations/armhf-awesome/bootstrap.py -o "$t"; python3 "$t")
+(set -eu; t=$(mktemp); trap 'rm -f "$t"' 0; trap 'exit 130' 1 2 15; curl -q -fSL --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 30 --max-filesize 262144 https://raw.githubusercontent.com/csd113/Vitrallis-Shell/main/integrations/pocketchip/bootstrap.py -o "$t"; python3 "$t")
 ```
 
 **Current source versus published releases:** this branch changes the installation
@@ -28,7 +28,7 @@ matching bundle and helpers are published, it reports no compatible release. Use
 complete locally built ARM bundle with this checkout's helpers for source validation:
 
 ```sh
-python3 integrations/armhf-awesome/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle
+python3 integrations/pocketchip/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle
 ```
 
 This source change does not bump versions or publish artifacts. The

@@ -82,7 +82,7 @@ def package(directory, target, output, tag, runner=None):
         (stage / (name + '.sha256')).write_text(digest + '  ' + name + '\n')
         if target == 'armv7-unknown-linux-gnueabihf':
             for helper in SESSION_HELPERS:
-                source = ROOT / 'integrations/armhf-awesome' / helper
+                source = ROOT / 'integrations/pocketchip' / helper
                 if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= 256 * 1024:
                     raise ValueError('Missing or unsafe ARMv7 Linux helper: ' + helper)
                 data = source.read_bytes()

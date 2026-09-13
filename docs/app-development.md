@@ -87,5 +87,5 @@ packages without loading PocketHome configuration. The original desktop remains 
 supervised device session's recovery destination.
 
 Build and install the shell using [device setup](devices/pocketchip.md).
-`integrations/armhf-awesome/install-session.py` and its adjacent `vitrallis-session.py` are the
+`integrations/pocketchip/install-session.py` and its adjacent `vitrallis-session.py` are the
 installer payload. Run `sh scripts/validate.sh` for the repository's host gates.

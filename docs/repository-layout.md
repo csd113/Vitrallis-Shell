@@ -5,7 +5,7 @@ Hardware support, display dimensions/scaling, and input handling have separate
 responsibilities. A matching screen size does not establish device support.
 
 ```text
-integrations/armhf-awesome/
+integrations/pocketchip/
   bootstrap.py                Bounded release download and verification
   install-session.py                  Canonical user installer
   uninstall.py                Offline receipt-based removal and recovery
@@ -51,7 +51,9 @@ support. See the device guide for the limited recorded hardware testing;
 generic mode supplies local time with hardware controls unavailable.
 
 A device's **installer**, recovery/session helper, and device-only templates
-belong in `integrations/<backend>/`, with setup and limitations in `docs/devices/`.
+belong in `integrations/<device>/`, with setup and limitations in `docs/devices/`.
+Device integration directories retain their device names; `integrations/pocketchip/`
+contains the PocketCHIP installation and Awesome/systemd session helpers.
 The ARMv7 `install-session.py` also contains its current rollback/repair logic;
 the installer and self-contained offline uninstaller share filesystem guards. Keep
 `install-session.py`, `uninstall.py` and `vitrallis-session.py` together when staging. See the

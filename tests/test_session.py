@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location('session', Path(__file__).resolve().parents[1] / 'integrations/armhf-awesome/vitrallis-session.py')
+spec = importlib.util.spec_from_file_location('session', Path(__file__).resolve().parents[1] / 'integrations/pocketchip/vitrallis-session.py')
 s = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(s)
 

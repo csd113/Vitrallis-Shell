@@ -62,7 +62,7 @@ def main():
         (generation / name).chmod(0o755)
     (BASE / 'current').symlink_to('generations/' + 'a' * 64)
     helper = BASE / 'vitrallis-session.py'
-    shutil.copyfile(ROOT / 'integrations/armhf-awesome/vitrallis-session.py', helper)
+    shutil.copyfile(ROOT / 'integrations/pocketchip/vitrallis-session.py', helper)
     spec = importlib.util.spec_from_file_location('session', helper)
     session = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(session)

@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-DEVICE = ROOT / 'integrations/armhf-awesome'
+DEVICE = ROOT / 'integrations/pocketchip'
 spec = importlib.util.spec_from_file_location('installer', DEVICE / 'install-session.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
@@ -310,7 +310,7 @@ class Installer(unittest.TestCase):
     def stage_and_install(self, layout):
         stage = self.home / 'package with spaces'
         stage.mkdir()
-        canonical = stage / 'integrations/armhf-awesome' if layout == 'checkout' else stage
+        canonical = stage / 'integrations/pocketchip' if layout == 'checkout' else stage
         canonical.mkdir(parents=True, exist_ok=True)
         for name in m.HELPERS:
             shutil.copyfile(DEVICE / name, canonical / name)

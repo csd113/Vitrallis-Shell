@@ -117,7 +117,7 @@ class ShellRelease(unittest.TestCase):
         self.package('armv7-unknown-linux-gnueabihf')
         for name in RELEASE.SESSION_HELPERS:
             data = (self.output / name).read_bytes()
-            self.assertEqual(data, (ROOT / 'integrations/armhf-awesome' / name).read_bytes())
+            self.assertEqual(data, (ROOT / 'integrations/pocketchip' / name).read_bytes())
             self.assertEqual((self.output / (name + '.sha256')).read_text(), hashlib.sha256(data).hexdigest() + '  ' + name + '\n')
         self.assertEqual(len(list(self.output.iterdir())), 10)
 

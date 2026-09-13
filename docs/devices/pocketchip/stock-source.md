@@ -84,6 +84,6 @@ The final audit must retain these intentional exceptions:
 
 The current Vitrallis flag is `--linux-handheld`, the Rust backend is
 `platform::linux_handheld`, the cross-build command is `scripts/build-armhf.sh`, and
-session helpers live under `integrations/armhf-awesome/`. No old flag aliases or
+session helpers live under `integrations/pocketchip/`. No old flag aliases or
 pre-release migration branches are supplied. Legal notices and historical evidence
 are preserved; generic Linux mode does not require either launcher.

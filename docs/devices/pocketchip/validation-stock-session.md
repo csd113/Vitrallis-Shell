@@ -6,7 +6,7 @@ No commit, version bump, publication, USB access or real-device modification occ
 ## Result and scope
 
 The shell uses the `linux_handheld` backend and `--linux-handheld` flag. ARMv7
-Awesome helpers live in `integrations/armhf-awesome/`; cross-building uses
+Awesome helpers live in `integrations/pocketchip/`; cross-building uses
 `scripts/build-armhf.sh`. General docs use neutral names and link to device setup.
 Historical hardware reports and all 30 original evidence files are under this
 device's documentation. Evidence logs and images were compared byte-for-byte with
@@ -94,11 +94,11 @@ The following paths are the full current change inventory. Moved files are shown
 - `.github/workflows/shell-release.yml`
 - `CONTRIBUTING.md`
 - `README.md`
-- `devices/pocketchip/bootstrap.py` → `integrations/armhf-awesome/bootstrap.py`
-- `devices/pocketchip/install.py` → `integrations/armhf-awesome/install-session.py`
-- `devices/pocketchip/run-pocketchip.sh` → `integrations/armhf-awesome/run-session.sh`
-- `devices/pocketchip/uninstall.py` → `integrations/armhf-awesome/uninstall.py`
-- `devices/pocketchip/vitrallis-session.py` → `integrations/armhf-awesome/vitrallis-session.py`
+- `devices/pocketchip/bootstrap.py` → `integrations/pocketchip/bootstrap.py`
+- `devices/pocketchip/install.py` → `integrations/pocketchip/install-session.py`
+- `devices/pocketchip/run-pocketchip.sh` → `integrations/pocketchip/run-session.sh`
+- `devices/pocketchip/uninstall.py` → `integrations/pocketchip/uninstall.py`
+- `devices/pocketchip/vitrallis-session.py` → `integrations/pocketchip/vitrallis-session.py`
 - `docs/README.md`
 - `docs/app-center-validation.md`
 - `docs/app-center.md`
