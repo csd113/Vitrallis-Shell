@@ -1,5 +1,16 @@
 # Release validation and assets
 
+## 0.1.0-beta2.7.1
+
+This patch fixes the built-in PocketCHIP Fn layer in the launcher and native
+apps. Fn+1–0, minus and equals produce F1–F12; Terminal receives Fn punctuation
+without an unintended Alt/Meta Escape prefix. Desktop keyboards retain their
+existing behavior. See the [device keyboard notes](devices/pocketchip.md#built-in-fn-keyboard)
+for device verification and its limits.
+
+The maintainer authorized this version and release publication. Both architecture
+bundles and matching helpers follow the release gates below.
+
 ## 0.1.0-beta2.7
 
 Release `v0.1.0-beta2.7` adds native desktop shortcuts for ordinary Linux
