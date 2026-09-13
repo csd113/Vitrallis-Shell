@@ -18,7 +18,7 @@ A compact Rust + SDL2 launcher for PocketCHIP and desktop Linux. Open a terminal
 
 ## Install on PocketCHIP
 
-**Beta.** Release `v0.1.0-beta2.6` uses a complete bundle containing the shell, Terminal, Notepad and Files, plus matching installation/removal helpers. The command below selects a published compatible release. Physical PocketCHIP validation of this complete installation remains pending; see [release validation and assets](docs/releases.md).
+**Beta.** Release `v0.1.0-beta2.6` uses a complete bundle containing the shell, Terminal, Notepad and Files, plus matching installation/removal helpers. The command below selects a published compatible release. A fresh complete-bundle installation, shell startup, update check and initial App Center load passed on a Debian 13 PocketCHIP; see [hardware results and limits](docs/history/beta2.6-device-validation.md).
 
 On a compatible device, open a terminal as your **normal desktop user**, save any Vitrallis work, close its session, and copy this entire line:
 
@@ -47,7 +47,7 @@ Running apps remain open when you return Home. Save and close them before stoppi
 
 ## Compatibility and beta limits
 
-The shell's PocketCHIP integration has [recorded Debian 13 hardware evidence](docs/history/device-validation.md). Current native utilities and lifecycle changes have host tests; complete-bundle installation, removal, updates, physical input and native-app behavior still need fresh PocketCHIP validation. Emulation and desktop previews do not establish it.
+The shell's PocketCHIP integration has [recorded Debian 13 hardware evidence](docs/history/device-validation.md), plus [beta2.6 installation and startup checks](docs/history/beta2.6-device-validation.md). Removal, installing a later native update, physical input and extended native-app behavior still need fresh PocketCHIP validation. Emulation and desktop previews do not establish it.
 
 Linux release packaging targets x86-64 and ARMv7 with the ABI requirements above. macOS is a development host; Linux artifacts cannot install there. Other devices need a platform adapter and validation. A matching screen size alone is not support.
 

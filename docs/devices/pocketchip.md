@@ -36,6 +36,12 @@ All sizes, exact download URLs and checksums are checked before helper execution
 If GitHub supplies an asset digest it must agree. HTTPS GitHub publication is the
 trust root; these hashes are not independent signatures.
 
+The bootstrap on `main` creates downloaded files with mode `0600`, including
+when the desktop account uses umask `002`. The originally published beta2.6
+bootstrap asset predates this correction; use the README command for the current
+bootstrap. Its bundle and installation helpers still come from one published
+release.
+
 ## Installed files and repeat runs
 
 Save and close Vitrallis apps and stop the previous session before reinstalling.
@@ -68,6 +74,12 @@ local edits block replacement. Symlinks, hardlinks, special files, unsafe owners
 and writable ancestors are rejected before protected writes. Newly created
 directories have explicit safe permissions even with a permissive umask.
 
+An `Unsafe directory ownership or permissions` error refers to an existing path
+that needs review. The installer preserves existing directory modes and refuses
+group/world-writable ancestors. Verify the named directory belongs to the desktop
+account and is not intentionally shared before removing its group/world write
+permissions. Do not disable the ownership checks or run the installer as root.
+
 Installer, shell updater and uninstaller share `.vitrallis-update/lock`. Files
 are staged, synced and renamed; `current` is published only after the complete
 helper/menu transaction succeeds. Repeat installation of the same bundle is safe.
@@ -80,6 +92,15 @@ No Awesome startup file, greetd/login configuration, calibration, system package
 Marshmallow binary or recovery service is replaced. Root-owned or obsolete
 unreceipted installations require manual reconciliation; the installer does not
 infer ownership or migrate a superseded layout.
+
+The beta2.5 updater expects a standalone shell executable. When it sees beta2.6,
+it can report that the version is available but no shell build exists for this
+platform. The ARM bundle is present; the old updater cannot consume its format.
+Replacing that obsolete installation requires a reviewed backup and fresh
+installation, including reconciliation of its old receipt and managed shortcuts.
+The current installer does not automatically migrate or erase old apps. The
+[beta2.6 hardware record](../history/beta2.6-device-validation.md) describes the
+owner-authorized fresh installation used for validation.
 
 ## Launch and return home
 

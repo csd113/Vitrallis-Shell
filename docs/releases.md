@@ -52,11 +52,17 @@ against checksums and bundle contents, and confirm successful release CI.
 The release description records those checks for the published artifacts.
 
 Docker App Center validation operates the real Linux SDL shell and installer,
-including published Carousel and Debug processes. It does not establish physical
-PocketCHIP performance, touch, installation/storage durability, Home/resume or
-media behavior. Complete-bundle installation/removal and the literal README
-command still need fresh physical-device verification. No device was connected
-for this release; emulator and fixture results do not substitute for it.
+including published Carousel and Debug processes. After publication, a Debian 13
+PocketCHIP passed a fresh installation of the published ARM bundle, all four
+version probes, supervised shell startup, the live update check and an initial
+App Center catalog load with zero installed apps. See the
+[hardware follow-up](history/beta2.6-device-validation.md), including the bootstrap
+permissions correction on `main`. Published assets and the release tag are unchanged.
+
+These checks do not establish physical touch, storage durability under power
+loss, Home/resume, media behavior, removal or installation of a later native
+update. The literal README command was fixture-tested; the hardware installation
+used verified, locally staged published helpers after manually archiving beta2.5.
 
 ## Repository About
 

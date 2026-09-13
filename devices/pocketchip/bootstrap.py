@@ -28,7 +28,10 @@ def fetch(url, destination, limit, timeout=30):
     def limits():
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
-    with destination.open('xb') as output, tempfile.TemporaryFile() as errors:
+    # The installer rejects group-writable inputs. Create private downloads
+    # even when the desktop user's umask is 002, retaining exclusive creation.
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as output, tempfile.TemporaryFile() as errors:
         result = subprocess.run([
             '/usr/bin/curl', '-q', '--fail', '--silent', '--show-error', '--location',
             '--proto', '=https', '--proto-redir', '=https', '--max-redirs', '5',

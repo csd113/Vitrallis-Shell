@@ -137,6 +137,27 @@ class Bootstrap(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'HTTPS'):
             b.fetch('http://github.com/example', self.root / 'bad', 100)
 
+    def test_download_permissions_are_accepted_by_installer_with_shared_umask(self):
+        def run(args, **kwargs):
+            kwargs['stdout'].write(b'verified download')
+            return subprocess.CompletedProcess(args, 0)
+        for mask in (0o002, 0o000, 0o077):
+            with self.subTest(umask=oct(mask)):
+                path = self.root / ('download-' + str(mask))
+                previous = os.umask(mask)
+                try:
+                    with patch.object(b.subprocess, 'run', side_effect=run):
+                        b.fetch('https://github.com/example', path, 100)
+                finally:
+                    os.umask(previous)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(fixture.m.read_file(path), b'verified download')
+                with patch.object(b.subprocess, 'run') as transport:
+                    with self.assertRaises(FileExistsError):
+                        b.fetch('https://github.com/example', path, 100)
+                    transport.assert_not_called()
+                self.assertEqual(path.read_bytes(), b'verified download')
+
 
 class ReadmeCommands(unittest.TestCase):
     def setUp(self):
