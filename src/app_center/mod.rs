@@ -8,7 +8,7 @@ mod running;
 mod runtime;
 mod screen;
 mod sources;
-mod storage;
+pub mod storage;
 #[cfg(test)]
 mod tests;
 mod transaction;
@@ -35,6 +35,7 @@ enum Command {
     Save(Sources),
     Install(Vec<String>),
     Uninstall(String),
+    SelectInstalled(String),
     Answer(u64, bool),
 }
 #[derive(Debug)]
@@ -45,6 +46,7 @@ enum Update {
     Row(Box<Row>),
     Confirm(u64, String),
     Done(Result<String, String>, bool),
+    SelectedInstalled(String),
 }
 #[derive(Debug)]
 struct Worker {
@@ -91,6 +93,7 @@ fn service(
     ));
     while let Ok(command) = commands.recv() {
         let mut changed = false;
+        let mut selected_installed = None;
         let mut success = String::from(match &command {
             Command::Save(_) => "Sources saved. Refresh to load available apps",
             Command::Uninstall(_) => "App uninstalled. Other data kept; removed files backed up.",
@@ -106,13 +109,12 @@ fn service(
                     success = message;
                 }
                 Command::Scan => {
-                    let sources = Sources::load(&loc.sources)?;
-                    for row in &mut rows {
-                        refresh_local(loc, &sources, row);
-                        let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
-                    }
+                    scan_local(loc, &mut rows, updates)?;
                     changed = true;
                     success = "Installed apps checked".into();
+                }
+                Command::SelectInstalled(id) => {
+                    selected_installed = Some(select_installed(loc, &id, &mut rows, updates)?);
                 }
                 Command::Save(sources) => {
                     if Some(Sources::load(&loc.sources)?) != expected_sources {
@@ -161,7 +163,7 @@ fn service(
                     )));
                     let result = uninstall::uninstall(loc, &row.package);
                     changed = true;
-                    refresh_local(loc, &Sources::load(&loc.sources)?, row);
+                    refresh_after_uninstall(loc, row);
                     let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
                     result?;
                 }
@@ -172,7 +174,65 @@ fn service(
             Ok(())
         })();
         let _ = updates.send(Update::Done(result.map(|()| success), changed));
+        if let Some(key) = selected_installed {
+            let _ = updates.send(Update::SelectedInstalled(key));
+        }
     }
+}
+fn scan_local(
+    loc: &Locations,
+    rows: &mut [Checked],
+    updates: &Sender<Update>,
+) -> Result<(), String> {
+    let sources = Sources::load(&loc.sources)?;
+    for row in rows {
+        refresh_local(loc, &sources, row);
+        let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
+    }
+    Ok(())
+}
+
+fn refresh_after_uninstall(loc: &Locations, row: &mut Checked) {
+    if !row.package.installable {
+        row.installed = install::label(loc, &row.package).unwrap_or_else(|_| "unavailable".into());
+        row.ready = false;
+        row.status = if row.installed == "not installed" {
+            "Not installed"
+        } else {
+            "Installed locally"
+        }
+        .into();
+        return;
+    }
+    match Sources::load(&loc.sources) {
+        Ok(sources) => refresh_local(loc, &sources, row),
+        Err(error) => {
+            // Source configuration does not own installed files. Keep local
+            // state accurate even when unrelated repository settings are broken.
+            row.installed =
+                install::label(loc, &row.package).unwrap_or_else(|_| "unavailable".into());
+            row.ready = false;
+            row.status = error;
+        }
+    }
+}
+fn select_installed(
+    loc: &Locations,
+    id: &str,
+    rows: &mut Vec<Checked>,
+    updates: &Sender<Update>,
+) -> Result<String, String> {
+    let package = uninstall::local_package(loc, id)?;
+    let key = package.key();
+    rows.retain(|row| row.package.key() != key);
+    rows.push(Checked {
+        installed: package.version.to_string(),
+        status: "Installed locally".into(),
+        ready: false,
+        package,
+    });
+    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+    Ok(key)
 }
 const fn initial_message(rows: &[Checked]) -> &'static str {
     if rows.is_empty() {

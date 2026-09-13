@@ -34,8 +34,17 @@ impl Options {
     /// # Errors
     /// Rejects unknown options, extra paths, and impractical display dimensions.
     pub fn parse(name: &str) -> Result<Option<Self>, String> {
+        Self::parse_args(name, std::env::args_os().skip(1))
+    }
+
+    /// Parse common options from an application's argument iterator.
+    /// # Errors
+    /// Rejects unknown options, extra paths, and impractical display dimensions.
+    pub fn parse_args(
+        name: &str,
+        mut args: impl Iterator<Item = std::ffi::OsString>,
+    ) -> Result<Option<Self>, String> {
         let mut options = Self::default();
-        let mut args = std::env::args_os().skip(1);
         while let Some(arg) = args.next() {
             match arg.to_str() {
                 Some("--version") => {

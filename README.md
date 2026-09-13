@@ -39,6 +39,10 @@ After installation, run `~/.local/share/vitrallis/launch` from a terminal in the
 
 Running apps remain open when you return Home. Save and close them before stopping or removing the session. Native utility menus and dialogs have visible keyboard focus; see [Terminal, Notepad and Files controls](docs/native-apps.md). App Center has [its own navigation and package guide](docs/app-center.md).
 
+Use **Add shortcut** (F2) to launch ordinary Linux programs or scripts without an
+App Center package. See [desktop shortcuts](docs/desktop-shortcuts.md) for command
+quoting, terminal mode, icons, editing, and removal rules.
+
 ## Compatibility and beta limits
 
 Linux release packaging targets x86-64 and ARMv7, with glibc 2.36+ and SDL2

@@ -61,6 +61,9 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     event_loop(&sdl, &mut canvas, &layout, state, platform, config)
 }
 
+// Keep input suppression, frame presentation and child-exit ordering together;
+// their operation-specific work lives in the helpers below.
+#[allow(clippy::too_many_lines)]
 fn event_loop(
     sdl: &sdl2::Sdl,
     canvas: &mut Screen,
@@ -77,6 +80,7 @@ fn event_loop(
     let mut child = ProcessSet::<crate::process::NativeProcess>::default();
     let broker = crate::native::broker(&mut state)?;
     let mut pointer = PointerInput::default();
+    let mut desktop_input = crate::input::DesktopInput::default();
     let mut accept_after = Instant::now();
     let mut dirty = false;
     let mut next_frame = Instant::now();
@@ -98,10 +102,14 @@ fn event_loop(
         dirty |= open_native(&broker, canvas, layout, &mut state, &textures, &mut child)?;
         if dirty && Instant::now() >= next_frame {
             state.running = child.running_ids();
-            render(canvas, layout, &state, &textures)?;
-            canvas.present();
-            dirty = submit_power_after_present(&mut worker, &mut state.settings);
-            next_frame = Instant::now() + Duration::from_millis(16);
+            dirty = present_frame(
+                canvas,
+                layout,
+                &mut state,
+                &textures,
+                &mut worker,
+                &mut next_frame,
+            )?;
         }
         let event = wait_event(&mut events, state.phase, next_poll, dirty);
         if let Some(event) = event {
@@ -111,23 +119,35 @@ fn event_loop(
             dirty |= exposed(&event);
             dirty |= window_focus(&event, &mut state, &mut pointer, &mut accept_after);
             if Instant::now() >= accept_after {
-                dirty |= terminate_selected(&event, &mut state, &mut child);
-                let (action, system_changed) =
-                    translate_action(&event, layout, &mut state, &mut pointer, &mut worker);
-                dirty |= system_changed;
-                let activating = state.phase == Phase::Ready
-                    && matches!(
-                        action,
-                        Some(Action::Activate | Action::SelectAndActivate(_))
-                    );
-                dirty |= handle_action(action, canvas, layout, &mut state, &textures, &mut child)?;
-                dirty |= open_requested(&mut state, &mut child);
-                if activating && state.phase == Phase::Running {
+                let (consumed, changed) =
+                    desktop_event(&event, layout, &mut state, &mut desktop_input);
+                if consumed {
                     pointer.clear();
-                    accept_after = Instant::now() + Duration::from_millis(400);
+                    if changed {
+                        textures = artwork(&creator, &state);
+                    }
+                    dirty = true;
+                } else {
+                    dirty |= terminate_selected(&event, &mut state, &mut child);
+                    let (action, system_changed) =
+                        translate_action(&event, layout, &mut state, &mut pointer, &mut worker);
+                    dirty |= system_changed;
+                    let activating = state.phase == Phase::Ready
+                        && matches!(
+                            action,
+                            Some(Action::Activate | Action::SelectAndActivate(_))
+                        );
+                    dirty |=
+                        handle_action(action, canvas, layout, &mut state, &textures, &mut child)?;
+                    dirty |= open_requested(&mut state, &mut child);
+                    if activating && state.phase == Phase::Running {
+                        pointer.clear();
+                        accept_after = Instant::now() + Duration::from_millis(400);
+                    }
                 }
             } else {
                 pointer.clear();
+                desktop_input.clear();
             }
         }
         let result = poll_children(&mut child, &mut next_poll);
@@ -144,10 +164,7 @@ fn event_loop(
                 if child.exited_active {
                     accept_after = Instant::now();
                 }
-                if raise && platform.raise_after_exit() {
-                    canvas.window_mut().raise();
-                    crate::platform::restore_shell_focus();
-                }
+                raise_after_exit(canvas, platform, raise);
                 dirty = true;
                 if smoke {
                     return finish_smoke(canvas, layout, &state, &textures, status);
@@ -155,17 +172,128 @@ fn event_loop(
             }
             Ok(None) => {}
             Err(error) => {
-                // Keep ownership and block new launches until this child can be reaped.
-                if last_wait_error.as_ref() != Some(&error) {
-                    eprintln!("level=error event=wait_failed message={error:?}");
-                    state.status.clone_from(&error);
-                    last_wait_error = Some(error);
-                    dirty = true;
-                }
+                dirty |= report_wait_error(error, &mut last_wait_error, &mut state);
             }
         }
         if smoke && Instant::now() >= deadline {
             return Err("smoke test timed out".into());
+        }
+    }
+}
+
+fn present_frame(
+    canvas: &mut Screen,
+    layout: &Layout,
+    state: &mut Launcher,
+    textures: &[Option<Texture<'_>>],
+    worker: &mut Option<crate::platform::system::Worker>,
+    next_frame: &mut Instant,
+) -> Result<bool, String> {
+    render(canvas, layout, state, textures)?;
+    canvas.present();
+    *next_frame = Instant::now() + Duration::from_millis(16);
+    Ok(submit_power_after_present(worker, &mut state.settings))
+}
+
+fn raise_after_exit(canvas: &mut Screen, platform: &impl Platform, raise: bool) {
+    if raise && platform.raise_after_exit() {
+        canvas.window_mut().raise();
+        crate::platform::restore_shell_focus();
+    }
+}
+
+fn report_wait_error(error: String, last: &mut Option<String>, state: &mut Launcher) -> bool {
+    // Retain the process owner until the child can be reaped.
+    if last.as_ref() == Some(&error) {
+        return false;
+    }
+    eprintln!("level=error event=wait_failed message={error:?}");
+    state.status.clone_from(&error);
+    *last = Some(error);
+    true
+}
+
+fn desktop_event(
+    event: &Event,
+    layout: &Layout,
+    state: &mut Launcher,
+    input: &mut crate::input::DesktopInput,
+) -> (bool, bool) {
+    use crate::{
+        input::DesktopAction,
+        shortcuts::{Store, screen::Request},
+    };
+    if state.phase != Phase::Ready
+        || state.settings.open
+        || state.app_center.open
+        || state.error.is_some()
+    {
+        input.clear();
+        return (false, false);
+    }
+    if !state.desktop.open {
+        match state
+            .desktop
+            .toolbar_event(event)
+            .or_else(|| input.event(event, layout, state.visible_count()))
+        {
+            Some(DesktopAction::Settings) => state.settings.show(),
+            Some(DesktopAction::Focus) => (),
+            Some(DesktopAction::Add) => state.desktop.add(),
+            Some(DesktopAction::Menu(index)) => {
+                if let Some(index) = index {
+                    state.selected = state.page_start() + index;
+                }
+                state.desktop.menu(state.apps.get(state.selected).cloned());
+            }
+            None => return (false, false),
+        }
+        input.clear();
+        return (true, false);
+    }
+    let Some(request) = state.desktop.event(event, layout) else {
+        return (true, false);
+    };
+    let result = (|| {
+        if matches!(request, Request::Uninstall) {
+            let app = state.desktop.entry.as_ref().ok_or("No app selected")?;
+            state.app_center.uninstall_entry(app)?;
+            return Ok(false);
+        }
+        let store = Store::current()?;
+        match request {
+            Request::Save => {
+                store.save(
+                    state.desktop.entry.as_ref().map(|app| app.id.as_str()),
+                    &state.desktop.draft,
+                )?;
+            }
+            Request::Remove => {
+                let app = state.desktop.entry.as_ref().ok_or("No shortcut selected")?;
+                if app.source == crate::app::AppSource::Custom {
+                    store.remove(app)?;
+                } else {
+                    store.hide(app)?;
+                }
+            }
+            Request::Uninstall => (),
+        }
+        let mut catalog = crate::discovery::Catalog {
+            apps: state.apps.clone(),
+            ..crate::discovery::Catalog::default()
+        };
+        crate::shortcuts::integrate(&mut catalog);
+        state.reload(catalog.apps)?;
+        Ok::<_, String>(true)
+    })();
+    match result {
+        Ok(changed) => {
+            state.desktop.open = false;
+            (true, changed)
+        }
+        Err(error) => {
+            state.desktop.error = error;
+            (true, false)
         }
     }
 }
@@ -248,8 +376,10 @@ fn launch_from_center(
     };
     if let Some(index) = state.apps.iter().position(|app| app.id == id) {
         state.app_center.open = false;
+        state.selected = index;
+        let local = index - state.page_start();
         handle_action(
-            Some(Action::SelectAndActivate(index)),
+            Some(Action::SelectAndActivate(local)),
             canvas,
             layout,
             state,
@@ -296,9 +426,9 @@ fn refresh_app_center(
         false
     };
     let input = sdl.video()?.text_input();
-    if state.app_center.editing() && !input.is_active() {
+    if (state.app_center.editing() || state.desktop.editing()) && !input.is_active() {
         input.start();
-    } else if !state.app_center.editing() && input.is_active() {
+    } else if !state.app_center.editing() && !state.desktop.editing() && input.is_active() {
         input.stop();
     }
     Ok(artwork_changed)
@@ -308,6 +438,7 @@ fn terminate_selected(event: &Event, state: &mut Launcher, child: &mut ProcessSe
     if state.phase != Phase::Ready
         || state.settings.open
         || state.app_center.open
+        || state.desktop.open
         || state.error.is_some()
         || !matches!(
             event,
@@ -770,6 +901,7 @@ fn handle_action(
         state.phase,
         state.error.is_some(),
         state.settings.open,
+        state.desktop.toolbar,
     );
     let was_ready = state.phase == Phase::Ready;
     if let Some(index) = state.input(action) {
@@ -785,6 +917,7 @@ fn handle_action(
             state.phase,
             state.error.is_some(),
             state.settings.open,
+            state.desktop.toolbar,
         )
         || was_ready
             && matches!(

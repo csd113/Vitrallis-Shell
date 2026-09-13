@@ -120,6 +120,22 @@ impl Default for Center {
     }
 }
 impl Center {
+    pub fn uninstall_entry(&mut self, app: &crate::app::AppEntry) -> Result<(), String> {
+        if app.source != crate::app::AppSource::AppCenter {
+            return Err("Only managed desktop entries can request uninstall".into());
+        }
+        if self.busy {
+            return Err("Wait for the current App Center operation".into());
+        }
+        if self.worker.is_none() {
+            self.worker = Some(Worker::start()?);
+        }
+        self.open = true;
+        self.confirmation = None;
+        self.send(Command::SelectInstalled(app.id.clone()));
+        Ok(())
+    }
+
     pub fn show(&mut self) {
         self.open = true;
         if self.worker.is_none() {
@@ -154,6 +170,17 @@ impl Center {
             };
             changed = true;
             match update {
+                Update::SelectedInstalled(key) => {
+                    if self.open
+                        && let Some(index) =
+                            self.rows.iter().position(|row| row.package.key() == key)
+                    {
+                        self.chosen = Some(key);
+                        self.row = index;
+                        self.page(Page::Details);
+                        self.confirm_uninstall();
+                    }
+                }
                 Update::Sources(s) => self.sources = s,
                 Update::Rows(rows) => {
                     self.rows = rows;

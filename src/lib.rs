@@ -13,6 +13,7 @@ mod preferences;
 mod process;
 mod renderer;
 mod settings;
+mod shortcuts;
 mod ui;
 mod updater;
 

@@ -149,7 +149,7 @@ impl Lock {
         opts.mode(0o600);
         let file = opts.open(path).map_err(|e| e.to_string())?;
         file.try_lock()
-            .map_err(|e| format!("Another App Center operation is active: {e}"))?;
+            .map_err(|e| format!("Another Vitrallis storage operation is active: {e}"))?;
         Ok(Self(file))
     }
 }

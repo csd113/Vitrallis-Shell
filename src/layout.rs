@@ -32,6 +32,8 @@ pub struct Layout {
     pub footer: Rect,
     pub previous: Rect,
     pub next: Rect,
+    pub add_shortcut: Rect,
+    pub desktop_menu: Rect,
 }
 impl Layout {
     pub fn home(width: u16, height: u16) -> Result<Self, String> {
@@ -95,6 +97,18 @@ impl Layout {
                 x: margin,
                 y: h - bottom,
                 w: w - 2 * margin,
+                h: bottom,
+            },
+            add_shortcut: Rect {
+                x: margin + (w - 2 * margin) / 3,
+                y: h - bottom,
+                w: (w - 2 * margin) / 3,
+                h: bottom,
+            },
+            desktop_menu: Rect {
+                x: margin + 2 * (w - 2 * margin) / 3,
+                y: h - bottom,
+                w: (w - 2 * margin) / 3,
                 h: bottom,
             },
         })

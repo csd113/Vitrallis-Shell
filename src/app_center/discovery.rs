@@ -99,20 +99,34 @@ pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), St
         })();
         match result {
             Ok(Some(app)) => {
-                if !catalog
-                    .apps
-                    .iter()
-                    .any(|old| old.manifest.entry == app.manifest.entry)
-                {
-                    if catalog.apps.iter().any(|old| old.id == app.id) {
-                        catalog.diagnostics.push(format!(
-                            "App ID conflicts with configured launcher: {}",
-                            app.id
-                        ));
-                    } else {
-                        catalog.apps.push(app);
+                // An imported alias of the installed launcher must not suppress
+                // the canonical managed tile (and bypass uninstall). Explicit
+                // custom shortcuts remain independent even for the same target.
+                catalog.apps.retain(|old| {
+                    old.source == crate::app::AppSource::Custom
+                        || old.manifest.entry != app.manifest.entry
+                        || old.manifest.runtime.is_some()
+                        || !old.manifest.args.is_empty()
+                });
+                for old in &mut catalog.apps {
+                    if old.id == app.id {
+                        old.id = format!(
+                            "vitrallis-discovered-{}",
+                            storage::sha(
+                                format!("{:?}:{}:{:?}", old.source, old.id, old.manifest)
+                                    .as_bytes()
+                            )
+                        );
                     }
                 }
+                // Match full discovery ordering, which appends custom records
+                // after installed apps. Retain custom identities across refresh.
+                let index = catalog
+                    .apps
+                    .iter()
+                    .position(|old| old.source == crate::app::AppSource::Custom)
+                    .unwrap_or(catalog.apps.len());
+                catalog.apps.insert(index, app);
             }
             Ok(None) => (),
             Err(e) => catalog.diagnostics.push(e),

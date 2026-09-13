@@ -69,6 +69,15 @@ failure conditions successfully.
 The simulator verifies Linux software behavior, not physical the target device touch,
 ARMv7 performance, hardware media decoding, battery behavior or display electronics.
 
+## Desktop shortcuts
+
+After starting the simulator services and building the workspace, run
+`python3 tests/simulator/shortcuts.py` inside the container. It runs the actual
+shell as an unprivileged user at 480×272. Mouse and keyboard events come from
+xdotool; `touch.c` injects native SDL finger events through a test-only preload
+library and FIFO. Production binaries contain no injection code. Results and
+screenshots are written to `/sim/artifacts/shortcuts.json` and `shortcut-*.png`.
+
 ## Stock session checks
 
 `session.py` runs under `dbus-run-session` on a separate Xvfb display with real

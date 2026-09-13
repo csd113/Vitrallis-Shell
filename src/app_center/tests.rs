@@ -2,6 +2,106 @@ use super::*;
 use metadata::{Files, Package};
 use std::{collections::BTreeMap, path::Path};
 use storage::{FileData, Locations};
+
+#[test]
+fn desktop_uninstall_resolves_custom_repository_receipts_without_network() -> Result<(), String> {
+    struct Offline(std::cell::Cell<usize>);
+    impl network::Fetch for Offline {
+        fn fetch(&self, _: &str, _: usize) -> Result<Vec<u8>, String> {
+            self.0.set(self.0.get() + 1);
+            Err("No network permitted".into())
+        }
+    }
+    let (_scratch, loc) = locations()?;
+    let (package, files) = generic()?;
+    install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
+    let local = uninstall::local_package(&loc, &package.id)?;
+    assert_eq!(local.origin, package.origin);
+    assert_eq!(local.repository, package.repository);
+    assert_eq!(local.entry, package.entry);
+    let target = loc.root(&package).join(&package.entry);
+    let offline = Offline(std::cell::Cell::new(0));
+    let (send, commands) = mpsc::channel();
+    let (updates, receive) = mpsc::channel();
+    send.send(Command::SelectInstalled(package.id.clone()))
+        .map_err(|e| e.to_string())?;
+    send.send(Command::Uninstall(local.key()))
+        .map_err(|e| e.to_string())?;
+    drop(send);
+    service(&loc, &commands, &updates, &AtomicBool::new(false), &offline);
+    let events: Vec<_> = receive.try_iter().collect();
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, Update::SelectedInstalled(key) if key == &local.key()))
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, Update::Done(Err(_), _))),
+        "{events:?}"
+    );
+    assert_eq!(offline.0.get(), 0);
+    assert!(!target.exists());
+    assert!(uninstall::local_package(&loc, &package.id).is_err());
+    Ok(())
+}
+
+#[test]
+fn managed_discovery_keeps_canonical_authority_and_independent_custom_aliases() -> Result<(), String>
+{
+    let (_scratch, loc) = locations()?;
+    let (package, files) = generic()?;
+    install::install(&loc, &install::prepare(&loc, package, files)?)?;
+    let mut catalog = crate::discovery::Catalog::default();
+    discovery::installed(&mut catalog, &loc)?;
+    let managed = catalog.apps[0].clone();
+    let mut alias = managed.clone();
+    alias.source = crate::app::AppSource::PocketHome;
+    alias.id = "imported-alias".into();
+    let mut custom = alias.clone();
+    custom.source = crate::app::AppSource::Custom;
+    custom.id = format!("{}{}", crate::shortcuts::PREFIX, "a".repeat(64));
+    let mut collision = alias.clone();
+    collision.id = managed.id.clone();
+    collision.manifest.entry = "/bin/echo".into();
+    catalog.apps = vec![alias, collision, custom.clone()];
+    discovery::installed(&mut catalog, &loc)?;
+    assert_eq!(catalog.apps.len(), 3);
+    assert!(catalog.apps.contains(&custom));
+    assert!(catalog.apps.contains(&managed));
+    let managed_index = catalog
+        .apps
+        .iter()
+        .position(|app| app.id == managed.id)
+        .ok_or("managed tile")?;
+    let custom_index = catalog
+        .apps
+        .iter()
+        .position(|app| app.id == custom.id)
+        .ok_or("custom tile")?;
+    assert!(
+        managed_index < custom_index,
+        "live refresh must match restart ordering"
+    );
+    assert!(
+        catalog
+            .apps
+            .iter()
+            .any(|app| app.source == crate::app::AppSource::PocketHome
+                && app.id.starts_with("vitrallis-discovered-"))
+    );
+    discovery::installed(&mut catalog, &loc)?;
+    assert_eq!(
+        catalog
+            .apps
+            .iter()
+            .filter(|app| app.source == crate::app::AppSource::AppCenter)
+            .count(),
+        1
+    );
+    Ok(())
+}
 #[path = "lifecycle_tests.rs"]
 mod lifecycle;
 fn fixture(name: &str) -> std::path::PathBuf {

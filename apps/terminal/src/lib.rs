@@ -1,14 +1,16 @@
 //! Compact native PTY terminal; no external terminal application or GUI framework.
+mod command;
 mod model;
 mod pty;
 use model::Terminal;
 use sdl2::{keyboard::Keycode, pixels::Color, rect::Rect};
-use vitrallis_native::ui::{self, BACKGROUND, Input, Options, TEXT, Ui};
+use vitrallis_native::ui::{self, BACKGROUND, Input, TEXT, Ui};
 
 /// # Errors
 /// Reports SDL initialization errors; PTY/shell failures are shown in a dismissible dialog.
 pub fn run() -> Result<(), String> {
-    let Some(options) = Options::parse("vitrallis-terminal")? else {
+    let (options, command) = command::parse(std::env::args_os().skip(1).collect())?;
+    let Some(options) = options else {
         return Ok(());
     };
     if options.path.is_some() {
@@ -25,19 +27,18 @@ pub fn run() -> Result<(), String> {
         ui.finish_preview(&options)?;
         return Ok(());
     }
-    let preferred = std::env::var_os("SHELL").map(std::path::PathBuf::from);
-    let shell = match pty::shell(preferred.as_deref()) {
-        Ok(shell) => shell,
+    let (program, args) = match command::launch(command) {
+        Ok(command) => command,
         Err(e) => {
             ui.error(&e.to_string())?;
             return Ok(());
         }
     };
-    let process = match pty::Pty::spawn(&shell, &["-i"], rows, cols, ui.sdl.event()?.event_sender())
+    let process = match pty::Pty::spawn(&program, &args, rows, cols, ui.sdl.event()?.event_sender())
     {
         Ok(pty) => pty,
         Err(e) => {
-            ui.error(&format!("Cannot start shell: {e}"))?;
+            ui.error(&format!("Cannot start command: {e}"))?;
             return Ok(());
         }
     };

@@ -1,5 +1,22 @@
 # Release validation and assets
 
+## 0.1.0-beta2.7
+
+Release `v0.1.0-beta2.7` adds native desktop shortcuts for ordinary Linux
+programs and scripts, including executable/icon browsing, editing, explicit
+shell mode and native terminal launching. Keyboard, mouse and touch actions use
+provenance-specific removal: custom records are removed without deleting their
+targets, managed apps use App Center's existing uninstall transaction, and
+unmanaged entries are hidden only. See the [shortcut guide](desktop-shortcuts.md)
+and [validation audit](desktop-shortcuts-validation.md).
+
+This release also includes the stock PocketHome/session integration and matching
+`install-session.py` helper added since beta2.6. The maintainer explicitly
+authorized version `0.1.0-beta2.7`, commit/push and GitHub prerelease publication.
+This authorization does not cover future versions. Release CI builds and checks
+both architecture bundles; the draft's uploaded assets must pass the review
+below before publication.
+
 ## 0.1.0-beta2.6
 
 Release `v0.1.0-beta2.6` packages the shell, Terminal, Notepad and Files as one
@@ -16,9 +33,9 @@ is a beta prerelease.
 
 ## Current source asset inventory
 
-This source contract requires `install-session.py`; published beta2.6 predates
-that installer and is not selected by the current bootstrap. No new release is
-published by this change. Each architecture has a four-binary bundle and sidecar:
+The beta2.7 source contract requires `install-session.py`; published beta2.6
+predates that installer and is not selected by the current bootstrap. Each
+architecture has a four-binary bundle and sidecar:
 
 - `vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle`
 - `vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle.sha256`
@@ -54,8 +71,9 @@ against checksums and bundle contents, and confirm successful release CI.
 The release description records those checks for the published artifacts.
 
 Published validation and its limits are recorded in the [hardware follow-up](devices/pocketchip/history/beta2.6-device-validation.md).
-Those artifacts predate the current stock-session integration changes. A matching
-bundle and helper release must be built and validated before distributing this branch.
+Those beta2.6 artifacts predate the stock-session integration changes. Beta2.7
+packages matching bundles and helpers; the previous hardware checks do not
+constitute physical-device validation of beta2.7.
 
 ## Repository About
 

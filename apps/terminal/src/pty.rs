@@ -34,7 +34,7 @@ pub struct Pty {
 impl Pty {
     pub fn spawn(
         shell: &Path,
-        args: &[&str],
+        args: &[std::ffi::OsString],
         rows: u16,
         cols: u16,
         sender: sdl2::event::EventSender,
@@ -149,6 +149,18 @@ impl Drop for Pty {
 struct OwnedChild(Child);
 impl Drop for OwnedChild {
     fn drop(&mut self) {
+        // spawn_child creates a new session/process group. Closing the terminal
+        // must also stop ordinary descendants left behind by its command.
+        if let Ok(pid) = i32::try_from(self.0.id()) {
+            // SAFETY: kill takes integer IDs only; the negative ID names only
+            // the process group established for this owned PTY child.
+            if unsafe { libc::kill(-pid, libc::SIGKILL) } < 0 {
+                let error = io::Error::last_os_error();
+                if error.raw_os_error() != Some(libc::ESRCH) {
+                    eprintln!("PTY group cleanup: {error}");
+                }
+            }
+        }
         if let Err(error) = self.0.kill()
             && error.kind() != io::ErrorKind::InvalidInput
         {
@@ -270,7 +282,12 @@ fn pump(
         drop(shared);
     }
 }
-fn spawn_child(shell: &Path, args: &[&str], rows: u16, cols: u16) -> io::Result<(File, Child)> {
+fn spawn_child(
+    shell: &Path,
+    args: &[std::ffi::OsString],
+    rows: u16,
+    cols: u16,
+) -> io::Result<(File, Child)> {
     let mut master = -1;
     let mut slave = -1;
     let mut size = libc::winsize {
@@ -385,7 +402,10 @@ mod tests {
     fn pty_command_resize_output_eof_and_reaping() -> io::Result<()> {
         let (mut master, mut child) = spawn_child(
             Path::new("/bin/sh"),
-            &["-c", "printf 'vitrallis-pty-ok\\n'; stty size"],
+            &[
+                "-c".into(),
+                "printf 'vitrallis-pty-ok\\n'; stty size".into(),
+            ],
             11,
             37,
         )?;
@@ -428,8 +448,8 @@ mod tests {
         let child = spawn_child(
             Path::new("/bin/sh"),
             &[
-                "-c",
-                "dd if=/dev/zero bs=8192 count=64 2>/dev/null; printf finished",
+                "-c".into(),
+                "dd if=/dev/zero bs=8192 count=64 2>/dev/null; printf finished".into(),
             ],
             28,
             60,

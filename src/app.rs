@@ -18,6 +18,7 @@ pub enum AppSource {
     PocketHome,
     System,
     Demo,
+    Custom,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

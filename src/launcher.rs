@@ -13,6 +13,7 @@ pub struct Launcher {
     pub preferences: crate::preferences::Preferences,
     pub settings: crate::settings::Settings,
     pub app_center: crate::app_center::Center,
+    pub desktop: crate::shortcuts::screen::Desktop,
     pub apps: Vec<AppEntry>,
     pub selected: usize,
     pub phase: Phase,
@@ -39,6 +40,7 @@ impl Launcher {
             preferences: crate::preferences::Preferences::default(),
             settings: crate::settings::Settings::default(),
             app_center: crate::app_center::Center::default(),
+            desktop: crate::shortcuts::screen::Desktop::default(),
             selected: 0,
             phase: Phase::Ready,
             error: None,
@@ -69,6 +71,7 @@ impl Launcher {
             }
             return None;
         }
+        self.desktop.toolbar = None;
         match action {
             Action::Move(direction) => {
                 self.selected =

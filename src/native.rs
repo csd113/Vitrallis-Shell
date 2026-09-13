@@ -109,6 +109,7 @@ pub fn requested(broker: &Broker, state: &mut Launcher) -> Result<Option<usize>,
         || state.error.is_some()
         || state.settings.open
         || state.app_center.open
+        || state.desktop.open
         || state.app_center.busy
     {
         return Ok(None);

@@ -1,7 +1,7 @@
 //! Discovery backends return normalized entries without touching the session or
 //! modifying source metadata. App Center supplies installed manifest packages.
 mod catalog;
-mod executable;
+pub mod executable;
 mod pockethome;
 use crate::{
     app::AppEntry,
@@ -29,13 +29,15 @@ pub fn refresh(config: &Config) -> Result<Catalog, String> {
 
 fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, String> {
     if config.demo || config.mode == crate::config::Mode::Smoke {
-        return Ok(Catalog {
+        let mut catalog = Catalog {
             apps: crate::platform::generic::demo_apps(
                 &std::env::current_exe().map_err(|e| e.to_string())?,
             ),
             diagnostics: vec![],
             preferences: crate::preferences::Preferences::default(),
-        });
+        };
+        crate::shortcuts::integrate(&mut catalog);
+        return Ok(catalog);
     }
     let paths = Paths::from_config(config)?;
     eprintln!(
@@ -66,6 +68,7 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
     }
     crate::app_center::integrate(&mut catalog);
     crate::native::integrate(&mut catalog)?;
+    crate::shortcuts::integrate(&mut catalog);
     if config.linux_handheld {
         for app in &mut catalog.apps {
             crate::platform::linux_handheld::LinuxHandheld.prepare_app(app);

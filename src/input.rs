@@ -119,6 +119,176 @@ mod sdl {
 }
 pub use sdl::action;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesktopAction {
+    Add,
+    Menu(Option<usize>),
+    Settings,
+    Focus,
+}
+#[derive(Debug, Default)]
+pub struct DesktopInput {
+    contact: Option<(i64, i64, u32, DesktopAction)>,
+}
+impl DesktopInput {
+    pub const fn clear(&mut self) {
+        self.contact = None;
+    }
+    pub fn event(
+        &mut self,
+        event: &sdl2::event::Event,
+        layout: &crate::layout::Layout,
+        count: usize,
+    ) -> Option<DesktopAction> {
+        use sdl2::{
+            event::{Event, WindowEvent},
+            keyboard::Keycode,
+            mouse::MouseButton,
+        };
+        let target = |x, y| desktop_target(layout, count, x, y);
+        let (id, finger, timestamp, down, hit, held) = match *event {
+            Event::KeyDown {
+                keycode: Some(key),
+                repeat: false,
+                ..
+            } => {
+                self.clear();
+                return match key {
+                    Keycode::F2 => Some(DesktopAction::Add),
+                    Keycode::F10 | Keycode::Application => Some(DesktopAction::Menu(None)),
+                    _ => None,
+                };
+            }
+            Event::MouseButtonDown {
+                which,
+                mouse_btn,
+                x,
+                y,
+                timestamp,
+                ..
+            }
+            | Event::MouseButtonUp {
+                which,
+                mouse_btn,
+                x,
+                y,
+                timestamp,
+                ..
+            } if which != u32::MAX
+                && matches!(mouse_btn, MouseButton::Left | MouseButton::Right) =>
+            {
+                (
+                    i64::from(which),
+                    0,
+                    timestamp,
+                    matches!(event, Event::MouseButtonDown { .. }),
+                    target(f64::from(x), f64::from(y)),
+                    mouse_btn == MouseButton::Right,
+                )
+            }
+            Event::FingerDown {
+                touch_id,
+                finger_id,
+                timestamp,
+                x,
+                y,
+                ..
+            }
+            | Event::FingerUp {
+                touch_id,
+                finger_id,
+                timestamp,
+                x,
+                y,
+                ..
+            } => (
+                touch_id,
+                finger_id,
+                timestamp,
+                matches!(event, Event::FingerDown { .. }),
+                target(
+                    f64::from(x) * f64::from(layout.width),
+                    f64::from(y) * f64::from(layout.height),
+                ),
+                matches!(event, Event::FingerDown { .. }),
+            ),
+            Event::FingerMotion {
+                touch_id,
+                finger_id,
+                x,
+                y,
+                ..
+            } => {
+                let hit = target(
+                    f64::from(x) * f64::from(layout.width),
+                    f64::from(y) * f64::from(layout.height),
+                );
+                if self.contact.is_some_and(|(id, finger, _, t)| {
+                    id != touch_id || finger != finger_id || hit != Some(t)
+                }) {
+                    self.clear();
+                }
+                return None;
+            }
+            Event::Window {
+                win_event: WindowEvent::FocusLost,
+                ..
+            } => {
+                self.clear();
+                return None;
+            }
+            _ => return None,
+        };
+        self.finish(id, finger, timestamp, down, hit, held)
+    }
+    fn finish(
+        &mut self,
+        id: i64,
+        finger: i64,
+        timestamp: u32,
+        down: bool,
+        hit: Option<DesktopAction>,
+        held: bool,
+    ) -> Option<DesktopAction> {
+        if down {
+            self.contact = if self.contact.is_some() {
+                None
+            } else {
+                hit.filter(|t| held || !matches!(t, DesktopAction::Menu(Some(_))))
+                    .map(|t| (id, finger, timestamp, t))
+            };
+            None
+        } else {
+            let (previous_id, previous_finger, start, previous) = self.contact.take()?;
+            hit.filter(|t| {
+                previous_id == id
+                    && previous_finger == finger
+                    && previous == *t
+                    && (!matches!(t, DesktopAction::Menu(Some(_)))
+                        || held
+                        || timestamp.wrapping_sub(start) >= 600)
+            })
+        }
+    }
+}
+
+fn desktop_target(
+    layout: &crate::layout::Layout,
+    count: usize,
+    x: f64,
+    y: f64,
+) -> Option<DesktopAction> {
+    if layout.add_shortcut.contains(x, y) {
+        Some(DesktopAction::Add)
+    } else if layout.desktop_menu.contains(x, y) {
+        Some(DesktopAction::Menu(None))
+    } else {
+        layout
+            .hit(x, y, count)
+            .map(|index| DesktopAction::Menu(Some(index)))
+    }
+}
+
 /// Require press and release on the same target and pointer. Clear this when
 /// focus changes or an app exits so stale releases cannot launch another app.
 #[derive(Debug, Default)]

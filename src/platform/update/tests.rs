@@ -42,6 +42,15 @@ fn atomic_generation_switch_retains_all_old_binaries_and_independent_apps()
     let apps = scratch.0.join("apps");
     fs::create_dir(&apps)?;
     fs::write(apps.join("sentinel"), "untouched")?;
+    let store = crate::shortcuts::Store::at(scratch.0.canonicalize()?.join("shortcuts"));
+    let draft = crate::shortcuts::Draft {
+        name: "Retained shortcut".into(),
+        command: "/bin/echo 'after shell update'".into(),
+        cwd: scratch.0.canonicalize()?.to_string_lossy().into_owned(),
+        icon: Some(include_bytes!("../../../assets/native/terminal.png").to_vec()),
+        ..crate::shortcuts::Draft::default()
+    };
+    let shortcut = store.save(None, &draft)?;
     let mut installation = Installation::open(&target)?;
     prepare(&mut installation)?;
     for name in bundle::BINARIES {
@@ -62,6 +71,7 @@ fn atomic_generation_switch_retains_all_old_binaries_and_independent_apps()
         );
     }
     assert_eq!(fs::read_to_string(apps.join("sentinel"))?, "untouched");
+    assert_eq!(store.load(&shortcut)?, draft);
     assert_eq!(fs::read_to_string(&target)?, "working vitrallis");
     let relaunch = installation.relaunch_target()?;
     drop(installation);

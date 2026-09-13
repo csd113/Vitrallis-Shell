@@ -10,6 +10,43 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+/// Resolve uninstall authority exclusively from local ownership metadata. This
+/// works for removed/custom repositories and never acquires a remote catalog.
+pub(super) fn local_package(loc: &Locations, id: &str) -> Result<metadata::Package, String> {
+    metadata::identity(id)?;
+    let root = loc.data.join("vitrallis/apps").join(id);
+    let receipt = install::receipt(&root)?.ok_or("No installed app receipt; uninstall refused")?;
+    if receipt["id"] != id {
+        return Err("Installed receipt ID differs; uninstall refused".into());
+    }
+    let file = storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)?
+        .ok_or("Installed manifest missing")?;
+    let manifest = metadata::manifest(&file.bytes)?;
+    if manifest["id"] != id {
+        return Err("Installed manifest ID differs; uninstall refused".into());
+    }
+    Ok(metadata::Package {
+        origin: super::sources::Repository::parse(metadata::text(&receipt["origin"], 160)?)?,
+        repository: super::sources::Repository::parse(metadata::text(
+            &receipt["repository"],
+            160,
+        )?)?,
+        id: id.into(),
+        name: metadata::text(&manifest["name"], 1000)?.into(),
+        entry: metadata::text(&manifest["entry"], 240)?.into(),
+        version: metadata::version(metadata::text(&receipt["version"], 32)?)?,
+        commit: metadata::text(&receipt["commit"], 40)?.into(),
+        description: "Installed application (local receipt)".into(),
+        changelog: None,
+        icon: None,
+        permissions: serde_json::json!({}),
+        installable: false,
+        notes: "Uninstall removes receipt-owned files and retains application data.".into(),
+        directory: String::new(),
+        files: Vec::new(),
+    })
+}
+
 pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), String> {
     use running::Processes;
     metadata::identity(&package.id)?;

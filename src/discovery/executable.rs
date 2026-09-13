@@ -1,13 +1,13 @@
 //! Resolve executable files in working-directory and PATH order.
 use std::path::{Path, PathBuf};
 
-pub(super) fn resolve(program: &str, cwd: &Path, search: &[PathBuf]) -> Option<PathBuf> {
+pub fn resolve(program: &str, cwd: &Path, search: &[PathBuf]) -> Option<PathBuf> {
     if program.contains('/') {
         return Some(cwd.join(program)).filter(|p| executable(p));
     }
     search
         .iter()
-        .map(|p| p.join(program))
+        .map(|p| cwd.join(p).join(program))
         .find(|p| executable(p))
 }
 fn executable(path: &Path) -> bool {

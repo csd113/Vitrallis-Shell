@@ -1,4 +1,5 @@
 mod app_center;
+mod shortcuts;
 mod system;
 use crate::{
     app::AppEntry,
@@ -73,15 +74,19 @@ pub fn icons<'a>(
             if remaining == 0 {
                 return None;
             }
-            let builtin: Option<&[u8]> = crate::native::icon(app).or_else(|| {
-                if app.id == crate::app_center::TILE_ID {
-                    Some(include_bytes!("../assets/system/apps.png").as_slice())
-                } else if app.is_system_settings() {
-                    Some(include_bytes!("../assets/system/gear.png").as_slice())
-                } else {
-                    None
-                }
-            });
+            let custom = crate::shortcuts::icon(app);
+            let builtin: Option<&[u8]> = custom
+                .as_deref()
+                .or_else(|| crate::native::icon(app))
+                .or_else(|| {
+                    if app.id == crate::app_center::TILE_ID {
+                        Some(include_bytes!("../assets/system/apps.png").as_slice())
+                    } else if app.is_system_settings() {
+                        Some(include_bytes!("../assets/system/gear.png").as_slice())
+                    } else {
+                        None
+                    }
+                });
             let result = if let Some(bytes) = builtin {
                 decode_icon(bytes).and_then(|surface| {
                     creator
@@ -171,7 +176,7 @@ pub fn artwork<'a>(
     textures
 }
 
-fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
+pub fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         let mut decoder = png::Decoder::new_with_limits(
             bytes,
@@ -229,6 +234,9 @@ pub fn render(
     }
     if state.app_center.open {
         return app_center::panel(canvas, layout, &state.app_center);
+    }
+    if state.desktop.open {
+        return shortcuts::panel(canvas, layout, &state.desktop);
     }
     render_launcher(canvas, layout, state, icons)
 }
@@ -308,30 +316,40 @@ fn render_launcher(
             layout,
             app,
             *tile,
-            index == state.selected,
+            index == state.selected && state.desktop.toolbar.is_none(),
             state.running.contains(&app.id),
             icons.get(index).and_then(Option::as_ref),
         )?;
     }
     loading_dialog(canvas, layout, state)?;
     error_dialog(canvas, layout, state)?;
+    desktop_footer(canvas, layout, state)?;
+    Ok(())
+}
+
+fn desktop_footer(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
+    if let Some(toolbar) = state.desktop.toolbar {
+        let bounds = toolbar.bounds(layout);
+        fill(canvas, bounds, Color::RGB(42, 77, 92))?;
+        canvas.set_draw_color(Color::RGB(120, 240, 220));
+        canvas.draw_rect(rect(bounds)?)?;
+    }
     text(
         canvas,
-        if state.opening.is_some() {
-            "OPENING APP - PLEASE WAIT"
-        } else if state
-            .apps
-            .get(state.selected)
-            .is_some_and(|app| app.name == "App Center")
-        {
-            "APP CENTER - FREE APPS AND UPDATES"
-        } else {
-            &state.status
+        "Settings [Power]",
+        Rect {
+            w: layout.footer.w / 3,
+            ..layout.footer
         },
-        layout.footer,
         layout.text_scale,
         Color::RGB(173, 194, 210),
     )?;
+    for (bounds, label) in [
+        (layout.add_shortcut, "Add shortcut [F2]"),
+        (layout.desktop_menu, "Actions [F10]"),
+    ] {
+        text(canvas, label, bounds, 1, Color::RGB(93, 218, 201))?;
+    }
     Ok(())
 }
 
@@ -789,6 +807,7 @@ mod system_tests {
             render(&mut canvas, &layout, &state, &[])?;
             screenshot(&canvas, &output.join(format!("loading-{w}x{h}.bmp")))?;
             app_center::qa(&mut canvas, &layout, output)?;
+            shortcuts::qa(&mut canvas, &layout, output)?;
         }
         Ok(())
     }
