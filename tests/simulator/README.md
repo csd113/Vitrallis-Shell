@@ -44,11 +44,10 @@ docker run --rm -e VITRALLIS_TEST_PUBLISHED=1 \
 ```
 
 The test materializes source bytes from the catalog's exact Git pins. App Center
-still obtains them through its real HTTPS acquisition path. Carousel's existing
-Python/Pillow/packaging prerequisites are explicitly installed by the test in an
-app-local virtual environment; **App Center does not install dependencies**.
+still obtains them through its real HTTPS acquisition path. App Center installs
+Carousel's declared Python dependencies in an app-local environment automatically.
 `published-runtime.txt` records resolved dependency versions. This optional pass
-needs network access to provision those prerequisites. It opens real Tk windows,
+needs network access to provision those dependencies. It opens real Tk windows,
 checks their process script paths, updates Debug 0.1.1 to 0.1.2 and removes Carousel.
 Upstream Debug 0.1.2 changes release metadata/changelog only; the synthetic fixture
 provides the distinct-code execution regression.

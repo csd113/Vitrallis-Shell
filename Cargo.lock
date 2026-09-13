@@ -373,7 +373,7 @@ checksum = "579a42fc0b8e0c63b76519a339be31bed574929511fa53c1a3acae26eb258f29"
 
 [[package]]
 name = "vitrallis-files"
-version = "0.1.0-beta2.7.1"
+version = "0.1.0-beta2.7.2"
 dependencies = [
  "sdl2",
  "vitrallis-native",
@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "vitrallis-native"
-version = "0.1.0-beta2.7.1"
+version = "0.1.0-beta2.7.2"
 dependencies = [
  "font8x8",
  "libc",
@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "vitrallis-notepad"
-version = "0.1.0-beta2.7.1"
+version = "0.1.0-beta2.7.2"
 dependencies = [
  "sdl2",
  "vitrallis-native",
@@ -399,7 +399,7 @@ dependencies = [
 
 [[package]]
 name = "vitrallis-shell"
-version = "0.1.0-beta2.7.1"
+version = "0.1.0-beta2.7.2"
 dependencies = [
  "font8x8",
  "png",
@@ -414,7 +414,7 @@ dependencies = [
 
 [[package]]
 name = "vitrallis-terminal"
-version = "0.1.0-beta2.7.1"
+version = "0.1.0-beta2.7.2"
 dependencies = [
  "libc",
  "sdl2",

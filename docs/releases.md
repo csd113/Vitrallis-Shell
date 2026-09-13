@@ -1,5 +1,18 @@
 # Release validation and assets
 
+## 0.1.0-beta2.7.2
+
+App Center now installs missing declared Python dependencies automatically in an
+isolated app-local environment, including Carousel's Pillow dependency. Failed
+provisioning cleans up its staged environment, existing environments are retained,
+and app code is validated before installation. System Python/Tk and venv support
+remain prerequisites; dependency downloads require network access.
+
+This release also includes the removal of obsolete shell implementations already
+on main. The maintainer authorized this version, push and release publication.
+Validation uses the host and release CI gates below; no device testing was
+requested for this patch.
+
 ## 0.1.0-beta2.7.1
 
 This patch fixes the built-in PocketCHIP Fn layer in the launcher and native

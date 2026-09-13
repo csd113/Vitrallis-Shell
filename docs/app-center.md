@@ -119,10 +119,17 @@ trees, collisions and reserved runtime/installer paths fail closed.
 Catalog v1 and manifest v1 must agree on ID, name, version, Python runtime, entry
 and network/audio/storage requirements. Packages require `app.toml`, `main.py`,
 `icon.png`, `requirements.txt`, `README.md` and populated `assets/`. The declared
-entry must be an inventoried Python file. Runtime detection checks an existing
-app-local `.venv/bin/python3`, then system Python candidates. Declared distributions,
-Tk imports and syntax are checked without importing app code. App Center never
-runs pip, apt, publisher install scripts, or app code during installation checks.
+entry must be an inventoried Python file. Runtime detection checks a managed
+app-local environment, an existing `.venv/bin/python3`, then system Python
+candidates. When declared Python dependencies are missing, installing an app
+creates an isolated environment under `runtime/<requirements hash>` and installs
+`requirements.txt` plus `packaging` using pip. Failed provisioning removes the
+staged environment; existing environments are preserved. Python/Tk and venv/pip
+must be available on the system, and dependency downloads require network access.
+Pip options, paths, URLs and extras in requirements are rejected. Declared
+distributions, Tk imports and syntax are checked without importing app code.
+Catalog checks do not install dependencies. App Center does not run apt or
+publisher install scripts, and does not install Python dependencies globally.
 Permissions are requirements; applications are not sandboxed.
 
 Installed packages live at `$XDG_DATA_HOME/vitrallis/apps/<id>` (default

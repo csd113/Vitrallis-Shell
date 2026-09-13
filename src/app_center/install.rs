@@ -183,12 +183,12 @@ pub fn prepare_with_modes(
     metadata::validate_bundle(&p, &files)?;
     validate_paths(&p)?;
     let root = loc.root(&p);
-    let runtime = runtime::detect(&root, &files)?;
-    runtime::validate(&runtime, &files)?;
     recover(loc, &p)?;
     let installed = label(loc, &p)?;
     let old_receipt = receipt(&root)?;
     protect(&p, &root, &files, old_receipt.as_ref())?;
+    let runtime = runtime::ensure(&root, &files)?;
+    runtime::validate(&runtime, &files)?;
     let mut writes = Vec::new();
     for (name, bytes) in &files {
         writes.push(transaction::plan(
@@ -347,9 +347,16 @@ fn support(
         let old_commit = saved
             .as_ref()
             .map_or(Ok(p.commit.as_str()), |r| metadata::text(&r["commit"], 40))?;
-        if old.bytes != after.bytes
-            && old.bytes != runtime::launcher(runtime, &old_entry, old_commit)?
-        {
+        let mut old_files = Files::new();
+        if let Some(requirements) = storage::read(&root.join("requirements.txt"), 65536)? {
+            old_files.insert("requirements.txt".into(), requirements.bytes);
+        }
+        let managed_launcher = runtime::candidates(&root, &old_files)
+            .into_iter()
+            .map(|program| runtime::launcher(&Runtime { program }, &old_entry, old_commit))
+            .collect::<Result<Vec<_>, _>>()?
+            .contains(&old.bytes);
+        if old.bytes != after.bytes && !managed_launcher {
             return Err("App launcher was edited; preserve your changes and restore the managed launcher before updating".into());
         }
     }

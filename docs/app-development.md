@@ -63,9 +63,10 @@ entry and permissions; receipts bind installed versions and file ownership to th
 publisher. Locally generated launchers live in the App Center state directory.
 Unmanaged files never become owned merely because Python source contains a version.
 
-Use system Python with the declared dependencies or an app-local `.venv`. The
-shell does not provision runtimes, install dependencies globally, import app code
-during validation, or reuse another application's private runtime. Declare Tk and
+Declare Python dependencies in `requirements.txt`; App Center installs missing
+distributions in an app-local environment. It can also use a compatible system
+Python or existing `.venv`. The shell does not install dependencies globally,
+import app code during validation, or reuse another application's private runtime. Declare Tk and
 other system prerequisites in the README. App code must not launch a window,
 perform network requests or write files when imported. Keep writes in documented
 app-private data paths, respect storage requirements, and treat package files as

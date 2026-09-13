@@ -1,7 +1,7 @@
 """Optional integration pass using the verified Vitrallis-Apps Git checkout.
 
 Clone the pinned publisher checkout as documented before running this script.
-Dependencies are provisioned explicitly by this test, never by App Center.
+App Center provisions the declared dependencies during installation.
 """
 import json
 import os
@@ -38,15 +38,13 @@ def main():
     state(published=True, debug='0.1.1')
     shell = Shell('published-' + str(time.time_ns()))
     try:
-        root = shell.root('mediacarousel')
-        venv = root / '.venv'
-        subprocess.run(['/usr/bin/python3', '-m', 'venv', str(venv)], check=True)
-        subprocess.run([str(venv / 'bin/pip'), 'install', '--quiet', '--disable-pip-version-check', 'Pillow>=10.4,<13', 'packaging'], check=True)
-        with (ARTIFACTS / 'published-runtime.txt').open('w') as output:
-            subprocess.run([str(venv / 'bin/pip'), 'freeze'], check=True, stdout=output)
         shell.center()
         shell.refresh()
         shell.install('Vitrallis Media Carousel', 'mediacarousel', '0.1.2')
+        environments = list((shell.root('mediacarousel') / 'runtime').glob('*/bin/python3'))
+        assert len(environments) == 1, environments
+        with (ARTIFACTS / 'published-runtime.txt').open('w') as output:
+            subprocess.run([str(environments[0]), '-m', 'pip', 'freeze'], check=True, stdout=output)
         shell.shot('published-carousel-installed')
         open_app(shell, 'Vitrallis Media Carousel')
         passed('Published Carousel 0.1.2: pinned source download, install, immediate Open and real Tk window')
