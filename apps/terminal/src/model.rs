@@ -210,9 +210,52 @@ pub fn key(key: Keycode, mods: Mod, application: bool) -> Option<Vec<u8>> {
     Some(output)
 }
 
+pub fn text(text: &str, mods: Mod) -> Option<Vec<u8>> {
+    if ui::ctrl(mods) {
+        return None;
+    }
+    let alt = mods.intersects(Mod::LALTMOD | Mod::RALTMOD);
+    let mut bytes = Vec::with_capacity(text.len() + usize::from(alt));
+    if alt {
+        bytes.push(27);
+    }
+    bytes.extend_from_slice(text.as_bytes());
+    Some(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn function_keys_and_fn_punctuation_have_no_meta_prefix() {
+        for (code, sequence) in [
+            (Keycode::F1, "\x1bOP"),
+            (Keycode::F2, "\x1bOQ"),
+            (Keycode::F3, "\x1bOR"),
+            (Keycode::F4, "\x1bOS"),
+            (Keycode::F5, "\x1b[15~"),
+            (Keycode::F6, "\x1b[17~"),
+            (Keycode::F7, "\x1b[18~"),
+            (Keycode::F8, "\x1b[19~"),
+            (Keycode::F9, "\x1b[20~"),
+            (Keycode::F10, "\x1b[21~"),
+            (Keycode::F11, "\x1b[23~"),
+            (Keycode::F12, "\x1b[24~"),
+        ] {
+            assert_eq!(
+                key(code, Mod::NOMOD, false),
+                Some(sequence.as_bytes().to_vec())
+            );
+        }
+        let punctuation = "{}[]|<>\"'`~:;\\";
+        assert_eq!(
+            text(punctuation, Mod::NOMOD),
+            Some(punctuation.as_bytes().to_vec())
+        );
+        assert_eq!(text("x", Mod::LALTMOD), Some(b"\x1bx".to_vec()));
+        assert_eq!(text("x", Mod::RALTMOD), Some(b"\x1bx".to_vec()));
+        assert_eq!(text("c", Mod::LCTRLMOD), None);
+    }
     #[test]
     fn ansi_cursor_colors_clear_and_wrap() {
         let mut terminal = Terminal::new(3, 4);

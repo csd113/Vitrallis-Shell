@@ -77,6 +77,7 @@ fn event_loop(
     let mut textures = artwork(&creator, &state);
     let mut worker = system_worker(platform, &mut state);
     let mut events = sdl.event_pump()?;
+    let mut keyboard = vitrallis_native::keyboard::Keyboard::new(&sdl.video()?);
     let mut child = ProcessSet::<crate::process::NativeProcess>::default();
     let broker = crate::native::broker(&mut state)?;
     let mut pointer = PointerInput::default();
@@ -112,7 +113,8 @@ fn event_loop(
             )?;
         }
         let event = wait_event(&mut events, state.phase, next_poll, dirty);
-        if let Some(event) = event {
+        if let Some(mut event) = event {
+            keyboard.event(&mut event);
             if closing(&event) && !state.app_center.busy {
                 return Ok(());
             }

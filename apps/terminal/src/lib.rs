@@ -153,14 +153,7 @@ impl Session {
                 }
             }
             Input::Text(text) => {
-                let mods = ui.sdl.keyboard().mod_state();
-                if !ui::ctrl(mods) {
-                    let mut bytes = Vec::with_capacity(text.len() + 1);
-                    if mods.intersects(sdl2::keyboard::Mod::LALTMOD | sdl2::keyboard::Mod::RALTMOD)
-                    {
-                        bytes.push(27);
-                    }
-                    bytes.extend_from_slice(text.as_bytes());
+                if let Some(bytes) = model::text(&text, ui.text_modifiers()) {
                     self.send(ui, &bytes)?;
                 }
             }

@@ -108,6 +108,7 @@ pub struct Ui {
     pub canvas: Canvas<Window>,
     pub sdl: sdl2::Sdl,
     events: sdl2::EventPump,
+    keyboard: crate::keyboard::Keyboard,
     press: Option<(i64, i32, i32)>,
     focus_requested: std::sync::Arc<std::sync::atomic::AtomicBool>,
     released_from: Option<(i32, i32)>,
@@ -151,10 +152,12 @@ impl Ui {
             .map_err(|e| e.to_string())?;
         video.text_input().start();
         let events = sdl.event_pump()?;
+        let keyboard = crate::keyboard::Keyboard::new(&video);
         let mut ui = Self {
             canvas,
             sdl,
             events,
+            keyboard,
             press: None,
             focus_requested: std::sync::Arc::default(),
             released_from: None,
@@ -358,7 +361,13 @@ impl Ui {
             .map(|e| self.translate(e))
             .transpose()
     }
-    fn translate(&mut self, event: Event) -> Result<Input, String> {
+    /// Modifiers belonging to the most recently delivered text input.
+    #[must_use]
+    pub const fn text_modifiers(&self) -> Mod {
+        self.keyboard.text_modifiers()
+    }
+    fn translate(&mut self, mut event: Event) -> Result<Input, String> {
+        self.keyboard.event(&mut event);
         if self
             .focus_requested
             .swap(false, std::sync::atomic::Ordering::AcqRel)

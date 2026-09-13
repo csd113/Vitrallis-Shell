@@ -153,6 +153,26 @@ unit stopped and restores the saved bindings. Launcher/supervisor crash recovery
 also uses systemd's `ExecStopPost` helper. PocketHome and serial login remain
 available independently.
 
+## Built-in Fn keyboard
+
+Hold **Fn** with **1–0** for **F1–F10**, **minus** for **F11**, and
+**equals** for **F12**. **Fn+2** opens Add shortcut on the home screen;
+**Shift+Fn+0** selects Terminal's menu. Fn punctuation uses the installed X11
+keyboard layout.
+
+Vitrallis translates SDL2's base-key/Right-Alt events on devices identifying as
+`nextthing,pocketchip` under X11. Terminal consumes that Fn modifier instead of
+prefixing symbols with an Alt/Meta Escape byte. Other hardware keeps its normal
+keyboard behavior. No system keymap is rewritten.
+
+Device validation on 2026-09-12 reproduced Fn+2 as SDL key `2` with modifier
+`0x200` and Fn+Y as text `{` with the same modifier. The updated beta2.7 bundle
+opened Add shortcut with Fn+2 and delivered exact PTY bytes for F1–F12, all 14
+tested Fn punctuation symbols, and ordinary `2`/`y`. This used injected physical
+X11 keycodes on the device, not manual switch presses. The device was left on
+Home; the installer retained its previous generation and backup. Formatting,
+strict workspace Clippy, workspace tests and the ARM release build passed.
+
 ## Optional startup
 
 Automatic startup is opt-in and is not installed by the bootstrap. If wanted,
