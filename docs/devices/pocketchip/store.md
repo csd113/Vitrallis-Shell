@@ -19,7 +19,7 @@ prevents installation until target integration is verified.
 
 The existing PocketHome menu remains a read-only source of device applications;
 App Center does not register packages in that menu. The supervised session still
-provides the Marshmallow recovery tile. Follow [session setup](../pocketchip.md)
+provides the Exit Vitrallis tile. Follow [session setup](../pocketchip.md)
 for installation and recovery. Package launch/return and window identity need
 physical verification on the target image; historical store tests do not certify
 this package path. See [current validation](../../app-center-validation.md).

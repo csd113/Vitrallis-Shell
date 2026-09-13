@@ -13,7 +13,7 @@
         "audio": false,
         "storage": true
       },
-      "description": "Bitcoin CAD price, chart, and network dashboard for the PocketCHIP.",
+      "description": "Bitcoin CAD price, chart, and network dashboard for small Linux screens.",
       "compatibility_notes": "Requires Python 3.8+ and system Tkinter with Tk 8.6. Uses the Vitrallis Shell native installer and launcher. Network access is required for live market data.",
       "source": {
         "repository": "csd113/Vitrallis-Apps",
@@ -80,7 +80,7 @@
         "audio": false,
         "storage": false
       },
-      "description": "Offline network, CPU, temperature and memory diagnostics for Vitrallis/PocketCHIP.",
+      "description": "Offline network, CPU, temperature and memory diagnostics for Vitrallis.",
       "compatibility_notes": "Requires Python 3.8+ and system Tkinter with a graphical desktop. Uses the Vitrallis Shell native installer and launcher. Reads local Linux interfaces; missing sensors are reported as unavailable.",
       "source": {
         "repository": "csd113/Vitrallis-Apps",

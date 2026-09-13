@@ -14,34 +14,58 @@ import tempfile
 UNIT = 'vitrallis-session'
 LIMIT = 128 * 1024
 HOME_HOOK = '''
-if not vitrallis_saved_keys then
-    vitrallis_saved_keys = root.keys()
+if not vitrallis_home_route then
+    local route = {removed = {}, added = {}, previous = client.focus}
     local keys = {}
-    for _, key in ipairs(vitrallis_saved_keys) do
-        if key.key ~= "XF86PowerOff" or #key.modifiers ~= 0 then
+    for _, key in ipairs(root.keys()) do
+        if key.key == "XF86PowerOff" and #key.modifiers == 0 then
+            table.insert(route.removed, key)
+        else
             table.insert(keys, key)
         end
     end
     local awful = require("awful")
-    local gears = require("gears")
-    root.keys(gears.table.join(keys, awful.key({}, "XF86PowerOff", function()
+    route.added = awful.key({}, "XF86PowerOff", function()
         for _, c in ipairs(client.get()) do
             if c.name == "Vitrallis" then
                 client.focus = c; c:raise(); return
             end
         end
-        if focus_home_screen then focus_home_screen() end
-    end)))
+        if route.previous and route.previous.valid then
+            client.focus = route.previous; route.previous:raise()
+        end
+    end)
+    for _, key in ipairs(route.added) do table.insert(keys, key) end
+    vitrallis_home_route = route
+    root.keys(keys)
 end
 return "vitrallis home routing active"
 '''
 RESTORE_HOOK = '''
-if vitrallis_saved_keys then
-    root.keys(vitrallis_saved_keys)
-    vitrallis_saved_keys = nil
+if vitrallis_home_route then
+    local route = vitrallis_home_route
+    local keys = {}
+    for _, key in ipairs(root.keys()) do
+        local owned = false
+        for _, added in ipairs(route.added) do
+            if key == added then owned = true end
+        end
+        if not owned then table.insert(keys, key) end
+    end
+    for _, key in ipairs(route.removed) do
+        local present = false
+        for _, current in ipairs(keys) do
+            if key == current then present = true end
+        end
+        if not present then table.insert(keys, key) end
+    end
+    root.keys(keys)
+    if route.previous and route.previous.valid then
+        client.focus = route.previous; route.previous:raise()
+    end
+    vitrallis_home_route = nil
 end
-if focus_home_screen then focus_home_screen() end
-return "marshmallow home routing restored"
+return "original session home routing restored"
 '''
 
 
@@ -94,18 +118,15 @@ def supervise(base):
             or len(relative.parts[1]) != 64
             or any(c not in '0123456789abcdef' for c in relative.parts[1])):
         raise RuntimeError('Invalid native build pointer')
-    for name in ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files'):
-        executable = base / relative / name
-        regular(executable)
-        if not executable.is_file() or not os.access(executable, os.X_OK):
-            raise RuntimeError('Missing bundled executable: ' + str(executable))
+    # The shell exposes a repair diagnostic for any missing native companion.
+    # Installation still validates the complete bundle before publication.
     binary = base / relative / 'vitrallis'
+    regular(binary)
     if not binary.is_file() or not os.access(binary, os.X_OK):
         raise RuntimeError('Missing executable: ' + str(binary))
     log = base / 'session.log'
     regular(log)
     regular(log.with_suffix('.log.1'))
-    awesome(HOME_HOOK)
     child = None
     def stopping(signum, frame):
         if child is not None:
@@ -113,7 +134,8 @@ def supervise(base):
     signal.signal(signal.SIGTERM, stopping)
     signal.signal(signal.SIGINT, stopping)
     try:
-        child = subprocess.Popen([str(binary), '--pocketchip'], stdin=subprocess.DEVNULL,
+        awesome(HOME_HOOK)
+        child = subprocess.Popen([str(binary), '--linux-handheld'], stdin=subprocess.DEVNULL,
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # Drain continuously; app output cannot fill an undrained pipe or grow
         # the log without bound. systemd removes every child on supervisor exit.

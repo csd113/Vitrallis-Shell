@@ -18,9 +18,9 @@ for app in vitrallis-terminal vitrallis-notepad vitrallis-files; do
     SDL_VIDEODRIVER=dummy "$native_target_dir/release/$app" --size 480x272 --smoke-test
     SDL_VIDEODRIVER=dummy "$native_target_dir/release/$app" --size 800x480 --smoke-test
 done
-for script in scripts/*.sh devices/pocketchip/*.sh; do
+for script in scripts/*.sh integrations/armhf-awesome/*.sh; do
     sh -n "$script"
 done
-python3 -m compileall -q scripts devices
+python3 -m compileall -q scripts integrations
 python3 scripts/check-doc-links.py
 git diff --check

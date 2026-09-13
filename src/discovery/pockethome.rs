@@ -1,10 +1,9 @@
-//! Read-only integration with the `PocketCHIP` OS menu: Apps pages, JUCE
+//! Read-only integration with the stock `PocketHome` menu: Apps pages, JUCE
 //! commands, stable IDs, and display preferences. Normalize into shared models.
 use super::{Catalog, executable::resolve};
 use crate::{
     app::{AppEntry, AppManifest},
     config::Paths,
-    preferences::Preferences,
 };
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -13,10 +12,7 @@ pub(super) fn parse_catalog(text: &str, paths: &Paths) -> Result<Catalog, String
     let root: Value = serde_json::from_str(&without_trailing_commas(text))
         .map_err(|e| format!("invalid JSON: {e}"))?;
     let pages = root["pages"].as_array().ok_or("missing pages array")?;
-    let mut catalog = Catalog {
-        preferences: parse_preferences(&root, paths),
-        ..Catalog::default()
-    };
+    let mut catalog = Catalog::default();
     let mut ids = BTreeMap::<String, usize>::new();
     for (page_index, page) in pages
         .iter()
@@ -32,7 +28,10 @@ pub(super) fn parse_catalog(text: &str, paths: &Paths) -> Result<Catalog, String
         for (index, item) in items.iter().enumerate() {
             match parse_entry(item, paths) {
                 Ok(mut app) => {
-                    // Marshmallow has no IDs and permits duplicate commands. Keep all
+                    if stock_utility(item, &app) {
+                        continue;
+                    }
+                    // PocketHome has no IDs and permits duplicate commands. Keep all
                     // tiles, with deterministic content IDs and occurrence suffixes.
                     let occurrence = ids.entry(app.id.clone()).or_default();
                     *occurrence += 1;
@@ -65,6 +64,36 @@ pub(super) fn parse_catalog(text: &str, paths: &Paths) -> Result<Catalog, String
     Ok(catalog)
 }
 
+// This function is used only by the PocketHome importer. Verified upstream
+// commands are documented in docs/devices/pocketchip/stock-source.md. Match
+// argv exactly and check resolved executable provenance, never a visible label.
+fn stock_utility(item: &Value, app: &AppEntry) -> bool {
+    let Some(shell) = item["shell"].as_str() else {
+        return false;
+    };
+    let Ok((program, args)) = command_tokens(shell) else {
+        return false;
+    };
+    let signature = match program.as_str() {
+        "vala-terminal" | "/usr/bin/vala-terminal" => args == ["-fs", "8", "-g", "20", "20"],
+        "leafpad"
+        | "/usr/bin/leafpad"
+        | "l3afpad"
+        | "/usr/bin/l3afpad"
+        | "pcmanfm"
+        | "/usr/bin/pcmanfm"
+        | "lxterminal"
+        | "/usr/bin/lxterminal" => args.is_empty(),
+        _ => false,
+    };
+    if !signature {
+        return false;
+    }
+    // A custom PATH executable shadowing the stock command remains discoverable.
+    app.unavailable.is_some()
+        || app.manifest.entry.parent() == Some(std::path::Path::new("/usr/bin"))
+}
+
 fn parse_entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
     let name = item["name"].as_str().ok_or("name must be a string")?;
     let shell = item["shell"].as_str().ok_or("shell must be a string")?;
@@ -84,7 +113,7 @@ fn parse_entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
     };
     // Validate untrusted fields before searching for executables, or launching.
     let mut app = AppEntry {
-        source: crate::app::AppSource::Device,
+        source: crate::app::AppSource::PocketHome,
         id: stable_id(name, shell),
         name: name.into(),
         icon: Some(paths.asset(if icon.is_empty() {
@@ -197,43 +226,37 @@ fn without_trailing_commas(text: &str) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-fn parse_preferences(root: &Value, paths: &Paths) -> Preferences {
-    let mut prefs = Preferences {
-        show_clock: root["showclock"]
-            .as_str()
-            .is_none_or(|v| v.is_empty() || v == "yes"),
-        ampm: root["timeformat"] == "ampm",
-        show_cursor: root["cursor"] != "notvisible",
-        ..Preferences::default()
-    };
-    if let Some(background) = root["background"].as_str() {
-        if background.len() == 6
-            && background
-                .bytes()
-                .all(|c| c.is_ascii_digit() || (b'A'..=b'F').contains(&c))
-        {
-            if let Ok(rgb) = u32::from_str_radix(background, 16) {
-                let bytes = rgb.to_be_bytes();
-                prefs.color = [bytes[1], bytes[2], bytes[3]];
-            }
-        } else if !background.is_empty() && !background.chars().any(char::is_control) {
-            prefs.wallpaper = Some(paths.asset(background));
-        }
-    }
-    prefs
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     fn paths() -> Paths {
         Paths {
-            user_config: None,
+            explicit_catalog: None,
             asset_roots: vec!["/missing-assets".into()],
             cwd: "/".into(),
             search_path: vec!["/bin".into(), "/usr/bin".into()],
         }
     }
+    #[test]
+    fn custom_path_shadow_and_non_stock_arguments_are_preserved()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let scratch = crate::test_support::Scratch::new()?;
+        let mut paths = paths();
+        paths.search_path.insert(0, scratch.0.clone());
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/bin/sh", scratch.0.join("leafpad"))?;
+        let root = serde_json::json!({"pages":[{"name":"Apps","items":[
+            {"name":"Custom","shell":"leafpad","icon":""},
+            {"name":"Terminal","shell":"vala-terminal -fs 12","icon":""},
+            {"name":"Files","shell":"pcmanfm /work","icon":""},
+            {"name":"Notepad","shell":"/opt/editor/leafpad","icon":""}
+        ]}]});
+        let catalog = parse_catalog(&root.to_string(), &paths)?;
+        assert_eq!(catalog.apps.len(), 4);
+        assert_eq!(catalog.apps[0].manifest.entry, scratch.0.join("leafpad"));
+        Ok(())
+    }
+
     #[test]
     fn ordered_apps_pages_only_skip_invalid_keep_missing_and_duplicates() -> Result<(), String> {
         let text = r#"{"pages":[{"name":"Settings","items":[{"name":"No","shell":"sh","icon":""}]},{"name":"Apps","items":[
@@ -344,35 +367,6 @@ mod tests {
         }
         std::fs::write(root.join("first/not-executable"), "test")?;
         assert!(resolve("not-executable", root, &paths.asset_roots).is_none());
-        Ok(())
-    }
-    #[test]
-    fn pockethome_preferences_validate_colors_paths_and_types() -> Result<(), String> {
-        let paths = Paths::from_config(&crate::config::Config::default())?;
-        let prefs = parse_preferences(
-            &serde_json::json!({
-                "background": "FF0080", "timeformat": "ampm", "cursor": "notvisible", "showclock": "no"
-            }),
-            &paths,
-        );
-        assert_eq!(prefs.color, [255, 0, 128]);
-        assert!(prefs.wallpaper.is_none());
-        assert!(!prefs.show_clock);
-        assert!(prefs.ampm);
-        assert!(!prefs.show_cursor);
-        let image = parse_preferences(&serde_json::json!({"background": "background.png"}), &paths);
-        assert_eq!(image.wallpaper, Some(paths.asset("background.png")));
-        for background in [
-            serde_json::json!("bad\0path"),
-            serde_json::json!(42),
-            serde_json::Value::Null,
-        ] {
-            assert!(
-                parse_preferences(&serde_json::json!({"background": background}), &paths)
-                    .wallpaper
-                    .is_none()
-            );
-        }
         Ok(())
     }
 }

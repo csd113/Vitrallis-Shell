@@ -115,9 +115,9 @@ class ShellRelease(unittest.TestCase):
         struct.pack_into('<HHIIIIIHHH', self.data, 16, 2, 40, 1, 0, 52, 0, 0x05000400, 52, 32, 1)
         self.write_binaries()
         self.package('armv7-unknown-linux-gnueabihf')
-        for name in RELEASE.POCKETCHIP_HELPERS:
+        for name in RELEASE.SESSION_HELPERS:
             data = (self.output / name).read_bytes()
-            self.assertEqual(data, (ROOT / 'devices/pocketchip' / name).read_bytes())
+            self.assertEqual(data, (ROOT / 'integrations/armhf-awesome' / name).read_bytes())
             self.assertEqual((self.output / (name + '.sha256')).read_text(), hashlib.sha256(data).hexdigest() + '  ' + name + '\n')
         self.assertEqual(len(list(self.output.iterdir())), 10)
 

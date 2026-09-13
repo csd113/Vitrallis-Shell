@@ -69,5 +69,5 @@ jobs:
             case "$RELEASE_TAG" in *-*) prerelease_flag=--prerelease ;; esac
             gh release create "$RELEASE_TAG" $prerelease_flag target/shell-release/* target/arm-shell-release/* \
               --verify-tag --draft --title "$RELEASE_TAG" \
-              --notes "Vitrallis Shell, Terminal, Notepad and Files bundles with SHA-256 checksums for Linux x86-64 and ARMv7, plus matching PocketCHIP installation/removal helpers. Requires glibc 2.36+ and SDL2 2.26.5+. Review and test artifacts before publishing."
+              --notes "Vitrallis Shell, Terminal, Notepad and Files bundles with SHA-256 checksums for Linux x86-64 and ARMv7, plus matching ARMv7 session installation/removal helpers. Requires glibc 2.36+ and SDL2 2.26.5+. Review and test artifacts before publishing."
           fi

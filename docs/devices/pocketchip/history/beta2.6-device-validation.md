@@ -80,4 +80,4 @@ This follow-up does not validate physical touch/keypad hardware, power-loss
 durability, sustained performance, Home/resume, native removal or installation
 of a later release. The literal README command retains its fixture coverage;
 the device used verified staged helpers after manual reconciliation. The broader
-App Center lifecycle remains covered by the [Docker audit](../app-center-validation.md).
+App Center lifecycle remains covered by the [Docker audit](../../../app-center-validation.md).

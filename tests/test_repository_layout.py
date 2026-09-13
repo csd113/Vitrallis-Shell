@@ -18,8 +18,8 @@ class BuildPaths(unittest.TestCase):
         self.root = Path(self.temp.name).resolve()
         self.checkout = self.root / 'source checkout'
         (self.checkout / 'scripts').mkdir(parents=True)
-        self.script = self.checkout / 'scripts/build-pocketchip.sh'
-        shutil.copyfile(ROOT / 'scripts/build-pocketchip.sh', self.script)
+        self.script = self.checkout / 'scripts/build-armhf.sh'
+        shutil.copyfile(ROOT / 'scripts/build-armhf.sh', self.script)
         self.caller = self.root / 'unrelated working directory'
         self.caller.mkdir()
         self.pkgconfig = self.root / 'private ARM libraries/pkgconfig'
@@ -79,17 +79,17 @@ class SourcePackage(unittest.TestCase):
             self.assertEqual(len(archives), 1)
             required = {
                 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'README.md',
-                'scripts/build-pocketchip.sh',
-                'scripts/validate.sh', 'devices/pocketchip/install.py',
-                'devices/pocketchip/vitrallis-session.py',
-                'devices/pocketchip/bootstrap.py', 'devices/pocketchip/uninstall.py',
+                'scripts/build-armhf.sh',
+                'scripts/validate.sh', 'integrations/armhf-awesome/install-session.py',
+                'integrations/armhf-awesome/vitrallis-session.py',
+                'integrations/armhf-awesome/bootstrap.py', 'integrations/armhf-awesome/uninstall.py',
                 'CONTRIBUTING.md', 'SECURITY.md', 'docs/images/shell-480x272.png',
                 'scripts/check-doc-links.py',
-                'devices/pocketchip/run-pocketchip.sh',
+                'integrations/armhf-awesome/run-session.sh',
                 'docs/devices/pocketchip.md', 'docs/repository-layout.md',
                 'src/layout.rs', 'src/renderer.rs', 'src/renderer/system.rs',
                 'src/discovery/catalog.rs', 'src/discovery/executable.rs',
-                'src/discovery/pockethome.rs', 'src/platform/pocketchip/recovery.rs',
+                'src/discovery/pockethome.rs', 'src/platform/linux_handheld/recovery.rs',
             }
             required.update('assets/system/' + name + '.png'
                             for name in ('gear', 'wifi', 'sun', 'speaker', 'power', 'restart'))
@@ -107,11 +107,6 @@ class SourcePackage(unittest.TestCase):
                     self.assertTrue(member.isfile(), name)
                     self.assertNotIn('target', Path(name).parts)
                     self.assertNotIn('__pycache__', Path(name).parts)
-                    self.assertNotIn(name, {
-                        'scripts/vitrallis-session.py', 'scripts/run-pocketchip.sh',
-                        'scripts/apply-store-patch.py', 'integration/pocketchip-store.patch',
-                        'src/discovery/marshmallow.rs', 'src/discovery/store.rs',
-                    })
                 for name in required:
                     with archive.extractfile(members[name]) as stream:
                         self.assertEqual(stream.read(), (ROOT / name).read_bytes(), name)

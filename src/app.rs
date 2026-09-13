@@ -15,7 +15,7 @@ pub struct AppManifest {
 pub enum AppSource {
     Native,
     AppCenter,
-    Device,
+    PocketHome,
     System,
     Demo,
 }

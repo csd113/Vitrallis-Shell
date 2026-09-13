@@ -1,4 +1,4 @@
-//! X display preferences stay per-user; neither X startup nor Marshmallow is edited.
+//! X display preferences stay per-user; the original X session is not edited.
 use super::{Hardware, Native};
 use std::{
     fs,

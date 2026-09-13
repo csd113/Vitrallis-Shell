@@ -176,6 +176,50 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn app_center_utility_commands_and_custom_names_survive_native_registration()
+    -> Result<(), String> {
+        let mut catalog = Catalog::default();
+        for (name, command) in [
+            ("Terminal", "lxterminal"),
+            ("Notepad", "leafpad"),
+            ("Files", "pcmanfm"),
+        ] {
+            catalog.apps.push(AppEntry {
+                source: AppSource::AppCenter,
+                id: format!("org.custom.{command}"),
+                name: name.into(),
+                icon: None,
+                manifest: AppManifest {
+                    entry: Path::new("/usr/bin").join(command),
+                    ..AppManifest::default()
+                },
+                unavailable: None,
+            });
+        }
+        for _ in 0..4 {
+            integrate(&mut catalog)?;
+            assert_eq!(catalog.apps.len(), 6);
+            assert_eq!(
+                catalog
+                    .apps
+                    .iter()
+                    .filter(|a| a.source == AppSource::Native)
+                    .count(),
+                3
+            );
+            assert_eq!(
+                catalog
+                    .apps
+                    .iter()
+                    .filter(|a| a.source == AppSource::AppCenter)
+                    .count(),
+                3
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn files_requests_use_normal_opening_and_wait_for_safe_launcher_state()
     -> Result<(), Box<dyn std::error::Error>> {
         let scratch = crate::test_support::Scratch::new()?;

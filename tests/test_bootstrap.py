@@ -1,4 +1,4 @@
-"""Bounded release selection and literal README command tests with local fixtures."""
+"""Bounded release selection and literal device-guide command tests with local fixtures."""
 import copy
 import hashlib
 import importlib.machinery
@@ -78,6 +78,13 @@ class Bootstrap(unittest.TestCase):
         values[0]['assets'] = [{'name': b.BUNDLE[:-len('.vtrbundle')]}]
         with self.assertRaisesRegex(ValueError, 'No compatible'):
             b.select(values[:1])
+
+    def test_bundle_with_obsolete_installer_is_not_a_supported_session_release(self):
+        value, _ = release()
+        for asset in value['assets']:
+            asset['name'] = asset['name'].replace('install-session.py', 'install.py')
+        with self.assertRaisesRegex(ValueError, 'No compatible'):
+            b.select([value])
 
     def test_missing_duplicate_foreign_and_oversized_assets_fail_before_download(self):
         original = copy.deepcopy(self.value)
@@ -190,9 +197,9 @@ cp ''' + shlex.quote(str(DEVICE / 'bootstrap.py')) + ''' "$output"
 ''')
         self.write_command('python3', '#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' ' +
                            shlex.quote(str(Path(__file__).resolve())) + ' --readme-driver "$@"\n')
-        readme = (ROOT / 'README.md').read_text()
+        readme = (ROOT / 'docs/devices/pocketchip.md').read_text()
         self.install_line = re.search(r'```sh\n(\(set -eu;[^\n]+)\n```', readme).group(1)
-        self.uninstall_line = re.search(r'## Uninstall\n.*?```sh\n([^\n]+)\n```', readme, re.S).group(1)
+        self.uninstall_line = re.search(r'## Uninstall\n.*?```sh\n([^\n]+)\n```', (ROOT / 'README.md').read_text(), re.S).group(1)
 
     def write_command(self, name, data):
         path = self.commands / name

@@ -1,11 +1,11 @@
-//! `PocketCHIP` hardware controls and session-specific application policy.
+//! Linux sysfs/ALSA controls and session-specific application policy.
 use super::Platform;
 mod display;
 pub mod recovery;
 
 #[derive(Debug, Clone, Copy)]
-pub struct PocketChip;
-impl Platform for PocketChip {
+pub struct LinuxHandheld;
+impl Platform for LinuxHandheld {
     fn fullscreen(&self) -> bool {
         true
     }
@@ -33,6 +33,8 @@ use std::{
     io::Read,
     path::Path,
 };
+// External OS utility name, retained verbatim; see the device source audit.
+pub const CALIBRATION: &str = "/usr/local/bin/pocketchip-calibration";
 const BRIGHTNESS: &str = "/sys/class/backlight/backlight/brightness";
 const MAX_BRIGHTNESS: &str = "/sys/class/backlight/backlight/max_brightness";
 
@@ -80,7 +82,7 @@ impl Hardware for Native {
         command::run(&path, args)
     }
 }
-impl System for PocketChip {
+impl System for LinuxHandheld {
     fn initialize(&mut self) {
         if let Err(error) = display::restore() {
             eprintln!("level=warn event=screen_timeout_restore message={error:?}");
@@ -167,7 +169,7 @@ fn brightness(io: &impl Hardware) -> Result<(u8, u8), String> {
         .trim()
         .parse::<u8>()
         .map_err(|e| e.to_string())?;
-    // Marshmallow writes native levels 1..10. Fail closed on another driver.
+    // This backlight driver uses native levels 1..10. Fail closed on another driver.
     if max != 10 || !(1..=max).contains(&current) {
         return Err("unsupported backlight range".into());
     }
@@ -256,7 +258,7 @@ fn snapshot(io: &impl Hardware) -> Status {
             .map(|text| text.trim().to_owned())
             .filter(|zone| display::valid_zone(zone)),
         timezones: display::zones(),
-        calibration: Path::new("/usr/local/bin/pocketchip-calibration").is_file(),
+        calibration: Path::new(CALIBRATION).is_file(),
         battery,
         charging,
         external_power,
@@ -544,13 +546,13 @@ mod terminal_tests {
         let original = app.clone();
         crate::platform::generic::Generic.prepare_app(&mut app);
         assert_eq!(app, original);
-        PocketChip.prepare_app(&mut app);
-        PocketChip.prepare_app(&mut app);
+        LinuxHandheld.prepare_app(&mut app);
+        LinuxHandheld.prepare_app(&mut app);
         assert_eq!(app.manifest.args, ["--no-remote", "-e", "nmtui"]);
         assert_eq!(app.id, original.id);
         app.manifest.entry = "/usr/bin/another-terminal".into();
         app.manifest.args = original.manifest.args;
-        PocketChip.prepare_app(&mut app);
+        LinuxHandheld.prepare_app(&mut app);
         assert_eq!(app.manifest.args, ["-e", "nmtui"]);
     }
 }

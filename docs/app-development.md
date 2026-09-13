@@ -71,21 +71,21 @@ perform network requests or write files when imported. Keep writes in documented
 app-private data paths, respect storage requirements, and treat package files as
 read-only. See [App Center safety and recovery](app-center.md).
 
-Apps should publish `_NET_WM_PID` for process-group window resume on PocketCHIP.
+Apps should publish `_NET_WM_PID` for process-group window resume on the target device.
 No app name or window-title matching is used. Tk builds that omit this property
 need the window manager to resume; test that behavior on the target image.
 Keyboard and touch activation, close/return, and display geometry must be tested
-on the actual target. Desktop validation alone does not certify PocketCHIP.
+on the actual target. Desktop validation alone does not certify the target device.
 
 ## Device integration
 
-PocketCHIP's read-only PocketHome menu reader exposes existing OS applications
-such as Terminal and calibration. It is a boundary with the independent device
+The read-only PocketHome importer exposes existing OS applications while suppressing
+verified stock equivalents of the three native utilities. It is a boundary with the independent device
 image, not the Vitrallis package API. `--app-config` and `--assets` allow explicit
 inspection of an exported device menu; the desktop default discovers manifest
-packages without loading PocketHome configuration. Marshmallow remains the
+packages without loading PocketHome configuration. The original desktop remains the
 supervised device session's recovery destination.
 
-Build and install the shell using [PocketCHIP setup](devices/pocketchip.md).
-`devices/pocketchip/install.py` and its adjacent `vitrallis-session.py` are the
+Build and install the shell using [device setup](devices/pocketchip.md).
+`integrations/armhf-awesome/install-session.py` and its adjacent `vitrallis-session.py` are the
 installer payload. Run `sh scripts/validate.sh` for the repository's host gates.

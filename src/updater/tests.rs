@@ -134,7 +134,7 @@ fn beta_builds_receive_published_previews_without_downgrades()
 }
 
 #[test]
-fn pocketchip_beta_selects_the_standard_arm_artifact_and_verifies_download()
+fn armhf_beta_selects_the_standard_arm_artifact_and_verifies_download()
 -> Result<(), Box<dyn std::error::Error>> {
     let arm = || Target::for_triple("armv7-unknown-linux-gnueabihf");
     let name = arm()?.artifact();
@@ -152,7 +152,7 @@ fn pocketchip_beta_selects_the_standard_arm_artifact_and_verifies_download()
     let mut transport = mock(&[value])?;
     transport.responses.insert(url, Ok(b"shell".to_vec()));
     let State::Available(release) = check(&transport, "0.1.0-beta.1", arm)? else {
-        return Err("missing PocketCHIP beta update".into());
+        return Err("missing ARMv7 beta update".into());
     };
     assert_eq!(release.name, name);
     let scratch = crate::test_support::Scratch::new()?;

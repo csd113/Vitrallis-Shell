@@ -79,7 +79,7 @@ network feature, or bundled SDL build is enabled by this candidate.
 The ARM pass upgrades the optional cargo-zigbuild tool from 0.22.1 to **0.23.4**,
 installed into ignored `target/beta/tools`, and uses Zig **0.16.0**. Tool binaries
 are not application dependencies. Install them on the development host, never
-on PocketCHIP. The native image retains SDL **2.32.4** and its existing Python
+on the target device. The native image retains SDL **2.32.4** and its existing Python
 **3.13.5**/Tk runtime; these are image compatibility inputs, not owned dependency
 pins to be upgraded globally.
 
@@ -148,4 +148,4 @@ no native library requirement beyond SDL2 and normal POSIX libc/libutil.
 Versioned references: [vt100 0.16.2](https://docs.rs/vt100/0.16.2/vt100/),
 [vte 0.15.0](https://docs.rs/vte/0.15.0/vte/),
 [portable-pty 0.9.0](https://docs.rs/portable-pty/0.9.0/portable_pty/).
-Resource measurements are recorded in [native validation](native-validation.md).
+Resource measurements are recorded in [native validation](devices/pocketchip/history/native-validation.md).

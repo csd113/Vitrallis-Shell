@@ -2,7 +2,7 @@
 
 | Start here | Guide |
 | --- | --- |
-| Install, launch, return home, remove | [PocketCHIP](devices/pocketchip.md) |
+| Install, launch, return home, remove | [Device installation](devices/pocketchip.md) |
 | Terminal, Notepad and Files | [Native utilities](native-apps.md) |
 | Find and manage third-party apps | [App Center](app-center.md) |
 | Device controls | [Settings](devices/pocketchip/settings.md) and [system status](devices/pocketchip/system-status.md) |
@@ -14,8 +14,9 @@
 | Run and interpret checks | [Validation](validation.md) |
 | Future direction | [Design roadmap](design.md) |
 
-Evidence has a specific scope: [native host measurements](native-validation.md),
+Evidence has a specific scope: [native host measurements](devices/pocketchip/history/native-validation.md),
+[current USB hardware tests](devices/pocketchip/validation-usb-session.md),
 [App Center contract tests](app-center-validation.md), and
-[historical hardware observations](history/device-validation.md). Earlier device
-logs and screenshots remain in [evidence](evidence/step3/). They are engineering
+[historical hardware observations](devices/pocketchip/history/device-validation.md). Earlier device
+logs and screenshots remain in [evidence](devices/pocketchip/evidence/step3). They are engineering
 records, not claims that a new release has been tested on hardware.

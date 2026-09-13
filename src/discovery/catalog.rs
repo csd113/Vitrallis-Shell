@@ -5,21 +5,14 @@ use std::io::Read;
 
 pub struct CatalogFile<'a> {
     pub paths: &'a Paths,
-    pub explicit_config: bool,
 }
 impl Discovery for CatalogFile<'_> {
     fn discover(&self) -> Result<Catalog, String> {
-        let path = match &self.paths.user_config {
-            Some(path)
-                if self.explicit_config
-                    || path
-                        .try_exists()
-                        .map_err(|e| format!("config {}: {e}", path.display()))? =>
-            {
-                path.clone()
-            }
-            _ => self.paths.asset("config.json"),
-        };
+        let path = self
+            .paths
+            .explicit_catalog
+            .clone()
+            .unwrap_or_else(|| self.paths.asset("config.json"));
         eprintln!(
             "level=info event=discovery_source path={:?}",
             path.to_string_lossy()
@@ -51,27 +44,25 @@ impl Discovery for CatalogFile<'_> {
 mod tests {
     use super::*;
     #[test]
-    fn user_catalog_overrides_defaults_without_merging_or_mutation()
+    fn explicit_catalog_overrides_system_without_merging_or_mutation()
     -> Result<(), Box<dyn std::error::Error>> {
         let scratch = crate::test_support::Scratch::new()?;
         let root = &scratch.0;
         let mut paths = Paths {
-            user_config: None,
+            explicit_catalog: None,
             asset_roots: vec![],
             cwd: "/".into(),
             search_path: vec!["/bin".into(), "/usr/bin".into()],
         };
-        paths.user_config = Some(root.join("user.json"));
         paths.asset_roots = vec![root.clone()];
         let default =
             br#"{"pages":[{"name":"Apps","items":[{"name":"Default","shell":"sh","icon":""}]}]}"#;
         std::fs::write(root.join("config.json"), default)?;
-        let backend = CatalogFile {
-            paths: &paths,
-            explicit_config: false,
-        };
+        let backend = CatalogFile { paths: &paths };
         assert_eq!(backend.discover()?.apps[0].name, "Default");
         assert!(!root.join("user.json").exists());
+        paths.explicit_catalog = Some(root.join("user.json"));
+        let backend = CatalogFile { paths: &paths };
         let user = br#"{"pages":[{"name":"Apps","items":[]}]}"#;
         std::fs::write(root.join("user.json"), user)?;
         assert!(backend.discover()?.apps.is_empty());
@@ -80,14 +71,7 @@ mod tests {
         std::fs::write(root.join("user.json"), "broken")?;
         assert!(backend.discover().is_err()); // Never silently replace broken user config.
         std::fs::remove_file(root.join("user.json"))?;
-        assert!(
-            CatalogFile {
-                paths: &paths,
-                explicit_config: true
-            }
-            .discover()
-            .is_err()
-        );
+        assert!(CatalogFile { paths: &paths }.discover().is_err());
         Ok(())
     }
 }

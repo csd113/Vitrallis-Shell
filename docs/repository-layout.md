@@ -1,41 +1,41 @@
 # Repository layout
 
-Vitrallis currently provides PocketCHIP support and a generic desktop backend.
+Vitrallis currently provides a Linux handheld backend and a generic desktop backend.
 Hardware support, display dimensions/scaling, and input handling have separate
 responsibilities. A matching screen size does not establish device support.
 
 ```text
-devices/pocketchip/
+integrations/armhf-awesome/
   bootstrap.py                Bounded release download and verification
-  install.py                  Canonical user installer
+  install-session.py                  Canonical user installer
   uninstall.py                Offline receipt-based removal and recovery
   vitrallis-session.py         Awesome/systemd session and recovery
-  run-pocketchip.sh            Launch the installed user session
+  run-session.sh            Launch the installed user session
 apps/{terminal,notepad,files}/  First-party Rust binary/library workspace packages
 crates/vitrallis-native/       Small SDL UI, document, browser, filesystem and IPC helpers
 assets/native/                Original SVG sources and embedded 128px PNG icons
 scripts/
-  package-shell-release.py    Four-binary bundle, PocketCHIP helpers and checksums
+  package-shell-release.py    Four-binary bundle, ARMv7 session helpers and checksums
   package-source.py           Complete Cargo workspace source archive
   validate.sh                 Shared host validation
-  build-pocketchip.sh         Host cross-build tooling for the target ABI
+  build-armhf.sh         Host cross-build tooling for the target ABI
 src/
   native.rs                   Built-in registry integration and supervised open requests
   config.rs                   CLI selection and filesystem conventions
   discovery/
     catalog.rs                Bounded catalog file loading and source precedence
     executable.rs             Executable lookup in cwd/PATH order
-    pockethome.rs              PocketHome/Marshmallow format compatibility
+    pockethome.rs              Stock PocketHome read-only format integration
   preferences.rs              Normalized display preferences and clock formatting
   launcher.rs                 Application selection and lifecycle state
   process.rs                  Child launching, tracking, and cleanup
   layout.rs                   Reusable dimensions and proportional layout
   input.rs                    Shared SDL keyboard, mouse, and touch translation
   platform/                   Hardware/OS and window/session interfaces
-    pocketchip.rs             PocketCHIP hardware and session policy
-    pocketchip/
+    linux_handheld.rs        Linux sysfs/ALSA hardware and session policy
+    linux_handheld/
       display.rs              X timeout and time-zone settings
-      recovery.rs             Marshmallow return-to-home catalog entry
+      recovery.rs             Exit Vitrallis catalog entry
 assets/system/                Shared embedded artwork and asset guidance
 docs/devices/
   pocketchip.md               Installation, selection, and recovery
@@ -47,23 +47,23 @@ For a new **device adapter**, extend the existing `Platform` and
 `platform::System` interfaces in `src/platform/`, and select it explicitly at
 configuration entry. Keep OS paths, hardware commands, and session policy in
 that adapter. Add unavailable-data behavior and focused tests before claiming
-support. PocketCHIP remains the only device with recorded physical testing;
+support. See the device guide for the limited recorded hardware testing;
 generic mode supplies local time with hardware controls unavailable.
 
 A device's **installer**, recovery/session helper, and device-only templates
-belong in `devices/<device>/`, with setup and limitations in `docs/devices/`.
-PocketCHIP's `install.py` also contains its current rollback/repair logic;
+belong in `integrations/<backend>/`, with setup and limitations in `docs/devices/`.
+The ARMv7 `install-session.py` also contains its current rollback/repair logic;
 the installer and self-contained offline uninstaller share filesystem guards. Keep
-`install.py`, `uninstall.py` and `vitrallis-session.py` together when staging. See the
-[PocketCHIP guide](devices/pocketchip.md) for the payload and recovery instructions.
+`install-session.py`, `uninstall.py` and `vitrallis-session.py` together when staging. See the
+[device guide](devices/pocketchip.md) for the payload and recovery instructions.
 
 `discovery::catalog::CatalogFile` handles bounded device-menu reads separately
 from `discovery::pockethome::parse_catalog`. The latter understands PocketHome's
-Apps-page schema, JUCE command tokenization, stable device-menu IDs and display
-preferences. This is an integration boundary with the independent PocketCHIP OS.
-It is loaded by PocketCHIP mode or an explicit `--app-config`; desktop startup
-combines the native registry with App Center's manifest discovery. `platform/pocketchip/recovery.rs` supplies
-the supervised session's return-to-Marshmallow tile.
+Apps-page schema, JUCE command tokenization and stable imported IDs. It filters
+verified stock utility commands without changing their source menu.
+It is loaded by Linux handheld mode or an explicit `--app-config`; desktop startup
+combines the native registry with App Center's manifest discovery. `platform/linux_handheld/recovery.rs` supplies
+the supervised session's Exit Vitrallis tile.
 
 Follow [CONTRIBUTING.md](../CONTRIBUTING.md) when replacing an implementation. Current callers
 must use the replacement directly; superseded entry points and formats are removed.
@@ -71,11 +71,11 @@ must use the replacement directly; superseded entry points and formats are remov
 For a **display profile**, use the existing `src/config.rs` and `src/layout.rs`
 area: `--size WIDTHxHEIGHT` selects dimensions, and `Layout` validates and scales
 the grid. `DISPLAY_480X272` and `DISPLAY_800X480` are reusable dimension defaults,
-not hardware identities. `--pocketchip` selects the backend and its fullscreen
+not hardware identities. `--linux-handheld` selects the backend and its fullscreen
 default; `--size` changes only dimensions. No profile-file loader exists.
 Keep new reusable layout defaults here until a real need warrants a separate
 format. Input capabilities come from SDL events in `src/input.rs`, independent
-of resolution. `src/platform/pocketchip/display.rs` controls OS screen timeout
+of resolution. `src/platform/linux_handheld/display.rs` controls OS screen timeout
 and time-zone settings; it is not a layout profile.
 
 A **shared helper** belongs in one clearly named file or module under
@@ -89,7 +89,7 @@ embedded from `assets/system/` at build time.
 
 Root Cargo/toolchain and contributor files retain standard locations. Design
 guidance lives in `docs/design.md`; consolidated historical observations and
-`docs/evidence/` retain useful validation records. Build outputs, Python caches, local environment files, and
+`docs/devices/pocketchip/evidence/` retain useful validation records. Build outputs, Python caches, local environment files, and
 private keys are already ignored; keep device sysroots and local credentials
 out of Git.
 

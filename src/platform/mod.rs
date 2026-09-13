@@ -1,5 +1,5 @@
 pub mod generic;
-pub mod pocketchip;
+pub mod linux_handheld;
 
 pub mod command;
 pub mod system;
@@ -24,7 +24,7 @@ pub enum AppWindow {
 
 impl AppWindow {
     pub fn for_entry(entry: &std::path::Path) -> Option<Self> {
-        if entry == std::path::Path::new("/usr/local/bin/pocketchip-calibration") {
+        if entry == std::path::Path::new(crate::platform::linux_handheld::CALIBRATION) {
             return Some(Self::Calibration);
         }
         None

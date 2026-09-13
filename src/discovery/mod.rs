@@ -40,14 +40,11 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
     let paths = Paths::from_config(config)?;
     eprintln!(
         "level=info event=discovery_paths config={:?} assets={:?}",
-        paths.user_config, paths.asset_roots
+        paths.explicit_catalog, paths.asset_roots
     );
-    let backend = catalog::CatalogFile {
-        paths: &paths,
-        explicit_config: config.catalog_path.is_some(),
-    };
+    let backend = catalog::CatalogFile { paths: &paths };
     // A broken catalog leaves a usable empty launcher, with a visible diagnostic.
-    let mut catalog = match if config.pocketchip || config.catalog_path.is_some() {
+    let mut catalog = match if config.linux_handheld || config.catalog_path.is_some() {
         backend.discover()
     } else {
         Ok(Catalog::default())
@@ -60,18 +57,18 @@ fn load_with_policy(config: &Config, tolerate_invalid: bool) -> Result<Catalog, 
         },
         Err(error) => return Err(error),
     };
-    if config.pocketchip
+    if config.linux_handheld
         && let Some(home) = std::env::var_os("HOME")
             .map(std::path::PathBuf::from)
             .filter(|path| path.is_absolute())
     {
-        crate::platform::pocketchip::recovery::integrate(&mut catalog, &home);
+        crate::platform::linux_handheld::recovery::integrate(&mut catalog, &home);
     }
     crate::app_center::integrate(&mut catalog);
     crate::native::integrate(&mut catalog)?;
-    if config.pocketchip {
+    if config.linux_handheld {
         for app in &mut catalog.apps {
-            crate::platform::pocketchip::PocketChip.prepare_app(app);
+            crate::platform::linux_handheld::LinuxHandheld.prepare_app(app);
         }
     }
     for diagnostic in &catalog.diagnostics {
@@ -92,4 +89,84 @@ pub fn print(catalog: &Catalog) {
         "{}",
         serde_json::json!({"apps": apps, "diagnostics": catalog.diagnostics})
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::AppSource;
+
+    #[test]
+    fn stock_catalog_refreshes_keep_natives_once_and_preserve_custom_apps()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let scratch = crate::test_support::Scratch::new()?;
+        let config_path = scratch.0.join("config.json");
+        let config = Config {
+            catalog_path: Some(config_path.clone()),
+            ..Config::default()
+        };
+        for fixture in [
+            include_str!("../../tests/fixtures/pockethome/stock.json"),
+            include_str!("../../tests/fixtures/pockethome/current.json"),
+        ] {
+            let mut root: serde_json::Value = serde_json::from_str(fixture)?;
+            let items = root["pages"][0]["items"].as_array_mut().ok_or("items")?;
+            // Labels/icons may be localized or replaced without restoring stock utilities.
+            for (index, item) in items.iter_mut().enumerate() {
+                item["name"] = format!("Traduit 日本語 {index}").into();
+                item["icon"] = "custom.png".into();
+            }
+            for name in ["Terminal", "Files", "Notepad"] {
+                items.push(serde_json::json!({"name":name,"shell":"/bin/sh -c true","icon":""}));
+            }
+            items.push(serde_json::json!({"name":"Editor with document","shell":"/usr/bin/leafpad note.txt","icon":""}));
+            std::fs::write(&config_path, serde_json::to_vec(&root)?)?;
+            let original = std::fs::read(&config_path)?;
+            let first = load(&config)?;
+            let ids: Vec<_> = first.apps.iter().map(|app| app.id.clone()).collect();
+            for _ in 0..4 {
+                let mut catalog = refresh(&config)?;
+                // Idempotence of native integration also protects repeated reload callers.
+                crate::native::integrate(&mut catalog)?;
+                assert_eq!(
+                    catalog
+                        .apps
+                        .iter()
+                        .map(|a| a.id.clone())
+                        .collect::<Vec<_>>(),
+                    ids
+                );
+                for native in vitrallis_native::APPLICATIONS {
+                    assert_eq!(catalog.apps.iter().filter(|a| a.id == native.id).count(), 1);
+                    assert_eq!(
+                        catalog
+                            .apps
+                            .iter()
+                            .filter(|a| a.source == AppSource::PocketHome && a.name == native.name)
+                            .count(),
+                        1
+                    );
+                }
+                let imported: Vec<_> = catalog
+                    .apps
+                    .iter()
+                    .filter(|a| a.source == AppSource::PocketHome)
+                    .collect();
+                assert!(imported.iter().any(|a| a.name == "Traduit 日本語 1"));
+                assert!(imported.iter().any(|a| a.name == "Traduit 日本語 2"));
+                assert!(imported.iter().any(|a| a.name == "Traduit 日本語 3"));
+                for index in [0, 4, 5] {
+                    assert!(
+                        !imported
+                            .iter()
+                            .any(|a| a.name == format!("Traduit 日本語 {index}"))
+                    );
+                }
+                assert!(imported.iter().any(|a| a.name == "Editor with document"));
+                assert!(catalog.apps.iter().any(|a| a.id == "vitrallis-app-center"));
+            }
+            assert_eq!(std::fs::read(&config_path)?, original);
+        }
+        Ok(())
+    }
 }

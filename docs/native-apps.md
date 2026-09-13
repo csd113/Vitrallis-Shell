@@ -150,7 +150,7 @@ Original geometric icon sources and 128×128 PNGs live in `assets/native/`.
 
 `vitrallis_native::APPLICATIONS` defines stable IDs `io.vitrallis.terminal`,
 `io.vitrallis.notepad`, `io.vitrallis.files`. `src/native.rs` integrates them with
-normal catalog entries. `AppSource` distinguishes Native, AppCenter, Device,
+normal catalog entries. `AppSource` distinguishes Native, AppCenter, PocketHome,
 System and Demo. Reserved native IDs cannot be replaced by discovered entries.
 Missing executables retain their tile with a repair diagnostic. Native entries
 use the normal Opening transition, `ProcessSet`, running indicator and reap/
@@ -170,7 +170,7 @@ it; normal launcher sessions use the existing shell process owner throughout.
 All UI main loops wait for SDL events, repaint changed/exposed state and have no
 idle frame timer. Notepad and Files have no idle worker outside a shell session.
 Terminal's worker and session inboxes block until needed. No app uses a network
-service. See [dependency review](dependencies.md) and [measured validation](native-validation.md).
+service. See [dependency review](dependencies.md) and [measured validation](devices/pocketchip/history/native-validation.md).
 
 ## Builds and installation
 

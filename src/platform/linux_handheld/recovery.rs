@@ -1,4 +1,4 @@
-//! Preserve the Marshmallow recovery tile; App Center is a native service.
+//! Exit the owned systemd session and restore the original desktop.
 use crate::{
     app::{AppEntry, AppManifest},
     discovery::Catalog,
@@ -11,15 +11,17 @@ pub fn integrate(catalog: &mut Catalog, home: &Path) {
         catalog.apps.retain(|app| app.manifest.entry != launcher);
         catalog.apps.push(AppEntry {
             source: crate::app::AppSource::System,
-            id: "vitrallis-return-marshmallow".into(),
-            name: "Marshmallow".into(),
+            id: "vitrallis-exit-session".into(),
+            name: "Exit Vitrallis".into(),
             icon: None,
             manifest: AppManifest {
-                entry: "/usr/bin/systemctl".into(),
-                args: ["--user", "stop", "vitrallis-session.service"]
-                    .into_iter()
-                    .map(Into::into)
-                    .collect(),
+                entry: "/usr/bin/python3".into(),
+                // The helper verifies unit and process ownership before stopping.
+                args: vec![
+                    home.join(".local/share/vitrallis/vitrallis-session.py")
+                        .into_os_string(),
+                    "stop".into(),
+                ],
                 ..AppManifest::default()
             },
             unavailable: None,

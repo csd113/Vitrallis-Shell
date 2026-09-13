@@ -202,7 +202,7 @@ Carousel's test environment records Pillow 12.3.0 and packaging 26.3 in
 ## Remaining limits
 
 No known failing software checks remain in this pass. Docker validates Linux
-software paths, not physical PocketCHIP touch, ARMv7 responsiveness, battery/display
+software paths, not physical the target device touch, ARMv7 responsiveness, battery/display
 hardware, hardware media decoding or full Carousel media/server functionality.
 Published apps were opened and their actual script processes verified; this is not
 exhaustive testing of those apps. No ARM/device performance result is claimed.

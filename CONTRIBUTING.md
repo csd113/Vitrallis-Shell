@@ -54,7 +54,7 @@ directory. See [validation](docs/validation.md) for the gates and test boundarie
   implementation. Do not introduce compatibility layers, legacy fallbacks,
   aliases, dual code paths, migration shims, deprecated formats, or version-gated
   support unless the task specifically requires them. Supported PocketHome OS
-  integration and Marshmallow recovery are current boundaries.
+  integration and the original desktop recovery are current boundaries.
 
 ## Pull requests
 

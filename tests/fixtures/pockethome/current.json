@@ -1,0 +1,40 @@
+{
+  "pages": [
+    {
+      "name": "Apps",
+      "items": [
+        {
+          "name": "Terminal",
+          "icon": "appIcons/terminal.png",
+          "shell": "lxterminal"
+        },
+        {
+          "name": "Play TIC-80",
+          "icon": "appIcons/tic80.png",
+          "shell": "tic80"
+        },
+        {
+          "name": "Make Music",
+          "icon": "appIcons/musicsequencer.png",
+          "shell": "goattracker"
+        },
+        {
+          "name": "Get Help",
+          "icon": "appIcons/help.png",
+          "shell": "surf https://www.reddit.com/r/ChipCommunity/"
+        },
+        {
+          "name": "Write",
+          "icon": "appIcons/texteditor.png",
+          "shell": "l3afpad"
+        },
+        {
+          "name": "Browse Files",
+          "icon": "appIcons/filebrowser.png",
+          "shell": "pcmanfm"
+        }
+      ]
+    }
+  ],
+  "wifiCommand": "lxterminal -e nmtui"
+}

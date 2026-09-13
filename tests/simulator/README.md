@@ -1,7 +1,7 @@
 # App Center Docker simulator
 
 Run from the Vitrallis-Shell checkout. Docker is the only host prerequisite.
-The image contains Rust 1.91.1, SDL2, Python/Tk, Xvfb, Openbox and xdotool.
+The image contains Rust 1.91.1, SDL2, Python/Tk, Xvfb, Openbox, Awesome, D-Bus and xdotool.
 
 ```sh
 docker build -t vitrallis-app-center-simulator -f tests/simulator/Dockerfile .
@@ -66,5 +66,18 @@ with a different entry, demonstrating that the original launcher still executes
 the old entry and keeps obsolete files. The normal lifecycle suite retests both
 failure conditions successfully.
 
-The simulator verifies Linux software behavior, not physical PocketCHIP touch,
+The simulator verifies Linux software behavior, not physical the target device touch,
 ARMv7 performance, hardware media decoding, battery behavior or display electronics.
+
+## Stock session checks
+
+`session.py` runs under `dbus-run-session` on a separate Xvfb display with real
+Awesome 4. It uses the verified upstream stock command fixture and an isolated
+home with no writable launcher config. It exercises native Terminal/Notepad/Files
+launch, Home, resume and graceful close, then checks original focus/key restoration,
+preservation of a concurrently added keybinding and missing-utility repair tiles.
+It records `stock-session.json`, screenshots and logs beside the App Center results.
+The supervisor runs directly because this container has no systemd user manager;
+unit command construction, ownership checks, stop and removal are covered by the
+Python temporary-filesystem tests. Physical key delivery and actual user-manager
+integration on the supported target still need hardware validation.

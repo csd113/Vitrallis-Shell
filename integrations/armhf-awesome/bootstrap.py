@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download a complete, compatible PocketCHIP release and its matching helpers."""
+"""Download a complete, compatible ARMv7 Linux release and its matching helpers."""
 import argparse
 from functools import cmp_to_key
 import hashlib
@@ -16,7 +16,7 @@ REPOSITORY = 'csd113/Vitrallis-Shell'
 API = 'https://api.github.com/repos/' + REPOSITORY + '/releases'
 DOWNLOAD = 'https://github.com/' + REPOSITORY + '/releases/download/'
 BUNDLE = 'vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle'
-HELPERS = ('install.py', 'uninstall.py', 'vitrallis-session.py')
+HELPERS = ('install-session.py', 'uninstall.py', 'vitrallis-session.py')
 MAX_BUNDLE = 256 * 1024 * 1024 + 176
 VERSION = re.compile(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?')
 
@@ -109,10 +109,13 @@ def select(values, stable=False, tag=None):
         assets = value.get('assets')
         if not isinstance(assets, list) or any(not isinstance(a, dict) for a in assets):
             raise ValueError('Malformed release assets')
-        if any(a.get('name') == BUNDLE for a in assets):
+        # This installer artifact identifies the current session contract.
+        # A bundle alone does not establish compatible installation helpers.
+        names = {a.get('name') for a in assets if isinstance(a.get('name'), str)}
+        if BUNDLE in names and 'install-session.py' in names:
             candidates.append(value)
     if not candidates:
-        raise ValueError('No compatible published PocketCHIP bundle release. Standalone-binary releases, including beta2.5, cannot be installed. A maintainer must publish the complete bundle and matching helpers.')
+        raise ValueError('No compatible published ARMv7 Linux bundle release. A maintainer must publish the complete bundle with install-session.py and its matching helpers.')
     return sorted(candidates, key=cmp_to_key(compare), reverse=True)[0]
 
 
@@ -170,7 +173,7 @@ def main():
         release = select(releases(directory), args.stable, args.release)
         print('Selected release:', release['tag_name'], flush=True)
         bundle = download_release(release, directory)
-        subprocess.run([sys.executable, str(directory / 'install.py'), str(bundle),
+        subprocess.run([sys.executable, str(directory / 'install-session.py'), str(bundle),
                         '--expected-version', release['tag_name'][1:]], check=True)
 
 

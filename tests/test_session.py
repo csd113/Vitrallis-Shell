@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location('session', Path(__file__).resolve().parents[1] / 'devices/pocketchip/vitrallis-session.py')
+spec = importlib.util.spec_from_file_location('session', Path(__file__).resolve().parents[1] / 'integrations/armhf-awesome/vitrallis-session.py')
 s = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(s)
 
@@ -61,7 +61,7 @@ class Session(unittest.TestCase):
                     s.supervise(root)
                 awesome.assert_not_called()
 
-    def test_missing_native_companion_or_escaped_pointer_never_changes_home(self):
+    def test_missing_companion_can_show_repair_diagnostic_but_escaped_pointer_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(s, 'awesome') as awesome:
             root = Path(temp).resolve()
             generation = root / 'generations' / ('a' * 64)
@@ -71,9 +71,9 @@ class Session(unittest.TestCase):
                 path = generation / name
                 path.write_text('#!/bin/sh\nexit 0\n')
                 path.chmod(0o755)
-            with self.assertRaisesRegex(RuntimeError, 'vitrallis-files'):
-                s.supervise(root)
-            awesome.assert_not_called()
+            self.assertEqual(s.supervise(root), 0)
+            self.assertEqual([call.args[0] for call in awesome.call_args_list], [s.HOME_HOOK, s.RESTORE_HOOK])
+            awesome.reset_mock()
             (root / 'current').unlink()
             (root / 'current').symlink_to('../../outside')
             with self.assertRaisesRegex(RuntimeError, 'Invalid native build pointer'):
@@ -153,8 +153,8 @@ class Session(unittest.TestCase):
             launcher.chmod(0o755)
             package = root / 'package with spaces'
             package.mkdir()
-            wrapper = package / 'run-pocketchip.sh'
-            shutil.copyfile(Path(s.__file__).parent / 'run-pocketchip.sh', wrapper)
+            wrapper = package / 'run-session.sh'
+            shutil.copyfile(Path(s.__file__).parent / 'run-session.sh', wrapper)
             cwd = root / 'unrelated directory'
             cwd.mkdir()
             args = ['argument with spaces', 'literal $HOME']

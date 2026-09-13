@@ -272,10 +272,10 @@ fn refresh_app_center(
     *dirty |= state.app_center.poll();
     let artwork_changed = if state.app_center.refresh && state.phase == Phase::Ready {
         match crate::app_center::refresh_apps(&state.apps).and_then(|mut apps| {
-            if config.pocketchip {
+            if config.linux_handheld {
                 use crate::platform::Platform;
                 for app in &mut apps {
-                    crate::platform::pocketchip::PocketChip.prepare_app(app);
+                    crate::platform::linux_handheld::LinuxHandheld.prepare_app(app);
                 }
             }
             state.reload(apps)
@@ -683,7 +683,7 @@ fn open_timezone(state: &mut Launcher, child: &mut impl Processes, index: usize)
         .timezones
         .get(index)
         .ok_or_else(|| "Time zone unavailable".to_owned())
-        .and_then(|zone| crate::platform::pocketchip::timezone_app(zone))
+        .and_then(|zone| crate::platform::linux_handheld::timezone_app(zone))
         .and_then(|app| child.start(&app));
     match result {
         Ok(()) => {
@@ -704,7 +704,7 @@ fn open_calibration(state: &mut Launcher, child: &mut impl Processes) {
         icon: None,
         unavailable: None,
         manifest: crate::app::AppManifest {
-            entry: "/usr/local/bin/pocketchip-calibration".into(),
+            entry: crate::platform::linux_handheld::CALIBRATION.into(),
             ..crate::app::AppManifest::default()
         },
     };

@@ -13,8 +13,8 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-DEVICE = ROOT / 'devices/pocketchip'
-spec = importlib.util.spec_from_file_location('installer', DEVICE / 'install.py')
+DEVICE = ROOT / 'integrations/armhf-awesome'
+spec = importlib.util.spec_from_file_location('installer', DEVICE / 'install-session.py')
 m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
@@ -50,14 +50,15 @@ class Installer(unittest.TestCase):
         with patch.object(m, 'verify_versions'):
             m.install(self.binary, self.source, self.home)
 
-    def test_preserves_menu_and_idempotent_install(self):
+    def test_preserves_original_session_menu_bytes_and_idempotent_install(self):
         self.config.chmod(0o600)
         self.install()
         self.install()
         config = json.loads(self.config.read_bytes())
         self.assertEqual(config['custom'], 19)
         self.assertEqual(config['pages'][0]['items'][0], self.original['pages'][0]['items'][0])
-        self.assertEqual(len(config['pages'][0]['items']), 2)
+        self.assertEqual(len(config['pages'][0]['items']), 1)
+        self.assertEqual(self.config.read_text(), json.dumps(self.original))
         self.assertFalse((self.target / '.installation-pending').exists())
         self.assertTrue((self.target / 'current/vitrallis').stat().st_mode & 0o111)
         self.assertEqual(self.config.stat().st_mode & 0o777, 0o600)
@@ -101,6 +102,21 @@ class Installer(unittest.TestCase):
         self.assertEqual(self.config.read_bytes(), before)
         self.assertFalse(self.target.exists())
 
+    def test_obsolete_helper_receipt_is_rejected_without_adopting_its_layout(self):
+        self.install()
+        path = self.target / 'installed.json'
+        receipt = json.loads(path.read_bytes())
+        receipt['install.py'] = receipt.pop('install-session.py')
+        path.write_text(json.dumps(receipt))
+        (self.target / 'install-session.py').rename(self.target / 'install.py')
+        before = {p.name: p.read_bytes() for p in self.target.iterdir() if p.is_file()}
+        current = os.readlink(self.target / 'current')
+        with self.assertRaisesRegex(ValueError, 'Invalid receipt digest: install-session.py'):
+            self.install()
+        self.assertEqual(os.readlink(self.target / 'current'), current)
+        self.assertEqual({p.name: p.read_bytes() for p in self.target.iterdir() if p.is_file()}, before)
+        self.assertFalse((self.target / 'install-session.py').exists())
+
     def test_user_edit_blocks_replacement(self):
         self.install()
         (self.target / 'vitrallis-session.py').write_text('# user edit')
@@ -108,12 +124,12 @@ class Installer(unittest.TestCase):
             self.install()
         self.assertEqual((self.target / 'vitrallis-session.py').read_text(), '# user edit')
 
-    def test_menu_write_failure_rolls_back(self):
+    def test_shortcut_write_failure_rolls_back(self):
         original = self.config.read_bytes()
         real = m.atomic
         failed = []
         def fail(path, *args):
-            if path == self.config and not failed:
+            if path == self.home / '.local/share/applications/vitrallis.desktop' and not failed:
                 failed.append(True)
                 raise OSError('full filesystem')
             real(path, *args)
@@ -160,26 +176,33 @@ class Installer(unittest.TestCase):
                 self.install()
         self.assertFalse((self.target / 'current').exists())
 
-    def test_malformed_config_and_marker_fail_before_installation(self):
-        for value in ([], None, 'text', 42):
-            self.config.write_text(json.dumps(value))
-            with self.assertRaises(ValueError):
-                self.install()
-            self.assertFalse(self.target.exists())
-        self.config.write_text(json.dumps(self.original))
+    def test_no_user_launcher_config_is_required(self):
+        self.config.unlink()
+        self.config.parent.rmdir()
+        self.install()
+        self.assertFalse(self.config.exists())
+        self.assertTrue((self.target / 'current/vitrallis-files').is_file())
+
+    def test_unrelated_config_is_never_read_or_written(self):
+        for content in ('broken', '[]', '{"pages":false}'):
+            self.config.write_text(content)
+            self.install()
+            self.assertEqual(self.config.read_text(), content)
+        outside = self.home / 'outside'
+        self.config.rename(outside)
+        self.config.symlink_to(outside)
+        self.install()
+        self.assertEqual(outside.read_text(), '{"pages":false}')
+        self.config.unlink()
+        os.link(outside, self.config)
+        self.install()
+        self.assertEqual(outside.read_text(), '{"pages":false}')
+
+    def test_malformed_recovery_marker_fails(self):
         self.install()
         (self.target / '.installation-pending').write_text('{"vitrallis": 42}')
         with self.assertRaisesRegex(ValueError, 'recovery marker'):
             self.install()
-
-    def test_hardlinked_file_is_rejected(self):
-        outside = self.home / 'outside'
-        os.link(self.config, outside)
-        original = outside.read_bytes()
-        with self.assertRaisesRegex(ValueError, 'hardlink'):
-            self.install()
-        self.assertEqual(outside.read_bytes(), original)
-        self.assertFalse(self.target.exists())
 
     def test_concurrent_menu_edit_is_preserved_during_rollback(self):
         real = m.atomic
@@ -250,10 +273,9 @@ class Installer(unittest.TestCase):
             config['late edit'] = 'preserve'
             self.config.write_text(json.dumps(config))
         with patch.object(m, 'verify_versions', side_effect=edit):
-            with self.assertRaisesRegex(ValueError, 'menu changed'):
-                m.install(self.binary, self.source, self.home)
+            m.install(self.binary, self.source, self.home)
         self.assertEqual(json.loads(self.config.read_bytes())['late edit'], 'preserve')
-        self.assertFalse((self.target / 'current').exists())
+        self.assertTrue((self.target / 'current').exists())
 
     def test_partial_desktop_commit_is_repairable_from_pending_receipt(self):
         self.install()
@@ -288,11 +310,11 @@ class Installer(unittest.TestCase):
     def stage_and_install(self, layout):
         stage = self.home / 'package with spaces'
         stage.mkdir()
-        canonical = stage / 'devices/pocketchip' if layout == 'checkout' else stage
+        canonical = stage / 'integrations/armhf-awesome' if layout == 'checkout' else stage
         canonical.mkdir(parents=True, exist_ok=True)
         for name in m.HELPERS:
             shutil.copyfile(DEVICE / name, canonical / name)
-        entry = canonical / 'install.py'
+        entry = canonical / 'install-session.py'
         result = self.run_installer(entry, str(self.binary.relative_to(self.home)))
         self.assertEqual(result.returncode, 0, result.stderr)
         for name in m.BINARIES:
@@ -308,8 +330,8 @@ class Installer(unittest.TestCase):
         self.stage_and_install('canonical')
 
     def test_missing_adjacent_session_fails_before_installing_files(self):
-        entry = self.source / 'install.py'
-        shutil.copyfile(DEVICE / 'install.py', entry)
+        entry = self.source / 'install-session.py'
+        shutil.copyfile(DEVICE / 'install-session.py', entry)
         (self.source / 'vitrallis-session.py').unlink()
         before = self.config.read_bytes()
         result = self.run_installer(entry, str(self.binary))

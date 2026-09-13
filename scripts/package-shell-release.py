@@ -14,7 +14,7 @@ TARGETS = {'x86_64-unknown-linux-gnu': (2, 62),
 BINARIES = ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files')
 MAGIC = b'VITRALLIS-BUNDLE'
 ROOT = Path(__file__).resolve().parents[1]
-POCKETCHIP_HELPERS = ('bootstrap.py', 'install.py', 'uninstall.py', 'vitrallis-session.py')
+SESSION_HELPERS = ('bootstrap.py', 'install-session.py', 'uninstall.py', 'vitrallis-session.py')
 
 
 def inventory(directory, target, version, runner):
@@ -81,10 +81,10 @@ def package(directory, target, output, tag, runner=None):
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         (stage / (name + '.sha256')).write_text(digest + '  ' + name + '\n')
         if target == 'armv7-unknown-linux-gnueabihf':
-            for helper in POCKETCHIP_HELPERS:
-                source = ROOT / 'devices/pocketchip' / helper
+            for helper in SESSION_HELPERS:
+                source = ROOT / 'integrations/armhf-awesome' / helper
                 if source.is_symlink() or not source.is_file() or not 0 < source.stat().st_size <= 256 * 1024:
-                    raise ValueError('Missing or unsafe PocketCHIP helper: ' + helper)
+                    raise ValueError('Missing or unsafe ARMv7 Linux helper: ' + helper)
                 data = source.read_bytes()
                 compile(data, str(source), 'exec')
                 (stage / helper).write_bytes(data)

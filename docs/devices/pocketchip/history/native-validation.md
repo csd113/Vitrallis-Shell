@@ -3,12 +3,12 @@
 The Shell workspace now ships Terminal, Notepad and Files as native Rust/SDL2
 binaries, with shared UI/filesystem components and normal launcher supervision.
 This native-application audit used workspace version **0.1.0-beta2.5**, before the
-separately authorized [beta2.6 release](releases.md). It did not publish a release,
+separately authorized [beta2.6 release](../../../releases.md). It did not publish a release,
 deploy software or connect to a physical PocketCHIP.
 
 ## Implementation and limits
 
-See [native applications](native-apps.md) for controls, architecture, bounded
+See [native applications](../../../native-apps.md) for controls, architecture, bounded
 buffers, file safety, and the Files → Notepad path. The native registry is
 `vitrallis_native::APPLICATIONS`, integrated by `src/native.rs`; `AppSource`
 keeps native utilities distinct from App Center and device applications.
@@ -28,7 +28,7 @@ The only newly locked registry crates are vt100 0.16.2, vte 0.15.0,
 unicode-width 0.2.2 and arrayvec 0.7.8. Existing libc is direct for the documented
 POSIX boundary; existing SHA-256 is reused for same-size save-conflict detection.
 No new GUI/runtime framework or installed Python app is involved. The
-[dependency review](dependencies.md) explains portable-pty evaluation and the
+[dependency review](../../../dependencies.md) explains portable-pty evaluation and the
 4 KiB guard around vte's escape-string accumulator.
 
 ## Measured resources

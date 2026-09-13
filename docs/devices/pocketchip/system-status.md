@@ -3,7 +3,7 @@
 The device backend supplies status and controls through `platform::System`;
 window/session policy remains in `Platform`. Generic desktop mode supplies local
 time and unavailable hardware values. Read [settings](settings.md) for controls
-and [historical qualification](../../history/device-validation.md) for observations
+and [historical qualification](history/device-validation.md) for observations
 on the inspected Debian 13 image.
 
 ## Mechanisms

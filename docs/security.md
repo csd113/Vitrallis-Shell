@@ -6,7 +6,7 @@ sandbox**. See [SECURITY.md](../SECURITY.md) for the verified contact route.
 
 ## Distribution and packages
 
-The PocketCHIP bootstrap executes a successfully downloaded official HTTPS script,
+The the target device bootstrap executes a successfully downloaded official HTTPS script,
 then verifies a complete native bundle and matching helper checksums from one
 published release. GitHub and the publishing account are trust roots. Checksums
 catch corruption and mismatched assets; they are not independent signatures or
@@ -36,10 +36,10 @@ do not put secrets in them. Per-child environments intentionally inherit the
 existing GUI session. Logs omit environment values and session logs rotate with
 bounded sizes.
 
-The supervised PocketCHIP session owns its systemd cgroup. Stopping validates the
+The supervised the target device session owns its systemd cgroup. Stopping validates the
 transient user unit and exact supervisor process identity before acting, then
 restores temporary Awesome bindings. A window title never grants permission to
-kill an unrelated process. Marshmallow startup, original configuration and serial
+kill an unrelated process. The original desktop startup, original configuration and serial
 recovery remain available. Power/time-zone actions use existing OS authorization;
 Vitrallis installs no privilege rules.
 

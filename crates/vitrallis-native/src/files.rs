@@ -109,8 +109,11 @@ pub fn rename_new(source: &Path, destination: &Path) -> io::Result<()> {
         )
     };
     #[cfg(target_os = "macos")]
-    let result =
-        unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
+    let result = {
+        // SAFETY: both pointers are live NUL-terminated path strings. renamex_np
+        // does not retain them; RENAME_EXCL atomically rejects an existing destination.
+        unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) }
+    };
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     return Err(io::Error::new(
         io::ErrorKind::Unsupported,

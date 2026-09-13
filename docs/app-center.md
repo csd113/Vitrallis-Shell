@@ -1,6 +1,6 @@
 # App Center
 
-App Center is a native Rust/SDL screen for desktop and PocketCHIP. Terminal,
+App Center is a native Rust/SDL screen for Linux desktop sessions. Terminal,
 Notepad and Files are bundled native utilities and cannot be removed here.
 Third-party apps come from configured GitHub catalogs; no catalog payload or
 third-party app is embedded in the shell.

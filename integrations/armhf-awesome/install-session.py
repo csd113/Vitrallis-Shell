@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Stage Vitrallis in the user's home and add an opt-in PocketHome shortcut."""
+"""Stage Vitrallis in the user's home and add an opt-in desktop shortcut."""
 import fcntl
 import argparse
 import ctypes
@@ -26,16 +26,16 @@ if sys.version_info < (3, 8):
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
-    from uninstall import BINARIES, HELPERS, MAGIC, atomic, file_digest, make_directories, pointer, read_file, safe
+    from uninstall import BINARIES, HELPERS, MAGIC, atomic, file_digest, make_directories, pointer, read_file, safe, validate_receipt
 except ImportError as error:
-    raise SystemExit('Keep uninstall.py beside install.py: ' + str(error)) from error
+    raise SystemExit('Keep uninstall.py beside install-session.py: ' + str(error)) from error
 
 
 def preflight():
     if os.geteuid() == 0:
         raise ValueError('Run as your normal desktop user, without sudo')
     if platform.system() != 'Linux' or platform.machine() not in ('armv7l', 'armv8l'):
-        raise ValueError('PocketCHIP requires 32-bit ARMv7 Linux (armhf)')
+        raise ValueError('This bundle requires 32-bit ARMv7 Linux (armhf)')
     release = Path('/etc/os-release').read_text()
     fields = dict(line.split('=', 1) for line in release.splitlines() if '=' in line)
     if (fields.get('ID', '').strip('"') != 'debian'
@@ -169,21 +169,6 @@ def validate_arm(header, size):
 
 
 def load_inputs(source, home):
-    config_path = home / '.pocket-home/config.json'
-    safe(config_path)
-    original = read_file(config_path, 1024 * 1024)
-    if len(original) > 1024 * 1024:
-        raise ValueError('PocketHome config exceeds 1 MiB')
-    config = json.loads(original)
-    if not isinstance(config, dict):
-        raise ValueError('PocketHome config must be an object')
-    pages = config.get('pages')
-    if not isinstance(pages, list):
-        raise ValueError('Missing PocketHome pages')
-    page = next((p for p in pages if isinstance(p, dict) and p.get('name') == 'Apps'
-                 and isinstance(p.get('items'), list)), None)
-    if page is None or not all(isinstance(i, dict) for i in page['items']):
-        raise ValueError('Missing or malformed Apps page')
     if any(c in str(home) for c in '\r\n\0"\\%'):
         raise ValueError('Unsupported home directory characters')
     helpers = {}
@@ -191,14 +176,13 @@ def load_inputs(source, home):
         path = source / name
         helpers[name] = read_file(path)
         compile(helpers[name], str(path), 'exec')
-    return config_path, original, config, page, helpers
+    return helpers
 
 
 def install(bundle, source, home, expected_version=None):
     preflight()
     inputs = load_inputs(source, home)
     target = home / '.local/share/vitrallis'
-    safe(home / '.pocket-home/config.json')
     safe(home / '.local/share/vitrallis-backups/.preflight')
     make_directories(target)
     stage = target / '.vitrallis-update'
@@ -230,9 +214,7 @@ def install(bundle, source, home, expected_version=None):
 
 def install_locked(generation, digest, home, inputs):
     target = home / '.local/share/vitrallis'
-    config_path, original, config, page, helpers = inputs
-    if read_file(config_path, 1024 * 1024) != original:
-        raise ValueError('PocketHome menu changed during staging; retry')
+    helpers = inputs
     generations = target / 'generations'
     make_directories(generations)
     destination = generations / digest
@@ -245,12 +227,6 @@ def install_locked(generation, digest, home, inputs):
     old_previous = pointer(target / 'previous')
     new_pointer = 'generations/' + digest
     launch = target / 'launch'
-    entry = dict(name='Vitrallis', icon='appIcons/terminal.png', shell='"' + str(launch) + '"')
-    matches = [i for i in page['items'] if i.get('name') == 'Vitrallis']
-    if matches and (len(matches) != 1 or matches[0].get('shell') != entry['shell']):
-        raise ValueError('An unrelated Vitrallis entry exists; refusing replacement')
-    if not matches:
-        page['items'].append(entry)
     desktop = home / '.local/share/applications/vitrallis.desktop'
     writes = {
         **{target / name: (data, 0o644) for name, data in helpers.items()},
@@ -258,15 +234,15 @@ def install_locked(generation, digest, home, inputs):
         desktop: ((
             '[Desktop Entry]\nType=Application\nName=Vitrallis\nExec="' + str(launch) +
             '"\nTerminal=false\nCategories=System;\n').encode(), 0o644),
-        config_path: ((json.dumps(config, indent=2) + '\n').encode(), stat.S_IMODE(config_path.stat().st_mode)),
     }
     receipt_path = target / 'installed.json'
     safe(receipt_path)
     receipt = json.loads(read_file(receipt_path)) if receipt_path.exists() else {}
     if not isinstance(receipt, dict):
         raise ValueError('Malformed installation receipt')
-    if receipt and receipt.get('schema') != 1:
-        raise ValueError('Unrecognized installation receipt; reconcile the existing installation first')
+    if receipt:
+        # Require the current helper inventory; do not silently adopt an obsolete layout.
+        validate_receipt(receipt)
     marker = target / '.installation-pending'
     safe(marker)
     recovery = json.loads(read_file(marker)) if marker.exists() else {}
@@ -275,6 +251,8 @@ def install_locked(generation, digest, home, inputs):
     recovery_receipt = recovery.get('receipt', {})
     if not isinstance(recovery_receipt, dict):
         raise ValueError('Malformed installation recovery receipt')
+    if recovery_receipt:
+        validate_receipt(recovery_receipt)
     safe(desktop)
     if desktop.exists():
         expected = [receipt.get('desktop_sha256'), recovery_receipt.get('desktop_sha256')]
@@ -294,14 +272,11 @@ def install_locked(generation, digest, home, inputs):
               for p, v in writes.items() if p.parent == target}
     hashes['desktop_sha256'] = hashlib.sha256(writes[desktop][0]).hexdigest()
     hashes['schema'] = 1
-    hashes['menu'] = entry
     writes[receipt_path] = (json.dumps(hashes).encode(), 0o600)
     previous = {}
     for path in writes:
         safe(path)
         previous[path] = (read_file(path, 64 * 1024 * 1024), stat.S_IMODE(path.stat().st_mode)) if path.exists() else None
-        if path == config_path and (previous[path] is None or previous[path][0] != original):
-            raise ValueError('PocketHome menu changed before installation; retry')
     backup = home / '.local/share/vitrallis-backups' / str(time.time_ns())
     safe(backup / 'paths.json')
     make_directories(backup.parent)
@@ -362,7 +337,7 @@ def install_locked(generation, digest, home, inputs):
     print('Installed:', target)
     print('Backups:', backup)
     print('Launch:', launch)
-    print('Marshmallow remains the default. Restart its menu to see Vitrallis.')
+    print('The original session and menu are unchanged. Run the launch command above.')
     print('Native bundle SHA256:', digest)
     print('Offline uninstall: python3 "' + str(target / 'uninstall.py') + '"')
 

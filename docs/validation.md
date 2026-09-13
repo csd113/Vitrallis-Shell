@@ -47,12 +47,13 @@ The README image is a genuine current desktop-build SDL render at 480×272,
 exported through `--screenshot`. Preview its Markdown at desktop and narrow/mobile
 widths; the image must scale and command blocks must remain copyable.
 
-No current physical-device validation is implied. Before certifying PocketCHIP,
-check real input and readable controls, ABI/startup, PTY behavior, Home/resume,
-update/relaunch, offline removal/purge, rollback on actual storage, and endurance.
-[Native validation](native-validation.md) retains host/container measurements.
-[Historical hardware evidence](history/device-validation.md) retains earlier
-Marshmallow integration observations. The scopes must remain distinct.
+The [USB hardware follow-up](devices/pocketchip/validation-usb-session.md) records
+fresh ARM installation, native app, session, control and removal tests on the device.
+Its scope distinguishes injected X11 input from physical switch/touch testing,
+and bounded checks from power-loss durability and endurance.
+[Native validation](devices/pocketchip/history/native-validation.md) retains host/container measurements.
+[Historical hardware evidence](devices/pocketchip/history/device-validation.md) retains earlier
+original desktop integration observations. The scopes must remain distinct.
 
 ## Repository lifecycle validation before beta2.6 — 2026-09-12
 

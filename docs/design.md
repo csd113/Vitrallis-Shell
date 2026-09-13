@@ -2,7 +2,7 @@
 
 Vitrallis makes small Linux screens useful without replacing the operating
 system underneath them. The current product is a Rust/SDL2 shell, three native
-utilities, a manifest-based App Center, and a PocketCHIP platform adapter.
+utilities, a manifest-based App Center, and a Linux handheld platform adapter.
 [Repository boundaries](repository-layout.md) describe that implementation;
 this page describes direction, not additional shipped features.
 
@@ -17,15 +17,15 @@ applications remain separate programs with their own runtime requirements.
 Catalog metadata describes their identity, content and permissions; it does not
 sandbox them. The current [app contract](app-development.md) is authoritative.
 
-Marshmallow is an independent OS component and recovery home. Preserve its
+The original desktop is an independent OS component and recovery home. Preserve its
 startup, preferences and tools. A replacement Vitrallis interface must not remove
 working recovery or imply authentication guarantees it does not implement.
-The [reference audit](history/marshmallow-reference.md) records relevant source
+The [reference audit](devices/pocketchip/stock-source.md) records relevant source
 observations without vendoring the reference implementation.
 
 ## Roadmap, not release promises
 
-- Validate the complete native bundle, update and removal lifecycle on PocketCHIP,
+- Validate the complete native bundle, update and removal lifecycle on the target device,
   including endurance, battery drain, physical input and storage failures.
 - Improve font coverage and text rendering, and evaluate additional artwork formats.
 - Establish independently verifiable publisher signatures and clearer runtime

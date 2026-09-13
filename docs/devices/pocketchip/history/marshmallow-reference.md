@@ -1,7 +1,10 @@
 # Marshmallow integration reference
 
+Archived evidence for the earlier modified launcher. The current contract is the
+[stock source audit](../stock-source.md); this report is not a runtime prerequisite.
+
 Historical source audit, 2026-09-10. These observations explain the supported OS
-integration boundary; current behavior is in the [shell guide](../shell.md).
+integration boundary; current behavior is in the [shell guide](../../../shell.md).
 
 The authoritative reference is [o-marshmallow/PocketCHIP-pocket-home at dccbd38dc233f3f45ebd6ea130d6a787268e23f5](https://github.com/o-marshmallow/PocketCHIP-pocket-home/tree/dccbd38dc233f3f45ebd6ea130d6a787268e23f5). Static source was cloned outside this repository; no reference implementation code or artwork is vendored. Its JUCE gitlink pins [630ab88f8bf11c8389f99a9ffb6daa3a0e891f14](https://github.com/juce-framework/JUCE/tree/630ab88f8bf11c8389f99a9ffb6daa3a0e891f14).
 

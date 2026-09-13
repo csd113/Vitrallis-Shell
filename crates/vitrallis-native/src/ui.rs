@@ -117,6 +117,9 @@ impl Ui {
         sdl2::hint::set("SDL_TOUCH_MOUSE_EVENTS", "0");
         sdl2::hint::set("SDL_MOUSE_TOUCH_EVENTS", "0");
         sdl2::hint::set("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
+        // Handle the window close once. SDL's additional last-window Quit would
+        // immediately cancel the unsaved-document or terminal confirmation.
+        sdl2::hint::set("SDL_QUIT_ON_LAST_WINDOW_CLOSE", "0");
         let sdl = sdl2::init()?;
         let video = sdl.video()?;
         let session = std::env::var_os("VITRALLIS_SESSION").is_some();

@@ -7,7 +7,7 @@ pub enum Mode {
 }
 #[derive(Debug, Default)]
 pub struct Config {
-    pub pocketchip: bool,
+    pub linux_handheld: bool,
     pub catalog_path: Option<std::path::PathBuf>,
     pub assets: Option<std::path::PathBuf>,
     pub mode: Mode,
@@ -31,7 +31,7 @@ impl Config {
                 }
                 "--list-apps" => config.mode = Mode::List,
                 "--demo" => config.demo = true,
-                "--pocketchip" => config.pocketchip = true,
+                "--linux-handheld" => config.linux_handheld = true,
                 "--smoke-test" => config.mode = Mode::Smoke,
                 "--size" => {
                     let value = args.next().ok_or("--size requires WIDTHxHEIGHT")?;
@@ -53,7 +53,7 @@ impl Config {
                 _ => return Err(format!("unknown argument: {arg}")),
             }
         }
-        if config.pocketchip && config.mode == crate::config::Mode::Smoke {
+        if config.linux_handheld && config.mode == crate::config::Mode::Smoke {
             return Err("smoke test is desktop-only".into());
         }
         if config.mode == crate::config::Mode::Smoke && config.screenshot.is_some() {
@@ -72,7 +72,7 @@ mod tests {
             vec!["--size", "junk"],
             vec!["--size", "999999x200"],
             vec!["--wat"],
-            vec!["--pocketchip", "--smoke-test"],
+            vec!["--linux-handheld", "--smoke-test"],
         ] {
             assert!(Config::parse(args.into_iter().map(str::to_owned)).is_err());
         }
@@ -80,30 +80,30 @@ mod tests {
 
     #[test]
     fn display_size_is_independent_of_device_selection() -> Result<(), String> {
-        use crate::platform::{Platform, generic::Generic, pocketchip::PocketChip};
+        use crate::platform::{Platform, generic::Generic, linux_handheld::LinuxHandheld};
 
         let desktop = Config::parse(["--size", "480x272"].into_iter().map(str::to_owned))?;
-        assert!(!desktop.pocketchip);
+        assert!(!desktop.linux_handheld);
         assert_eq!(desktop.size, Some((480, 272)));
         assert_eq!(Generic.resolution(), (800, 480));
         assert!(!Generic.fullscreen());
 
         let device = Config::parse(
-            ["--pocketchip", "--size", "800x480"]
+            ["--linux-handheld", "--size", "800x480"]
                 .into_iter()
                 .map(str::to_owned),
         )?;
-        assert!(device.pocketchip);
+        assert!(device.linux_handheld);
         assert_eq!(device.size, Some((800, 480)));
-        assert_eq!(PocketChip.resolution(), (480, 272));
-        assert!(PocketChip.fullscreen());
+        assert_eq!(LinuxHandheld.resolution(), (480, 272));
+        assert!(LinuxHandheld.fullscreen());
 
         let smoke = Config::parse(
             ["--size", "480x272", "--smoke-test"]
                 .into_iter()
                 .map(str::to_owned),
         )?;
-        assert!(!smoke.pocketchip);
+        assert!(!smoke.linux_handheld);
         assert_eq!(smoke.mode, Mode::Smoke);
         Ok(())
     }
@@ -112,7 +112,7 @@ mod tests {
 /// All filesystem conventions live here. Discovery only reads these locations.
 #[derive(Debug, Clone)]
 pub struct Paths {
-    pub user_config: Option<std::path::PathBuf>,
+    pub explicit_catalog: Option<std::path::PathBuf>,
     pub asset_roots: Vec<std::path::PathBuf>,
     pub cwd: std::path::PathBuf,
     pub search_path: Vec<std::path::PathBuf>,
@@ -120,9 +120,6 @@ pub struct Paths {
 impl Paths {
     pub fn from_config(config: &Config) -> Result<Self, String> {
         let cwd = std::env::current_dir().map_err(|e| format!("current directory: {e}"))?;
-        let home = std::env::var_os("HOME")
-            .map(std::path::PathBuf::from)
-            .filter(|p| p.is_absolute());
         let absolute = |p: &std::path::PathBuf| {
             if p.is_absolute() {
                 p.clone()
@@ -130,11 +127,7 @@ impl Paths {
                 cwd.join(p)
             }
         };
-        let user_config = config
-            .catalog_path
-            .as_ref()
-            .map(absolute)
-            .or_else(|| home.as_ref().map(|p| p.join(".pocket-home/config.json")));
+        let explicit_catalog = config.catalog_path.as_ref().map(absolute);
         let asset_roots = config.assets.as_ref().map_or_else(
             || vec!["/usr/share/pocket-home".into(), cwd.clone()],
             |p| vec![absolute(p)],
@@ -146,7 +139,7 @@ impl Paths {
             |p| std::env::split_paths(&p).map(|p| absolute(&p)).collect(),
         );
         Ok(Self {
-            user_config,
+            explicit_catalog,
             asset_roots,
             cwd,
             search_path,

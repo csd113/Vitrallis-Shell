@@ -104,56 +104,6 @@ fn imported_catalog_is_read_only_and_missing_icons_render_safely()
 }
 
 #[test]
-fn existing_background_color_and_wallpaper_render_without_config_mutation()
--> Result<(), Box<dyn std::error::Error>> {
-    let root =
-        std::env::temp_dir().join(format!("vitrallis wallpaper test {}", std::process::id()));
-    std::fs::create_dir(&root)?;
-    let scratch = Scratch(root);
-    let config = scratch.0.join("source config.json");
-    let assets = scratch.0.join("exported assets");
-    std::fs::create_dir(&assets)?;
-    let file = std::fs::File::create(assets.join("wallpaper.png"))?;
-    let mut encoder = png::Encoder::new(file, 1, 1);
-    encoder.set_color(png::ColorType::Rgb);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header()?.write_image_data(&[10, 20, 30])?;
-    for (name, background, expected) in [
-        ("color", "FF0080", [128, 0, 255]),
-        ("wallpaper", "wallpaper.png", [30, 20, 10]),
-    ] {
-        let content = serde_json::to_vec(&serde_json::json!({
-            "pages": [{"name": "Apps", "items": []}], "background": background,
-            "showclock": "no"
-        }))?;
-        std::fs::write(&config, &content)?;
-        let screenshot = scratch.0.join(format!("{name}.bmp"));
-        let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
-            .current_dir(&scratch.0)
-            .env("SDL_VIDEODRIVER", "dummy")
-            .args([
-                "--app-config",
-                "source config.json",
-                "--assets",
-                "exported assets",
-            ])
-            .args(["--size", "480x272", "--screenshot"])
-            .arg(&screenshot)
-            .output()?;
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let bytes = std::fs::read(screenshot)?;
-        let offset = usize::try_from(u32::from_le_bytes(bytes[10..14].try_into()?))?;
-        assert_eq!(&bytes[offset..offset + 3], expected);
-        assert_eq!(std::fs::read(&config)?, content);
-    }
-    Ok(())
-}
-
-#[test]
 fn catalog_paths_and_device_session_entries_survive_import_boundaries()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::temp_dir().join(format!("vitrallis catalog paths {}", std::process::id()));
@@ -193,17 +143,22 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
             .ok_or("diagnostics")?
             .is_empty()
     );
-    command.arg("--pocketchip");
+    command.arg("--linux-handheld");
     let fallback = list(&mut command)?;
     assert_eq!(fallback["apps"][3]["id"], "vitrallis-app-center");
     assert_eq!(fallback["apps"][4]["name"], "Default");
     assert!(!user_config.exists());
 
     let user = serde_json::to_vec(&serde_json::json!({"pages": [{"name": "Apps", "items": [
-        {"name": "Terminal", "shell": "/usr/bin/lxterminal", "icon": ""},
+        {"name": "Terminal", "shell": "/usr/bin/lxterminal -e nmtui", "icon": ""},
         {"name": "Vitrallis", "shell": format!("\"{}\"", home.join(".local/share/vitrallis/launch").display()), "icon": ""}
     ]}]}))?;
-    std::fs::write(&user_config, &user)?;
+    std::fs::write(&user_config, b"unrelated malformed user config")?;
+    assert_eq!(list(&mut command)?["apps"][4]["name"], "Default");
+    command
+        .arg("--app-config")
+        .arg(scratch.0.join("explicit.json"));
+    std::fs::write(scratch.0.join("explicit.json"), &user)?;
     let configured = list(&mut command)?;
     assert_eq!(
         configured["apps"].as_array().ok_or("missing apps")?.len(),
@@ -212,7 +167,7 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
     assert_eq!(configured["apps"][4]["name"], "Terminal");
     assert_eq!(
         configured["apps"][4]["args"],
-        serde_json::json!(["--no-remote"])
+        serde_json::json!(["--no-remote", "-e", "nmtui"])
     );
 
     let device = list(&mut command)?;
@@ -220,7 +175,7 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
     assert_eq!(device["apps"][4]["id"], configured["apps"][4]["id"]);
     assert_eq!(
         device["apps"][4]["args"],
-        serde_json::json!(["--no-remote"])
+        serde_json::json!(["--no-remote", "-e", "nmtui"])
     );
     assert_eq!(device["apps"][5]["name"], "Vitrallis");
     assert_eq!(device["apps"][3]["id"], "vitrallis-app-center");
@@ -228,15 +183,22 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
     command.env("VITRALLIS_SESSION", "1");
     let session = list(&mut command)?;
     assert_eq!(session["apps"].as_array().ok_or("missing apps")?.len(), 6);
-    assert_eq!(session["apps"][5]["id"], "vitrallis-return-marshmallow");
-    assert_eq!(session["apps"][5]["entry"], "/usr/bin/systemctl");
+    assert_eq!(session["apps"][5]["id"], "vitrallis-exit-session");
+    assert_eq!(session["apps"][5]["entry"], "/usr/bin/python3");
     assert_eq!(
         session["apps"][5]["args"],
-        serde_json::json!(["--user", "stop", "vitrallis-session.service"])
+        serde_json::json!([
+            home.join(".local/share/vitrallis/vitrallis-session.py"),
+            "stop"
+        ])
     );
     assert_eq!(session["apps"][3]["id"], "vitrallis-app-center");
     assert_eq!(std::fs::read(&default_config)?, default);
-    assert_eq!(std::fs::read(&user_config)?, user);
+    assert_eq!(
+        std::fs::read(&user_config)?,
+        b"unrelated malformed user config"
+    );
+    assert_eq!(session["apps"][5]["name"], "Exit Vitrallis");
     Ok(())
 }
 

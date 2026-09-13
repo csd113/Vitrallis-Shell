@@ -14,16 +14,18 @@ GitHub release publication. This authorization does not cover future versions.
 The [GitHub release](https://github.com/csd113/Vitrallis-Shell/releases/tag/v0.1.0-beta2.6)
 is a beta prerelease.
 
-## Complete asset inventory
+## Current source asset inventory
 
-Each architecture has a complete four-binary bundle and SHA-256 sidecar:
+This source contract requires `install-session.py`; published beta2.6 predates
+that installer and is not selected by the current bootstrap. No new release is
+published by this change. Each architecture has a four-binary bundle and sidecar:
 
 - `vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle`
 - `vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle.sha256`
 - `vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle`
 - `vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle.sha256`
 
-The ARM job also packages `bootstrap.py`, `install.py`, `uninstall.py` and
+The ARM job also packages `bootstrap.py`, `install-session.py`, `uninstall.py` and
 `vitrallis-session.py`, each with its own `.sha256` sidecar. The resulting 12
 assets come from the tagged checkout. The bootstrap obtains matching helpers
 and bundle from one release; native OTA updates replace only the four-binary
@@ -51,24 +53,15 @@ Before publication, review the complete asset inventory, verify uploaded bytes
 against checksums and bundle contents, and confirm successful release CI.
 The release description records those checks for the published artifacts.
 
-Docker App Center validation operates the real Linux SDL shell and installer,
-including published Carousel and Debug processes. After publication, a Debian 13
-PocketCHIP passed a fresh installation of the published ARM bundle, all four
-version probes, supervised shell startup, the live update check and an initial
-App Center catalog load with zero installed apps. See the
-[hardware follow-up](history/beta2.6-device-validation.md), including the bootstrap
-permissions correction on `main`. Published assets and the release tag are unchanged.
-
-These checks do not establish physical touch, storage durability under power
-loss, Home/resume, media behavior, removal or installation of a later native
-update. The literal README command was fixture-tested; the hardware installation
-used verified, locally staged published helpers after manually archiving beta2.5.
+Published validation and its limits are recorded in the [hardware follow-up](devices/pocketchip/history/beta2.6-device-validation.md).
+Those artifacts predate the current stock-session integration changes. A matching
+bundle and helper release must be built and validated before distributing this branch.
 
 ## Repository About
 
 Suggested description: **A compact Rust + SDL2 launcher for small-screen Linux,
-with native Terminal, Notepad and Files, App Center, and reversible PocketCHIP
+with native Terminal, Notepad and Files, App Center, and reversible session
 integration. Currently in beta.**
 
-Suggested topics: `pocketchip`, `embedded-linux`, `rust`, `sdl2`, `launcher`,
+Suggested topics: `embedded-linux`, `rust`, `sdl2`, `launcher`,
 `touchscreen`. Repository settings are unchanged by the release.

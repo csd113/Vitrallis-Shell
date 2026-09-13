@@ -4,7 +4,7 @@ These are historical observations from September 2026, before the current native
 utilities and complete-bundle lifecycle. They are retained to explain the tested
 Marshmallow integration. Old Store/package behavior in the matrix is historical,
 not a supported package contract. F1 and title-based app resume mentioned in old
-evidence have since been replaced; see [current controls](../../README.md#first-launch-and-controls).
+evidence have since been replaced; see [current controls](../../../../README.md#first-launch-and-controls).
 No new physical-device test is claimed by this document.
 
 The inspected image used Debian 13, ARMv7, Linux 6.12.94, SDL2 2.32.4, Awesome 4.x
@@ -77,7 +77,7 @@ must not be presented as measurements of the current native utilities.
 
 ## Retained evidence
 
-The [evidence directory](../evidence/step3/) retains the original command outputs
+The [evidence directory](../evidence/step3) retains the original command outputs
 and screenshots, including failed intermediate checks with later corrections:
 
 - [Physical input confirmation](../evidence/step3/device-physical-input.txt)
@@ -98,9 +98,9 @@ returned. Full storage and FEL flashing were not exercised. Battery/radio
 transitions, audible range, endurance and original Jessie compatibility were not
 established.
 
-Current [native-app measurements](../native-validation.md),
-[App Center contract evidence](../app-center-validation.md), and
-[validation commands](../validation.md) have separate scopes.
+Current [native-app measurements](native-validation.md),
+[App Center contract evidence](../../../app-center-validation.md), and
+[validation commands](../../../validation.md) have separate scopes.
 
 ## Settings qualification — September 10, 2026
 

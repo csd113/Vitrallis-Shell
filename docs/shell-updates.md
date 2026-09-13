@@ -25,7 +25,7 @@ installation run on a worker thread; leaving settings does not cancel an active
 installation. The original shell keeps running until **Relaunch Shell** is selected
 by keyboard, mouse, or touch. Relaunch executes the verified installed replacement
 at its saved installation path, preserving the process ID, launch arguments, and
-session environment so the PocketCHIP supervisor remains attached. The installed
+session environment so the the target device supervisor remains attached. The installed
 SHA-256 and filesystem safety checks run again before execution. Failed attempts
 show a diagnostic and retain the relaunch button for retry. Close running apps and
 wait for App Center/system operations to finish before relaunching; the action
@@ -118,7 +118,7 @@ Tag and executable version must match Cargo metadata. Release beta2.6 uses this
 complete bundle contract; older standalone beta2.5 assets cannot satisfy it. See
 [release validation and assets](releases.md).
 
-ARM packaging also emits `bootstrap.py`, `install.py`, `uninstall.py`,
+ARM packaging also emits `bootstrap.py`, `install-session.py`, `uninstall.py`,
 `vitrallis-session.py`, and a `.sha256` sidecar for each. Initial installation
 fetches the matching helpers from the same release as the bundle. Native OTA
 updates do not replace these helpers; rerun the reviewed bootstrap with the

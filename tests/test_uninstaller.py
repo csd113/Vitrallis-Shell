@@ -155,19 +155,22 @@ class Uninstaller(unittest.TestCase):
             u.main()
             self.assertTrue(remove.call_args.args[2])
 
-    def test_write_failure_rolls_back_removed_binaries_helpers_and_menu(self):
-        before = self.config.read_bytes()
+    def test_write_failure_rolls_back_owned_files_and_startup_block(self):
+        owned_config = self.home / u.AWESOME
+        owned_config.parent.mkdir(parents=True)
+        owned_config.write_text('before\n' + u.STARTUP + '\nafter\n')
+        before = owned_config.read_bytes()
         real = u.atomic
         failed = []
         def fail(path, *args):
-            if path == self.config and not failed:
+            if path == owned_config and not failed:
                 failed.append(True)
                 raise OSError('injected full disk')
             return real(path, *args)
         with patch.object(u, 'atomic', side_effect=fail):
             with self.assertRaisesRegex(OSError, 'full disk'):
                 self.remove()
-        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(owned_config.read_bytes(), before)
         self.assertTrue((self.target / 'current/vitrallis').is_file())
         self.assertTrue((self.target / 'uninstall.py').is_file())
         self.remove()
@@ -219,26 +222,31 @@ class Uninstaller(unittest.TestCase):
         self.assertTrue(path.read_bytes().endswith(b'user edit'))
         self.assertFalse((self.target / 'current').exists())
 
-    def test_receipt_cannot_remove_an_unrelated_menu_item(self):
-        path = self.target / 'installed.json'
-        receipt = json.loads(path.read_bytes())
-        receipt['menu'] = {'name': 'Keep', 'shell': 'keep'}
-        path.write_text(json.dumps(receipt))
-        with self.assertRaisesRegex(ValueError, 'Receipt menu'):
-            self.remove()
-        u.session.assert_not_called()
-        self.assertTrue((self.target / 'current').exists())
+    def test_no_launcher_config_is_required_for_removal(self):
+        self.config.unlink()
+        self.config.parent.rmdir()
+        self.remove()
+        self.assertFalse(self.config.exists())
+        self.assertFalse((self.target / 'current').exists())
+
+    def test_unrelated_broken_config_is_not_read(self):
+        self.config.write_text('broken user config')
+        self.remove()
+        self.assertEqual(self.config.read_text(), 'broken user config')
 
     def test_recovery_preserves_later_edits_and_leaves_journal(self):
+        owned_config = self.home / u.AWESOME
+        owned_config.parent.mkdir(parents=True)
+        owned_config.write_text('before\n' + u.STARTUP + '\nafter\n')
         real = u.atomic
         def fail(path, *args):
-            if path == self.config:
+            if path == owned_config:
                 path.write_text('later user edit')
                 raise OSError('injected error')
             return real(path, *args)
         with patch.object(u, 'atomic', side_effect=fail), self.assertRaisesRegex(ValueError, 'Later edit'):
             self.remove()
-        self.assertEqual(self.config.read_text(), 'later user edit')
+        self.assertEqual(owned_config.read_text(), 'later user edit')
         self.assertTrue((self.target / '.vitrallis-update/removal/journal.json').is_file())
         self.assertTrue((self.target / 'uninstall.py').is_file())
 
@@ -251,7 +259,7 @@ class Uninstaller(unittest.TestCase):
         with patch.object(u, 'cleanup', side_effect=interrupt), self.assertRaisesRegex(OSError, 'interrupted cleanup'):
             self.remove()
         self.assertTrue((self.target / 'uninstall.py').is_file())
-        self.assertTrue((self.target / 'install.py').is_file())
+        self.assertTrue((self.target / 'install-session.py').is_file())
         self.remove()
         self.assertFalse((self.target / 'uninstall.py').exists())
         self.assertFalse((self.target / 'current').exists())
@@ -270,7 +278,7 @@ class Uninstaller(unittest.TestCase):
             with self.assertRaisesRegex(OSError, 'final helper cleanup'):
                 self.remove()
         self.assertTrue(entry.is_file())
-        self.assertFalse((self.target / 'install.py').exists())
+        self.assertFalse((self.target / 'install-session.py').exists())
         code = "import runpy, sys; from unittest.mock import patch; " + \
                "sys.argv = sys.argv[1:]; " + \
                "guard = patch('os.geteuid', return_value=1000); guard.start(); " + \
@@ -281,18 +289,6 @@ class Uninstaller(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(entry.exists())
         self.assertFalse((self.target / 'installed.json').exists())
-
-    def test_menu_edit_during_planning_is_preserved(self):
-        real = u.fingerprint
-        def fingerprint(path):
-            if path == self.config:
-                path.write_text('concurrent menu edit')
-            return real(path)
-        with patch.object(u, 'fingerprint', side_effect=fingerprint), self.assertRaisesRegex(ValueError, 'planning'):
-            self.remove()
-        self.assertEqual(self.config.read_text(), 'concurrent menu edit')
-        u.session.assert_not_called()
-        self.assertTrue((self.target / 'current').exists())
 
     def test_partial_install_uses_pending_receipt(self):
         receipt = json.loads((self.target / 'installed.json').read_bytes())

@@ -1,6 +1,6 @@
 # System Settings
 
-Settings use the PocketCHIP backend and the existing device utilities.
+Settings use the Linux handheld backend and the existing device utilities.
 
 ## Controls
 
@@ -19,14 +19,14 @@ Back and More remain visible while a setting reports Saved or an error. Escape r
 
 Timeout uses the X server's screen saver and DPMS timers, covering the current graphical session. The user confirmed that physical input wakes the display normally after a 30-second timeout. Synthetic XTest input did not wake DPMS on this X server; that automation limitation does not reproduce with physical input. This turns the display off; it does not lock the session or suspend the device. Applications that explicitly inhibit screen saving can still override X's idle behavior.
 
-A selected timeout is saved atomically with mode 0600 in `~/.config/vitrallis/screen-timeout` and restored when Vitrallis next starts. Missing preferences leave the existing timer alone. Unsupported values and symlinked paths are rejected. A failed application/readback/save attempts to restore the previous X timers. The setting stays effective when returning to Marshmallow in the same X session; after a fresh login, Vitrallis restores it when launched. Choose Never to disable idle blanking, or choose the previous value to undo a change.
+A selected timeout is saved atomically with mode 0600 in `~/.config/vitrallis/screen-timeout` and restored when Vitrallis next starts. Missing preferences leave the existing timer alone. Unsupported values and symlinked paths are rejected. A failed application/readback/save attempts to restore the previous X timers. The setting stays effective when returning to PocketHome in the same X session; after a fresh login, Vitrallis restores it when launched. Choose Never to disable idle blanking, or choose the previous value to undo a change.
 
 Time-zone changes use the existing device authorization policy and system zone database; no sudoers or polkit rule is installed. The interactive helper validates its single zone argument against that database and invokes the fixed sudo/timedatectl executables with explicit arguments. Only the password-taking subprocess receives the authentication input. All interactive settings utilities remain owned by the Vitrallis session and return to the additional settings page on exit.
 
 The normal worker continues polling status independently of controls. Timestamped readback prevents an older snapshot from reverting newly applied brightness, volume, timeout or time-zone fields. Bounded, noninteractive helper commands retain the two-second deadline. The deliberate interactive password/calibration applications use the existing supervised app lifecycle instead.
 
-No Marshmallow binary, Awesome configuration, X startup file, calibration implementation, default boot setting, system package, or authorization policy is changed by the Vitrallis installer.
+No PocketHome binary, Awesome configuration, X startup file, calibration implementation, default boot setting, system package, or authorization policy is changed by the Vitrallis installer.
 
 ## Validation scope
 
-The [historical settings qualification](../../history/device-validation.md#settings-qualification--september-10-2026) records the beta.1 device observations. Current native utilities and installation/removal changes require fresh physical validation.
+The [historical settings qualification](history/device-validation.md#settings-qualification--september-10-2026) records the beta.1 device observations. Current native utilities and installation/removal changes require fresh physical validation.

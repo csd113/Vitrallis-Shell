@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Remove a managed PocketCHIP installation offline, preserving personal data."""
+"""Remove a managed Vitrallis installation offline, preserving personal data."""
 import argparse
 import fcntl
 import hashlib
@@ -20,7 +20,7 @@ sys.dont_write_bytecode = True
 
 BINARIES = ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files')
 MAGIC = b'VITRALLIS-BUNDLE'
-HELPERS = ('install.py', 'uninstall.py', 'vitrallis-session.py')
+HELPERS = ('install-session.py', 'uninstall.py', 'vitrallis-session.py')
 
 
 def safe(path):
@@ -133,7 +133,6 @@ def file_digest(path):
 BASE = Path('.local/share/vitrallis')
 DESKTOP = Path('.local/share/applications/vitrallis.desktop')
 AUTOSTART = Path('.config/autostart/vitrallis.desktop')
-MENU = Path('.pocket-home/config.json')
 AWESOME = Path('.config/awesome/rc.lua')
 STARTUP = """-- BEGIN optional Vitrallis startup
 require('gears').timer.start_new(5, function()
@@ -176,7 +175,7 @@ def allowed(relative, replacement):
     if path.is_absolute() or path.as_posix() != relative or '..' in path.parts:
         return False
     if replacement is not None:
-        return path in (MENU, AWESOME)
+        return path == AWESOME
     if path in (DESKTOP, AUTOSTART) + PURGE:
         return True
     if path.parent == BASE:
@@ -208,8 +207,6 @@ def validate_receipt(receipt):
     for name in HELPERS + ('launch', 'desktop_sha256'):
         if not isinstance(receipt.get(name), str) or HEX.fullmatch(receipt[name]) is None:
             raise ValueError('Invalid receipt digest: ' + name)
-    if not isinstance(receipt.get('menu'), dict):
-        raise ValueError('Invalid menu receipt')
     return receipt
 
 
@@ -225,10 +222,6 @@ def plan(home, purge=False):
             raise ValueError('Invalid installation recovery marker')
         pending = validate_receipt(recovery.get('receipt'))
     receipts = [r for r in (receipt, pending) if r is not None]
-    expected_menu = dict(name='Vitrallis', icon='appIcons/terminal.png',
-                         shell='"' + str(target / 'launch') + '"')
-    if any(r['menu'] != expected_menu for r in receipts):
-        raise ValueError('Receipt menu does not belong to this installation')
     if not receipts:
         generations = target / 'generations'
         safe(generations / '.path-check')
@@ -258,22 +251,6 @@ def plan(home, purge=False):
         managed(target / name, [r[name] for r in receipts])
     for relative in (DESKTOP, AUTOSTART):
         managed(home / relative, [r['desktop_sha256'] for r in receipts])
-    config_path = home / MENU
-    if exists(config_path):
-        original = read_file(config_path, 1024 * 1024)
-        config = json.loads(original)
-        if not isinstance(config, dict) or not isinstance(config.get('pages'), list):
-            raise ValueError('Invalid PocketHome menu; preserve and repair it before removal')
-        changed = False
-        for page in config['pages']:
-            if isinstance(page, dict) and isinstance(page.get('items'), list):
-                keep = [item for item in page['items'] if not any(item == r['menu'] for r in receipts)]
-                changed |= len(keep) != len(page['items'])
-                page['items'] = keep
-        if changed:
-            expected = {'sha256': hashlib.sha256(original).hexdigest(),
-                        'mode': stat.S_IMODE(config_path.stat().st_mode)}
-            add(config_path, (json.dumps(config, indent=2) + '\n').encode(), expected)
     awesome = home / AWESOME
     if exists(awesome):
         original = read_file(awesome)
@@ -359,7 +336,7 @@ def session(home, dry_run):
 
 def helper_directory(home):
     source = Path(__file__).absolute().parent
-    return source if (source / 'install.py').is_file() else home / BASE
+    return source if (source / 'install-session.py').is_file() else home / BASE
 
 
 def validate_journal(value):
@@ -450,7 +427,7 @@ def execute(home, transaction, actions):
     journal = validate_journal({'state': 'prepared', 'actions': actions})
     make_directories(transaction, 0o700)
     atomic(transaction / 'journal.json', json.dumps(journal).encode(), 0o600)
-    deferred = {BASE / name for name in ('install.py', 'uninstall.py', 'installed.json')}
+    deferred = {BASE / name for name in ('install-session.py', 'uninstall.py', 'installed.json')}
     try:
         # Keep the normal removal entry and its import available until journal
         # cleanup is complete, including interruptions during committed cleanup.
@@ -477,7 +454,7 @@ def execute(home, transaction, actions):
         raise
     cleanup(transaction, journal, committed=True)
     # Receipt is last, so an interrupted cleanup can still identify the helpers.
-    for name in ('install.py', 'uninstall.py', 'installed.json'):
+    for name in ('install-session.py', 'uninstall.py', 'installed.json'):
         for action in actions:
             if Path(action['path']) == BASE / name:
                 path = home / action['path']
@@ -527,7 +504,7 @@ def uninstall(home, dry_run=False, purge=False):
         if dry_run:
             session(home, True)
             return
-        if any(Path(a['path']) not in {BASE / name for name in ('install.py', 'uninstall.py', 'installed.json')}
+        if any(Path(a['path']) not in {BASE / name for name in ('install-session.py', 'uninstall.py', 'installed.json')}
                for a in actions):
             session(home, False)
         execute(home, transaction, actions)
@@ -552,7 +529,7 @@ def uninstall(home, dry_run=False, purge=False):
                 generations.rmdir()
     # Retaining this tiny lock prevents a waiting process from using an orphaned
     # inode concurrently with a new installation. It contains no personal data.
-    print('Removed managed Vitrallis files. Marshmallow remains available.')
+    print('Removed managed Vitrallis files. The original session remains available.')
     print('Retained: apps/, app-center/ transactions, user documents, installation backups,')
     print('unrecognized or edited files, custom XDG locations, and .vitrallis-update/lock.')
     if not purge:

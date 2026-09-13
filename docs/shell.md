@@ -1,8 +1,8 @@
 # Shell behavior and development preview
 
 The native registry supplies Terminal, Notepad and Files. App Center discovers
-installed manifest packages; PocketCHIP mode additionally reads the independent
-PocketHome menu and provides System Settings and Marshmallow recovery.
+installed manifest packages; Linux handheld mode additionally reads the independent
+PocketHome menu and provides System Settings and an Exit Vitrallis tile.
 [Native apps](native-apps.md), [App Center](app-center.md),
 [settings](devices/pocketchip/settings.md) and [updates](shell-updates.md) document
 their respective controls and limits.
@@ -10,7 +10,7 @@ their respective controls and limits.
 ## Preview and discovery
 
 Build all workspace binaries before running. Generic desktop mode defaults to
-800×480; `--pocketchip` selects the hardware backend, fullscreen and 480×272.
+800×480; `--linux-handheld` selects the hardware backend, fullscreen and 480×272.
 `--size WIDTHxHEIGHT` changes layout independently of hardware selection.
 Keyboard/mouse/touch capabilities come from SDL events, not screen dimensions.
 
@@ -25,19 +25,23 @@ asset root. `--list-apps` prints normalized discovery diagnostics without a wind
 an existing file. The README screenshot was captured from the current desktop
 release build at 480×272 through this real renderer, with no device connection.
 
-PocketCHIP first reads `~/.pocket-home/config.json`; only an absent user file permits
-its default asset configuration. Asset lookup checks `/usr/share/pocket-home/`,
-then `../../assets/` relative to the working directory, then that working directory.
-Explicit paths override these choices. Malformed user metadata is reported instead
-of silently merged with defaults. All Apps pages contribute items in order.
-Device-menu items use the OS `name`, `icon`, and `shell` contract. Their command
-parser preserves the pinned JUCE tokenization; it does not implicitly execute a
-shell. Use an explicit shell entry only when that is intended.
+The handheld backend reads stock PocketHome's `/usr/share/pocket-home/config.json`.
+`--app-config` overrides that path explicitly; no per-user launcher config is
+assumed. `--assets` overrides the asset directory for exported fixtures. Missing or
+malformed catalogs produce diagnostics; an explicit failed refresh preserves the
+current catalog. All Apps pages contribute items in order. Entries use the OS
+`name`, `icon`, and `shell` contract and JUCE command tokenization, without implicit
+shell execution. No modified-launcher appearance preferences are imported.
 
-Existing background color/PNG/BMP wallpaper, clock visibility, 12/24-hour time and
-cursor preferences are read without runtime mutation. Missing icons use the OS
-fallback when available; unsupported artwork uses a visible placeholder. Retained
-icon textures are capped at 16 MiB. SVG/JPEG and full font shaping are not supported.
+Only verified stock utility command signatures in this importer are suppressed:
+the exact terminal/editor/file-browser invocations documented in the
+[upstream source audit](devices/pocketchip/stock-source.md). Renamed or localized
+labels do not affect matching. Custom commands, arguments, PATH shadows, and
+App Center packages are retained. Filtering runs on load and every refresh.
+Native utilities remain present once even when missing; their repair diagnostic
+is shown instead of substituting the stock app. Original menu files and packages
+are never modified. Missing icons use a placeholder; retained textures are capped
+at 16 MiB. SVG/JPEG and full font shaping are not supported.
 
 ## Navigation and application lifecycle
 
@@ -51,7 +55,7 @@ justify another launch. Startup failures show a dismissible error panel.
 
 Each owned Unix child has a process group and is polled/reaped. Background exits
 do not steal focus. Manual direct invocation cannot contain descendants that
-escape that group after forced termination; the installed PocketCHIP systemd
+escape that group after forced termination; the installed systemd
 session owns its cgroup and restores Awesome's temporary bindings on exit.
 Externally owned windows are not made safe to kill merely by matching a title.
 
