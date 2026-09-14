@@ -35,12 +35,14 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     // A touch used to focus the launcher must also deliver its matching press.
     // SDL otherwise consumes the first click after window activation.
     sdl2::hint::set("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
-    let (mut canvas, info) = crate::renderer::backend::initialize(
-        &video,
-        (width, height),
-        platform.fullscreen(),
-        config.renderer,
-    )?;
+    let (mut canvas, info) = crate::renderer::backend::initialize(&video, config.renderer, || {
+        let mut window = video.window("Vitrallis", u32::from(width), u32::from(height));
+        window.position_centered().hidden();
+        if platform.fullscreen() {
+            window.fullscreen_desktop();
+        }
+        window.build().map_err(|error| format!("window: {error}"))
+    })?;
     state.renderer_info = Some(info);
     if let Some(info) = &state.renderer_info {
         eprintln!("{info}");

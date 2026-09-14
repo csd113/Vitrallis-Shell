@@ -1,5 +1,5 @@
 mod app_center;
-pub mod backend;
+pub use vitrallis_native::renderer as backend;
 mod shortcuts;
 mod system;
 use crate::{

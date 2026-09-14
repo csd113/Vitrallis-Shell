@@ -143,9 +143,38 @@ an isolation boundary; filesystem errors remain visible and recoverable.
 
 The Cargo workspace contains the shell, `crates/vitrallis-native`, and
 `apps/{terminal,notepad,files}`. Each app has a small `main.rs` and independently
-tested library/model code. Shared SDL initialization, software bitmap text,
+tested library/model code. Shared SDL initialization, bitmap text,
 colors, buttons, focus, dialogs, geometry, browser/picker, bounded document I/O
 and filesystem operations live in `vitrallis-native`; it is not a shell rewrite.
+The shell and all three native apps use `vitrallis_native::renderer` for renderer
+policy, capability verification, GLES2 preference, retries, and diagnostics.
+`--renderer auto` (the default) tries SDL accelerated drivers, preferring
+`opengles2` when advertised, then falls back to software. `--renderer hardware`
+requires acceleration and reports the failed attempts; `--renderer software`
+explicitly selects software without GPU attempts. The option is per process.
+Native startup logs include the app name, requested/actual mode, SDL flags,
+backend, dimensions, and any fallback reason. SDL acceleration flags do not
+prove physical GPU use: Mesa software rasterizers can also expose these drivers.
+
+The existing Canvas drawing calls, layout, colors, input, and dirty-frame loops
+are unchanged. Font lookup and glyph point/rectangle generation remain CPU-side;
+SDL executes drawing and presentation through the selected backend. There is no
+new framebuffer upload, shader, raw GL/EGL code, or GPU API requirement beyond
+SDL's GLES2-capable architecture. Software rendering remains complete. Screenshots
+read the completed backbuffer before presentation invalidates it. SDL device/reset
+events request one redraw rather than starting a continuous rendering loop.
+
+Run `sh scripts/validate.sh` for all host gates and native dummy-driver policy,
+fallback, readback, and overwrite checks. With a graphical SDL backend available,
+run `VITRALLIS_RENDERER_BIN_DIR=target/release VITRALLIS_TEST_ACCELERATED=1
+python3 -m unittest discover -s tests -p 'test_native_renderer.py'` for exact native
+software/accelerated BMP comparisons at 480x272, 800x480, and 1280x720. The Linux
+`tests/simulator/session.py` also checks launch, Home/resume, close, crash/relaunch,
+and session restoration; set `VITRALLIS_TEST_ACCELERATED=1` to require hardware
+selection in each native application's diagnostics. Host and Mesa/Xvfb checks do
+not replace physical Mali-400/Lima or Raspberry Pi vc4/V3D testing of display
+handoff, driver recovery, memory pressure, readback, and idle power.
+
 Original geometric icon sources and 128×128 PNGs live in `assets/native/`.
 
 `vitrallis_native::APPLICATIONS` defines stable IDs `io.vitrallis.terminal`,

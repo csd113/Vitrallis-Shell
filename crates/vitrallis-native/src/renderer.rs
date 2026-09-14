@@ -1,14 +1,48 @@
 //! SDL capability selection. No device, window-system or raw GPU API policy.
-use super::Screen;
-use crate::config::RendererMode;
+use sdl2::{render::Canvas, video::Window};
 use sdl2::{render::RendererInfo as SdlInfo, sys::SDL_RendererFlags};
 use std::fmt;
+
+/// SDL renderer policy, independent of the selected device/system backend.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum RendererMode {
+    #[default]
+    Auto,
+    Hardware,
+    Software,
+}
+
+impl RendererMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Hardware => "hardware",
+            Self::Software => "software",
+        }
+    }
+}
+
+impl std::str::FromStr for RendererMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "hardware" => Ok(Self::Hardware),
+            "software" => Ok(Self::Software),
+            _ => Err(format!(
+                "invalid renderer {value:?}; use auto, hardware or software"
+            )),
+        }
+    }
+}
 
 const ACCELERATED: u32 = SDL_RendererFlags::SDL_RENDERER_ACCELERATED as u32;
 const SOFTWARE: u32 = SDL_RendererFlags::SDL_RENDERER_SOFTWARE as u32;
 const VSYNC: u32 = SDL_RendererFlags::SDL_RENDERER_PRESENTVSYNC as u32;
 
-/// Shell-owned startup snapshot for system/debug consumers. SDL flags describe
+/// Startup snapshot for system/debug consumers. SDL flags describe
 /// the renderer, not the physical GPU or whether Mesa uses CPU rasterization.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RendererInfo {
@@ -24,14 +58,17 @@ pub struct RendererInfo {
 }
 
 impl RendererInfo {
+    #[must_use]
     pub const fn accelerated(&self) -> bool {
         self.sdl.flags & ACCELERATED != 0
     }
 
+    #[must_use]
     pub const fn software(&self) -> bool {
         self.sdl.flags & SOFTWARE != 0
     }
 
+    #[must_use]
     pub const fn vsync(&self) -> bool {
         self.sdl.flags & VSYNC != 0
     }
@@ -166,12 +203,15 @@ fn select<T>(
     }
 }
 
+/// Create and verify a renderer, retrying with a fresh application window.
+/// The factory must return a hidden window with the application's window policy.
+/// # Errors
+/// Reports all failed hardware attempts and software failure, or required hardware failure.
 pub fn initialize(
     video: &sdl2::VideoSubsystem,
-    size: (u16, u16),
-    fullscreen: bool,
     requested: RendererMode,
-) -> Result<(Screen, RendererInfo), String> {
+    mut window: impl FnMut() -> Result<Window, String>,
+) -> Result<(Canvas<Window>, RendererInfo), String> {
     let drivers: Vec<_> = (0_u32..).zip(sdl2::render::drivers()).collect();
     // Failed attempts may destroy the last window. They must not queue a quit
     // event that closes the eventual successful renderer (notably on macOS).
@@ -179,12 +219,7 @@ pub fn initialize(
     let ((canvas, output_size), sdl, hardware_error) = select(requested, &drivers, |attempt| {
         // A fresh window discards any GL/Metal state from a failed backend.
         // Keep unsuccessful attempts hidden and preserve the same window policy.
-        let mut window = video.window("Vitrallis", u32::from(size.0), u32::from(size.1));
-        window.position_centered().hidden();
-        if fullscreen {
-            window.fullscreen_desktop();
-        }
-        let window = window.build().map_err(|error| format!("window: {error}"))?;
+        let window = window()?;
         let builder = window.into_canvas().index(attempt.index);
         let mut builder = if attempt.mode == RendererMode::Software {
             builder.software()

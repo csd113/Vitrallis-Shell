@@ -4,6 +4,7 @@ pub mod document;
 pub mod files;
 pub mod ipc;
 pub mod keyboard;
+pub mod renderer;
 pub mod ui;
 
 /// Executables shipped and updated together. Order is the launcher order.

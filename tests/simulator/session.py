@@ -144,10 +144,33 @@ return "concurrent key added"
                 time.sleep(.6)
                 key('Right', 'Right', 'Return')  # Explicit Discard closes it.
             wait_for(lambda: not windows(name), name + ' clean close')
+            # A crashed accelerated client must be reaped and launchable again.
+            focus(shell)
+            run('xdotool', 'mousemove', '--window', shell, str(80 + index * 155), '82', 'click', '1')
+            wait_for(lambda: windows(name), name + ' relaunch before crash')
+            crashed = windows(name)[-1]
+            time.sleep(.6)  # Crash a running client, after startup activation completes.
+            os.kill(int(run('xdotool', 'getwindowpid', crashed)), 9)
+            wait_for(lambda: not windows(name), name + ' crash cleanup')
+            time.sleep(.6)  # Allow the shell's existing bounded reap interval.
+            focus(shell)
+            run('xdotool', 'mousemove', '--window', shell, str(80 + index * 155), '82', 'click', '1')
+            wait_for(lambda: windows(name), name + ' recovery launch')
+            recovered = windows(name)[-1]
+            session.awesome(f'for _, c in ipairs(client.get()) do if c.window == {int(recovered)} then c:kill() end end; return "close requested"')
+            wait_for(lambda: not windows(name), name + ' recovery close')
         focus(shell)
         run('import', '-window', shell, str(OUT / 'stock-session-menu.png'))
         session.awesome(f'for _, c in ipairs(client.get()) do if c.window == {int(shell)} then c:kill() end end; return \"close requested\"')
         assert supervisor.wait(timeout=10) == 0
+        if os.environ.get('VITRALLIS_TEST_ACCELERATED') == '1':
+            diagnostics = (BASE / 'session.log').read_text().splitlines()
+            shutil.copyfile(BASE / 'session.log', OUT / 'native-renderers.log')
+            for name in ('Terminal', 'Notepad', 'Files'):
+                selected = [line for line in diagnostics if 'event=renderer_initialized' in line and f'app="{name}"' in line]
+                assert len(selected) >= 3, (name, diagnostics)
+                assert all('requested=auto mode=hardware' in line and 'fallback=false' in line for line in selected)
+
         wait_for(lambda: active() == original, 'original window restored')
         session.awesome('''
 assert(vitrallis_home_route == nil)
@@ -172,6 +195,7 @@ return "keys restored"
         assert len(files) == 1 and 'Repair' in files[0]['unavailable']
         assert not any(a['name'] == 'Browse Files' for a in missing['apps'])
         (OUT / 'stock-session.json').write_text(json.dumps({
+            'native_crash_recovery': ['Terminal', 'Notepad', 'Files'],
             'native_launch_home_resume_close': ['Terminal', 'Notepad', 'Files'],
             'original_focus_and_keys_restored': True,
             'concurrent_binding_preserved': True,

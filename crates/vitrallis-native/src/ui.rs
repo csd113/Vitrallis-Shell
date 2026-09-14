@@ -1,4 +1,4 @@
-//! Event-driven software rendering and shared keyboard/touch dialogs.
+//! Event-driven SDL rendering and shared keyboard/touch dialogs.
 use font8x8::UnicodeFonts;
 use sdl2::{
     event::{Event, WindowEvent},
@@ -24,6 +24,7 @@ pub const SELECTED: Color = Color::RGB(46, 85, 95);
 /// Common native command-line options; paths stay in their original OS encoding.
 #[derive(Debug, Default)]
 pub struct Options {
+    pub renderer: crate::renderer::RendererMode,
     pub size: Option<(u32, u32)>,
     pub fullscreen: bool,
     pub smoke: bool,
@@ -53,9 +54,17 @@ impl Options {
                 }
                 Some("--help") => {
                     println!(
-                        "{name} [--size WIDTHxHEIGHT] [--fullscreen] [--smoke-test] [--screenshot NEW.bmp] [--] [PATH]"
+                        "{name} [--renderer auto|hardware|software] [--size WIDTHxHEIGHT] [--fullscreen] [--smoke-test] [--screenshot NEW.bmp] [--] [PATH]"
                     );
                     return Ok(None);
+                }
+                Some("--renderer") => {
+                    options.renderer = args
+                        .next()
+                        .ok_or("--renderer requires auto, hardware or software")?
+                        .to_str()
+                        .ok_or("Invalid renderer encoding")?
+                        .parse()?;
                 }
                 Some("--size") => {
                     let value = args.next().ok_or("Missing display size")?;
@@ -120,9 +129,6 @@ impl Ui {
     /// # Errors
     /// Reports SDL/video/window initialization errors.
     pub fn new(title: &str, options: &Options) -> Result<Self, String> {
-        // A software renderer can still acquire an accelerated window surface.
-        // Avoid loading a GL/Mesa stack merely to present our small pixel buffer.
-        sdl2::hint::set("SDL_FRAMEBUFFER_ACCELERATION", "0");
         sdl2::hint::set("SDL_VIDEO_ALLOW_SCREENSAVER", "1");
         sdl2::hint::set("SDL_TOUCH_MOUSE_EVENTS", "0");
         sdl2::hint::set("SDL_MOUSE_TOUCH_EVENTS", "0");
@@ -136,20 +142,19 @@ impl Ui {
         let (width, height) = options
             .size
             .unwrap_or(if session { (480, 272) } else { (800, 480) });
-        let mut builder = video.window(title, width, height);
-        builder.position_centered().resizable();
-        if options.fullscreen || (session && options.size.is_none()) {
-            builder.fullscreen_desktop();
-        }
-        let mut window = builder.build().map_err(|e| e.to_string())?;
-        window
-            .set_minimum_size(320, 200)
-            .map_err(|e| e.to_string())?;
-        let canvas = window
-            .into_canvas()
-            .software()
-            .build()
-            .map_err(|e| e.to_string())?;
+        let (canvas, info) = crate::renderer::initialize(&video, options.renderer, || {
+            let mut builder = video.window(title, width, height);
+            builder.position_centered().resizable().hidden();
+            if options.fullscreen || (session && options.size.is_none()) {
+                builder.fullscreen_desktop();
+            }
+            let mut window = builder.build().map_err(|e| e.to_string())?;
+            window
+                .set_minimum_size(320, 200)
+                .map_err(|e| e.to_string())?;
+            Ok(window)
+        })?;
+        eprintln!("{info} app={title:?}");
         video.text_input().start();
         let events = sdl.event_pump()?;
         let keyboard = crate::keyboard::Keyboard::new(&video);
@@ -435,7 +440,9 @@ impl Ui {
             Event::Window {
                 win_event: WindowEvent::Exposed | WindowEvent::FocusGained,
                 ..
-            } => Input::Resize,
+            }
+            | Event::RenderTargetsReset { .. }
+            | Event::RenderDeviceReset { .. } => Input::Resize,
             Event::User { .. } => Input::Wake,
             _ => Input::Ignore,
         })
@@ -463,7 +470,7 @@ impl Ui {
     /// # Errors
     /// Refuses overwrites and reports screenshot encoding/I/O errors.
     pub fn finish_preview(&mut self, options: &Options) -> Result<bool, String> {
-        self.present();
+        // Accelerated backbuffers may be invalidated by present. Read first.
         if let Some(path) = &options.screenshot {
             let mut output = std::fs::OpenOptions::new()
                 .write(true)
@@ -491,8 +498,10 @@ impl Ui {
             output
                 .write_all(&bytes[..length])
                 .map_err(|e| e.to_string())?;
+            self.present();
             return Ok(true);
         }
+        self.present();
         Ok(options.smoke)
     }
     /// Shared modal selection; index zero is always the safe default.

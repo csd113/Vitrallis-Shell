@@ -9,6 +9,7 @@ cargo test --locked --workspace --all-features
 python3 -m unittest discover -s tests -p 'test_*.py'
 cargo build --locked --release --workspace --all-features
 native_target_dir=$(cargo metadata --no-deps --locked --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')
+VITRALLIS_RENDERER_BIN_DIR="$native_target_dir/release" python3 -m unittest discover -s tests -p 'test_native_renderer.py'
 SDL_VIDEODRIVER=dummy cargo run --locked -- --smoke-test
 for app in vitrallis vitrallis-terminal vitrallis-notepad vitrallis-files; do
     test -x "$native_target_dir/release/$app"

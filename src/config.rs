@@ -1,36 +1,4 @@
-/// SDL renderer policy, independent of the selected device/system backend.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum RendererMode {
-    #[default]
-    Auto,
-    Hardware,
-    Software,
-}
-
-impl RendererMode {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Hardware => "hardware",
-            Self::Software => "software",
-        }
-    }
-}
-
-impl std::str::FromStr for RendererMode {
-    type Err = String;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "auto" => Ok(Self::Auto),
-            "hardware" => Ok(Self::Hardware),
-            "software" => Ok(Self::Software),
-            _ => Err(format!(
-                "invalid renderer {value:?}; use auto, hardware or software"
-            )),
-        }
-    }
-}
+pub use vitrallis_native::renderer::RendererMode;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub enum Mode {
