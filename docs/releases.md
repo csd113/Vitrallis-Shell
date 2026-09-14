@@ -1,5 +1,19 @@
 # Release validation and assets
 
+## 0.1.0-beta3
+
+This release merges the GPU hardware acceleration work into main. The shell,
+Terminal, Notepad and Files share SDL renderer selection with automatic software
+fallback. Renderer artwork caching and a shared font atlas reduce repeated work;
+graphics diagnostics identify software Mesa renderers and reject them when
+hardware acceleration is explicitly required.
+
+See the [hardware acceleration guide](hardware-acceleration.md),
+[rendering performance report](rendering-performance.md) and
+[PocketCHIP graphics validation](devices/pocketchip/graphics-phase3.md) for
+configuration, measurements and the scope of recorded device checks. Those device
+checks cover the development build; release artifacts follow the gates below.
+
 ## 0.1.0-beta2.7.2
 
 App Center now installs missing declared Python dependencies automatically in an
