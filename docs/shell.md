@@ -43,6 +43,59 @@ is shown instead of substituting the stock app. Original menu files and packages
 are never modified. Missing icons use a placeholder; retained textures are capped
 at 16 MiB. SVG/JPEG and full font shaping are not supported.
 
+## SDL renderer selection
+
+The shell now defaults to hardware acceleration when SDL can initialize an
+accelerated renderer. Its existing Canvas/Texture drawing path prefers SDL's
+`opengles2` backend when advertised, then tries other advertised accelerated
+backends in SDL order. Each backend is attempted with vsync, then without vsync
+if initialization fails. SDL's resulting flags are checked before acceptance.
+Auto falls back to a fresh SDL software canvas if all hardware attempts fail.
+SDL remains responsible for presenting software window surfaces.
+
+```sh
+cargo run --locked -- --renderer auto
+cargo run --locked -- --renderer hardware
+cargo run --locked -- --renderer software
+SDL_VIDEODRIVER=dummy cargo run --locked -- --renderer software --demo --size 480x272 --screenshot /tmp/vitrallis-new.bmp
+```
+
+`--renderer auto` is the default; `hardware` requires SDL acceleration and returns
+an actionable startup error if unavailable; `software` skips hardware attempts.
+These options use the existing CLI parser. Selection is independent of
+`--linux-handheld`, window dimensions, and the SDL video driver. Each attempted
+backend gets a fresh hidden window; only the accepted window is shown. Failed
+hardware initialization cannot prevent software startup, provided SDL can create
+a software window in the current display environment.
+
+The minimum GPU API target remains **OpenGL ES 2.0**: PocketCHIP's Mali-400 with
+upstream Mesa Lima; VideoCore IV with Mesa vc4 on Raspberry Pi 0/1/2/3/Zero/Zero 2
+class devices; and VideoCore VI/VII with Mesa V3D on Pi 4/5. These are architectural
+compatibility targets, **not newly validated device combinations**. GPU support
+does not establish OS, CPU ABI, installer or system-control support: existing
+Linux bundles target ARMv7/x86-64, so the ARMv6 Pi 0/1/Zero require separate build
+and platform validation. No Vulkan, GLES3-only features, custom EGL/GLES, or
+Wayland integration is introduced. A future SDL Wayland video backend can use
+the same renderer; the current installed session still selects X11 independently.
+Native Terminal/Notepad/Files retain their separate existing software UI renderer.
+
+Inspect stderr (or the captured shell session log) for the single
+`event=renderer_initialized` line. It records requested/actual mode, SDL renderer
+name, acceleration/software/vsync flags, maximum texture dimensions, SDL video
+driver, window/output/display dimensions, and `fallback=true hardware_error="..."`
+when Auto rejected hardware. Unknown display dimensions are marked `unknown`;
+zero maximum texture dimensions mean SDL did not provide a limit. Vsync describes
+SDL's reported flag, not a measured refresh rate. These diagnostics do not identify
+the physical GPU: Mesa software rasterizers can also sit behind an SDL accelerated
+backend. The shell retains the typed `Launcher::renderer_info` snapshot, including
+the full SDL capabilities, for future system/debug consumers without log parsing.
+
+Dirty-frame rendering and the existing frame limiter are unchanged. Screenshots
+read the completed backbuffer before presentation, as required by
+[SDL's readback contract](https://wiki.libsdl.org/SDL2/SDL_RenderReadPixels), for both
+software and accelerated canvases. `--demo`, `--smoke-test`, and `--screenshot`
+use the selected renderer; deterministic CI can explicitly request software.
+
 ## Navigation and application lifecycle
 
 Arrows traverse the 3×2 grid across pages. Page Up/Down and header arrows retain

@@ -27,6 +27,8 @@ src/
     executable.rs             Executable lookup in cwd/PATH order
     pockethome.rs              Stock PocketHome read-only format integration
   preferences.rs              Normalized display preferences and clock formatting
+  renderer.rs                 SDL Canvas/Texture drawing and pre-present screenshot readback
+  renderer/backend.rs         Capability selection, fallback and typed startup diagnostics
   launcher.rs                 Application selection and lifecycle state
   process.rs                  Child launching, tracking, and cleanup
   layout.rs                   Reusable dimensions and proportional layout

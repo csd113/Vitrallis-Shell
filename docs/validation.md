@@ -21,6 +21,43 @@ runs `git diff --check`. Rust tests intentionally exclude the separately invoked
 online application-contract test. SDL2 development libraries and pkg-config are
 host prerequisites; native application/runtime tests use normal-user fixtures.
 
+## Renderer checks
+
+Display-free unit tests cover Auto/Hardware/Software policy, GLES2 preference,
+other accelerated backends, vsync retries, rejected capability flags, complete
+failure and diagnostic formatting. Desktop integration tests use SDL's dummy
+video driver: Auto must fall back, Hardware must fail clearly, Software must
+launch, and both successful modes must pass the child lifecycle smoke and produce
+identical nonempty BMP screenshots without overwriting an existing file.
+
+For a local accelerated check, use `--renderer hardware --demo --size 480x272
+--screenshot NEW.bmp` in a graphical session and inspect the initialization event.
+Run `--renderer hardware --smoke-test` to exercise presentation and recovery.
+The optional automated backend comparison checks screenshots at 480×272 and
+800×480 against software output with a small color-filtering tolerance, then
+runs an accelerated child lifecycle smoke. On Linux it also verifies fullscreen
+diagnostics against actual screenshot dimensions:
+
+```sh
+cargo test --test desktop accelerated_ -- --ignored --test-threads=1
+```
+
+It is explicitly ignored in ordinary CI because a graphical session and an SDL
+accelerated backend are required.
+SDL's acceleration flag alone does not prove physical GPU execution (for example,
+Mesa llvmpipe under Xvfb). Phase 3 must verify Mali-400/Lima, vc4 and V3D on real
+hardware, including renderer identity, readback colors/orientation, fullscreen,
+vsync behavior, input, app recovery, idle CPU/GPU use and power consumption.
+See [renderer behavior](shell.md#sdl-renderer-selection) for compatibility scope.
+
+Phase 1 implementation validation passed on the macOS development host and the
+Linux simulator: the complete host gate (225 Rust tests and 81 Python tests),
+Metal and GLES2 screenshot/presentation checks, and the simulator's App Center,
+shortcut/touch and Awesome session scenarios. Auto selected Metal on Cocoa and
+`opengles2` on X11. Linux fullscreen readback was also checked on an 800×480
+virtual display with a requested 480×272 window. These are host/simulated results;
+no Mali-400, vc4 or V3D physical hardware validation is claimed.
+
 ## Installation and removal fixtures
 
 Python tests isolate filesystem writes in temporary HOME directories, including

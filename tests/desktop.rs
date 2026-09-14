@@ -2,19 +2,44 @@ use std::{path::PathBuf, process::Command};
 
 #[test]
 fn sdl_event_loop_launches_reaps_and_renders_recovery() -> Result<(), Box<dyn std::error::Error>> {
+    for mode in ["auto", "software"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+            .env("SDL_VIDEODRIVER", "dummy")
+            .args(["--renderer", mode, "--smoke-test"])
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let log = String::from_utf8_lossy(&output.stderr);
+        assert!(log.contains("event=app_started"));
+        assert!(log.contains("event=app_exited"));
+        assert!(log.contains("event=smoke_passed"));
+        assert!(log.contains(&format!("requested={mode} mode=software")));
+        assert!(log.contains("accelerated=false software=true"));
+        assert!(log.contains("video_driver=\"dummy\""));
+        assert!(log.contains(if mode == "auto" {
+            "fallback=true hardware_error="
+        } else {
+            "fallback=false"
+        }));
+    }
+    Ok(())
+}
+
+#[test]
+fn required_hardware_fails_clearly_on_dummy_video() -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
         .env("SDL_VIDEODRIVER", "dummy")
-        .arg("--smoke-test")
+        .args(["--renderer", "hardware", "--smoke-test"])
         .output()?;
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(!output.status.success());
     let log = String::from_utf8_lossy(&output.stderr);
-    assert!(log.contains("event=app_started"));
-    assert!(log.contains("event=app_exited"));
-    assert!(log.contains("event=smoke_passed"));
+    assert!(log.contains("hardware renderer unavailable"));
+    assert!(log.contains("--renderer software"));
+    assert!(!log.contains("event=renderer_initialized"));
+    assert!(!log.contains("event=smoke_passed"));
     Ok(())
 }
 
@@ -52,6 +77,9 @@ fn renderer_outputs_native_size_bmp_and_refuses_overwrite() -> Result<(), Box<dy
         "{}",
         String::from_utf8_lossy(&first.stderr)
     );
+    let log = String::from_utf8_lossy(&first.stderr);
+    assert!(log.contains("requested=auto mode=software"));
+    assert!(log.contains("fallback=true hardware_error="));
     let bytes = std::fs::read(&file)?;
     assert_eq!(&bytes[..2], b"BM");
     assert_eq!(&bytes[18..22], &480_u32.to_le_bytes());
@@ -60,6 +88,18 @@ fn renderer_outputs_native_size_bmp_and_refuses_overwrite() -> Result<(), Box<dy
     assert!(bytes[54..].windows(3).any(|pixel| pixel == [201, 218, 93]));
     assert!(!command.output()?.status.success());
     assert_eq!(std::fs::read(&file)?, bytes);
+    let software_file = scratch.0.join("software.bmp");
+    let software = command
+        .args(["--renderer", "software", "--screenshot"])
+        .arg(&software_file)
+        .output()?;
+    assert!(
+        software.status.success(),
+        "{}",
+        String::from_utf8_lossy(&software.stderr)
+    );
+    assert_eq!(std::fs::read(software_file)?, bytes);
+    assert!(String::from_utf8_lossy(&software.stderr).contains("requested=software mode=software"));
     Ok(())
 }
 
@@ -235,5 +275,128 @@ fn fifo_catalog_is_rejected_without_blocking() -> Result<(), Box<dyn std::error:
     assert_eq!(apps[3]["id"], "vitrallis-app-center");
     assert!(apps[3]["unavailable"].is_null());
     assert!(String::from_utf8_lossy(&output.stderr).contains("regular file"));
+    Ok(())
+}
+
+/// Optional real-backend regression: run explicitly in a graphical session or
+/// Xvfb/Mesa environment. Ordinary CI needs only the dummy-driver tests above.
+#[test]
+#[ignore = "requires an SDL accelerated backend and a graphical session"]
+fn accelerated_readback_and_presentation() -> Result<(), Box<dyn std::error::Error>> {
+    let root = std::env::temp_dir().join(format!("vitrallis-accelerated-{}", std::process::id()));
+    std::fs::create_dir(&root)?;
+    let scratch = Scratch(root);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_vitrallis"));
+    command
+        .current_dir(&scratch.0)
+        .env("HOME", &scratch.0)
+        .env("XDG_CONFIG_HOME", scratch.0.join("config"))
+        .env("XDG_DATA_HOME", scratch.0.join("data"))
+        .env_remove("VITRALLIS_SESSION")
+        .arg("--demo");
+    for (size, width, height) in [("480x272", 480_u32, 272_u32), ("800x480", 800, 480)] {
+        let mut baseline = Vec::new();
+        for mode in ["software", "hardware", "auto"] {
+            let file = scratch.0.join(format!("{size}-{mode}.bmp"));
+            let output = command
+                .args(["--size", size, "--renderer", mode, "--screenshot"])
+                .arg(&file)
+                .output()?;
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let log = String::from_utf8_lossy(&output.stderr);
+            assert!(log.contains(if mode == "software" {
+                "mode=software"
+            } else {
+                "mode=hardware"
+            }));
+            assert!(log.contains("fallback=false"));
+            let bytes = std::fs::read(file)?;
+            assert_eq!(&bytes[..2], b"BM");
+            assert_eq!(&bytes[18..22], &width.to_le_bytes());
+            assert_eq!(&bytes[22..26], &height.to_le_bytes());
+            assert!(bytes[54..].windows(3).any(|pixel| pixel == [201, 218, 93]));
+            if baseline.is_empty() {
+                baseline = bytes;
+            } else {
+                assert_eq!(bytes.len(), baseline.len());
+                assert_eq!(&bytes[..54], &baseline[..54]);
+                // Allow small filtering/rounding differences across backends,
+                // while detecting blank, flipped, shifted or color-swapped readback.
+                let different = bytes[54..]
+                    .iter()
+                    .zip(&baseline[54..])
+                    .filter(|(a, b)| a.abs_diff(**b) > 2)
+                    .count();
+                assert!(
+                    different < (bytes.len() - 54) / 100,
+                    "{size} {mode}: {different} differing channels"
+                );
+            }
+        }
+    }
+    // Use a fresh command: screenshot and smoke are intentionally separate modes.
+    let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+        .current_dir(&scratch.0)
+        .env("HOME", &scratch.0)
+        .env("XDG_CONFIG_HOME", scratch.0.join("config"))
+        .env("XDG_DATA_HOME", scratch.0.join("data"))
+        .env_remove("VITRALLIS_SESSION")
+        .args(["--renderer", "hardware", "--smoke-test"])
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let log = String::from_utf8_lossy(&output.stderr);
+    assert!(log.contains("mode=hardware"));
+    assert!(log.contains("event=smoke_passed"));
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires an SDL accelerated backend and a graphical session"]
+fn accelerated_fullscreen_dimensions_match_readback() -> Result<(), Box<dyn std::error::Error>> {
+    let root = std::env::temp_dir().join(format!("vitrallis-fullscreen-{}", std::process::id()));
+    std::fs::create_dir(&root)?;
+    let scratch = Scratch(root);
+    for mode in ["software", "hardware"] {
+        let file = scratch.0.join(format!("{mode}.bmp"));
+        let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+            .current_dir(&scratch.0)
+            .env("HOME", &scratch.0)
+            .env("XDG_CONFIG_HOME", scratch.0.join("config"))
+            .env("XDG_DATA_HOME", scratch.0.join("data"))
+            .env_remove("VITRALLIS_SESSION")
+            .args([
+                "--demo",
+                "--linux-handheld",
+                "--size",
+                "480x272",
+                "--renderer",
+                mode,
+                "--screenshot",
+            ])
+            .arg(file.as_os_str())
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let bytes = std::fs::read(file)?;
+        let width = u32::from_le_bytes(bytes[18..22].try_into()?);
+        let height = u32::from_le_bytes(bytes[22..26].try_into()?);
+        let log = String::from_utf8_lossy(&output.stderr);
+        assert!(log.contains(&format!("requested={mode} mode={mode}")));
+        assert!(log.contains(&format!("window_width={width} window_height={height}")));
+        assert!(log.contains(&format!("output_width={width} output_height={height}")));
+        assert!(log.contains(&format!("display_width={width} display_height={height}")));
+    }
     Ok(())
 }

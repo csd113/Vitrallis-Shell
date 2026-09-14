@@ -9,6 +9,8 @@ pub enum Phase {
 
 #[derive(Debug)]
 pub struct Launcher {
+    /// Startup capabilities, separate from periodically refreshed device status.
+    pub renderer_info: Option<crate::renderer::backend::RendererInfo>,
     pub running: Vec<String>,
     pub preferences: crate::preferences::Preferences,
     pub settings: crate::settings::Settings,
@@ -36,6 +38,7 @@ impl Launcher {
             }
         }
         Ok(Self {
+            renderer_info: None,
             running: Vec::new(),
             preferences: crate::preferences::Preferences::default(),
             settings: crate::settings::Settings::default(),

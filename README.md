@@ -47,7 +47,9 @@ quoting, terminal mode, icons, editing, and removal rules.
 
 Linux release packaging targets x86-64 and ARMv7, with glibc 2.36+ and SDL2
 2.26.5+. macOS is a development host; Linux artifacts cannot install there.
-Hardware support requires a matching adapter and validation. A matching screen
+The shell uses SDL hardware acceleration when available, with automatic software
+fallback and a GLES2 compatibility floor. See [renderer selection and diagnostics](docs/shell.md#sdl-renderer-selection)
+for overrides and GPU validation limits. Hardware support requires a matching adapter and validation. A matching screen
 size alone is not support. See the [device guide](docs/devices/pocketchip.md) for
 recorded evidence and checks still requiring hardware.
 

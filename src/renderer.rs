@@ -1,4 +1,5 @@
 mod app_center;
+pub mod backend;
 mod shortcuts;
 mod system;
 use crate::{
@@ -532,6 +533,8 @@ fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Resul
     Ok(())
 }
 
+/// Read the completed backbuffer before `present`, which may invalidate it on
+/// accelerated backends. SDL handles pixel conversion and backend orientation.
 pub fn screenshot(canvas: &Screen, path: &std::path::Path) -> Result<(), String> {
     let (width, height) = canvas.output_size()?;
     let mut pixels = canvas.read_pixels(None, PixelFormatEnum::RGB24)?;

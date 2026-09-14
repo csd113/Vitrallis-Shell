@@ -1,3 +1,37 @@
+/// SDL renderer policy, independent of the selected device/system backend.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum RendererMode {
+    #[default]
+    Auto,
+    Hardware,
+    Software,
+}
+
+impl RendererMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Hardware => "hardware",
+            Self::Software => "software",
+        }
+    }
+}
+
+impl std::str::FromStr for RendererMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "hardware" => Ok(Self::Hardware),
+            "software" => Ok(Self::Software),
+            _ => Err(format!(
+                "invalid renderer {value:?}; use auto, hardware or software"
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub enum Mode {
     #[default]
@@ -7,6 +41,7 @@ pub enum Mode {
 }
 #[derive(Debug, Default)]
 pub struct Config {
+    pub renderer: RendererMode,
     pub linux_handheld: bool,
     pub catalog_path: Option<std::path::PathBuf>,
     pub assets: Option<std::path::PathBuf>,
@@ -21,6 +56,12 @@ impl Config {
         let mut args = args;
         while let Some(arg) = args.next() {
             match arg.as_str() {
+                "--renderer" => {
+                    config.renderer = args
+                        .next()
+                        .ok_or("--renderer requires auto, hardware or software")?
+                        .parse()?;
+                }
                 "--app-config" => {
                     config.catalog_path =
                         Some(args.next().ok_or("--app-config requires a path")?.into());
@@ -72,10 +113,36 @@ mod tests {
             vec!["--size", "junk"],
             vec!["--size", "999999x200"],
             vec!["--wat"],
+            vec!["--renderer"],
+            vec!["--renderer", "invalid"],
+            vec!["--renderer", ""],
             vec!["--linux-handheld", "--smoke-test"],
         ] {
             assert!(Config::parse(args.into_iter().map(str::to_owned)).is_err());
         }
+    }
+
+    #[test]
+    fn renderer_options_use_existing_config_parser() -> Result<(), String> {
+        assert_eq!(
+            Config::parse(std::iter::empty())?.renderer,
+            RendererMode::Auto
+        );
+        for (value, mode) in [
+            ("auto", RendererMode::Auto),
+            ("hardware", RendererMode::Hardware),
+            ("software", RendererMode::Software),
+        ] {
+            let config = Config::parse(
+                ["--renderer", value, "--demo"]
+                    .into_iter()
+                    .map(str::to_owned),
+            )?;
+            assert_eq!(config.renderer, mode);
+            assert!(config.demo);
+            assert_eq!(mode.as_str(), value);
+        }
+        Ok(())
     }
 
     #[test]
