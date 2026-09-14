@@ -5,3 +5,4 @@
 - [ ] App manager can fail on first app install attempt if pip dependency installer lags behind causing a false failure
 - [ ] create folders and add apps into folders
 - [ ] create calculator app
+- [ ] implement beta update channel
