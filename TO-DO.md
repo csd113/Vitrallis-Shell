@@ -2,6 +2,8 @@
 
 - [ ] Integrate the PocketCHIP Mali-400/Lima GPU utilization fix into Vitrallis Shell by ensuring the required GPU OPP/devfreq device-tree configuration is installed as part of PocketCHIP support, and update Vitrallis Debug to detect Lima GPUs and use the real devfreq_monitor utilization data instead of reporting that no supported utilization counter exists.
 
+- [ ] Add a Vitrallis Shell requirement that the desktop environment and all native shell rendering paths must use double buffering and synchronize frame presentation to VSync/vblank to prevent tearing across the system UI.
+
 - [ ] App manager can fail on first app install attempt if pip dependency installer lags behind causing a false failure
 - [ ] create folders and add apps into folders
 - [ ] create calculator app
