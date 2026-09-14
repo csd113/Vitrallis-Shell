@@ -6,3 +6,8 @@
 - [ ] create folders and add apps into folders
 - [ ] create calculator app
 - [ ] implement beta update channel
+- [ ] app manager needs to allow for beta app channels for development builds
+- [ ] App manager needs rust app support
+
+- [ ] Raspberry pi 1/2 validation testing
+- [ ] Raspberry pi 4 validation testing
