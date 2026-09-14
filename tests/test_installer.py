@@ -359,6 +359,19 @@ class Preflight(unittest.TestCase):
         self.sdl.SDL_GetVersion.side_effect = version
         patch.object(m.ctypes, 'CDLL', return_value=self.sdl).start()
 
+    def test_optional_graphics_never_blocks_software_installation(self):
+        import io
+        output = io.StringIO()
+        with patch.object(m.ctypes, 'CDLL', side_effect=OSError('missing optional library')), \
+                patch.object(m.Path, 'is_dir', return_value=False), \
+                patch.object(m.sys, 'stderr', output):
+            m.graphics_advice()
+        self.assertIn('libegl-mesa0', output.getvalue())
+        self.assertIn('libgles2', output.getvalue())
+        self.assertIn('libdrm2', output.getvalue())
+        self.assertIn('Software rendering remains available', output.getvalue())
+        self.assertIn('/dev/dri unavailable', output.getvalue())
+
     def test_supported_runtime(self):
         m.preflight()
 

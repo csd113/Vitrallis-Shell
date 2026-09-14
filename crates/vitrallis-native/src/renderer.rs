@@ -1,7 +1,10 @@
-//! SDL capability selection. No device, window-system or raw GPU API policy.
+//! Shared SDL capability selection with optional read-only graphics diagnostics.
 use sdl2::{render::Canvas, video::Window};
 use sdl2::{render::RendererInfo as SdlInfo, sys::SDL_RendererFlags};
 use std::fmt;
+#[cfg(target_os = "linux")]
+mod egl;
+pub mod graphics;
 
 /// SDL renderer policy, independent of the selected device/system backend.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +58,7 @@ pub struct RendererInfo {
     /// Current SDL display mode; unavailable queries remain unknown.
     pub display_size: Option<(i32, i32)>,
     pub hardware_error: Option<String>,
+    pub gl: Option<graphics::GlInfo>,
 }
 
 impl RendererInfo {
@@ -97,6 +101,16 @@ impl fmt::Display for RendererInfo {
             write!(f, " display_width={width} display_height={height}")?;
         } else {
             write!(f, " display_width=unknown display_height=unknown")?;
+        }
+        if let Some(gl) = &self.gl {
+            write!(
+                f,
+                " gl_vendor={:?} gl_renderer={:?} gl_version={:?} mesa_software={}",
+                gl.vendor,
+                gl.renderer,
+                gl.version,
+                gl.software()
+            )?;
         }
         if let Some(error) = &self.hardware_error {
             write!(f, " fallback=true hardware_error={error:?}")
@@ -173,7 +187,7 @@ fn select<T>(
     let hardware_error = (!failures.is_empty()).then(|| failures.join("; "));
     if requested == RendererMode::Hardware {
         return Err(format!(
-            "hardware renderer unavailable: {}; check SDL/Mesa drivers and display access, or use --renderer auto or --renderer software",
+            "hardware renderer unavailable: {}; check Mesa DRI/EGL/GLES libraries, DRM node permissions and display access; run --graphics-info, or use --renderer auto or --renderer software",
             hardware_error
                 .as_deref()
                 .unwrap_or("no accelerated renderer")
@@ -216,28 +230,33 @@ pub fn initialize(
     // Failed attempts may destroy the last window. They must not queue a quit
     // event that closes the eventual successful renderer (notably on macOS).
     sdl2::hint::set("SDL_QUIT_ON_LAST_WINDOW_CLOSE", "0");
-    let ((canvas, output_size), sdl, hardware_error) = select(requested, &drivers, |attempt| {
-        // A fresh window discards any GL/Metal state from a failed backend.
-        // Keep unsuccessful attempts hidden and preserve the same window policy.
-        let window = window()?;
-        let builder = window.into_canvas().index(attempt.index);
-        let mut builder = if attempt.mode == RendererMode::Software {
-            builder.software()
-        } else {
-            builder.accelerated()
-        };
-        if attempt.vsync {
-            builder = builder.present_vsync();
-        }
-        let mut canvas = builder.build().map_err(|error| error.to_string())?;
-        let info = canvas.info();
-        verify(attempt.mode, &info)?;
-        canvas.window_mut().show();
-        // Showing a fullscreen-desktop window can change its drawable size.
-        // Query after that transition, within the fallible retry boundary.
-        let output_size = canvas.output_size()?;
-        Ok(((canvas, output_size), info))
-    })?;
+    let ((canvas, output_size, gl), sdl, hardware_error) =
+        select(requested, &drivers, |attempt| {
+            // A fresh window discards any GL/Metal state from a failed backend.
+            // Keep unsuccessful attempts hidden and preserve the same window policy.
+            let window = window()?;
+            let builder = window.into_canvas().index(attempt.index);
+            let mut builder = if attempt.mode == RendererMode::Software {
+                builder.software()
+            } else {
+                builder.accelerated()
+            };
+            if attempt.vsync {
+                builder = builder.present_vsync();
+            }
+            let mut canvas = builder.build().map_err(|error| error.to_string())?;
+            let info = canvas.info();
+            verify(attempt.mode, &info)?;
+            let gl = graphics::current_gl(&mut canvas);
+            if attempt.mode == RendererMode::Hardware {
+                reject_software_gl(gl.as_ref())?;
+            }
+            canvas.window_mut().show();
+            // Showing a fullscreen-desktop window can change its drawable size.
+            // Query after that transition, within the fallible retry boundary.
+            let output_size = canvas.output_size()?;
+            Ok(((canvas, output_size, gl), info))
+        })?;
     let display_size = canvas.window().display_index().ok().and_then(|index| {
         video
             .current_display_mode(index)
@@ -257,8 +276,21 @@ pub fn initialize(
         output_size,
         display_size,
         hardware_error,
+        gl,
     };
+    if let Some(error) = &info.hardware_error {
+        eprintln!(
+            "Hardware renderer initialization failed: {error:?}. Vitrallis is continuing with software rendering. Check Mesa DRI/EGL/GLES packages, DRM permissions and display access. Run vitrallis --graphics-info for diagnostics."
+        );
+    }
     Ok((canvas, info))
+}
+
+fn reject_software_gl(gl: Option<&graphics::GlInfo>) -> Result<(), String> {
+    gl.filter(|gl| gl.software()).map_or(Ok(()), |gl| Err(format!(
+        "SDL accelerated backend uses software Mesa renderer {:?}; genuine GPU acceleration is unavailable",
+        gl.renderer
+    )))
 }
 
 #[cfg(test)]

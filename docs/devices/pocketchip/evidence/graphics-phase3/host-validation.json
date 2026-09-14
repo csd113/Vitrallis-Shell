@@ -1,0 +1,18 @@
+{
+  "host-complete": {
+    "rust_passed": 231,
+    "python": [
+      "Ran 84 tests",
+      "Ran 2 tests"
+    ],
+    "last_line": "Local Markdown links and anchors passed (37 files)."
+  },
+  "linux-complete": {
+    "rust_passed": 231,
+    "python": [
+      "Ran 84 tests",
+      "Ran 2 tests"
+    ],
+    "last_line": "Local Markdown links and anchors passed (37 files)."
+  }
+}

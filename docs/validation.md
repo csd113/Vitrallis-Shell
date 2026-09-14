@@ -24,8 +24,10 @@ host prerequisites; native application/runtime tests use normal-user fixtures.
 ## Renderer checks
 
 Display-free unit tests cover Auto/Hardware/Software policy, GLES2 preference,
-other accelerated backends, vsync retries, rejected capability flags, complete
-failure and diagnostic formatting. Desktop integration tests use SDL's dummy
+other accelerated backends, vsync retries, rejected capability flags, software
+Mesa detection and complete
+failure and diagnostic formatting. Process-isolated graphics command tests check
+Auto/Hardware/Software on the dummy backend without a usable HOME. Desktop integration tests use SDL's dummy
 video driver: Auto must fall back, Hardware must fail clearly, Software must
 launch, and both successful modes must pass the child lifecycle smoke and produce
 identical nonempty BMP screenshots without overwriting an existing file.
@@ -45,9 +47,10 @@ cargo test --test desktop accelerated_ -- --ignored --test-threads=1
 It is explicitly ignored in ordinary CI because a graphical session and an SDL
 accelerated backend are required.
 SDL's acceleration flag alone does not prove physical GPU execution (for example,
-Mesa llvmpipe under Xvfb). Phase 3 must verify Mali-400/Lima, vc4 and V3D on real
-hardware, including renderer identity, readback colors/orientation, fullscreen,
-vsync behavior, input, app recovery, idle CPU/GPU use and power consumption.
+Mesa llvmpipe under Xvfb). Phase 3 physically tests only PocketCHIP Mali-400/Lima. Raspberry Pi 1/vc4
+and Raspberry Pi 4/V3D physical GPU validation remains pending. See
+[hardware acceleration](hardware-acceleration.md) for current results and
+[the physical record](devices/pocketchip/graphics-phase3.md) for evidence.
 See [renderer behavior](shell.md#sdl-renderer-selection) for compatibility scope.
 
 Phase 1 implementation validation passed on the macOS development host and the

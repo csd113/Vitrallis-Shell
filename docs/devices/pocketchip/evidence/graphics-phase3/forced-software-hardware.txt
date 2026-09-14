@@ -1,0 +1,14 @@
+SDL video: x11
+Available SDL renderers:
+  opengl flags=0xe
+  opengles2 flags=0xe
+  software flags=0xd
+DRM devices (/dev/dri): present (not proof of acceleration)
+  /dev/dri/card0 kernel DRM driver=sun4i-drm read/write access=yes
+  /dev/dri/card1 kernel DRM driver=lima read/write access=yes
+  /dev/dri/renderD128 kernel DRM driver=lima read/write access=yes
+Loaded graphics libraries (not active-driver identification):
+  /usr/lib/arm-linux-gnueabihf/libgallium-25.0.7-2+deb13u1.so
+If hardware fails: check Mesa DRI/EGL/GLES packages, display access and DRM node permissions. Do not run as root. Preserve the SDL error above.
+
+level=error event=startup message="hardware renderer unavailable: driver=\"opengles2\" vsync=true: SDL accelerated backend uses software Mesa renderer \"llvmpipe (LLVM 19.1.7, 128 bits)\"; genuine GPU acceleration is unavailable; driver=\"opengles2\" vsync=false: SDL accelerated backend uses software Mesa renderer \"llvmpipe (LLVM 19.1.7, 128 bits)\"; genuine GPU acceleration is unavailable; driver=\"opengl\" vsync=true: SDL accelerated backend uses software Mesa renderer \"llvmpipe (LLVM 19.1.7, 128 bits)\"; genuine GPU acceleration is unavailable; driver=\"opengl\" vsync=false: SDL accelerated backend uses software Mesa renderer \"llvmpipe (LLVM 19.1.7, 128 bits)\"; genuine GPU acceleration is unavailable; check Mesa DRI/EGL/GLES libraries, DRM node permissions and display access; run --graphics-info, or use --renderer auto or --renderer software"

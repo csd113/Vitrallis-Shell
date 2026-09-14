@@ -145,3 +145,103 @@ fn samples(layout: &Layout) -> Result<Vec<(String, Launcher)>, String> {
     samples.push(("rapid-pointer".into(), make_state()?));
     Ok(samples)
 }
+
+/// Physical GPU readback coverage for production scenes, including wallpaper
+/// (which currently has no user-facing configuration control).
+#[test]
+#[ignore = "requires a real accelerated backend; run on each physical target separately"]
+fn hardware_scenes_match_software() -> Result<(), String> {
+    let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+    let icon = scratch.0.join("artwork.png");
+    std::fs::write(&icon, include_bytes!("../../assets/system/apps.png"))
+        .map_err(|e| e.to_string())?;
+    let sdl = sdl2::init()?;
+    let video = sdl.video()?;
+    let layout = Layout::home(480, 272)?;
+    let mut references = Vec::new();
+    let mut mismatches = Vec::new();
+    for mode in [
+        backend::RendererMode::Software,
+        backend::RendererMode::Hardware,
+    ] {
+        let (canvas, info) = backend::initialize(&video, mode, || {
+            video
+                .window("Vitrallis scene validation", 480, 272)
+                .hidden()
+                .build()
+                .map_err(|e| e.to_string())
+        })?;
+        eprintln!("{info}");
+        let creator = canvas.texture_creator();
+        let mut canvas = Screen::new(canvas, &creator)?;
+        for (index, (name, mut state)) in samples(&layout)?.into_iter().enumerate() {
+            // Fixtures use compile-host paths; materialize embedded bytes on the
+            // actual test host so missing files cannot silently skip artwork.
+            for app in &mut state.apps {
+                if app.icon.is_some() {
+                    app.icon = Some(icon.clone());
+                }
+            }
+            if state.preferences.wallpaper.is_some() {
+                state.preferences.wallpaper = Some(icon.clone());
+            }
+            let textures = artwork(&creator, &state);
+            if state.preferences.wallpaper.is_some() {
+                assert!(
+                    textures.get(state.apps.len()).is_some_and(Option::is_some),
+                    "wallpaper must actually upload"
+                );
+            }
+            if name == "many-icons" {
+                assert!(
+                    textures
+                        .iter()
+                        .take(layout.tiles.len())
+                        .all(Option::is_some),
+                    "visible icons must actually upload"
+                );
+            }
+            render(&mut canvas, &layout, &state, &textures)?;
+            let pixels = canvas.read_pixels(None, PixelFormatEnum::RGB24)?;
+            if mode == backend::RendererMode::Software {
+                references.push(pixels);
+            } else {
+                let reference = references.get(index).ok_or("missing software reference")?;
+                assert_eq!(pixels.len(), reference.len());
+                let different = pixels
+                    .iter()
+                    .zip(reference)
+                    .filter(|(a, b)| a.abs_diff(**b) > 2)
+                    .count();
+                // SDL software and Lima linear filtering differ by up to 6/255
+                // on this densely scaled icon fixture (measured physical output).
+                // Bound every channel and the total error; do not permit shifts,
+                // missing icons or arbitrary percentages of corrupted pixels.
+                let valid = if name == "many-icons" {
+                    let errors = pixels.iter().zip(reference).map(|(a, b)| a.abs_diff(*b));
+                    errors.clone().all(|error| error <= 6)
+                        && errors.map(usize::from).sum::<usize>() <= pixels.len() / 5
+                } else {
+                    different < pixels.len() / 100
+                };
+                if !valid {
+                    mismatches.push(format!("{name}: {different} differing channels"));
+                }
+                eprintln!(
+                    "scene={name} different_channels={different} total_channels={}",
+                    pixels.len()
+                );
+            }
+            if let Some(directory) = std::env::var_os("VITRALLIS_PERF_QA_DIR") {
+                screenshot(
+                    &canvas,
+                    &std::path::PathBuf::from(directory)
+                        .join(format!("{}-{name}.bmp", mode.as_str())),
+                )?;
+            }
+            canvas.present();
+        }
+    }
+    assert!(mismatches.is_empty(), "{}", mismatches.join("; "));
+    Ok(())
+}

@@ -1,0 +1,26 @@
+SDL video: x11
+Available SDL renderers:
+  opengl flags=0xe
+  opengles2 flags=0xe
+  software flags=0xd
+DRM devices (/dev/dri): present (not proof of acceleration)
+  /dev/dri/card0 kernel DRM driver=sun4i-drm read/write access=yes
+  /dev/dri/card1 kernel DRM driver=lima read/write access=yes
+  /dev/dri/renderD128 kernel DRM driver=lima read/write access=yes
+Loaded graphics libraries (not active-driver identification):
+  /usr/lib/arm-linux-gnueabihf/libgallium-25.0.7-2+deb13u1.so
+If hardware fails: check Mesa DRI/EGL/GLES packages, display access and DRM node permissions. Do not run as root. Preserve the SDL error above.
+
+Requested mode: software
+SDL renderer mode: software
+SDL video: x11
+SDL renderer: software
+SDL flags: 0xd
+SDL accelerated: false
+SDL software: true
+VSync (SDL flag): true
+Window: 64x32
+Output: 64x32
+Display: 480x272
+GL identity: unavailable for this renderer
+

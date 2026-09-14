@@ -64,6 +64,24 @@ def preflight():
     if re.search(r'awesome v4\.', awesome) is None:
         raise ValueError('Requires Awesome 4.x')
     require_stopped_session()
+    graphics_advice()
+
+
+def graphics_advice():
+    """Optional upstream graphics components must never block software installs."""
+    packages = (('libEGL.so.1', 'libegl1 and libegl-mesa0'),
+                ('libGLESv2.so.2', 'libgles2'), ('libdrm.so.2', 'libdrm2'))
+    for library, package in packages:
+        try:
+            ctypes.CDLL(library)
+        except OSError as error:
+            print('Graphics warning: {} unavailable ({}); Debian packages: {}. '
+                  'Mesa DRI drivers are provided by libgl1-mesa-dri. '
+                  'Software rendering remains available.'.format(library, error, package), file=sys.stderr)
+    if not Path('/dev/dri').is_dir():
+        print('Graphics warning: /dev/dri unavailable; installation can continue with software rendering.', file=sys.stderr)
+    print('Optional graphics check from the desktop session after installation: '
+          '~/.local/share/vitrallis/current/vitrallis --graphics-test --renderer auto')
 
 
 def require_stopped_session():

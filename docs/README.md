@@ -11,6 +11,7 @@
 | Trust and reporting | [Trust model](security.md) and [security policy](../SECURITY.md) |
 | Develop an application | [App development](app-development.md) |
 | Work on the shell | [Contributing](../CONTRIBUTING.md), [shell behavior](shell.md), [repository layout](repository-layout.md), [dependencies](dependencies.md) |
+| Graphics setup and physical GPU status | [Hardware acceleration](hardware-acceleration.md) |
 | Run and interpret checks | [Validation](validation.md), [renderer performance](rendering-performance.md) |
 | Future direction | [Design roadmap](design.md) |
 

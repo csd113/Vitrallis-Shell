@@ -40,7 +40,7 @@ pub fn run() -> Result<(), String> {
     }
     if args == ["--help"] {
         println!(
-            "vitrallis [--linux-handheld] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--renderer auto|hardware|software] [--screenshot NEW.bmp] [--smoke-test]\nDefault: installed Vitrallis apps in a desktop window; --linux-handheld also reads device menu metadata. --demo enables fixtures. Arrows select; Enter/tap opens; settings tile/footer opens system controls; Escape/Home goes back. Close window to quit.\n--renderer defaults to auto (accelerated SDL with software fallback); hardware requires acceleration; software disables it.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
+            "vitrallis [--linux-handheld] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--renderer auto|hardware|software] [--screenshot NEW.bmp] [--smoke-test] [--graphics-info | --graphics-test]\nDefault: installed Vitrallis apps in a desktop window; --linux-handheld also reads device menu metadata. --demo enables fixtures. Arrows select; Enter/tap opens; settings tile/footer opens system controls; Escape/Home goes back. Close window to quit.\n--renderer defaults to auto (accelerated SDL with software fallback); hardware requires acceleration; software disables it.\n--graphics-info reports the active renderer; --graphics-test checks texture/fill/font readback without loading user data.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
         );
         return Ok(());
     }
@@ -49,6 +49,12 @@ pub fn run() -> Result<(), String> {
         return Ok(());
     }
     let config = config::Config::parse(args.into_iter())?;
+    if matches!(
+        config.mode,
+        config::Mode::GraphicsInfo | config::Mode::GraphicsTest
+    ) {
+        return graphics_command(&config);
+    }
     if config.mode == crate::config::Mode::List {
         discovery::print(&discovery::load(&config)?);
         return Ok(());
@@ -74,3 +80,29 @@ fn demo_child(args: &[String]) -> Result<(), String> {
 
 #[cfg(test)]
 mod test_support;
+
+fn graphics_command(config: &config::Config) -> Result<(), String> {
+    use vitrallis_native::renderer::{graphics, initialize};
+    let sdl = sdl2::init().map_err(|e| format!("SDL init: {e}"))?;
+    let video = sdl
+        .video()
+        .map_err(|e| format!("SDL video: {e}; check display/session access"))?;
+    println!("SDL video: {}", video.current_video_driver());
+    let result = initialize(&video, config.renderer, || {
+        video
+            .window("Vitrallis graphics diagnostics", 64, 32)
+            .hidden()
+            .build()
+            .map_err(|e| e.to_string())
+    });
+    println!("{}", graphics::capabilities());
+    let (mut canvas, info) = result?;
+    println!("{}", graphics::report(&info));
+    if config.mode == config::Mode::GraphicsTest {
+        graphics::self_test(&mut canvas)?;
+        println!(
+            "Graphics self-test: PASS (texture copy, fill, font atlas, pixel readback, present)"
+        );
+    }
+    Ok(())
+}

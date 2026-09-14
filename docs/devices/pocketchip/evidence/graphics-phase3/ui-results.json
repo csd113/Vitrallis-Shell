@@ -1,0 +1,14 @@
+[
+  {
+    "app": "terminal",
+    "exit": 0
+  },
+  {
+    "app": "notepad",
+    "exit": 0
+  },
+  {
+    "app": "files",
+    "exit": 0
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "scene": "home",
+    "mode": "auto",
+    "differing_channels": 65,
+    "total_channels": 391680
+  },
+  {
+    "scene": "home",
+    "mode": "hardware",
+    "differing_channels": 65,
+    "total_channels": 391680
+  },
+  {
+    "scene": "terminal-",
+    "mode": "auto",
+    "differing_channels": 0,
+    "total_channels": 391680
+  },
+  {
+    "scene": "terminal-",
+    "mode": "hardware",
+    "differing_channels": 0,
+    "total_channels": 391680
+  },
+  {
+    "scene": "notepad-",
+    "mode": "auto",
+    "differing_channels": 0,
+    "total_channels": 391680
+  },
+  {
+    "scene": "notepad-",
+    "mode": "hardware",
+    "differing_channels": 0,
+    "total_channels": 391680
+  },
+  {
+    "scene": "files-",
+    "mode": "auto",
+    "differing_channels": 0,
+    "total_channels": 391680
+  },
+  {
+    "scene": "files-",
+    "mode": "hardware",
+    "differing_channels": 0,
+    "total_channels": 391680
+  }
+]

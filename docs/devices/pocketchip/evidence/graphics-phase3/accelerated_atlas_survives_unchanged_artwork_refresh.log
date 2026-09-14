@@ -1,0 +1,6 @@
+
+running 1 test
+test renderer::cache_tests::accelerated_atlas_survives_unchanged_artwork_refresh ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 182 filtered out; finished in 3.62s
+

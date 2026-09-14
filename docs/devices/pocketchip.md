@@ -64,6 +64,30 @@ bootstrap asset predates this correction; use the command above for the current
 bootstrap. Its bundle and installation helpers still come from one published
 release.
 
+## Graphics runtime and diagnostics
+
+For upstream Debian 13 Mali-400/Lima acceleration, the physical target uses
+`libsdl2-2.0-0`, `libgl1-mesa-dri`, `libegl1`, `libegl-mesa0`, `libgles2` and
+`libdrm2`. These names were checked against its installed packages. The owner
+provisions distro packages; Vitrallis never installs proprietary Mali blobs or
+changes the graphics stack. Installer checks for optional EGL/GLES/DRM libraries
+and DRM node presence are advisory; missing hardware cannot block software use.
+
+From the existing desktop session after installation:
+
+```sh
+~/.local/share/vitrallis/current/vitrallis --graphics-info
+~/.local/share/vitrallis/current/vitrallis --graphics-test --renderer auto
+~/.local/share/vitrallis/current/vitrallis --graphics-test --renderer software
+```
+
+The test does not load apps or mutate user data. `--renderer hardware` requires
+an accelerated SDL backend without a known software Mesa identity. Auto preserves
+hardware errors and falls back to software. See [hardware acceleration](../hardware-acceleration.md)
+for identities, permissions, troubleshooting, package scope and the explicitly
+separate physical/architectural validation matrix. The [Phase 3 record](pocketchip/graphics-phase3.md)
+tracks the current device results; it does not claim Raspberry Pi hardware testing.
+
 ## Installed files and repeat runs
 
 Save and close Vitrallis apps and stop the previous session before reinstalling.

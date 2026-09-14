@@ -1,0 +1,17 @@
+d98d7908bde8711fc8ea0fa0954e4a3114a8140672454f505be708ed936b110b  final/vitrallis
+07437a725c4acd12b8487fa5311cc640bdcb4a589c1aadd4f1d5b64def7ec639  final/vitrallis-files
+cb6a64c51b4050d0228f14a0af719a8ed0a11bfc7e02fa558722ee45ffbb8027  final/vitrallis-notepad
+aebf3b10fb182cd45fc38242c05cda40307db2a058778d64fe0025cc4ac76c8a  final/vitrallis-terminal
+6dba9c8da2d90886d43c8258bbea5c61ca5a967910a2f0a6b0d4c0b38b69685e  scene-tests
+  928 x-window-manager
+  983 /usr/bin/ssh-agent x-window-manager
+ 1018 /usr/libexec/gvfsd
+ 1030 /usr/libexec/gvfsd-fuse /run/user/1000/gvfs -f
+ 1049 /bin/bash /usr/sbin/pocketchip-load
+ 1071 /usr/bin/python3 /home/chip/.local/share/vitrallis/vitrallis-session.py run
+ 1076 /home/chip/.local/share/vitrallis/generations/39088497a55be5a511f307f1fce4992e09a31cd0a76d929b333554ebd327df29/vitrallis --linux-handheld
+ 1834 sshd-session: chip@notty
+28800 sleep 5
+28802 bash -c cd /tmp/vitrallis-phase3.bnDOpD; sha256sum final/vitrallis* scene-tests; ps -u chip -o pid,args | tail -12
+28804 ps -u chip -o pid,args
+28805 tail -12

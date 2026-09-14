@@ -1,0 +1,122 @@
+[
+  {
+    "name": "graphics-info-auto",
+    "exit": 0,
+    "seconds": 1.4472522959999878
+  },
+  {
+    "name": "graphics-test-auto",
+    "exit": 0,
+    "seconds": 2.4569136180002715
+  },
+  {
+    "name": "smoke-auto",
+    "exit": 0,
+    "seconds": 5.078559504999703
+  },
+  {
+    "name": "screenshot-auto",
+    "exit": 0,
+    "seconds": 1.890884718000052
+  },
+  {
+    "name": "terminal-auto",
+    "exit": 0,
+    "seconds": 1.6066103619996284
+  },
+  {
+    "name": "notepad-auto",
+    "exit": 0,
+    "seconds": 3.5957050299998627
+  },
+  {
+    "name": "files-auto",
+    "exit": 0,
+    "seconds": 2.2520412559997567
+  },
+  {
+    "name": "graphics-info-hardware",
+    "exit": 0,
+    "seconds": 1.2989105940000627
+  },
+  {
+    "name": "graphics-test-hardware",
+    "exit": 0,
+    "seconds": 1.462967289000062
+  },
+  {
+    "name": "smoke-hardware",
+    "exit": 0,
+    "seconds": 4.41798786299978
+  },
+  {
+    "name": "screenshot-hardware",
+    "exit": 0,
+    "seconds": 3.3280331370001477
+  },
+  {
+    "name": "terminal-hardware",
+    "exit": 0,
+    "seconds": 1.4808219199999257
+  },
+  {
+    "name": "notepad-hardware",
+    "exit": 0,
+    "seconds": 2.0361384500001805
+  },
+  {
+    "name": "files-hardware",
+    "exit": 0,
+    "seconds": 1.6290347090002797
+  },
+  {
+    "name": "graphics-info-software",
+    "exit": 0,
+    "seconds": 1.8829932240000744
+  },
+  {
+    "name": "graphics-test-software",
+    "exit": 0,
+    "seconds": 2.527213564000249
+  },
+  {
+    "name": "smoke-software",
+    "exit": 0,
+    "seconds": 5.167241024999839
+  },
+  {
+    "name": "screenshot-software",
+    "exit": 0,
+    "seconds": 2.6634227290001036
+  },
+  {
+    "name": "terminal-software",
+    "exit": 0,
+    "seconds": 1.7274917249997088
+  },
+  {
+    "name": "notepad-software",
+    "exit": 0,
+    "seconds": 3.152026395000121
+  },
+  {
+    "name": "files-software",
+    "exit": 0,
+    "seconds": 1.9973148640001455
+  },
+  {
+    "name": "forced-software-auto",
+    "exit": 0,
+    "seconds": 6.380736275000345
+  },
+  {
+    "name": "forced-software-hardware",
+    "exit": 1,
+    "seconds": 5.075539547000062
+  },
+  {
+    "name": "egl-hardware",
+    "exit": 0,
+    "seconds": 1.4321494079999866
+  }
+]

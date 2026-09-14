@@ -279,7 +279,7 @@ fn fifo_catalog_is_rejected_without_blocking() -> Result<(), Box<dyn std::error:
 }
 
 /// Optional real-backend regression: run explicitly in a graphical session or
-/// Xvfb/Mesa environment. Ordinary CI needs only the dummy-driver tests above.
+/// a physical Mesa GPU session. Ordinary CI needs only the dummy-driver tests above.
 #[test]
 #[ignore = "requires an SDL accelerated backend and a graphical session"]
 fn accelerated_readback_and_presentation() -> Result<(), Box<dyn std::error::Error>> {
@@ -397,6 +397,67 @@ fn accelerated_fullscreen_dimensions_match_readback() -> Result<(), Box<dyn std:
         assert!(log.contains(&format!("window_width={width} window_height={height}")));
         assert!(log.contains(&format!("output_width={width} output_height={height}")));
         assert!(log.contains(&format!("display_width={width} display_height={height}")));
+    }
+    Ok(())
+}
+
+#[test]
+fn graphics_commands_work_without_user_data_and_keep_mode_failures()
+-> Result<(), Box<dyn std::error::Error>> {
+    for command in ["--graphics-info", "--graphics-test"] {
+        for mode in ["auto", "software", "hardware"] {
+            let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+                .env("SDL_VIDEODRIVER", "dummy")
+                .env("HOME", "/nonexistent-vitrallis-graphics-home")
+                .args([command, "--renderer", mode])
+                .output()?;
+            let report = String::from_utf8_lossy(&output.stdout);
+            assert!(report.contains("Available SDL renderers:"));
+            assert_eq!(
+                output.status.success(),
+                mode != "hardware",
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            if mode == "hardware" {
+                assert!(
+                    String::from_utf8_lossy(&output.stderr)
+                        .contains("hardware renderer unavailable")
+                );
+            } else {
+                assert!(report.contains("SDL renderer mode: software"));
+                assert_eq!(
+                    report.contains("Graphics self-test: PASS"),
+                    command == "--graphics-test"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires Linux Mesa with a graphical session; API-path test, not physical GPU validation"]
+fn mesa_software_is_not_hardware() -> Result<(), Box<dyn std::error::Error>> {
+    for mode in ["auto", "hardware", "software"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+            .env("LIBGL_ALWAYS_SOFTWARE", "1")
+            .args(["--renderer", mode, "--graphics-test"])
+            .output()?;
+        assert_eq!(
+            output.status.success(),
+            mode != "hardware",
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if mode != "software" {
+            let log = String::from_utf8_lossy(&output.stderr);
+            assert!(log.contains("software Mesa renderer"), "{log}");
+        }
+        if mode != "hardware" {
+            assert!(String::from_utf8_lossy(&output.stdout).contains("Graphics self-test: PASS"));
+        }
     }
     Ok(())
 }

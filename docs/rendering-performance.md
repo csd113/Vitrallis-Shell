@@ -129,7 +129,9 @@ by the simulator rather than inferred from those CPU timings.
 The two-second real event-loop observation records two startup/exposure frames,
 all within the first 500 ms, and zero subsequent idle frames. This proves bounded
 idle redraw behavior locally, not physical power consumption. PocketCHIP Mali-400
-and Raspberry Pi vc4/V3D hardware were not available. Their input latency,
+and Raspberry Pi vc4/V3D hardware were not available during Phase 2.
+The later [Phase 3 physical record](devices/pocketchip/graphics-phase3.md) covers
+PocketCHIP only; both Raspberry Pi physical validations remain pending. Their input latency,
 frame-time tails, driver reset behavior, memory/RSS, thermal and battery effects,
 and sustained navigation with maximum artwork still require hardware measurement.
 
@@ -139,9 +141,9 @@ and sustained navigation with maximum artwork still require hardware measurement
 sh scripts/validate.sh
 cargo test --release --lib -p vitrallis-shell rendering_workloads -- --ignored --nocapture
 cargo test --lib -p vitrallis-shell idle_loop_stops_after_startup -- --ignored --nocapture
-# In a graphical session:
+# In a graphical session with a real accelerated backend:
 cargo test --lib -p vitrallis-shell accelerated_atlas_survives_unchanged_artwork_refresh -- --ignored
-cargo test --test desktop -- --ignored
+cargo test --test desktop accelerated_ -- --ignored
 VITRALLIS_RENDERER_BIN_DIR="$PWD/target/release" VITRALLIS_TEST_ACCELERATED=1 python3 -m unittest discover -s tests -p 'test_native_renderer.py'
 ```
 

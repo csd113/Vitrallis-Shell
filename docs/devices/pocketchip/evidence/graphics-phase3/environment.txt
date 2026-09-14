@@ -1,0 +1,132 @@
+Mon Sep 14 14:29:33 UTC 2026
+Linux chip 6.12.107+deb13-chip #1 SMP Debian 6.12.107-1.31 (2026-08-29) armv7l GNU/Linux
+PRETTY_NAME="Debian GNU/Linux 13 (trixie)"
+NAME="Debian GNU/Linux"
+VERSION_ID="13"
+VERSION="13 (trixie)"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL=13.7
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+uid=1000(chip) gid=1000(chip) groups=1000(chip),4(adm),20(dialout),27(sudo),29(audio),44(video),46(plugdev),100(users),101(netdev),104(i2c),106(bluetooth),992(render),996(input)
+total 0
+drwxr-xr-x  2 root root        100 Sep 13 23:44 by-path
+crw-rw----+ 1 root video  226,   0 Sep 13 23:44 card0
+crw-rw----+ 1 root video  226,   1 Sep 13 23:44 card1
+crw-rw----+ 1 root render 226, 128 Sep 13 23:44 renderD128
+/sys/bus/platform/drivers/sun4i-drm
+/sys/bus/platform/drivers/lima
+/sys/bus/platform/drivers/lima
+libdrm2:armhf	2.4.124-2
+libegl-mesa0:armhf	25.0.7-2+deb13u1
+libegl1:armhf	1.7.0-1+b2
+libgl1-mesa-dri:armhf	25.0.7-2+deb13u1
+libgles2:armhf	1.7.0-1+b2
+libsdl2-2.0-0:armhf	2.32.4+dfsg-1
+name of display: :0
+display: :0  screen: 0
+direct rendering: Yes
+Extended renderer info (GLX_MESA_query_renderer):
+    Vendor: Mesa (0x13b5)
+    Device: Mali400 (0xffffffff)
+    Version: 25.0.7
+    Accelerated: yes
+    Video memory: 0MB
+    Unified memory: yes
+    Preferred profile: compat (0x2)
+    Max core profile version: 0.0
+    Max compat profile version: 2.1
+    Max GLES1 profile version: 1.1
+    Max GLES[23] profile version: 2.0
+OpenGL vendor string: Mesa
+OpenGL renderer string: Mali400
+OpenGL version string: 2.1 Mesa 25.0.7-2+deb13u1
+OpenGL shading language version string: 1.20
+
+OpenGL ES profile version string: OpenGL ES 2.0 Mesa 25.0.7-2+deb13u1
+OpenGL ES profile shading language version string: OpenGL ES GLSL ES 1.0.16
+
+GBM platform:
+EGL API version: 1.5
+EGL vendor string: Mesa Project
+EGL version string: 1.5
+EGL client APIs: OpenGL OpenGL_ES 
+OpenGL compatibility profile vendor: Mesa
+OpenGL compatibility profile renderer: Mali400
+OpenGL compatibility profile version: 2.1 Mesa 25.0.7-2+deb13u1
+OpenGL compatibility profile shading language version: 1.20
+OpenGL ES profile vendor: Mesa
+OpenGL ES profile renderer: Mali400
+OpenGL ES profile version: OpenGL ES 2.0 Mesa 25.0.7-2+deb13u1
+OpenGL ES profile shading language version: OpenGL ES GLSL ES 1.0.16
+
+Wayland platform:
+eglinfo: eglInitialize failed
+
+X11 platform:
+EGL API version: 1.5
+EGL vendor string: Mesa Project
+EGL version string: 1.5
+EGL client APIs: OpenGL OpenGL_ES 
+OpenGL compatibility profile vendor: Mesa
+OpenGL compatibility profile renderer: Mali400
+OpenGL compatibility profile version: 2.1 Mesa 25.0.7-2+deb13u1
+OpenGL compatibility profile shading language version: 1.20
+OpenGL ES profile vendor: Mesa
+OpenGL ES profile renderer: Mali400
+OpenGL ES profile version: OpenGL ES 2.0 Mesa 25.0.7-2+deb13u1
+OpenGL ES profile shading language version: OpenGL ES GLSL ES 1.0.16
+
+Surfaceless platform:
+EGL API version: 1.5
+EGL vendor string: Mesa Project
+EGL version string: 1.5
+EGL client APIs: OpenGL OpenGL_ES 
+OpenGL compatibility profile vendor: Mesa
+OpenGL compatibility profile renderer: Mali400
+OpenGL compatibility profile version: 2.1 Mesa 25.0.7-2+deb13u1
+OpenGL compatibility profile shading language version: 1.20
+OpenGL ES profile vendor: Mesa
+OpenGL ES profile renderer: Mali400
+OpenGL ES profile version: OpenGL ES 2.0 Mesa 25.0.7-2+deb13u1
+OpenGL ES profile shading language version: OpenGL ES GLSL ES 1.0.16
+
+Device platform:
+Device #0:
+
+Platform Device platform:
+EGL API version: 1.5
+EGL vendor string: Mesa Project
+EGL version string: 1.5
+EGL client APIs: OpenGL OpenGL_ES 
+OpenGL compatibility profile vendor: Mesa
+OpenGL compatibility profile renderer: Mali400
+OpenGL compatibility profile version: 2.1 Mesa 25.0.7-2+deb13u1
+OpenGL compatibility profile shading language version: 1.20
+OpenGL ES profile vendor: Mesa
+OpenGL ES profile renderer: Mali400
+OpenGL ES profile version: OpenGL ES 2.0 Mesa 25.0.7-2+deb13u1
+OpenGL ES profile shading language version: OpenGL ES GLSL ES 1.0.16
+
+Device #1:
+
+Platform Device platform:
+EGL API version: 1.5
+EGL vendor string: Mesa Project
+EGL version string: 1.5
+EGL client APIs: OpenGL OpenGL_ES 
+OpenGL core profile vendor: Mesa
+OpenGL core profile renderer: llvmpipe (LLVM 19.1.7, 128 bits)
+OpenGL core profile version: 4.5 (Core Profile) Mesa 25.0.7-2+deb13u1
+OpenGL core profile shading language version: 4.50
+OpenGL compatibility profile vendor: Mesa
+OpenGL compatibility profile renderer: llvmpipe (LLVM 19.1.7, 128 bits)
+OpenGL compatibility profile version: 4.5 (Compatibility Profile) Mesa 25.0.7-2+deb13u1
+OpenGL compatibility profile shading language version: 4.50
+OpenGL ES profile vendor: Mesa
+OpenGL ES profile renderer: llvmpipe (LLVM 19.1.7, 128 bits)
+OpenGL ES profile version: OpenGL ES 3.2 Mesa 25.0.7-2+deb13u1
+OpenGL ES profile shading language version: OpenGL ES GLSL ES 3.20
+

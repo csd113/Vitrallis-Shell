@@ -1,0 +1,410 @@
+[
+  {
+    "time": 1789396444.147969,
+    "ticks": 131,
+    "rss_pages": 10915,
+    "temperature": "50200",
+    "memory": [
+      "VmSize:\t  230612 kB",
+      "VmRSS:\t   43732 kB",
+      "RssAnon:\t   15324 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       1624  sun4i_irq  69 Edge      gp",
+      "108:       1310  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "786745",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "94868",
+      "runtime_usage": "0",
+      "runtime_status": "active"
+    }
+  },
+  {
+    "time": 1789396504.1744502,
+    "ticks": 159,
+    "rss_pages": 10915,
+    "temperature": "47800",
+    "memory": [
+      "VmSize:\t  230624 kB",
+      "VmRSS:\t   43756 kB",
+      "RssAnon:\t   15348 kB"
+    ],
+    "fds": 14,
+    "gpu_irq": [
+      "107:       1719  sun4i_irq  69 Edge      gp",
+      "108:       1403  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "836068",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "105573",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789396564.2065182,
+    "ticks": 186,
+    "rss_pages": 10915,
+    "temperature": "47200",
+    "memory": [
+      "VmSize:\t  232664 kB",
+      "VmRSS:\t   43764 kB",
+      "RssAnon:\t   15356 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       1810  sun4i_irq  69 Edge      gp",
+      "108:       1490  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "885547",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "116156",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789396624.261456,
+    "ticks": 216,
+    "rss_pages": 10915,
+    "temperature": "48200",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43776 kB",
+      "RssAnon:\t   15368 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       1910  sun4i_irq  69 Edge      gp",
+      "108:       1583  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "934365",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "127352",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789396684.2752306,
+    "ticks": 239,
+    "rss_pages": 10915,
+    "temperature": "48000",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43776 kB",
+      "RssAnon:\t   15368 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2001  sun4i_irq  69 Edge      gp",
+      "108:       1670  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "983809",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "137922",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789396744.2937605,
+    "ticks": 271,
+    "rss_pages": 10915,
+    "temperature": "47900",
+    "memory": [
+      "VmSize:\t  233824 kB",
+      "VmRSS:\t   43776 kB",
+      "RssAnon:\t   15368 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2098  sun4i_irq  69 Edge      gp",
+      "108:       1765  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1032950",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "148804",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789396804.3300374,
+    "ticks": 295,
+    "rss_pages": 10915,
+    "temperature": "48000",
+    "memory": [
+      "VmSize:\t  233824 kB",
+      "VmRSS:\t   43776 kB",
+      "RssAnon:\t   15368 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2188  sun4i_irq  69 Edge      gp",
+      "108:       1854  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1082361",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "159432",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789396864.360082,
+    "ticks": 325,
+    "rss_pages": 10915,
+    "temperature": "47600",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43776 kB",
+      "RssAnon:\t   15368 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2284  sun4i_irq  69 Edge      gp",
+      "108:       1945  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1131419",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "170398",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789396924.3826756,
+    "ticks": 353,
+    "rss_pages": 10915,
+    "temperature": "48400",
+    "memory": [
+      "VmSize:\t  232812 kB",
+      "VmRSS:\t   43776 kB",
+      "RssAnon:\t   15368 kB"
+    ],
+    "fds": 14,
+    "gpu_irq": [
+      "107:       2379  sun4i_irq  69 Edge      gp",
+      "108:       2035  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1180505",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "181343",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789396984.4141495,
+    "ticks": 382,
+    "rss_pages": 10915,
+    "temperature": "48600",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43776 kB",
+      "RssAnon:\t   15368 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2472  sun4i_irq  69 Edge      gp",
+      "108:       2124  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1229907",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "191963",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789397044.434536,
+    "ticks": 414,
+    "rss_pages": 10915,
+    "temperature": "49400",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43784 kB",
+      "RssAnon:\t   15376 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2571  sun4i_irq  69 Edge      gp",
+      "108:       2219  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1278163",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "203742",
+      "runtime_usage": "0",
+      "runtime_status": "active"
+    }
+  },
+  {
+    "time": 1789397104.4705598,
+    "ticks": 438,
+    "rss_pages": 10915,
+    "temperature": "48300",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43784 kB",
+      "RssAnon:\t   15376 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2659  sun4i_irq  69 Edge      gp",
+      "108:       2302  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1327346",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "214581",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789397164.488773,
+    "ticks": 469,
+    "rss_pages": 10915,
+    "temperature": "49000",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43784 kB",
+      "RssAnon:\t   15376 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2752  sun4i_irq  69 Edge      gp",
+      "108:       2393  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1375899",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "226046",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789397224.5064144,
+    "ticks": 494,
+    "rss_pages": 10915,
+    "temperature": "48200",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43784 kB",
+      "RssAnon:\t   15376 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2844  sun4i_irq  69 Edge      gp",
+      "108:       2481  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1425031",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "236932",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789397284.5267303,
+    "ticks": 525,
+    "rss_pages": 10915,
+    "temperature": "47900",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43784 kB",
+      "RssAnon:\t   15376 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       2943  sun4i_irq  69 Edge      gp",
+      "108:       2576  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1473552",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "248440",
+      "runtime_usage": "0",
+      "runtime_status": "suspended"
+    }
+  },
+  {
+    "time": 1789397344.5603786,
+    "ticks": 550,
+    "rss_pages": 10915,
+    "temperature": "48100",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43784 kB",
+      "RssAnon:\t   15376 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       3022  sun4i_irq  69 Edge      gp",
+      "108:       2654  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1523463",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "258555",
+      "runtime_usage": "0",
+      "runtime_status": "active"
+    }
+  },
+  {
+    "time": 1789397404.5795984,
+    "ticks": 581,
+    "rss_pages": 10915,
+    "temperature": "48000",
+    "memory": [
+      "VmSize:\t  232800 kB",
+      "VmRSS:\t   43784 kB",
+      "RssAnon:\t   15376 kB"
+    ],
+    "fds": 13,
+    "gpu_irq": [
+      "107:       3116  sun4i_irq  69 Edge      gp",
+      "108:       2745  sun4i_irq  71 Edge      pp0"
+    ],
+    "gpu_power": {
+      "runtime_active_kids": "0",
+      "runtime_suspended_time": "1572562",
+      "runtime_enabled": "enabled",
+      "runtime_active_time": "269477",
+      "runtime_usage": "0",
+      "runtime_status": "active"
+    }
+  }
+]

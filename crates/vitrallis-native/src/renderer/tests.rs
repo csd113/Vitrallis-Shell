@@ -156,6 +156,7 @@ fn diagnostics_report_actual_flags_dimensions_and_escape_fallback_errors() {
         output_size: (480, 272),
         display_size: Some((480, 272)),
         hardware_error: None,
+        gl: None,
     };
     let log = snapshot.to_string();
     assert!(log.contains("event=renderer_initialized requested=auto mode=hardware"));
@@ -175,4 +176,36 @@ fn diagnostics_report_actual_flags_dimensions_and_escape_fallback_errors() {
     assert!(log.contains("display_width=unknown display_height=unknown"));
     assert!(log.contains("fallback=true hardware_error=\"GPU \\\"failed\\\"\\ninjected=event\""));
     assert_eq!(log.lines().count(), 1);
+}
+
+#[test]
+fn software_mesa_rejects_hardware_and_auto_keeps_reason() -> Result<(), String> {
+    let gl = graphics::GlInfo {
+        vendor: "Mesa".into(),
+        renderer: "llvmpipe (LLVM 19)".into(),
+        version: "OpenGL ES 3.2 Mesa".into(),
+        egl_version: None,
+        egl_display_driver: None,
+    };
+    for requested in [RendererMode::Auto, RendererMode::Hardware] {
+        let result = select(requested, &drivers(), |attempt| {
+            if attempt.mode == RendererMode::Hardware {
+                reject_software_gl(Some(&gl))?;
+            }
+            Ok(((), info("software", SOFTWARE)))
+        });
+        if requested == RendererMode::Hardware {
+            assert!(result.unwrap_err().contains("llvmpipe"));
+        } else {
+            let ((), actual, error) = result?;
+            assert_eq!(actual.name, "software");
+            assert!(
+                error
+                    .ok_or("missing software Mesa failure")?
+                    .contains("llvmpipe")
+            );
+        }
+    }
+    assert!(reject_software_gl(None).is_ok());
+    Ok(())
 }

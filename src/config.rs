@@ -6,6 +6,8 @@ pub enum Mode {
     Launch,
     List,
     Smoke,
+    GraphicsInfo,
+    GraphicsTest,
 }
 #[derive(Debug, Default)]
 pub struct Config {
@@ -38,10 +40,28 @@ impl Config {
                     config.assets =
                         Some(args.next().ok_or("--assets requires a directory")?.into());
                 }
-                "--list-apps" => config.mode = Mode::List,
+                "--graphics-info" | "--graphics-test" => {
+                    if config.mode != Mode::Launch {
+                        return Err("graphics commands cannot be combined with other modes".into());
+                    }
+                    config.mode = if arg == "--graphics-info" {
+                        Mode::GraphicsInfo
+                    } else {
+                        Mode::GraphicsTest
+                    };
+                }
+                "--list-apps" | "--smoke-test" => {
+                    if config.mode != Mode::Launch {
+                        return Err("command modes cannot be combined".into());
+                    }
+                    config.mode = if arg == "--list-apps" {
+                        Mode::List
+                    } else {
+                        Mode::Smoke
+                    };
+                }
                 "--demo" => config.demo = true,
                 "--linux-handheld" => config.linux_handheld = true,
-                "--smoke-test" => config.mode = Mode::Smoke,
                 "--size" => {
                     let value = args.next().ok_or("--size requires WIDTHxHEIGHT")?;
                     let (w, h) = value
@@ -62,6 +82,16 @@ impl Config {
                 _ => return Err(format!("unknown argument: {arg}")),
             }
         }
+        if matches!(config.mode, Mode::GraphicsInfo | Mode::GraphicsTest)
+            && (config.screenshot.is_some()
+                || config.catalog_path.is_some()
+                || config.assets.is_some()
+                || config.demo
+                || config.linux_handheld
+                || config.size.is_some())
+        {
+            return Err("graphics commands accept only --renderer; they use a small diagnostic window and do not load or change user data".into());
+        }
         if config.linux_handheld && config.mode == crate::config::Mode::Smoke {
             return Err("smoke test is desktop-only".into());
         }
@@ -81,6 +111,11 @@ mod tests {
             vec!["--size", "junk"],
             vec!["--size", "999999x200"],
             vec!["--wat"],
+            vec!["--graphics-test", "--smoke-test"],
+            vec!["--smoke-test", "--graphics-test"],
+            vec!["--graphics-info", "--graphics-test"],
+            vec!["--graphics-info", "--screenshot", "new.bmp"],
+            vec!["--graphics-test", "--app-config", "ignored.json"],
             vec!["--renderer"],
             vec!["--renderer", "invalid"],
             vec!["--renderer", ""],
