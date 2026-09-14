@@ -18,7 +18,9 @@ pub fn run() -> Result<(), String> {
     let Some(options) = Options::parse("vitrallis-files")? else {
         return Ok(());
     };
-    let mut ui = Ui::new("Files", &options)?;
+    let session = vitrallis_native::ui::Session::new("Files", &options)?;
+    let creator = session.canvas.texture_creator();
+    let mut ui = Ui::new(session, &creator)?;
     let _inbox = ui.inbox("files")?;
     let start = options.path.clone().unwrap_or_else(vitrallis_native::home);
     let browser = match Browser::new(&start) {
@@ -432,13 +434,15 @@ mod tests {
     fn keyboard_controls_and_cancel_default_delete_preserve_selection()
     -> Result<(), Box<dyn std::error::Error>> {
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
-        let mut ui = Ui::new(
+        let session = vitrallis_native::ui::Session::new(
             "Files test",
             &Options {
                 size: Some((480, 272)),
                 ..Options::default()
             },
         )?;
+        let creator = session.canvas.texture_creator();
+        let mut ui = Ui::new(session, &creator)?;
         let directory =
             std::env::temp_dir().join(format!("vitrallis-files-ui-{}", std::process::id()));
         std::fs::create_dir(&directory)?;

@@ -1,4 +1,8 @@
 mod app_center;
+#[cfg(test)]
+mod cache_tests;
+#[cfg(test)]
+pub mod performance;
 pub use vitrallis_native::renderer as backend;
 mod shortcuts;
 mod system;
@@ -7,16 +11,81 @@ use crate::{
     launcher::Launcher,
     layout::{Layout, Rect},
 };
-use font8x8::UnicodeFonts;
 use sdl2::{
     pixels::{Color, PixelFormatEnum},
     render::{Canvas, Texture, TextureCreator},
     surface::Surface,
     video::{Window, WindowContext},
 };
-use std::io::{Read, Write};
+use std::io::Write;
 
-pub type Screen = Canvas<Window>;
+pub struct Screen<'a> {
+    canvas: Canvas<Window>,
+    font: vitrallis_native::font::Atlas<'a>,
+    creator: &'a TextureCreator<WindowContext>,
+    center_icons: Vec<(Box<[u8]>, Texture<'a>)>,
+}
+impl<'a> Screen<'a> {
+    pub fn new(
+        canvas: Canvas<Window>,
+        creator: &'a TextureCreator<WindowContext>,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            canvas,
+            font: vitrallis_native::font::Atlas::new(creator)?,
+            creator,
+            center_icons: Vec::new(),
+        })
+    }
+    pub fn reset(&mut self) -> Result<(), String> {
+        self.font = vitrallis_native::font::Atlas::new(self.creator)?;
+        self.center_icons.clear();
+        Ok(())
+    }
+    fn center_icon(&mut self, pixels: &[u8], bounds: Rect) -> Result<(), String> {
+        if pixels.len() != 32 * 32 * 4 {
+            return Err("App Center icon must be 32x32 RGBA".into());
+        }
+        let index = if let Some(index) = self
+            .center_icons
+            .iter()
+            .position(|(key, _)| key.as_ref() == pixels)
+        {
+            index
+        } else {
+            // Bounded independently of catalogue size: 512 KiB textures + keys.
+            if self.center_icons.len() == 128 {
+                self.center_icons.remove(0);
+            }
+            let mut texture = self
+                .creator
+                .create_texture_static(PixelFormatEnum::RGBA32, 32, 32)
+                .map_err(|e| e.to_string())?;
+            texture.set_blend_mode(sdl2::render::BlendMode::Blend);
+            texture.set_scale_mode(sdl2::render::ScaleMode::Nearest);
+            texture
+                .update(None, pixels, 32 * 4)
+                .map_err(|e| e.to_string())?;
+            #[cfg(test)]
+            performance::count(|c| c.uploads += 1);
+            self.center_icons.push((pixels.into(), texture));
+            self.center_icons.len() - 1
+        };
+        self.canvas
+            .copy(&self.center_icons[index].1, None, rect(bounds)?)
+    }
+}
+impl std::ops::Deref for Screen<'_> {
+    type Target = Canvas<Window>;
+    fn deref(&self) -> &Self::Target {
+        &self.canvas
+    }
+}
+impl std::ops::DerefMut for Screen<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.canvas
+    }
+}
 fn rect(r: Rect) -> Result<sdl2::rect::Rect, String> {
     Ok(sdl2::rect::Rect::new(
         r.x,
@@ -26,7 +95,12 @@ fn rect(r: Rect) -> Result<sdl2::rect::Rect, String> {
     ))
 }
 fn fill(canvas: &mut Screen, r: Rect, color: Color) -> Result<(), String> {
-    canvas.set_draw_color(color);
+    if r.w <= 0 || r.h <= 0 {
+        return Ok(());
+    }
+    if canvas.draw_color() != color {
+        canvas.set_draw_color(color);
+    }
     canvas.fill_rect(rect(r)?)
 }
 fn text(
@@ -36,148 +110,43 @@ fn text(
     scale: i32,
     color: Color,
 ) -> Result<(), String> {
-    canvas.set_draw_color(color);
+    if scale <= 0 {
+        return Err("invalid text scale".into());
+    }
     let limit = usize::try_from(bounds.w / (8 * scale)).map_err(|_| "invalid text width")?;
     let count = i32::try_from(value.chars().take(limit).count()).map_err(|_| "text too long")?;
     let mut x = bounds.x + (bounds.w - count * 8 * scale) / 2;
     let y = bounds.y + (bounds.h - 8 * scale) / 2;
     for character in value.chars().take(limit) {
-        let glyph = font8x8::BASIC_FONTS
-            .get(character)
-            .or_else(|| font8x8::BASIC_FONTS.get('?'))
-            .unwrap_or([0; 8]);
-        for (row, bits) in (0_i32..8).zip(glyph) {
-            for col in 0..8 {
-                if bits & (1 << col) != 0 {
-                    canvas.fill_rect(rect(Rect {
-                        x: x + col * scale,
-                        y: y + row * scale,
-                        w: scale,
-                        h: scale,
-                    })?)?;
-                }
-            }
-        }
+        #[cfg(test)]
+        performance::count(|c| c.glyphs += 1);
+        #[cfg(test)]
+        performance::count(|c| {
+            c.text_operations += u64::from(!character.is_ascii_control() && character != ' ');
+        });
+        let character = if character.is_ascii() { character } else { '?' };
+        canvas.font.draw(
+            &mut canvas.canvas,
+            character,
+            rect(Rect {
+                x,
+                y,
+                w: 8 * scale,
+                h: 8 * scale,
+            })?,
+            color,
+        )?;
         x += 8 * scale;
     }
     Ok(())
 }
 
-pub fn icons<'a>(
-    creator: &'a TextureCreator<WindowContext>,
-    apps: &[AppEntry],
-) -> Vec<Option<Texture<'a>>> {
-    // Bound the retained artwork on a 512 MiB device even when a small JSON
-    // catalogue refers to thousands of maximum-size images.
-    let mut remaining = 16 * 1024 * 1024;
-    apps.iter()
-        .map(|app| {
-            if remaining == 0 {
-                return None;
-            }
-            let custom = crate::shortcuts::icon(app);
-            let builtin: Option<&[u8]> = custom
-                .as_deref()
-                .or_else(|| crate::native::icon(app))
-                .or_else(|| {
-                    if app.id == crate::app_center::TILE_ID {
-                        Some(include_bytes!("../assets/system/apps.png").as_slice())
-                    } else if app.is_system_settings() {
-                        Some(include_bytes!("../assets/system/gear.png").as_slice())
-                    } else {
-                        None
-                    }
-                });
-            let result = if let Some(bytes) = builtin {
-                decode_icon(bytes).and_then(|surface| {
-                    creator
-                        .create_texture_from_surface(&surface)
-                        .map_err(|e| e.to_string())
-                })
-            } else {
-                load_image(creator, app.icon.as_ref()?)
-            };
-            match result {
-                Ok(mut texture) => {
-                    texture.set_scale_mode(sdl2::render::ScaleMode::Linear);
-                    let size = texture.query();
-                    let bytes = size.width * size.height * 4;
-                    if bytes > remaining {
-                        remaining = 0;
-                        eprintln!("level=warn event=artwork_budget_exhausted");
-                        None
-                    } else {
-                        remaining -= bytes;
-                        Some(texture)
-                    }
-                }
-                Err(error) => {
-                    eprintln!(
-                        "level=warn event=icon_fallback app={} message={error:?}",
-                        app.id
-                    );
-                    None
-                }
-            }
-        })
-        .collect()
-}
-
-fn load_image<'a>(
-    creator: &'a TextureCreator<WindowContext>,
-    path: &std::path::Path,
-) -> Result<Texture<'a>, String> {
-    if !std::fs::metadata(path)
-        .map_err(|e| e.to_string())?
-        .is_file()
-    {
-        return Err("expected a regular file".into());
-    }
-    let file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-    if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-        return Err("icon must be a regular image file".into());
-    }
-    let mut bytes = Vec::new();
-    file.take(1024 * 1024 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
-    let surface = decode_icon(&bytes)?;
-    creator
-        .create_texture_from_surface(&surface)
-        .map_err(|e| e.to_string())
-}
-
-pub fn artwork<'a>(
-    creator: &'a TextureCreator<WindowContext>,
-    state: &Launcher,
-) -> Vec<Option<Texture<'a>>> {
-    let mut textures = icons(creator, &state.apps);
-    textures.push(state.preferences.wallpaper.as_ref().and_then(|path| {
-        load_image(creator, path)
-            .map_err(|error| {
-                eprintln!("level=warn event=wallpaper_fallback message={error:?}");
-            })
-            .ok()
-    }));
-    for bytes in system::ASSETS {
-        textures.push(
-            decode_icon(bytes)
-                .and_then(|surface| {
-                    creator
-                        .create_texture_from_surface(&surface)
-                        .map_err(|e| e.to_string())
-                })
-                .map(|mut texture| {
-                    texture.set_scale_mode(sdl2::render::ScaleMode::Linear);
-                    texture
-                })
-                .ok(),
-        );
-    }
-    textures
-}
+mod artwork;
+pub use artwork::artwork;
 
 pub fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
+    #[cfg(test)]
+    performance::count(|c| c.decodes += 1);
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         let mut decoder = png::Decoder::new_with_limits(
             bytes,
@@ -230,6 +199,11 @@ pub fn render(
     state: &Launcher,
     icons: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
+    #[cfg(test)]
+    performance::count(|counts| {
+        counts.frames += 1;
+        counts.last_frame = Some(std::time::Instant::now());
+    });
     if let Some(power) = state.settings.power_transition {
         return system::power_splash(canvas, layout, power.message());
     }
@@ -749,7 +723,7 @@ mod system_tests {
                 .hidden()
                 .build()
                 .map_err(|e| e.to_string())?;
-            let mut canvas = window
+            let canvas = window
                 .into_canvas()
                 .software()
                 .build()
@@ -775,6 +749,11 @@ mod system_tests {
                 power_controls: true,
                 ..Status::default()
             };
+            let creator = canvas.texture_creator();
+            let mut canvas = Screen::new(canvas, &creator)?;
+            if w == 480 {
+                cache_tests::lifecycle(&creator, &mut canvas)?;
+            }
             power_samples(&mut canvas, &layout, &mut state, output)?;
             state.settings.network_available = true;
             state.settings.input(Action::System);
@@ -811,6 +790,32 @@ mod system_tests {
             screenshot(&canvas, &output.join(format!("loading-{w}x{h}.bmp")))?;
             app_center::qa(&mut canvas, &layout, output)?;
             shortcuts::qa(&mut canvas, &layout, output)?;
+        }
+        verify_references(output)
+    }
+
+    fn verify_references(output: &std::path::Path) -> Result<(), String> {
+        use sha2::{Digest, Sha256};
+        let references: std::collections::BTreeMap<
+            String,
+            std::collections::BTreeMap<String, String>,
+        > = serde_json::from_str(include_str!(
+            "../tests/fixtures/renderer/phase1-sha256.json"
+        ))
+        .map_err(|e| e.to_string())?;
+        for (name, expected) in references.get(std::env::consts::OS).into_iter().flatten() {
+            let bytes = std::fs::read(output.join(name)).map_err(|e| e.to_string())?;
+            assert_eq!(
+                Sha256::digest(bytes)
+                    .iter()
+                    .fold(String::new(), |mut out, byte| {
+                        use std::fmt::Write;
+                        write!(&mut out, "{byte:02x}").unwrap();
+                        out
+                    }),
+                *expected,
+                "Phase 1 pixels changed: {name}"
+            );
         }
         Ok(())
     }

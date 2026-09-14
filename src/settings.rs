@@ -94,6 +94,9 @@ pub struct Settings {
     preview: Option<Percent>,
 }
 impl Settings {
+    pub const fn pointer_visual(&self) -> (usize, Option<Percent>) {
+        (self.selected, self.preview)
+    }
     pub fn show(&mut self) {
         self.cancel();
         self.open = true;

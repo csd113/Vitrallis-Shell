@@ -1,13 +1,12 @@
 //! Event-driven SDL rendering and shared keyboard/touch dialogs.
-use font8x8::UnicodeFonts;
 use sdl2::{
     event::{Event, WindowEvent},
     keyboard::{Keycode, Mod},
     mouse::MouseButton,
     pixels::{Color, PixelFormatEnum},
-    rect::{Point, Rect},
-    render::Canvas,
-    video::Window,
+    rect::Rect,
+    render::{Canvas, TextureCreator},
+    video::{Window, WindowContext},
 };
 use std::{
     io::{Seek, Write},
@@ -113,7 +112,9 @@ pub enum Input {
 }
 
 /// One SDL event queue and canvas. No timers, animation thread, or idle repaint.
-pub struct Ui {
+pub struct Ui<'a> {
+    font: crate::font::Atlas<'a>,
+    creator: &'a TextureCreator<WindowContext>,
     pub canvas: Canvas<Window>,
     pub sdl: sdl2::Sdl,
     events: sdl2::EventPump,
@@ -125,7 +126,14 @@ pub struct Ui {
     pub height: i32,
     pub scale: i32,
 }
-impl Ui {
+/// SDL initialization owner. Keep its texture creator alive around `Ui`.
+pub struct Session {
+    pub canvas: Canvas<Window>,
+    sdl: sdl2::Sdl,
+    events: sdl2::EventPump,
+    keyboard: crate::keyboard::Keyboard,
+}
+impl Session {
     /// # Errors
     /// Reports SDL/video/window initialization errors.
     pub fn new(title: &str, options: &Options) -> Result<Self, String> {
@@ -158,7 +166,31 @@ impl Ui {
         video.text_input().start();
         let events = sdl.event_pump()?;
         let keyboard = crate::keyboard::Keyboard::new(&video);
+        Ok(Self {
+            canvas,
+            sdl,
+            events,
+            keyboard,
+        })
+    }
+}
+impl<'a> Ui<'a> {
+    /// Bind persistent textures to this session's renderer.
+    /// # Errors
+    /// Reports atlas allocation and display-size errors.
+    pub fn new(
+        session: Session,
+        creator: &'a TextureCreator<WindowContext>,
+    ) -> Result<Self, String> {
+        let Session {
+            canvas,
+            sdl,
+            events,
+            keyboard,
+        } = session;
         let mut ui = Self {
+            font: crate::font::Atlas::new(creator)?,
+            creator,
             canvas,
             sdl,
             events,
@@ -244,36 +276,17 @@ impl Ui {
     /// # Errors
     /// Reports a renderer error.
     pub fn glyph(&mut self, ch: char, x: i32, y: i32, color: Color) -> Result<(), String> {
-        let glyph = font8x8::BASIC_FONTS
-            .get(ch)
-            .or_else(|| font8x8::LATIN_FONTS.get(ch))
-            .or_else(|| font8x8::BOX_FONTS.get(ch))
-            .or_else(|| font8x8::BASIC_FONTS.get('?'))
-            .unwrap_or([0; 8]);
-        self.canvas.set_draw_color(color);
-        let mut points = [Point::new(0, 0); 64];
-        let mut count = 0;
-        for (row, bits) in (0..8).zip(glyph) {
-            for col in 0..8 {
-                if bits & (1 << col) != 0 {
-                    points[count] = Point::new(x + col * self.scale, y + row * self.scale);
-                    count += 1;
-                }
-            }
-        }
-        if self.scale == 1 {
-            self.canvas.draw_points(&points[..count])?;
-        } else {
-            for point in &points[..count] {
-                self.canvas.fill_rect(Rect::new(
-                    point.x,
-                    point.y,
-                    self.scale.unsigned_abs(),
-                    self.scale.unsigned_abs(),
-                ))?;
-            }
-        }
-        Ok(())
+        self.font.draw(
+            &mut self.canvas,
+            ch,
+            Rect::new(
+                x,
+                y,
+                8 * self.scale.unsigned_abs(),
+                8 * self.scale.unsigned_abs(),
+            ),
+            color,
+        )
     }
     /// # Errors
     /// Reports a renderer error.
@@ -354,8 +367,13 @@ impl Ui {
     /// # Errors
     /// Reports a display resize error.
     pub fn wait(&mut self) -> Result<Input, String> {
-        let event = self.events.wait_event();
-        self.translate(event)
+        loop {
+            let event = self.events.wait_event();
+            let input = self.translate(event)?;
+            if input != Input::Ignore {
+                return Ok(input);
+            }
+        }
     }
     /// Drain a bounded batch in applications with high output rates.
     /// # Errors
@@ -441,8 +459,11 @@ impl Ui {
                 win_event: WindowEvent::Exposed | WindowEvent::FocusGained,
                 ..
             }
-            | Event::RenderTargetsReset { .. }
-            | Event::RenderDeviceReset { .. } => Input::Resize,
+            | Event::RenderTargetsReset { .. } => Input::Resize,
+            Event::RenderDeviceReset { .. } => {
+                self.font = crate::font::Atlas::new(self.creator)?;
+                Input::Resize
+            }
             Event::User { .. } => Input::Wake,
             _ => Input::Ignore,
         })
@@ -671,13 +692,18 @@ mod tests {
     fn dialogs_pointer_guards_and_private_ipc_work_at_native_sizes() -> Result<(), String> {
         for size in [(480, 272), (800, 480), (1280, 720)] {
             sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
-            let mut ui = Ui::new(
+            let session = Session::new(
                 "Native controls test",
                 &Options {
                     size: Some(size),
                     ..Options::default()
                 },
             )?;
+            let creator = session.canvas.texture_creator();
+            let mut ui = Ui::new(session, &creator)?;
+            crate::font::tests::pixel_parity(&mut ui.canvas, &mut ui.font)?;
+            ui.translate(Event::RenderDeviceReset { timestamp: 0 })?;
+            crate::font::tests::pixel_parity(&mut ui.canvas, &mut ui.font)?;
             key(&ui, Keycode::Return)?;
             assert_eq!(
                 ui.choose("Delete?", "Keep the original", &["Cancel", "Delete"])?,

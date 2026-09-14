@@ -2,6 +2,7 @@
 pub mod browser;
 pub mod document;
 pub mod files;
+pub mod font;
 pub mod ipc;
 pub mod keyboard;
 pub mod renderer;

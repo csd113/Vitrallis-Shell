@@ -209,16 +209,8 @@ fn app_row(
         },
     )
 }
-fn draw_icon(canvas: &mut Screen, pixels: &[u8], bounds: Rect) -> Result<(), String> {
-    let creator = canvas.texture_creator();
-    let mut texture = creator
-        .create_texture_streaming(sdl2::pixels::PixelFormatEnum::RGBA32, 32, 32)
-        .map_err(|e| e.to_string())?;
-    texture.set_blend_mode(sdl2::render::BlendMode::Blend);
-    texture
-        .update(None, pixels, 32 * 4)
-        .map_err(|e| e.to_string())?;
-    canvas.copy(&texture, None, super::rect(bounds)?)
+pub(super) fn draw_icon(canvas: &mut Screen, pixels: &[u8], bounds: Rect) -> Result<(), String> {
+    canvas.center_icon(pixels, bounds)
 }
 
 #[cfg(test)]

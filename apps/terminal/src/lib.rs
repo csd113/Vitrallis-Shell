@@ -16,7 +16,9 @@ pub fn run() -> Result<(), String> {
     if options.path.is_some() {
         return Err("Terminal does not accept a file path".into());
     }
-    let mut ui = Ui::new("Terminal", &options)?;
+    let session = vitrallis_native::ui::Session::new("Terminal", &options)?;
+    let creator = session.canvas.texture_creator();
+    let mut ui = Ui::new(session, &creator)?;
     let _inbox = ui.inbox("terminal")?;
     let (rows, cols) = model::geometry(ui.width, ui.height, ui.scale);
     let mut terminal = Terminal::new(rows, cols);

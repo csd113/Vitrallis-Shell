@@ -35,7 +35,7 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     // A touch used to focus the launcher must also deliver its matching press.
     // SDL otherwise consumes the first click after window activation.
     sdl2::hint::set("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
-    let (mut canvas, info) = crate::renderer::backend::initialize(&video, config.renderer, || {
+    let (canvas, info) = crate::renderer::backend::initialize(&video, config.renderer, || {
         let mut window = video.window("Vitrallis", u32::from(width), u32::from(height));
         window.position_centered().hidden();
         if platform.fullscreen() {
@@ -43,6 +43,8 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         }
         window.build().map_err(|error| format!("window: {error}"))
     })?;
+    let font_creator = canvas.texture_creator();
+    let mut canvas = Screen::new(canvas, &font_creator)?;
     state.renderer_info = Some(info);
     if let Some(info) = &state.renderer_info {
         eprintln!("{info}");
@@ -73,6 +75,7 @@ fn event_loop(
     platform: &impl Platform,
     config: &Config,
 ) -> Result<(), String> {
+    let mut current_layout = layout.clone();
     let smoke = config.mode == crate::config::Mode::Smoke;
     let creator = canvas.texture_creator();
     let mut textures = artwork(&creator, &state);
@@ -94,9 +97,10 @@ fn event_loop(
     }
     present_initial(canvas, layout, &state, &textures)?;
     loop {
+        let layout = &current_layout;
         dirty |= refresh_system(&mut worker, &mut state.settings);
         if refresh_app_center(sdl, config, &mut state, &mut dirty)? {
-            textures = artwork(&creator, &state);
+            textures.refresh(&creator, &state);
             dirty = true;
         }
         dirty |= refresh_shell(&mut state, &mut child);
@@ -119,6 +123,31 @@ fn event_loop(
             if closing(&event) && !state.app_center.busy {
                 return Ok(());
             }
+            if matches!(event, Event::RenderDeviceReset { .. }) {
+                canvas.reset()?;
+                textures.reset(&creator, &state);
+                dirty = true;
+            }
+            if matches!(
+                event,
+                Event::Window {
+                    win_event: WindowEvent::SizeChanged(..) | WindowEvent::Resized(..),
+                    ..
+                }
+            ) {
+                let (width, height) = canvas.window().size();
+                if width >= 320 && height >= 200 {
+                    current_layout = Layout::home(
+                        u16::try_from(width).map_err(|_| "window width")?,
+                        u16::try_from(height).map_err(|_| "window height")?,
+                    )?;
+                    pointer.clear();
+                    desktop_input.clear();
+                    state.settings.clear_pointer();
+                    state.app_center.lost_focus();
+                }
+            }
+            let layout = &current_layout;
             dirty |= exposed(&event);
             dirty |= window_focus(&event, &mut state, &mut pointer, &mut accept_after);
             if Instant::now() >= accept_after {
@@ -127,9 +156,9 @@ fn event_loop(
                 if consumed {
                     pointer.clear();
                     if changed {
-                        textures = artwork(&creator, &state);
+                        textures.refresh(&creator, &state);
                     }
-                    dirty = true;
+                    dirty |= panel_input(&event);
                 } else {
                     dirty |= terminate_selected(&event, &mut state, &mut child);
                     let (action, system_changed) =
@@ -153,6 +182,7 @@ fn event_loop(
                 desktop_input.clear();
             }
         }
+        let layout = &current_layout;
         let result = poll_children(&mut child, &mut next_poll);
         match result {
             Ok(Some(status)) => {
@@ -161,7 +191,7 @@ fn event_loop(
                 let raise = app_exited(&mut state, status, child.exited_active);
                 let catalog_changed = refresh_exit_catalog(sdl, config, &mut state, &mut pointer);
                 if catalog_changed {
-                    textures = artwork(&creator, &state);
+                    textures.refresh(&creator, &state);
                 }
                 last_wait_error = None;
                 if child.exited_active {
@@ -612,12 +642,32 @@ const fn closing(event: &Event) -> bool {
 const fn exposed(event: &Event) -> bool {
     matches!(
         event,
-        Event::Window {
-            win_event: WindowEvent::Exposed | WindowEvent::Shown | WindowEvent::Restored,
-            ..
-        }
+        Event::RenderTargetsReset { .. }
+            | Event::Window {
+                win_event: WindowEvent::Exposed
+                    | WindowEvent::Shown
+                    | WindowEvent::Restored
+                    | WindowEvent::SizeChanged(..)
+                    | WindowEvent::Resized(..),
+                ..
+            }
     )
 }
+// Pointer motion and unrelated queue traffic cannot change these panels.
+// Settings separately compares its slider preview during active drags.
+const fn panel_input(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::KeyDown { .. }
+            | Event::TextInput { .. }
+            | Event::MouseButtonDown { .. }
+            | Event::MouseButtonUp { .. }
+            | Event::FingerDown { .. }
+            | Event::FingerUp { .. }
+            | Event::MouseWheel { .. }
+    )
+}
+
 fn translate_action(
     event: &Event,
     layout: &Layout,
@@ -630,16 +680,20 @@ fn translate_action(
     }
     if state.app_center.open {
         state.app_center.event(event, layout);
-        return (None, true);
+        return (None, panel_input(event));
     }
     state.settings.network_available = state
         .apps
         .iter()
         .any(|app| app.is_system_settings() && app.unavailable.is_none());
     if state.settings.open {
+        let pointer_before = state.settings.pointer_visual();
         let request = state.settings.event(event, layout);
         submit_setting(request, worker, &mut state.settings);
-        return (None, true);
+        return (
+            None,
+            panel_input(event) || pointer_before != state.settings.pointer_visual(),
+        );
     }
     let action = pointer.action(event, layout, state.visible_count());
     if action == Some(Action::System) {
@@ -658,6 +712,7 @@ fn refresh_system(
     dirty |= settings.updater.poll();
     if let Some(worker) = worker {
         if let Some(update) = worker.update() {
+            dirty |= settings.status != update.status || update.result.is_some();
             settings.status = update.status;
             if let Some(result) = update.result {
                 if result.is_err() {
@@ -682,8 +737,8 @@ fn refresh_system(
                     },
                 );
             }
-            dirty = true;
         }
+        dirty |= settings.pending != worker.pending;
         settings.pending = worker.pending;
         if worker.stale() && settings.status != crate::platform::system::Status::default() {
             settings.status = crate::platform::system::Status::default();
@@ -990,6 +1045,98 @@ fn open_requested(state: &mut Launcher, child: &mut impl Processes) -> bool {
 mod tests {
     use super::*;
     use sdl2::mouse::MouseButton;
+    #[test]
+    #[ignore = "opt-in real idle-loop measurement; takes two seconds"]
+    fn idle_loop_stops_after_startup() -> Result<(), String> {
+        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        let sdl = sdl2::init()?;
+        let video = sdl.video()?;
+        let window = video
+            .window("Idle benchmark", 480, 272)
+            .hidden()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let canvas = window
+            .into_canvas()
+            .software()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let creator = canvas.texture_creator();
+        let mut canvas = Screen::new(canvas, &creator)?;
+        let layout = Layout::home(480, 272)?;
+        let sender = sdl.event()?.event_sender();
+        let stop = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_secs(2));
+            sender.push_event(Event::Quit { timestamp: 0 })
+        });
+        crate::renderer::performance::reset();
+        let start = Instant::now();
+        let result = event_loop(
+            &sdl,
+            &mut canvas,
+            &layout,
+            Launcher::new(Vec::new(), 3, 6)?,
+            &crate::platform::generic::Generic,
+            &Config::default(),
+        );
+        stop.join().map_err(|_| "idle benchmark timer failed")??;
+        result?;
+        let counts = crate::renderer::performance::snapshot();
+        eprintln!(
+            "idle_elapsed_ms={} frames={} redraws={}",
+            start.elapsed().as_millis(),
+            counts.frames,
+            counts.frames.saturating_sub(1)
+        );
+        assert!(
+            counts.frames <= 2,
+            "only initial presentation and startup exposure may draw"
+        );
+        assert!(
+            counts
+                .last_frame
+                .is_some_and(|last| last.duration_since(start) < Duration::from_millis(500))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn irrelevant_panel_events_do_not_schedule_frames() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut state = Launcher::new(Vec::new(), 3, 6)?;
+        let mut pointer = PointerInput::default();
+        let mut worker = None;
+        let motion = Event::MouseMotion {
+            timestamp: 0,
+            window_id: 0,
+            which: 0,
+            mousestate: sdl2::mouse::MouseState::from_sdl_state(0),
+            x: 20,
+            y: 20,
+            xrel: 1,
+            yrel: 1,
+        };
+        state.settings.show();
+        for _ in 0..200 {
+            assert!(!translate_action(&motion, &layout, &mut state, &mut pointer, &mut worker).1);
+        }
+        state.settings.cancel();
+        state.app_center.open = true;
+        for _ in 0..200 {
+            assert!(!translate_action(&motion, &layout, &mut state, &mut pointer, &mut worker).1);
+        }
+        assert!(!panel_input(&Event::User {
+            timestamp: 0,
+            window_id: 0,
+            type_: 0,
+            code: 0,
+            data1: std::ptr::null_mut(),
+            data2: std::ptr::null_mut()
+        }));
+        assert!(exposed(&Event::RenderTargetsReset { timestamp: 0 }));
+        Ok(())
+    }
+
     #[test]
     fn escape_terminates_only_the_highlighted_background_app() -> Result<(), String> {
         let mut apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));

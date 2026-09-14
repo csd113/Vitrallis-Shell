@@ -15,7 +15,9 @@ pub fn run() -> Result<(), String> {
     let Some(options) = Options::parse("vitrallis-notepad")? else {
         return Ok(());
     };
-    let mut ui = Ui::new("Notepad", &options)?;
+    let session = vitrallis_native::ui::Session::new("Notepad", &options)?;
+    let creator = session.canvas.texture_creator();
+    let mut ui = Ui::new(session, &creator)?;
     let mut editor = Editor::default();
     let inbox = ui.inbox("notepad")?;
     if let Some(path) = &options.path {
@@ -413,13 +415,15 @@ mod tests {
     fn unsaved_actions_default_to_cancel_and_save_before_discard()
     -> Result<(), Box<dyn std::error::Error>> {
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
-        let mut ui = Ui::new(
+        let session = vitrallis_native::ui::Session::new(
             "Notepad test",
             &Options {
                 size: Some((480, 272)),
                 ..Options::default()
             },
         )?;
+        let creator = session.canvas.texture_creator();
+        let mut ui = Ui::new(session, &creator)?;
         let scratch = vitrallis_native::files::Temporary::file(&std::env::temp_dir())?.0;
         std::fs::write(&scratch.path, "before\r\n")?;
         let mut editor = Editor {

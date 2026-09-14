@@ -11,7 +11,7 @@
 | Trust and reporting | [Trust model](security.md) and [security policy](../SECURITY.md) |
 | Develop an application | [App development](app-development.md) |
 | Work on the shell | [Contributing](../CONTRIBUTING.md), [shell behavior](shell.md), [repository layout](repository-layout.md), [dependencies](dependencies.md) |
-| Run and interpret checks | [Validation](validation.md) |
+| Run and interpret checks | [Validation](validation.md), [renderer performance](rendering-performance.md) |
 | Future direction | [Design roadmap](design.md) |
 
 Evidence has a specific scope: [native host measurements](devices/pocketchip/history/native-validation.md),

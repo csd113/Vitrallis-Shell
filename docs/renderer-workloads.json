@@ -1,0 +1,344 @@
+{
+  "method": "macOS SDL dummy/software, release test harness, 200 warm frames; not hardware GPU measurements",
+  "baseline_commit": "c4c6d20467e28126ab00ebbf93679bb6d5d79be1",
+  "baseline": {
+    "home": {
+      "frames": 200,
+      "elapsed_us": 110547,
+      "glyphs": 27200,
+      "text_operations": 508600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "settings": {
+      "frames": 200,
+      "elapsed_us": 82132,
+      "glyphs": 25200,
+      "text_operations": 455000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "modal": {
+      "frames": 200,
+      "elapsed_us": 101785,
+      "glyphs": 35400,
+      "text_operations": 655200,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-apps": {
+      "frames": 200,
+      "elapsed_us": 137984,
+      "glyphs": 49200,
+      "text_operations": 889800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-sources": {
+      "frames": 200,
+      "elapsed_us": 100130,
+      "glyphs": 34600,
+      "text_operations": 641000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-editor": {
+      "frames": 200,
+      "elapsed_us": 129206,
+      "glyphs": 42400,
+      "text_operations": 785200,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-details": {
+      "frames": 200,
+      "elapsed_us": 130405,
+      "glyphs": 43000,
+      "text_operations": 831400,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-search": {
+      "frames": 200,
+      "elapsed_us": 110956,
+      "glyphs": 37600,
+      "text_operations": 712800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-changelog": {
+      "frames": 200,
+      "elapsed_us": 93811,
+      "glyphs": 34200,
+      "text_operations": 607600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-update-badge": {
+      "frames": 200,
+      "elapsed_us": 150240,
+      "glyphs": 53000,
+      "text_operations": 958600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-uninstall": {
+      "frames": 200,
+      "elapsed_us": 90175,
+      "glyphs": 34000,
+      "text_operations": 582600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-confirm": {
+      "frames": 200,
+      "elapsed_us": 65771,
+      "glyphs": 23600,
+      "text_operations": 418200,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "desktop-editor": {
+      "frames": 200,
+      "elapsed_us": 132579,
+      "glyphs": 47000,
+      "text_operations": 851200,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "desktop-command": {
+      "frames": 200,
+      "elapsed_us": 85913,
+      "glyphs": 25600,
+      "text_operations": 516600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "desktop-remove": {
+      "frames": 200,
+      "elapsed_us": 55880,
+      "glyphs": 20400,
+      "text_operations": 361800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "desktop-picker": {
+      "frames": 200,
+      "elapsed_us": 94667,
+      "glyphs": 33400,
+      "text_operations": 611800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "many-icons": {
+      "frames": 200,
+      "elapsed_us": 82746,
+      "glyphs": 26000,
+      "text_operations": 491800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "wallpaper": {
+      "frames": 200,
+      "elapsed_us": 138541,
+      "glyphs": 27200,
+      "text_operations": 508600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "rapid-keyboard": {
+      "frames": 200,
+      "elapsed_us": 81420,
+      "glyphs": 27200,
+      "text_operations": 508600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "rapid-pointer": {
+      "frames": 200,
+      "elapsed_us": 96860,
+      "glyphs": 33633,
+      "text_operations": 622536,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "cached-app-center-icon": {
+      "frames": 200,
+      "elapsed_us": 1490,
+      "glyphs": 0,
+      "text_operations": 0,
+      "decodes": 0,
+      "uploads": 200
+    }
+  },
+  "final": {
+    "home": {
+      "frames": 200,
+      "elapsed_us": 20625,
+      "glyphs": 27200,
+      "text_operations": 25000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "settings": {
+      "frames": 200,
+      "elapsed_us": 17073,
+      "glyphs": 25200,
+      "text_operations": 23600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "modal": {
+      "frames": 200,
+      "elapsed_us": 19647,
+      "glyphs": 35400,
+      "text_operations": 32600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-apps": {
+      "frames": 200,
+      "elapsed_us": 20546,
+      "glyphs": 49200,
+      "text_operations": 45000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-sources": {
+      "frames": 200,
+      "elapsed_us": 14371,
+      "glyphs": 34600,
+      "text_operations": 32000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-editor": {
+      "frames": 200,
+      "elapsed_us": 18106,
+      "glyphs": 42400,
+      "text_operations": 39400,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-details": {
+      "frames": 200,
+      "elapsed_us": 17886,
+      "glyphs": 43000,
+      "text_operations": 39800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-search": {
+      "frames": 200,
+      "elapsed_us": 17360,
+      "glyphs": 37600,
+      "text_operations": 35600,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-changelog": {
+      "frames": 200,
+      "elapsed_us": 13423,
+      "glyphs": 34200,
+      "text_operations": 30000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-update-badge": {
+      "frames": 200,
+      "elapsed_us": 21790,
+      "glyphs": 53000,
+      "text_operations": 48000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-uninstall": {
+      "frames": 200,
+      "elapsed_us": 12189,
+      "glyphs": 34000,
+      "text_operations": 28800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "app-center-confirm": {
+      "frames": 200,
+      "elapsed_us": 9097,
+      "glyphs": 23600,
+      "text_operations": 20200,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "desktop-editor": {
+      "frames": 200,
+      "elapsed_us": 17651,
+      "glyphs": 47000,
+      "text_operations": 43000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "desktop-command": {
+      "frames": 200,
+      "elapsed_us": 13800,
+      "glyphs": 25600,
+      "text_operations": 25000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "desktop-remove": {
+      "frames": 200,
+      "elapsed_us": 8131,
+      "glyphs": 20400,
+      "text_operations": 17800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "desktop-picker": {
+      "frames": 200,
+      "elapsed_us": 14296,
+      "glyphs": 33400,
+      "text_operations": 29800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "many-icons": {
+      "frames": 200,
+      "elapsed_us": 17850,
+      "glyphs": 26000,
+      "text_operations": 23800,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "wallpaper": {
+      "frames": 200,
+      "elapsed_us": 74696,
+      "glyphs": 27200,
+      "text_operations": 25000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "rapid-keyboard": {
+      "frames": 200,
+      "elapsed_us": 14221,
+      "glyphs": 27200,
+      "text_operations": 25000,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "rapid-pointer": {
+      "frames": 200,
+      "elapsed_us": 16536,
+      "glyphs": 33633,
+      "text_operations": 30833,
+      "decodes": 0,
+      "uploads": 0
+    },
+    "cached-app-center-icon": {
+      "frames": 200,
+      "elapsed_us": 162,
+      "glyphs": 0,
+      "text_operations": 0,
+      "decodes": 0,
+      "uploads": 0
+    }
+  }
+}
