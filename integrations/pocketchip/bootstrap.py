@@ -16,7 +16,7 @@ REPOSITORY = 'csd113/Vitrallis-Shell'
 API = 'https://api.github.com/repos/' + REPOSITORY + '/releases'
 DOWNLOAD = 'https://github.com/' + REPOSITORY + '/releases/download/'
 BUNDLE = 'vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle'
-HELPERS = ('install-session.py', 'uninstall.py', 'vitrallis-session.py')
+HELPERS = ('install-session.py', 'uninstall.py', 'vitrallis-session.py', 'platform-setup.py', 'media-setup.py')
 MAX_BUNDLE = 256 * 1024 * 1024 + 176
 VERSION = re.compile(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?')
 

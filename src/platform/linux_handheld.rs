@@ -1,5 +1,7 @@
 //! Linux sysfs/ALSA controls and session-specific application policy.
+mod gpu;
 use super::Platform;
+pub use gpu::setup_notice as gpu_setup_notice;
 mod display;
 pub mod recovery;
 

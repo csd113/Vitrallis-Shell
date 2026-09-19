@@ -9,10 +9,12 @@ shell executable. The original menu and launcher files are preserved.
 
 Use the normal desktop account on Debian 12+ ARMv7 hard-float (`armhf`), glibc
 2.36+, SDL2 2.26.5+, Python 3.8+, `/usr/bin/curl` with HTTPS and valid CA certificates,
-Awesome 4.x, stock PocketHome and a systemd user manager. The recorded
+Awesome 4.x, Picom (Debian 13 validates 12.5), stock PocketHome and a systemd user manager. The recorded
 physical image was Debian 13; original Jessie is unsupported. Missing packages
-must be resolved separately by the device owner. Installation never uses sudo,
-apt, pip, Git, Rust, or device build tools.
+must be resolved separately by the device owner. The normal installer invokes a privileged, narrowly scoped GPU platform helper
+through sudo. `device-tree-compiler` (`dtc` and `fdtoverlay`), sudo and the CHIP
+flash-kernel boot layout are prerequisites for this provisioning step. It does
+not run apt, pip, Git or Rust. The desktop and native apps remain unprivileged.
 
 On a compatible device, open a terminal as your normal desktop user. The bootstrap
 for a published release can be fetched with:
@@ -53,7 +55,7 @@ fallback or automatic build exists. [Release assets](../releases.md) documents t
 current inventory and the separate historical release evidence.
 
 The bundle, its SHA-256 sidecar, `install-session.py`, `uninstall.py`,
-`vitrallis-session.py`, and each helper's sidecar come from the **same release**.
+`vitrallis-session.py`, `platform-setup.py`, `media-setup.py`, and each helper's sidecar come from the **same release**.
 All sizes, exact download URLs and checksums are checked before helper execution.
 If GitHub supplies an asset digest it must agree. HTTPS GitHub publication is the
 trust root; these hashes are not independent signatures.
@@ -64,14 +66,41 @@ bootstrap asset predates this correction; use the command above for the current
 bootstrap. Its bundle and installation helpers still come from one published
 release.
 
+## GPU platform provisioning
+
+The installer automatically runs the [PocketCHIP GPU setup](pocketchip/gpu-utilization.md)
+after validating the native bundle. It patches only missing GPU OPP data in the
+selected boot DTB and kernel source DTB, preserves existing OPP configurations,
+and installs a boot oneshot to expose a single read-only utilization pipe.
+Reboot notices appear in the installer and System Settings → Updates until the
+running tree has the OPP. Already configured systems do not need a reboot.
+The root-owned GPU support is system configuration: normal user uninstall retains
+it along with system packages. Disable its trace service explicitly if no longer
+needed; the document above lists the exact installed paths.
+
+The separate `media-setup.py` step installs Carousel's fixed FFmpeg installation
+action at `/usr/local/libexec/vitrallis-carousel-install-media` and a validated,
+account-specific rule under `/etc/sudoers.d/vitrallis-carousel-media-<user>`.
+The root-owned action accepts no arguments and installs only the fixed `ffmpeg`
+package request when invoked from Carousel. Setup itself does not install FFmpeg.
+Normal user uninstall retains these system-owned files.
+
 ## Graphics runtime and diagnostics
 
 For upstream Debian 13 Mali-400/Lima acceleration, the physical target uses
 `libsdl2-2.0-0`, `libgl1-mesa-dri`, `libegl1`, `libegl-mesa0`, `libgles2` and
-`libdrm2`. These names were checked against its installed packages. The owner
+`libdrm2`, plus `picom` for synchronized window composition. These names were checked against its installed packages. The owner
 provisions distro packages; Vitrallis never installs proprietary Mali blobs or
-changes the graphics stack. Installer checks for optional EGL/GLES/DRM libraries
+replaces the graphics driver. Installer checks for optional EGL/GLES/DRM libraries
 and DRM node presence are advisory; missing hardware cannot block software use.
+
+The session supervises an effects-free `picom --config /dev/null --backend xrender
+--vsync` process when X11 has no existing compositor. Its full-screen backbuffers
+are presented through X Present; XRender uses the existing glamor acceleration.
+An existing compositor is preserved and its synchronization remains externally
+managed. The owned compositor exits with the session; PocketHome startup and
+system Xorg configuration are unchanged. Failures are logged to `session.log`
+as a possible-tearing fallback, without preventing the desktop from opening.
 
 From the existing desktop session after installation:
 
@@ -109,6 +138,7 @@ version to the selected release tag.
   install-session.py
   uninstall.py
   vitrallis-session.py
+  platform-setup.py
   installed.json
   .vitrallis-update/lock
 ```

@@ -1,0 +1,48 @@
+Vitrallis-Shell (relative paths)
+Cargo.lock
+crates/vitrallis-native/src/renderer.rs
+crates/vitrallis-native/src/renderer/graphics.rs
+crates/vitrallis-native/src/renderer/tests.rs
+crates/vitrallis-native/src/ui.rs
+docs/devices/pocketchip.md
+docs/devices/pocketchip/evidence/gpu-vsync/changed-files.txt
+docs/devices/pocketchip/evidence/gpu-vsync/checks.txt
+docs/devices/pocketchip/evidence/gpu-vsync/graphics.txt
+docs/devices/pocketchip/evidence/gpu-vsync/idle.json
+docs/devices/pocketchip/evidence/gpu-vsync/install.txt
+docs/devices/pocketchip/evidence/gpu-vsync/installed-native.txt
+docs/devices/pocketchip/evidence/gpu-vsync/native.txt
+docs/devices/pocketchip/evidence/gpu-vsync/present.txt
+docs/devices/pocketchip/gpu-utilization.md
+docs/hardware-acceleration.md
+docs/releases.md
+docs/rendering-performance.md
+docs/repository-layout.md
+docs/shell-updates.md
+integrations/pocketchip/bootstrap.py
+integrations/pocketchip/install-session.py
+integrations/pocketchip/media-setup.py
+integrations/pocketchip/platform-setup.py
+integrations/pocketchip/uninstall.py
+integrations/pocketchip/vitrallis-session.py
+scripts/package-shell-release.py
+src/platform/linux_handheld.rs
+src/platform/linux_handheld/gpu.rs
+src/renderer.rs
+src/ui.rs
+src/updater/mod.rs
+tests/test_gpu_setup.py
+tests/test_installer.py
+tests/test_session.py
+tests/test_shell_release.py
+docs/devices/pocketchip/evidence/gpu-vsync/postboot.txt
+docs/devices/pocketchip/evidence/gpu-vsync/postboot-reader.txt
+
+Vitrallis-Apps (separate repository; provider/UI changes)
+apps/vitrallis-debug/gpu_metrics.py
+apps/vitrallis-debug/tests/test_gpu_metrics.py
+apps/vitrallis-debug/diagnostics.py
+apps/vitrallis-debug/ui.py
+
+Cargo.lock: restored only flate2 to 1.1.9 as authorized (matching HEAD); other pre-existing lockfile updates retained locally and excluded from the implementation commit.
+Vitrallis-Apps entries identify separate source changes, not files included in the Shell commit.

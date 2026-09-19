@@ -21,6 +21,7 @@ use std::io::Write;
 
 pub struct Screen<'a> {
     canvas: Canvas<Window>,
+    presentation: backend::PresentationClock,
     font: vitrallis_native::font::Atlas<'a>,
     creator: &'a TextureCreator<WindowContext>,
     center_icons: Vec<(Box<[u8]>, Texture<'a>)>,
@@ -30,12 +31,17 @@ impl<'a> Screen<'a> {
         canvas: Canvas<Window>,
         creator: &'a TextureCreator<WindowContext>,
     ) -> Result<Self, String> {
+        let presentation = backend::PresentationClock::new(&canvas);
         Ok(Self {
             canvas,
+            presentation,
             font: vitrallis_native::font::Atlas::new(creator)?,
             creator,
             center_icons: Vec::new(),
         })
+    }
+    pub fn present(&mut self) {
+        self.presentation.present(&mut self.canvas);
     }
     pub fn reset(&mut self) -> Result<(), String> {
         self.font = vitrallis_native::font::Atlas::new(self.creator)?;

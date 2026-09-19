@@ -88,7 +88,6 @@ fn event_loop(
     let mut desktop_input = crate::input::DesktopInput::default();
     let mut accept_after = Instant::now();
     let mut dirty = false;
-    let mut next_frame = Instant::now();
     let mut last_wait_error = None;
     let mut next_poll = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -106,16 +105,9 @@ fn event_loop(
         dirty |= refresh_shell(&mut state, &mut child);
         dirty |= launch_from_center(canvas, layout, &mut state, &textures, &mut child)?;
         dirty |= open_native(&broker, canvas, layout, &mut state, &textures, &mut child)?;
-        if dirty && Instant::now() >= next_frame {
+        if dirty {
             state.running = child.running_ids();
-            dirty = present_frame(
-                canvas,
-                layout,
-                &mut state,
-                &textures,
-                &mut worker,
-                &mut next_frame,
-            )?;
+            dirty = present_frame(canvas, layout, &mut state, &textures, &mut worker)?;
         }
         let event = wait_event(&mut events, state.phase, next_poll, dirty);
         if let Some(mut event) = event {
@@ -220,11 +212,9 @@ fn present_frame(
     state: &mut Launcher,
     textures: &[Option<Texture<'_>>],
     worker: &mut Option<crate::platform::system::Worker>,
-    next_frame: &mut Instant,
 ) -> Result<bool, String> {
     render(canvas, layout, state, textures)?;
     canvas.present();
-    *next_frame = Instant::now() + Duration::from_millis(16);
     Ok(submit_power_after_present(worker, &mut state.settings))
 }
 

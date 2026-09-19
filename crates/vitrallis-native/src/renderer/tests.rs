@@ -43,8 +43,10 @@ fn acceleration_survives_vsync_failure_in_auto_and_hardware_modes() -> Result<()
                 Ok(((), info("opengles2", ACCELERATED)))
             }
         })?;
-        assert_eq!(attempts.len(), 2);
-        assert_eq!(attempts[1].index, 2);
+        assert_eq!(attempts.len(), 3);
+        assert_eq!(attempts[1].index, 0);
+        assert!(attempts[1].vsync);
+        assert_eq!(attempts[2].index, 2);
         assert_eq!(actual.flags, ACCELERATED);
         assert!(fallback.is_none());
     }
@@ -57,7 +59,7 @@ fn failed_gles2_tries_other_accelerated_drivers() -> Result<(), String> {
         if attempt.index == 2 {
             Err("GLES2 unavailable on this video driver".into())
         } else {
-            Ok((attempt, info("metal", ACCELERATED)))
+            Ok((attempt, info("metal", ACCELERATED | VSYNC)))
         }
     })?;
     assert_eq!(selected.index, 0);
@@ -79,7 +81,7 @@ fn auto_falls_back_after_all_hardware_attempts_and_retains_errors() -> Result<()
     })?;
     assert_eq!(attempts.len(), 5);
     assert_eq!(selected.mode, RendererMode::Software);
-    assert!(!selected.vsync);
+    assert!(selected.vsync);
     let error = fallback.ok_or("missing hardware failure")?;
     assert!(error.contains("opengles2"));
     assert!(error.contains("metal"));
@@ -103,7 +105,7 @@ fn explicit_software_skips_hardware() -> Result<(), String> {
     let ((), _, fallback) = select(RendererMode::Software, &drivers(), |attempt| {
         assert_eq!(attempt.mode, RendererMode::Software);
         assert_eq!(attempt.index, 1);
-        assert!(!attempt.vsync);
+        assert!(attempt.vsync);
         Ok(((), info("software", SOFTWARE)))
     })?;
     assert!(fallback.is_none());
@@ -207,5 +209,34 @@ fn software_mesa_rejects_hardware_and_auto_keeps_reason() -> Result<(), String> 
         }
     }
     assert!(reject_software_gl(None).is_ok());
+    Ok(())
+}
+
+#[test]
+fn synchronized_backend_wins_over_unsynchronized_preferred_driver() -> Result<(), String> {
+    let (selected, _, _) = select(RendererMode::Auto, &drivers(), |attempt| {
+        Ok((
+            attempt,
+            info(
+                "driver",
+                ACCELERATED | if attempt.index == 0 { VSYNC } else { 0 },
+            ),
+        ))
+    })?;
+    assert_eq!(selected.index, 0);
+    assert!(selected.vsync);
+    Ok(())
+}
+
+#[test]
+fn software_without_vsync_still_has_a_buffered_fallback() -> Result<(), String> {
+    let (selected, _, _) = select(RendererMode::Software, &drivers(), |attempt| {
+        if attempt.vsync {
+            Err("VSync unavailable".into())
+        } else {
+            Ok((attempt, info("software", SOFTWARE)))
+        }
+    })?;
+    assert!(!selected.vsync);
     Ok(())
 }

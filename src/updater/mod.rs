@@ -90,9 +90,15 @@ pub struct Updater {
 }
 impl Updater {
     pub fn detail(&self) -> String {
-        self.relaunch_error
+        let mut detail = self
+            .relaunch_error
             .clone()
-            .unwrap_or_else(|| self.state.detail())
+            .unwrap_or_else(|| self.state.detail());
+        if let Some(notice) = crate::platform::linux_handheld::gpu_setup_notice() {
+            detail.push('\n');
+            detail.push_str(notice);
+        }
+        detail
     }
     pub const fn request_relaunch(&mut self) {
         if matches!(self.state, State::Installed { .. }) {

@@ -120,7 +120,7 @@ cannot satisfy this contract. See
 [release validation and assets](releases.md).
 
 ARM packaging also emits `bootstrap.py`, `install-session.py`, `uninstall.py`,
-`vitrallis-session.py`, and a `.sha256` sidecar for each. Initial installation
+`vitrallis-session.py`, `platform-setup.py`, `media-setup.py`, and a `.sha256` sidecar for each. Initial installation
 fetches the matching helpers from the same release as the bundle. Native OTA
 updates do not replace these helpers; rerun the reviewed bootstrap with the
 session closed when updating installation tooling.
@@ -168,3 +168,8 @@ The maximum total is 256 MiB plus 176 header bytes. Names never come from input.
 There are no legacy raw-executable readers or migration paths. Install the current
 complete bundle with the current installer when replacing an obsolete pre-release
 layout; equal versions do not become self-updates.
+
+PocketCHIP GPU provisioning is performed by the full session installer. Binary-only
+self-update does not execute privileged platform changes. On a device not yet
+provisioned, Settings → Updates directs the owner to rerun the matching installer;
+a pending device-tree reboot remains visible even after a shell relaunch.

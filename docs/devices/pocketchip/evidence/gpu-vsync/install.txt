@@ -1,0 +1,9 @@
+Optional graphics check from the desktop session after installation: ~/.local/share/vitrallis/current/vitrallis --graphics-test --renderer auto
+Configuring PocketCHIP GPU OPP and private utilization access. The system may request your administrator password.
+{"reboot_required": false, "lima_bound": true, "devfreq": true, "frequency_hz": 297000000}
+Installed: /home/chip/.local/share/vitrallis
+Backups: /home/chip/.local/share/vitrallis-backups/1789701733630492436
+Launch: /home/chip/.local/share/vitrallis/launch
+The original session and menu are unchanged. Run the launch command above.
+Native bundle SHA256: 5487971547cd91f527b61634b47c34288478f0ab9270d9a48b41732cd3ce7aca
+Offline uninstall: python3 "/home/chip/.local/share/vitrallis/uninstall.py"

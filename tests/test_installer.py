@@ -50,6 +50,17 @@ class Installer(unittest.TestCase):
         with patch.object(m, 'verify_versions'):
             m.install(self.binary, self.source, self.home)
 
+    def test_valid_bundle_runs_platform_setup(self):
+        with patch.object(m, 'setup_platform') as setup:
+            self.install()
+        setup.assert_called_once_with(self.source)
+
+    def test_invalid_bundle_never_runs_privileged_platform_setup(self):
+        self.binary.write_bytes(b'invalid')
+        with patch.object(m, 'setup_platform') as setup:
+            with self.assertRaises(ValueError): self.install()
+        setup.assert_not_called()
+
     def test_preserves_original_session_menu_bytes_and_idempotent_install(self):
         self.config.chmod(0o600)
         self.install()

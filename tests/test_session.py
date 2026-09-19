@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('session', Path(__file__).resolve().parents[1] / 'integrations/pocketchip/vitrallis-session.py')
 s = importlib.util.module_from_spec(spec)
@@ -14,6 +14,45 @@ spec.loader.exec_module(s)
 
 
 class Session(unittest.TestCase):
+    def test_compositor_preserves_existing_owner_and_requires_present(self):
+        x = Mock()
+        x.XOpenDisplay.return_value = 1
+        x.XDefaultScreen.return_value = 0
+        x.XInternAtom.return_value = 42
+        x.XGetSelectionOwner.return_value = 123
+        with patch.object(s.ctypes, 'CDLL', return_value=x), patch.object(s, 'log_chunk') as log, \
+                patch.object(s.subprocess, 'Popen') as spawn:
+            self.assertIsNone(s.start_compositor(Path('/unused')))
+            spawn.assert_not_called()
+            self.assertIn(b'compositor=existing', log.call_args.args[1])
+            x.XGetSelectionOwner.return_value = 0
+            x.XQueryExtension.return_value = 0
+            self.assertIsNone(s.start_compositor(Path('/unused')))
+            spawn.assert_not_called()
+            self.assertIn(b'X Present extension unavailable', log.call_args.args[1])
+            x.XQueryExtension.return_value = 1
+            self.assertIs(s.start_compositor(Path('/unused')), spawn.return_value)
+            self.assertEqual(spawn.call_args.args[0],
+                             ['/usr/bin/picom', '--config', '/dev/null', '--backend', 'xrender', '--vsync'])
+        self.assertEqual(x.XCloseDisplay.call_count, 3)
+
+    def test_session_drains_and_stops_only_its_compositor(self):
+        with tempfile.TemporaryDirectory() as temp, patch.object(s, 'awesome'):
+            root = Path(temp).resolve()
+            generation = root / 'generations' / ('a' * 64)
+            generation.mkdir(parents=True)
+            (root / 'current').symlink_to('generations/' + 'a' * 64)
+            binary = generation / 'vitrallis'
+            binary.write_text('#!/bin/sh\nsleep 0.2\necho shell-done\n')
+            binary.chmod(0o755)
+            compositor = subprocess.Popen(['/bin/sh', '-c', 'echo compositor-ready; exec sleep 30'],
+                                          stdout=subprocess.PIPE)
+            with patch.object(s, 'start_compositor', return_value=compositor):
+                self.assertEqual(s.supervise(root), 0)
+            self.assertIsNotNone(compositor.poll())
+            self.assertTrue(compositor.stdout.closed)
+            self.assertIn('compositor-ready', (root / 'session.log').read_text())
+
     def test_explicit_argv_and_cleanup_policy(self):
         env = dict(DISPLAY=':0', XAUTHORITY='/home/chip/.Xauthority', DBUS_SESSION_BUS_ADDRESS='unix:path=/run/user/1000/bus')
         args = s.launch_command(Path('/space here/100%/session.py'), env)

@@ -119,7 +119,7 @@ class ShellRelease(unittest.TestCase):
             data = (self.output / name).read_bytes()
             self.assertEqual(data, (ROOT / 'integrations/pocketchip' / name).read_bytes())
             self.assertEqual((self.output / (name + '.sha256')).read_text(), hashlib.sha256(data).hexdigest() + '  ' + name + '\n')
-        self.assertEqual(len(list(self.output.iterdir())), 10)
+        self.assertEqual(len(list(self.output.iterdir())), 2 + 2 * len(RELEASE.SESSION_HELPERS))
 
     def test_arm_soft_float_is_rejected(self):
         self.data = bytearray(84)

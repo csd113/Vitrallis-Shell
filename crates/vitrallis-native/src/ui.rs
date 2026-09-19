@@ -113,6 +113,7 @@ pub enum Input {
 
 /// One SDL event queue and canvas. No timers, animation thread, or idle repaint.
 pub struct Ui<'a> {
+    presentation: crate::renderer::PresentationClock,
     font: crate::font::Atlas<'a>,
     creator: &'a TextureCreator<WindowContext>,
     pub canvas: Canvas<Window>,
@@ -188,7 +189,9 @@ impl<'a> Ui<'a> {
             events,
             keyboard,
         } = session;
+        let presentation = crate::renderer::PresentationClock::new(&canvas);
         let mut ui = Self {
+            presentation,
             font: crate::font::Atlas::new(creator)?,
             creator,
             canvas,
@@ -361,7 +364,7 @@ impl<'a> Ui<'a> {
         .then_some(row)
     }
     pub fn present(&mut self) {
-        self.canvas.present();
+        self.presentation.present(&mut self.canvas);
     }
     /// Block until an event arrives. There is no idle timeout.
     /// # Errors

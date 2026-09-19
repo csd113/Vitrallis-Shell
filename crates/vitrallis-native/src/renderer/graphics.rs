@@ -119,6 +119,16 @@ pub fn report(info: &RendererInfo) -> String {
         info.output_size.0,
         info.output_size.1,
     );
+    out.push_str("Buffering: SDL complete-frame backbuffer\n");
+    let _ = writeln!(
+        out,
+        "Presentation: {}",
+        if info.vsync() && !info.software() {
+            "SDL VSync requested; GL swap interval 1 verified when applicable"
+        } else {
+            "synchronization unavailable/unverified; frame rate bounded, tearing possible"
+        }
+    );
     if let Some((w, h)) = info.display_size {
         let _ = writeln!(out, "Display: {w}x{h}");
     }

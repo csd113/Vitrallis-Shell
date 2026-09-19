@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import platform
+import pwd
 import re
 import resource
 import subprocess
@@ -57,7 +58,7 @@ def preflight():
     sdl.SDL_GetVersion(ctypes.byref(version))
     if (version.major, version.minor, version.patch) < (2, 26, 5):
         raise ValueError('Requires SDL2 2.26.5 or newer')
-    for name in ('python3', 'curl', 'systemctl', 'systemd-run', 'awesome', 'awesome-client'):
+    for name in ('python3', 'curl', 'systemctl', 'systemd-run', 'awesome', 'awesome-client', 'picom'):
         if not os.access('/usr/bin/' + name, os.X_OK):
             raise ValueError('Missing runtime prerequisite: /usr/bin/' + name)
     awesome = subprocess.check_output(['/usr/bin/awesome', '--version'], timeout=5, text=True)
@@ -227,7 +228,31 @@ def install(bundle, source, home, expected_version=None):
             generation.mkdir(mode=0o755)
             digest = extract_bundle(bundle, generation)
             verify_versions(generation, expected_version)
+            setup_platform(source)
             install_locked(generation, digest, home, inputs)
+
+
+def setup_platform(source):
+    """Privilege is confined to explicit platform provisioning, never the shell."""
+    compatible = Path('/sys/firmware/devicetree/base/compatible')
+    if not compatible.exists() or b'nextthing,pocketchip' not in compatible.read_bytes().split(b'\0'):
+        return
+    print('Configuring PocketCHIP GPU OPP and private utilization access. '
+          'The system may request your administrator password.', flush=True)
+    subprocess.run(['/usr/bin/sudo', '--', '/usr/bin/python3', '-I',
+                    str(source / 'platform-setup.py'), '--install-user', pwd.getpwuid(os.getuid()).pw_name],
+                   check=True)
+    print('Enabling the fixed FFmpeg installation action for Media Carousel. '
+          'No multimedia packages are installed until requested in the app.', flush=True)
+    subprocess.run(['/usr/bin/sudo', '--', '/usr/bin/python3', '-I',
+                    str(source / 'media-setup.py'), '--user', pwd.getpwuid(os.getuid()).pw_name],
+                   check=True)
+    state = Path('/var/lib/vitrallis-pocketchip/gpu-status.json')
+    status = json.loads(state.read_bytes())
+    if status.get('reboot_required') is True:
+        print('REBOOT REQUIRED: restart PocketCHIP to activate GPU utilization support.', flush=True)
+    elif status.get('trace_configured') is not True:
+        print('GPU utilization is unavailable: ' + status.get('trace_error', 'inspect platform setup status'), flush=True)
 
 
 def install_locked(generation, digest, home, inputs):

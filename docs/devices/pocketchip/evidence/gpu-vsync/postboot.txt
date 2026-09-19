@@ -1,0 +1,45 @@
+96.62 24.30
+{"reboot_required": false, "lima_bound": true, "devfreq": true, "frequency_hz": 297000000, "trace_configured": true}
+● vitrallis-gpu-trace.service - Vitrallis dedicated GPU utilization trace
+     Loaded: loaded (/etc/systemd/system/vitrallis-gpu-trace.service; enabled; preset: enabled)
+     Active: active (exited) since Thu 2026-09-17 20:27:18 PDT; 28s ago
+ Invocation: cea2cc2c99ca44aa849f35f82a43e3e6
+    Process: 290 ExecStart=/usr/bin/python3 -I /usr/libexec/vitrallis-pocketchip-gpu.py --boot (code=exited, status=0/SUCCESS)
+   Main PID: 290 (code=exited, status=0/SUCCESS)
+   Mem peak: 11.1M
+        CPU: 3.022s
+
+Sep 17 20:26:42 chip systemd[1]: Starting vitrallis-gpu-trace.service - Vitrallis dedicated GPU utilization trace...
+Sep 17 20:27:17 chip python3[290]: {"reboot_required": false, "lima_bound": true, "devfreq": true, "frequency_hz": 297000000, "trace_configured": true}
+Sep 17 20:27:18 chip systemd[1]: Finished vitrallis-gpu-trace.service - Vitrallis dedicated GPU utilization trace.
+/sys/bus/platform/drivers/lima
+297000000
+-r--r----- 1 root chip 0 Sep 17 20:27 /run/vitrallis-gpu/trace_pipe
+461df83541b59baac9d21bcd603374a51bcf7be15d65580cf43facea2f123da7  /boot/dtbs/6.12.107+deb13-chip/sun5i-r8-chip.dtb
+461df83541b59baac9d21bcd603374a51bcf7be15d65580cf43facea2f123da7  /usr/lib/linux-image-6.12.107+deb13-chip/sun5i-r8-chip.dtb
+ls: cannot access '/tmp/vitrallis-apps-validation/vitrallis-debug/gpu_metrics.py': No such file or directory
+● vitrallis-session.service - [systemd-run] /usr/bin/python3 /home/chip/.local/share/vitrallis/vitrallis-session.py run
+     Loaded: loaded (/run/user/1000/systemd/transient/vitrallis-session.service; transient)
+  Transient: yes
+     Active: active (running) since Thu 2026-09-17 20:28:18 PDT; 27s ago
+ Invocation: 6447f708cd3a4d4bb2209770d14b5d21
+   Main PID: 885 (python3)
+      Tasks: 6 (limit: 850)
+     Memory: 28.3M (peak: 29.7M)
+        CPU: 4.628s
+     CGroup: /user.slice/user-1000.slice/user@1000.service/app.slice/vitrallis-session.service
+             ├─885 /usr/bin/python3 /home/chip/.local/share/vitrallis/vitrallis-session.py run
+             ├─890 /usr/bin/picom --config /dev/null --backend xrender --vsync
+             └─891 /home/chip/.local/share/vitrallis/generations/5487971547cd91f527b61634b47c34288478f0ab9270d9a48b41732cd3ce7aca/vitrallis --linux-handheld
+
+Sep 17 20:28:18 chip systemd[592]: Started vitrallis-session.service - [systemd-run] /usr/bin/python3 /home/chip/.local/share/vitrallis/vitrallis-session.py run.
+presentation compositor=exited tearing_possible=true
+X connection to :0 broken (explicit kill or server shutdown).
+presentation compositor=picom backend=xrender buffering=present-pixmaps vsync=requested
+level=info event=discovery_paths config=None assets=["/usr/share/pocket-home", "/home/chip"]
+level=info event=discovery_source path="/usr/share/pocket-home/config.json"
+level=warn event=discovery message="Get Help: command not found or not executable: surf"
+level=info event=renderer_initialized requested=auto mode=hardware driver="opengles2" accelerated=true software=false vsync=true max_texture_width=4096 max_texture_height=4096 video_driver="x11" window_width=480 window_height=272 output_width=480 output_height=272 display_width=480 display_height=272 gl_vendor="Mesa" gl_renderer="Mali400" gl_version="OpenGL ES 2.0 Mesa 25.0.7-2+deb13u1" mesa_software=false buffering=sdl-backbuffer synchronization=sdl-vsync-requested fallback=false
+level=info event=ready width=480 height=272 apps=9
+  PID   RSS COMMAND
+  890  3540 /usr/bin/picom --config /dev/null --backend xrender --vsync

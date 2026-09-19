@@ -80,8 +80,8 @@ architecture has a four-binary bundle and sidecar:
 - `vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle`
 - `vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle.sha256`
 
-The ARM job also packages `bootstrap.py`, `install-session.py`, `uninstall.py` and
-`vitrallis-session.py`, each with its own `.sha256` sidecar. The resulting 12
+The ARM job also packages `bootstrap.py`, `install-session.py`, `uninstall.py`,
+`vitrallis-session.py`, `platform-setup.py` and `media-setup.py`, each with its own `.sha256` sidecar. The resulting 16
 assets come from the tagged checkout. The bootstrap obtains matching helpers
 and bundle from one release; native OTA updates replace only the four-binary
 generation. Installer/session helper updates require rerunning the reviewed

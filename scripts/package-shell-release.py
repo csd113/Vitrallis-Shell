@@ -14,7 +14,7 @@ TARGETS = {'x86_64-unknown-linux-gnu': (2, 62),
 BINARIES = ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files')
 MAGIC = b'VITRALLIS-BUNDLE'
 ROOT = Path(__file__).resolve().parents[1]
-SESSION_HELPERS = ('bootstrap.py', 'install-session.py', 'uninstall.py', 'vitrallis-session.py')
+SESSION_HELPERS = ('bootstrap.py', 'install-session.py', 'uninstall.py', 'vitrallis-session.py', 'platform-setup.py', 'media-setup.py')
 
 
 def inventory(directory, target, version, runner):

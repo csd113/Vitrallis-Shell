@@ -1,4 +1,12 @@
-//! Shared SDL capability selection with optional read-only graphics diagnostics.
+//! Native presentation boundary: compose complete frames in SDL's backbuffer,
+//! then present once with `VSync`.
+//!
+//! Shell widgets and native apps must use this
+//! factory and `PresentationClock`; never draw into a visible window surface.
+//! Unsynchronized presentation is a diagnosed fallback only after every
+//! accelerated backend has failed to supply synchronization.
+//! On X11, a successful swap interval does not prove tear-free scanout for
+//! windowed surfaces. The `PocketCHIP` session supplies a Present compositor.
 use sdl2::{render::Canvas, video::Window};
 use sdl2::{render::RendererInfo as SdlInfo, sys::SDL_RendererFlags};
 use std::fmt;
@@ -112,6 +120,15 @@ impl fmt::Display for RendererInfo {
                 gl.software()
             )?;
         }
+        write!(
+            f,
+            " buffering=sdl-backbuffer synchronization={}",
+            if self.vsync() && !self.software() {
+                "sdl-vsync-requested"
+            } else {
+                "unverified-fallback"
+            }
+        )?;
         if let Some(error) = &self.hardware_error {
             write!(f, " fallback=true hardware_error={error:?}")
         } else {
@@ -161,8 +178,8 @@ fn select<T>(
         // Prefer the GLES2 backend when SDL actually provides it. All remaining
         // accelerated drivers retain SDL's order (e.g. Metal on a macOS host).
         hardware.sort_by_key(|(_, info)| info.name != "opengles2");
-        for (index, driver) in hardware {
-            for vsync in [true, false] {
+        for vsync in [true, false] {
+            for (index, driver) in &hardware {
                 let attempt = Attempt {
                     index: *index,
                     mode: RendererMode::Hardware,
@@ -170,6 +187,9 @@ fn select<T>(
                 };
                 let result = create(attempt).and_then(|(canvas, info)| {
                     verify(attempt.mode, &info)?;
+                    if attempt.vsync && info.flags & VSYNC == 0 {
+                        return Err("renderer did not enable requested VSync".into());
+                    }
                     Ok((canvas, info))
                 });
                 match result {
@@ -198,15 +218,23 @@ fn select<T>(
         .find(|(_, info)| verify(RendererMode::Software, info).is_ok())
         .ok_or_else(|| "SDL advertises no software render driver".to_owned())
         .and_then(|(index, _)| {
-            create(Attempt {
-                index: *index,
-                mode: RendererMode::Software,
-                vsync: false,
-            })
-        })
-        .and_then(|(canvas, info)| {
-            verify(RendererMode::Software, &info)?;
-            Ok((canvas, info))
+            let mut last_error = String::new();
+            for vsync in [true, false] {
+                let result = create(Attempt {
+                    index: *index,
+                    mode: RendererMode::Software,
+                    vsync,
+                })
+                .and_then(|(canvas, info)| {
+                    verify(RendererMode::Software, &info)?;
+                    Ok((canvas, info))
+                });
+                match result {
+                    Ok(value) => return Ok(value),
+                    Err(error) => last_error = error,
+                }
+            }
+            Err(last_error)
         });
     match result {
         Ok((canvas, info)) => Ok((canvas, info, hardware_error)),
@@ -230,10 +258,18 @@ pub fn initialize(
     // Failed attempts may destroy the last window. They must not queue a quit
     // event that closes the eventual successful renderer (notably on macOS).
     sdl2::hint::set("SDL_QUIT_ON_LAST_WINDOW_CLOSE", "0");
+    // SDL/environment hints must not silently override the native UI contract.
+    sdl2::hint::set_with_priority("SDL_RENDER_VSYNC", "1", &sdl2::hint::Hint::Override);
+    video.gl_attr().set_double_buffer(true);
     let ((canvas, output_size, gl), sdl, hardware_error) =
         select(requested, &drivers, |attempt| {
             // A fresh window discards any GL/Metal state from a failed backend.
             // Keep unsuccessful attempts hidden and preserve the same window policy.
+            sdl2::hint::set_with_priority(
+                "SDL_RENDER_VSYNC",
+                if attempt.vsync { "1" } else { "0" },
+                &sdl2::hint::Hint::Override,
+            );
             let window = window()?;
             let builder = window.into_canvas().index(attempt.index);
             let mut builder = if attempt.mode == RendererMode::Software {
@@ -250,6 +286,14 @@ pub fn initialize(
             let gl = graphics::current_gl(&mut canvas);
             if attempt.mode == RendererMode::Hardware {
                 reject_software_gl(gl.as_ref())?;
+                if attempt.vsync && gl.is_some() {
+                    // SDL can simulate VSync using a timer even on GL. Require
+                    // a real swap interval before accepting this attempt.
+                    video.gl_set_swap_interval(sdl2::video::SwapInterval::VSync)?;
+                    if video.gl_get_swap_interval() != sdl2::video::SwapInterval::VSync {
+                        return Err("GL did not enable swap interval 1".into());
+                    }
+                }
             }
             canvas.window_mut().show();
             // Showing a fullscreen-desktop window can change its drawable size.
@@ -278,6 +322,12 @@ pub fn initialize(
         hardware_error,
         gl,
     };
+    if !info.vsync() || info.software() {
+        eprintln!(
+            "level=warn event=presentation_fallback driver={:?} synchronization=unverified pacing=bounded tearing_possible=true",
+            info.sdl.name
+        );
+    }
     if let Some(error) = &info.hardware_error {
         eprintln!(
             "Hardware renderer initialization failed: {error:?}. Vitrallis is continuing with software rendering. Check Mesa DRI/EGL/GLES packages, DRM permissions and display access. Run vitrallis --graphics-info for diagnostics."
@@ -291,6 +341,45 @@ fn reject_software_gl(gl: Option<&graphics::GlInfo>) -> Result<(), String> {
         "SDL accelerated backend uses software Mesa renderer {:?}; genuine GPU acceleration is unavailable",
         gl.renderer
     )))
+}
+
+/// Bounds production frame submission even during sustained input or PTY output.
+///
+/// Hardware `VSync` is the primary synchronizer. The deadline only prevents an
+/// unavailable/nonblocking backend from spinning; it is not a vblank substitute.
+/// Idle callers continue to block in their event queue and do not repaint.
+pub struct PresentationClock {
+    next_frame: std::time::Instant,
+    interval: std::time::Duration,
+}
+
+impl PresentationClock {
+    #[must_use]
+    pub fn new(canvas: &Canvas<Window>) -> Self {
+        let window = canvas.window();
+        let refresh = window
+            .display_index()
+            .ok()
+            .and_then(|index| window.subsystem().current_display_mode(index).ok())
+            .map_or(60, |mode| mode.refresh_rate);
+        Self {
+            next_frame: std::time::Instant::now(),
+            interval: std::time::Duration::from_secs_f64(1.0 / f64::from(refresh.clamp(30, 240))),
+        }
+    }
+
+    /// Present one complete backbuffer on the SDL/main thread. Time spent waiting
+    /// for the backend's swap consumes the deadline; no extra post-swap sleep.
+    pub fn present(&mut self, canvas: &mut Canvas<Window>) {
+        let wait = self
+            .next_frame
+            .saturating_duration_since(std::time::Instant::now());
+        if !wait.is_zero() {
+            std::thread::sleep(wait);
+        }
+        self.next_frame = std::time::Instant::now() + self.interval;
+        canvas.present();
+    }
 }
 
 #[cfg(test)]

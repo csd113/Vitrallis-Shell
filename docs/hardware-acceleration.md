@@ -9,7 +9,8 @@ DispmanX dependency is required. Newer native desktop SDL backends may also work
 
 SDL's advertised `opengles2` backend is preferred; other accelerated drivers keep
 SDL's order. Each failed attempt drops its renderer/window before retrying, first
-without vsync, then with the next driver. `auto` falls back to SDL software after
+with VSync on every accelerated driver, then without synchronization only if all
+synchronized attempts failed. GL contexts additionally require swap interval 1. `auto` falls back to SDL software after
 all hardware attempts fail. `hardware` fails instead of silently using software.
 `software` bypasses accelerated selection. All four binaries accept `--renderer auto|hardware|software`; the shell passes its policy to native children.
 
@@ -89,7 +90,8 @@ Mesa Lima. Its installed packages were verified with `dpkg-query`:
 | GLES2 dispatcher | `libgles2` |
 | DRM userspace library | `libdrm2` |
 
-The existing installer does not run apt or require root. It retains SDL's required
+The installer does not run apt. Its PocketCHIP GPU provisioning step uses sudo
+for the root-owned platform helper; the desktop remains unprivileged. It retains SDL's required
 runtime check and gives nonfatal advice for missing EGL/GLES/DRM libraries or
 `/dev/dri`. Package provisioning stays with the device owner/distro image. Missing
 DRM nodes must not block a software-capable installation. No proprietary Mali
@@ -109,12 +111,12 @@ hardware --graphics-test` should fail when Mesa exposes a recognized software
 renderer. The equivalent Auto invocation should pass using SDL software. This
 sets a process-local environment variable, not a system graphics configuration.
 
-A missing GPU-utilization counter means **unavailable**, not 0% utilization. The
-physical target exposes no devfreq GPU device or per-client DRM engine-time
-fdinfo counters to this account. GP/PP interrupt deltas and GPU runtime power
-state are corroborating signals; they are system-wide and are not a per-process
-utilization percentage. Never treat a debug app's empty GPU graph as authoritative
-unless its counters actually support Mali/Lima on the running kernel.
+Lima utilization comes from the kernel's `devfreq_monitor` load field when the
+GPU has an OPP/devfreq configuration. The normal PocketCHIP installer provisions
+the device-validated single 297 MHz OPP and private trace access. Missing OPP data,
+unavailable tracing, and an unsupported GPU are separate Debug states; 0% is a
+valid sample. GPU runtime suspension can stop samples, in which case old values
+expire rather than being held indefinitely. See [GPU setup and verification](devices/pocketchip/gpu-utilization.md).
 
 ## Architectural support and physical validation
 

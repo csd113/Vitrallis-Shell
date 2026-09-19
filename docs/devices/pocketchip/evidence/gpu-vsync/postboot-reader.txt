@@ -1,0 +1,23 @@
+uid 1000 global_trace_readable False
+state WORKING load 16 frequency_hz 297000000
+state WORKING load 39 frequency_hz 297000000
+state WORKING load 94 frequency_hz 297000000
+state WORKING load 96 frequency_hz 297000000
+state WORKING load 97 frequency_hz 297000000
+state WORKING load 96 frequency_hz 297000000
+state WORKING load 96 frequency_hz 297000000
+state WORKING load 96 frequency_hz 297000000
+state WORKING load 93 frequency_hz 297000000
+state WORKING load 95 frequency_hz 297000000
+state WORKING load 97 frequency_hz 297000000
+state WORKING load 92 frequency_hz 297000000
+state WORKING load 77 frequency_hz 297000000
+state WORKING load 59 frequency_hz 297000000
+state WORKING load 31 frequency_hz 297000000
+state WORKING load 7 frequency_hz 297000000
+state WORKING load 44 frequency_hz 297000000
+state WORKING load 65 frequency_hz 297000000
+state WORKING load 86 frequency_hz 297000000
+state WORKING load 82 frequency_hz 297000000
+state WORKING load 64 frequency_hz 297000000
+reader_closed True

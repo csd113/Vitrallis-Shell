@@ -82,7 +82,7 @@ lifecycle and the dedicated accelerated refresh regression. SDL's
 [GLES2 implementation](https://raw.githubusercontent.com/libsdl-org/SDL/release-2.26.5/src/render/opengles2/SDL_render_gles2.c)
 provides the backend context for that test.
 
-The shell retains 16 ms dirty-frame pacing and 250 ms bounded polling. Identical
+The shell uses the shared display-rate presentation clock and 250 ms bounded polling. Identical
 system status no longer schedules a frame; irrelevant motion/queue events do not
 redraw App Center or desktop panels. Settings compares slider selection/preview
 while preserving drag handling. Native waits consume ignored events without
@@ -189,3 +189,56 @@ The opt-in idle observation passed with two initial frames over 2.005 seconds;
 no frame occurred after the first 500 ms. This is a short deterministic idle check,
 not a long-term system polling or battery benchmark. Exact physical-device
 acceptance remains the hardware work listed above.
+
+## Native presentation contract and path audit
+
+All changing native UI must render a complete SDL backbuffer, then present once.
+`vitrallis-native::renderer::initialize` requests VSync across all accelerated
+backends before accepting an unsynchronized fallback. GL initialization requests
+a double-buffered context and verifies swap interval 1. SDL's render API already
+buffers drawing, so no extra full-screen software buffer or copy is introduced.
+
+| Native path | Backend / buffering | Presentation / scheduling | Bypasses factory? |
+| --- | --- | --- | --- |
+| Shell background, desktop, launcher, panels, menus, notifications, settings, App Center, shortcut editor and transition frames | Shared SDL Canvas, complete backbuffer | `Screen::present` → `PresentationClock` → SDL present; dirty events only | No |
+| Terminal, including live PTY output and confirmations | Shared native Session/Ui, SDL backbuffer | `Ui::present`; blocking event queue and bounded PTY batches | No |
+| Notepad, Files, file browser, native widgets and modal dialogs | Shared native Session/Ui, SDL backbuffer | `Ui::present`; blocks on input while idle | No |
+| Graphics self-test / preview / screenshot | Same renderer and backbuffer; readback precedes present | One frame, then exit | No |
+| Pixel oracle and renderer benchmarks | Explicit software/accelerated canvases in `cfg(test)` code | Test-only timing/readback | Yes, tests only |
+
+No production code creates a raw framebuffer or visible window surface. Textures
+and decoded image surfaces are off-screen assets, never separate presentation
+paths. New native components must inherit Session/Ui or the shared factory and
+presentation clock, rather than create ad-hoc canvases or swap paths.
+
+The presentation deadline counts time spent in SDL's synchronized swap. It bounds
+submission during event/output floods and on nonblocking fallback backends; it is
+not a substitute for vblank. Idle UI does not redraw. The old shell-only 16 ms
+delay after present was removed to avoid delaying an already synchronized frame.
+`renderer_initialized` logs backend, `buffering=sdl-backbuffer`, VSync and the
+synchronization mechanism. Software or unavailable synchronization produces an
+explicit warning: complete-frame buffering remains, but tearing is possible.
+
+On PocketCHIP the accelerated path remains SDL → Mesa Lima, through Xorg's
+modesetting/glamor and DRI3/Present stack. Windowed swaps cannot necessarily flip
+the screen even when swap interval 1 succeeds. The PocketCHIP session therefore
+owns one effects-free Picom XRender compositor when no compositor already owns
+the screen. It composes into full-screen pixmaps and submits them through X
+Present with VSync, preserving glamor acceleration. It is supervised alongside
+the shell, with bounded logs and cleanup on session exit. Existing compositors
+are preserved; their synchronization is externally managed. Missing Picom,
+missing Present, or compositor exit produces a clear possible-tearing warning.
+The installer checks Picom as a distro prerequisite.
+
+The device test observes actual Present completion modes: `FLIP`, with MSC/UST
+corresponding to the panel's 59.52 Hz refresh when awake. DPMS-off outputs can
+instead report synthetic slow `COPY` completions, so check an awake display and
+moving content. SDL diagnostics alone prove API configuration, not physical
+scanout. See [GPU and presentation evidence](devices/pocketchip/gpu-utilization.md).
+
+Third-party applications control their
+own renderers; this contract does not force their swaps to synchronize. SDL's
+[backbuffer contract](https://wiki.libsdl.org/SDL2/SDL_RenderPresent) and
+[swap interval API](https://wiki.libsdl.org/SDL2/SDL_GL_SetSwapInterval) explain the
+underlying behavior. Actual presentation is still subject to the active display
+driver, compositor and administrator driver overrides.

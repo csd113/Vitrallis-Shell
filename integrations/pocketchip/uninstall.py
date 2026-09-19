@@ -20,7 +20,7 @@ sys.dont_write_bytecode = True
 
 BINARIES = ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files')
 MAGIC = b'VITRALLIS-BUNDLE'
-HELPERS = ('install-session.py', 'uninstall.py', 'vitrallis-session.py')
+HELPERS = ('install-session.py', 'uninstall.py', 'vitrallis-session.py', 'platform-setup.py', 'media-setup.py')
 
 
 def safe(path):

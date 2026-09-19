@@ -10,6 +10,8 @@ integrations/pocketchip/
   install-session.py                  Canonical user installer
   uninstall.py                Offline receipt-based removal and recovery
   vitrallis-session.py         Awesome/systemd session and recovery
+  platform-setup.py            Privileged GPU OPP/tracefs provisioning
+  media-setup.py               Fixed privileged FFmpeg installation action
   run-session.sh            Launch the installed user session
 apps/{terminal,notepad,files}/  First-party Rust binary/library workspace packages
 crates/vitrallis-native/       Small SDL UI, document, browser, filesystem and IPC helpers
@@ -58,7 +60,7 @@ Device integration directories retain their device names; `integrations/pocketch
 contains the PocketCHIP installation and Awesome/systemd session helpers.
 The ARMv7 `install-session.py` also contains its current rollback/repair logic;
 the installer and self-contained offline uninstaller share filesystem guards. Keep
-`install-session.py`, `uninstall.py` and `vitrallis-session.py` together when staging. See the
+`install-session.py`, `uninstall.py`, `vitrallis-session.py`, `platform-setup.py` and `media-setup.py` together when staging. See the
 [device guide](devices/pocketchip.md) for the payload and recovery instructions.
 
 `discovery::catalog::CatalogFile` handles bounded device-menu reads separately

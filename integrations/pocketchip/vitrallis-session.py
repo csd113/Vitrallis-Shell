@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Reversible Awesome launch target, supervised by the existing user systemd."""
 import os
+import ctypes
 import fcntl
 from pathlib import Path
 import selectors
@@ -102,6 +103,57 @@ def log_chunk(path, data):
         stream.write(data)
 
 
+def start_compositor(log):
+    """Own one effects-free X Present compositor for this session, if needed.
+
+    Child/windowed swaps cannot pageflip an uncomposited root window. XRender
+    composition uses the existing glamor acceleration and a full-screen Present
+    backbuffer. Never replace another compositor or daemonize outside our unit.
+    """
+    display = None
+    try:
+        x = ctypes.CDLL('libX11.so.6')
+        x.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x.XOpenDisplay.restype = ctypes.c_void_p
+        x.XDefaultScreen.argtypes = [ctypes.c_void_p]
+        x.XDefaultScreen.restype = ctypes.c_int
+        x.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        x.XInternAtom.restype = ctypes.c_ulong
+        x.XGetSelectionOwner.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        x.XGetSelectionOwner.restype = ctypes.c_ulong
+        x.XQueryExtension.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
+                                     ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int),
+                                     ctypes.POINTER(ctypes.c_int)]
+        x.XQueryExtension.restype = ctypes.c_int
+        x.XCloseDisplay.argtypes = [ctypes.c_void_p]
+        x.XCloseDisplay.restype = ctypes.c_int
+        display = x.XOpenDisplay(None)
+        if not display:
+            raise OSError('Cannot inspect X11 compositor ownership')
+        name = ('_NET_WM_CM_S' + str(x.XDefaultScreen(display))).encode('ascii')
+        atom = x.XInternAtom(display, name, 0)
+        if x.XGetSelectionOwner(display, atom):
+            log_chunk(log, b'presentation compositor=existing synchronization=externally-managed\n')
+            return None
+        opcode, event, error = ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+        if not x.XQueryExtension(display, b'Present', ctypes.byref(opcode),
+                                 ctypes.byref(event), ctypes.byref(error)):
+            raise OSError('X Present extension unavailable')
+        log_chunk(log, b'presentation compositor=picom backend=xrender buffering=present-pixmaps vsync=requested\n')
+        process = subprocess.Popen(['/usr/bin/picom', '--config', '/dev/null',
+                                    '--backend', 'xrender', '--vsync'],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.STDOUT)
+        return process
+    except OSError as error:
+        log_chunk(log, ('presentation compositor=unavailable tearing_possible=true: '
+                        + str(error) + '\n').encode())
+        return None
+    finally:
+        if display:
+            x.XCloseDisplay(display)
+
+
 def supervise(base):
     marker = base / '.installation-pending'
     regular(marker)
@@ -128,6 +180,7 @@ def supervise(base):
     regular(log)
     regular(log.with_suffix('.log.1'))
     child = None
+    compositor = None
     def stopping(signum, frame):
         if child is not None:
             child.terminate()
@@ -135,24 +188,39 @@ def supervise(base):
     signal.signal(signal.SIGINT, stopping)
     try:
         awesome(HOME_HOOK)
+        compositor = start_compositor(log)
         child = subprocess.Popen([str(binary), '--linux-handheld'], stdin=subprocess.DEVNULL,
                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         # Drain continuously; app output cannot fill an undrained pipe or grow
         # the log without bound. systemd removes every child on supervisor exit.
         with selectors.DefaultSelector() as selector:
             selector.register(child.stdout, selectors.EVENT_READ)
+            if compositor is not None:
+                selector.register(compositor.stdout, selectors.EVENT_READ)
             while True:
-                if selector.select(timeout=0.25):
-                    data = os.read(child.stdout.fileno(), 8192)
-                    if not data:
-                        break
-                    log_chunk(log, data)
+                for key, _ in selector.select(timeout=0.25):
+                    data = os.read(key.fd, 8192)
+                    if data:
+                        log_chunk(log, data)
+                    else:
+                        selector.unregister(key.fileobj)
+                        if compositor is not None and key.fileobj is compositor.stdout:
+                            log_chunk(log, b'presentation compositor=exited tearing_possible=true\n')
                 if child.poll() is not None:
                     break
         return child.wait()
     finally:
-        if child is not None and child.poll() is None:
-            child.terminate()
+        for process in (child, compositor):
+            if process is None:
+                continue
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            process.stdout.close()
         awesome(RESTORE_HOOK)
 
 
