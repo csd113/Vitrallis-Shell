@@ -1,0 +1,5 @@
+# Latest SDL2 requires bitflags 1; latest PNG requires bitflags 2 and miniz_oxide
+# 0.8, while latest flate2 requires miniz_oxide 0.9. Keep the duplicate-crate lint
+# enabled for all other crates. Remove each exception when upstreams converge.
+# See docs/dependencies.md for the dependency paths and upgrade policy.
+allowed-duplicate-crates = ["bitflags", "miniz_oxide"]

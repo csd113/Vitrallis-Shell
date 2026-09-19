@@ -458,7 +458,10 @@ pub(super) fn validate_icon(bytes: &[u8]) -> Result<(), String> {
     if !(1..=512).contains(&info.width) || !(1..=512).contains(&info.height) || info.interlaced {
         return Err("invalid icon dimensions/interlacing".into());
     }
-    let mut pixels = vec![0; reader.output_buffer_size()];
+    let size = reader
+        .output_buffer_size()
+        .ok_or("PNG output buffer exceeds addressable memory")?;
+    let mut pixels = vec![0; size];
     reader.next_frame(&mut pixels).map_err(|e| e.to_string())?;
     reader.finish().map_err(|e| e.to_string())?;
 

@@ -1,151 +1,125 @@
 # Rust 1.91 and dependency policy
 
 The workspace uses edition 2024, Cargo resolver 3 and `rust-version = "1.91"`.
-`rust-toolchain.toml` pins Rust **1.91.1** (including rustfmt and Clippy), so the
-release baseline uses the latest 1.91 patch. Rust 1.91.0 is also checked separately to verify the declared minimum. Future
-workspace packages should inherit `version`, `edition`, `rust-version` and
-shared dependencies. Python-only applications do not require Rust.
+`rust-toolchain.toml` pins Rust **1.91.1** with rustfmt and Clippy. CI also checks
+1.91.0 to verify the declared minimum. Workspace packages inherit `version`,
+`edition`, `rust-version` and shared dependencies. The dependency refresh does
+not change the Vitrallis release version, compiler baseline or device ABI.
 
-The historical 2026-09-10 audit below covered all four direct dependencies, the complete Cargo
-lockfile, features, optional/build/dev dependencies, external Store code and
-build/CI tooling. There are no owned pip/npm dependencies, Python SDK package,
-Git Cargo dependencies, build script dependencies, at that time. The native-application additions below supersede that workspace inventory. Python scripts use the standard library. The Store uses standard-library
-Tk with an existing app-local runtime; do not upgrade global/device Python or
-Debian packages for this release.
+## Dependency review: 2026-09-19
 
-## Selected direct releases
+All ten direct registry dependencies use their newest non-yanked stable release.
+The manifest records those versions as minimum compatible requirements; the
+lockfile fixes the exact resolved graph for release and CI builds.
 
-| Dependency | Selected | Newest stable checked | Result |
-| --- | --- | --- | --- |
-| SDL2 Rust bindings | 0.38.0 | 0.38.0 | Current; `use-pkgconfig` enabled, bundled SDL disabled |
-| font8x8 | 0.3.1 | 0.3.1 | Current; only Unicode tables enabled, defaults disabled |
-| serde_json | 1.0.151 | 1.0.151 | Current; standard defaults, bounded JSON input |
-| png | 0.17.16 | 0.18.1 | Explicit exception below |
+| Dependency | Selected stable release | Features / purpose |
+| --- | --- | --- |
+| sdl2 | 0.38.0 | `use-pkgconfig`; no bundled SDL build |
+| font8x8 | 0.3.1 | Unicode tables only; defaults disabled |
+| libc | 0.2.189 | POSIX boundary in the shared native crate and Terminal |
+| vt100 | 0.16.2 | ANSI/VT terminal state |
+| serde_json | 1.0.151 | Bounded JSON input |
+| serde | 1.0.229 | Recursive duplicate-key-rejecting JSON visitor |
+| toml | 1.1.6+spec-1.1.0 | `std`, `parse`, `serde`; defaults disabled |
+| semver | 1.0.28 | Standard version precedence |
+| sha2 | 0.11.0 | Streaming SHA-256; defaults disabled |
+| png | 0.18.1 | Bounded icon decoding and validation |
 
-Sources: [SDL2](https://docs.rs/crate/sdl2/0.38.0),
-[font8x8](https://docs.rs/crate/font8x8/0.3.1),
-[serde_json](https://docs.rs/crate/serde_json/1.0.151),
-[PNG](https://docs.rs/crate/png/0.18.1).
-The registry index was refreshed with Cargo, then every non-yanked stable
-version was compared with every locked registry package. `cargo outdated` was
-also run; its workspace-inherited direct-dependency output alone misses the
-exact PNG pin, so an "all up to date" result is not sufficient evidence.
+Versions were verified against the live crates.io index, including all **51**
+locked registry package entries. `cargo upgrade` also checked incompatible and
+pinned releases with the Rust-version filter disabled. `cargo outdated
+--workspace` reports no upgrades, but that result alone does not expose every
+upstream transitive constraint.
 
-## Exact exceptions and migration blockers
+PNG was upgraded from 0.17.16 to 0.18.1 and flate2 from 1.1.9 to 1.1.10. The PNG
+0.18 API requires seekable buffered input and returns an optional output buffer
+size. All three decoder paths handle an unrepresentable size as an error before
+allocation; existing image dimensions and decoder memory limits remain enforced.
+Regression coverage checks RGB, grayscale, grayscale/alpha, 16-bit RGBA, palette
+transparency, malformed input and oversized assets.
 
-| Dependency | Selected | Newest | Concrete blocker |
-| --- | --- | --- | --- |
-| png | 0.17.16 | 0.18.1 | 0.18 requires bitflags 2 while the newest SDL2 requires bitflags 1. The migrated decoder compiled (seekable input plus checked optional output size), but strict `clippy::multiple_crate_versions` rejected the resulting graph. No compatible upstream SDL2 release exists to unify these dependencies. |
-| bitflags | 1.3.2 | 2.13.2 | Required by SDL2 0.38.0 and the retained PNG release; cannot substitute 2.x through a lockfile update. |
-| flate2 | 1.1.9 | 1.1.10 | 1.1.10 requires miniz_oxide 0.9 while PNG directly requires 0.8. Both versions fail the same required duplicate-dependency gate. |
-| miniz_oxide | 0.8.9 | 0.9.1 | PNG's direct 0.8 requirement prevents unification with 0.9. |
-| version-compare | 0.1.1 | 0.2.1 | SDL2-sys 0.38.0 build dependency is constrained to 0.1. |
+Sources: [crates.io index](https://index.crates.io/config.json),
+[PNG 0.18.1 reader API](https://docs.rs/png/0.18.1/png/struct.Reader.html),
+[SDL2 0.38.0](https://docs.rs/crate/sdl2/0.38.0),
+[flate2 1.1.10](https://docs.rs/crate/flate2/1.1.10).
 
-These are policy/upstream constraints, not Rust 1.91 compiler failures. No major
-Rust dependency migration is included in the final candidate: the only newer
-direct incompatible release was attempted and is explicitly deferred. This is
-not a claim that every dependency is latest. Resolving these constraints needs
-coordinated upstream SDL2/PNG changes or a separately reviewed dependency policy
-change. SDL3 would also require replacing the device's validated native SDL2 ABI
-and is outside a conservative launcher hardening pass. No vendored forks,
-redundant direct dependencies, or lint suppressions were added to hide this.
+## Upstream transitive constraints
 
-The lockfile is version 4 and has no duplicate crate versions. All other locked
-registry packages matched the newest stable release at review. `cargo audit`
-with 1,243 loaded RustSec advisories reported no advisories or unmaintained-crate
-warnings. This does not audit the device's native OS libraries or establish
-trust in remote applications.
+| Dependency retained | Newest stable | Required by |
+| --- | --- | --- |
+| bitflags 1.3.2 | 2.13.2 | SDL2 0.38.0 requires 1.x; PNG uses the latest 2.x alongside it |
+| miniz_oxide 0.8.9 | 0.9.1 | PNG 0.18.1 requires 0.8; flate2 uses the latest 0.9 alongside it |
+| version-compare 0.1.1 | 0.2.1 | SDL2-sys 0.38.0 has a 0.1 build dependency |
 
-Reproduce resolution after manifest changes:
+These are the only locked registry entries below the newest stable release.
+Cargo cannot replace them with incompatible versions without upstream changes.
+SDL3 would change the validated native SDL2 ABI and is a separate migration.
+
+`clippy.toml` allows duplicate versions only for **bitflags** and **miniz_oxide**,
+using Clippy's [allowed-duplicate-crates configuration](https://doc.rust-lang.org/clippy/lint_configuration.html#allowed-duplicate-crates).
+This replaces the old PNG/flate2 downgrade policy so direct dependencies can stay
+current. The required strict Clippy command remains unchanged, and duplicate
+versions of other crates still fail validation. Remove each named exception when
+upstream requirements converge; do not add forks or unused direct dependencies
+to force incompatible transitive upgrades.
+
+Compression retains the pure Rust miniz backend. `zlib-rs` 0.6.8 appears in the
+lockfile through an optional PNG/flate2 feature, but that feature is not enabled
+by this workspace. There is no new native compression library requirement.
+The refreshed lockfile passed `cargo audit` with **1,251** loaded RustSec
+advisories and no reported advisories or unmaintained-crate warnings. This does
+not audit native OS libraries or establish trust in remote applications.
+
+Reproduce the review after manifest changes:
 
 ```sh
+cargo upgrade --dry-run --incompatible allow --pinned allow --ignore-rust-version
 cargo update
-# Reviewed exception: preserve one miniz_oxide version with the PNG constraint.
-cargo update -p flate2 --precise 1.1.9
 cargo outdated --workspace
-cargo tree --duplicates
-cargo tree --edges features
+cargo tree --workspace --duplicates
+cargo tree --workspace --edges features
 cargo audit
 sh scripts/validate.sh
 ```
 
-Review the regenerated lockfile; release and CI builds use `--locked`. Do not
-silently remove the documented exception after a general `cargo update`.
-Compression remains the pure Rust miniz backend; no native compression library,
-network feature, or bundled SDL build is enabled by this candidate.
+Do not restore the superseded PNG or flate2 pins. Review the regenerated
+lockfile and upstream requirements; release and CI builds use `--locked`.
 
 ## Build tools and external code
 
-The ARM pass upgrades the optional cargo-zigbuild tool from 0.22.1 to **0.23.4**,
-installed into ignored `target/beta/tools`, and uses Zig **0.16.0**. Tool binaries
-are not application dependencies. Install them on the development host, never
-on the target device. The native image retains SDL **2.32.4** and its existing Python
-**3.13.5**/Tk runtime; these are image compatibility inputs, not owned dependency
-pins to be upgraded globally.
+There are no owned pip/npm dependency manifests, Git Cargo dependencies or
+third-party build-script dependencies. Python scripts use the standard library.
+Device and simulator Python/Tk, SDL2, Debian packages and optional host
+cargo-zigbuild/Zig installations are environment prerequisites, not owned Cargo
+dependency pins. This refresh does not upgrade global or device packages.
 
-CI uses [actions/checkout 7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1)
-at its full commit SHA, read-only repository permissions and no persisted Git
-credentials. There were no previous CI action pins. Ubuntu's packaged SDL/Tk
-are host test prerequisites. The workflow has been reviewed locally; a remote
-Actions run is not claimed before committing/pushing.
+CI's only external action, [actions/checkout 7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1),
+was verified as the latest release and remains pinned to its full commit SHA.
+Repository permissions and disabled credential persistence are unchanged. The
+release container remains Debian 12 with Rust 1.91.1 to preserve the release ABI.
 
-Rust 1.91.1 includes the upstream 1.91 patch fixes; the declared MSRV remains
-1.91. CI checks both 1.91.0 and 1.91.1. See the
-[official Rust release notes](https://doc.rust-lang.org/stable/releases.html#version-1911-2025-11-10).
+## Application dependency boundaries
 
-## Shell updater additions
+The updater and App Center share semver, SHA-256 and PNG validation. Networking
+uses optional system `/usr/bin/curl`, avoiding an HTTP/TLS dependency stack.
+App Center parses the complete manifest v1 TOML grammar, rejects duplicate keys
+and validates types. Runtime Python is probed only for applications that require
+it, using system Python or an app-local virtual environment.
 
-The shell updater adds `semver` 1.x for standard version precedence (including
-prereleases and build metadata) and `sha2` 0.11 with default features disabled
-for streaming SHA-256 verification. Neither existing dependencies nor the
-standard library provide those operations. The hashing crate avoids relying on
-varying external checksum utilities; both additions support Rust 1.91 and keep
-the graph free of duplicate crate versions. Networking uses optional system
-`/usr/bin/curl` rather than adding an HTTP/TLS dependency stack.
+`vitrallis-native` shares SDL2, font8x8 and SHA-256 for bounded Notepad save-conflict
+checks. Native applications add no GUI framework, async runtime, HTTP stack,
+Python runtime or embedded server. The shell retains `unsafe_code = "forbid"`.
+The shared crate and Terminal use a small documented libc boundary for exclusive
+rename/no-follow flags, socket ownership, PTYs, polling and controlling terminals.
+An owned child guard kills/reaps on early failure and shutdown; the post-fork
+callback performs only documented async-signal-safe calls.
 
+Terminal's vt100 parser uses vte 0.15.0, unicode-width 0.2.2 and arrayvec 0.7.8.
+The adapter caps control strings at 4 KiB and discards excess through their
+terminator. Replies, scrollback, geometry and PTY queues have separate bounds.
+The upstream parser remains part of the dependency trust boundary. The focused
+POSIX adapter avoids the additional process abstractions and dependencies of
+portable-pty. No native library beyond SDL2 and POSIX libc/libutil is required.
 
-## Native App Center additions
-
-App Center adds the Rust `toml` parser (1.1, parse/std/serde features only) because
-manifest v1 requires complete TOML parsing, duplicate-key rejection, and strict
-types. No existing crate parsed TOML. `serde`, already in the dependency graph,
-is now direct for the recursive duplicate-key-rejecting JSON visitor. The lockfile
-retains the existing Rust 1.91 policy and no duplicate crate versions. No package
-or workspace version was changed. HTTP uses the existing optional system curl
-approach; SHA-256 and PNG verification reuse existing crates. Runtime Python is
-probed only for the apps being checked; there is no Python/Tk App Center UI or
-updater dependency. Python runtime probes use system Python or an app-local virtual environment.
-
-
-## Bundled native utilities
-
-`vitrallis-native` reuses SDL2 0.38, font8x8 and the existing SHA-256 crate for
-bounded Notepad save-conflict checks. The app binaries have no GUI
-framework, async runtime, HTTP stack, Python runtime or embedded server.
-`libc` was already transitive; it is now direct in the shared crate and Terminal
-for a small documented POSIX boundary (exclusive rename/no-follow flags,
-private socket ownership, PTY creation, poll, resize, controlling terminal).
-The shell retains its existing `unsafe_code = "forbid"` policy.
-
-Terminal adds **vt100 0.16.2** for maintained ANSI/VT state rather than an ad-hoc
-parser. Its new transitive crates are **vte 0.15.0**, **unicode-width 0.2.2**, and
-**arrayvec 0.7.8**. Source review found vte's std-enabled OSC accumulator uses a
-Vec; the adapter caps control strings at 4 KiB and discards excess through their
-terminator. Terminal replies, scrollback, geometry and PTY queues have separate
-bounds. The parser sources contain no application-owned unsafe boundary; vte's
-upstream implementation remains part of the dependency trust boundary.
-
-`portable-pty 0.9.0` was evaluated. Its cross-platform process abstraction adds
-several dependencies unnecessary for the supported POSIX hosts, including a
-second bitflags major version rejected by this workspace's strict Cargo lint.
-A focused openpty/setsid/TIOCSCTTY adapter therefore uses existing libc. The
-post-fork callback performs only documented async-signal-safe OS calls. An owned
-child guard kills/reaps on every early failure and shutdown. Linux ARMv7 and
-AArch64 compilation plus real host PTY tests exercise the platform boundary.
-
-The workspace remains Rust 1.91, has one version of each dependency, and adds
-no native library requirement beyond SDL2 and normal POSIX libc/libutil.
-Versioned references: [vt100 0.16.2](https://docs.rs/vt100/0.16.2/vt100/),
-[vte 0.15.0](https://docs.rs/vte/0.15.0/vte/),
-[portable-pty 0.9.0](https://docs.rs/portable-pty/0.9.0/portable_pty/).
-Resource measurements are recorded in [native validation](devices/pocketchip/history/native-validation.md).
+Resource measurements are recorded in
+[native validation](devices/pocketchip/history/native-validation.md).

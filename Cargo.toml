@@ -37,20 +37,18 @@ toml.workspace = true
 
 [workspace.dependencies]
 vitrallis-native = { path = "crates/vitrallis-native" }
-libc = "0.2"
+libc = "0.2.189"
 vt100 = "0.16.2"
 sdl2 = { version = "0.38.0", features = ["use-pkgconfig"] }
 font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
 serde_json = "1.0.151"
-serde = "1.0"
+serde = "1.0.229"
 # Parse the complete manifest v1 TOML grammar without executing Python.
-toml = { version = "1.1", default-features = false, features = ["std", "parse", "serde"] }
+toml = { version = "1.1.6", default-features = false, features = ["std", "parse", "serde"] }
 # Standards-compliant version precedence and in-process artifact verification.
-semver = "1.0"
-sha2 = { version = "0.11", default-features = false }
-# PNG 0.18 requires bitflags 2, conflicting with SDL2 and strict duplicate checks.
-# See docs/dependencies.md for the reviewed migration blockers.
-png = "=0.17.16"
+semver = "1.0.28"
+sha2 = { version = "0.11.0", default-features = false }
+png = "0.18.1"
 
 [profile.release]
 lto = true

@@ -155,7 +155,7 @@ pub fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
     performance::count(|c| c.decodes += 1);
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         let mut decoder = png::Decoder::new_with_limits(
-            bytes,
+            std::io::Cursor::new(bytes),
             png::Limits {
                 bytes: 8 * 1024 * 1024,
             },
@@ -169,7 +169,10 @@ pub fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
         {
             return Err("PNG icon exceeds 512x512 or 1 MiB".into());
         }
-        let mut pixels = vec![0; reader.output_buffer_size()];
+        let size = reader
+            .output_buffer_size()
+            .ok_or("PNG output buffer exceeds addressable memory")?;
+        let mut pixels = vec![0; size];
         let frame = reader.next_frame(&mut pixels).map_err(|e| e.to_string())?;
         let channels = frame.color_type.samples();
         let mut rgba = Vec::with_capacity(pixels.len() / channels * 4);
@@ -589,6 +592,60 @@ mod tests {
 #[cfg(test)]
 mod png_tests {
     use super::*;
+
+    #[test]
+    fn png_color_formats_expand_to_rgba() -> Result<(), Box<dyn std::error::Error>> {
+        use png::{BitDepth, ColorType};
+
+        for (color, depth, pixels, expected) in [
+            (
+                ColorType::Rgb,
+                BitDepth::Eight,
+                [12, 34, 56].as_slice(),
+                [12, 34, 56, 255],
+            ),
+            (
+                ColorType::Grayscale,
+                BitDepth::Eight,
+                [42].as_slice(),
+                [42, 42, 42, 255],
+            ),
+            (
+                ColorType::GrayscaleAlpha,
+                BitDepth::Eight,
+                [42, 128].as_slice(),
+                [42, 42, 42, 128],
+            ),
+            (
+                ColorType::Rgba,
+                BitDepth::Sixteen,
+                [12, 1, 34, 2, 56, 3, 128, 4].as_slice(),
+                [12, 34, 56, 128],
+            ),
+            (
+                ColorType::Indexed,
+                BitDepth::One,
+                [0].as_slice(),
+                [12, 34, 56, 128],
+            ),
+        ] {
+            let mut bytes = Vec::new();
+            {
+                let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+                encoder.set_color(color);
+                encoder.set_depth(depth);
+                if color == ColorType::Indexed {
+                    encoder.set_palette([12, 34, 56].as_slice());
+                    encoder.set_trns([128].as_slice());
+                }
+                encoder.write_header()?.write_image_data(pixels)?;
+            }
+            let surface = decode_icon(&bytes)?;
+            assert_eq!(surface.without_lock(), Some(expected.as_slice()));
+        }
+        Ok(())
+    }
+
     #[test]
     fn png_pixels_decode_and_broken_or_large_assets_fall_back()
     -> Result<(), Box<dyn std::error::Error>> {

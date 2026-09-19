@@ -162,7 +162,10 @@ fn icon(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
     let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
-    let mut data = vec![0; reader.output_buffer_size()];
+    let size = reader
+        .output_buffer_size()
+        .ok_or("PNG output buffer exceeds addressable memory")?;
+    let mut data = vec![0; size];
     let frame = reader.next_frame(&mut data).map_err(|e| e.to_string())?;
     let width = usize::try_from(frame.width).map_err(|e| e.to_string())?;
     let height = usize::try_from(frame.height).map_err(|e| e.to_string())?;

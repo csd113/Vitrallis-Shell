@@ -78,7 +78,7 @@ class SourcePackage(unittest.TestCase):
             archives = list(output.glob('*.tar.gz'))
             self.assertEqual(len(archives), 1)
             required = {
-                'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'README.md',
+                'Cargo.toml', 'Cargo.lock', 'clippy.toml', 'rust-toolchain.toml', 'README.md',
                 'scripts/build-armhf.sh',
                 'scripts/validate.sh', 'integrations/pocketchip/install-session.py',
                 'integrations/pocketchip/vitrallis-session.py',
