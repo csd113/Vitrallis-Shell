@@ -3,6 +3,7 @@ mod app;
 mod app_center;
 mod config;
 mod discovery;
+mod folders;
 mod input;
 mod launcher;
 mod layout;
@@ -40,7 +41,7 @@ pub fn run() -> Result<(), String> {
     }
     if args == ["--help"] {
         println!(
-            "vitrallis [--linux-handheld] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--renderer auto|hardware|software] [--screenshot NEW.bmp] [--smoke-test] [--graphics-info | --graphics-test]\nDefault: installed Vitrallis apps in a desktop window; --linux-handheld also reads device menu metadata. --demo enables fixtures. Arrows select; Enter/tap opens; settings tile/footer opens system controls; Escape/Home goes back. Close window to quit.\n--renderer defaults to auto (accelerated SDL with software fallback); hardware requires acceleration; software disables it.\n--graphics-info reports the active renderer; --graphics-test checks texture/fill/font readback without loading user data.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
+            "vitrallis [--linux-handheld] [--app-config FILE] [--assets DIR] [--list-apps] [--demo] [--size WIDTHxHEIGHT] [--renderer auto|hardware|software] [--screenshot NEW.bmp] [--smoke-test] [--graphics-info | --graphics-test]\nDefault: installed Vitrallis apps in a desktop window; --linux-handheld also reads device menu metadata. --demo enables fixtures. Arrows select; Enter/tap opens; settings tile/Power key opens system controls; Escape/Home goes back. Close window to quit.\n--renderer defaults to auto (accelerated SDL with software fallback); hardware requires acceleration; software disables it.\n--graphics-info reports the active renderer; --graphics-test checks texture/fill/font readback without loading user data.\n--screenshot saves the first frame, then exits; --smoke-test exercises a demo child and exits."
         );
         return Ok(());
     }

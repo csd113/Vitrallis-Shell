@@ -1,6 +1,6 @@
 use super::*;
 use metadata::{Files, Package};
-use std::{collections::BTreeMap, path::Path};
+use std::collections::BTreeMap;
 use storage::{FileData, Locations};
 
 #[test]
@@ -105,8 +105,14 @@ fn managed_discovery_keeps_canonical_authority_and_independent_custom_aliases() 
 #[path = "lifecycle_tests.rs"]
 mod lifecycle;
 fn fixture(name: &str) -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/app-center")
+    std::env::var_os("VITRALLIS_TEST_FIXTURES")
+        .map_or_else(
+            || {
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/app-center")
+            },
+            std::path::PathBuf::from,
+        )
         .join(name)
 }
 fn fixture_icon() -> Result<Vec<u8>, String> {
@@ -138,6 +144,7 @@ pub(super) fn generic() -> Result<(Package, Files), String> {
     let v = metadata::manifest(&files["app.toml"])?;
     let origin = sources::Repository::parse("example/catalog")?;
     let p = Package {
+        runtime: metadata::RuntimeKind::Python,
         origin: origin.clone(),
         repository: origin,
         id: v["id"].as_str().ok_or("id")?.into(),
@@ -1457,6 +1464,72 @@ fn published_catalog_packages_match_the_current_contract() -> Result<(), String>
             package.directory,
             files.len(),
             package.installable
+        );
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "explicit device QA: downloads an app-local Python dependency into VITRALLIS_QA_HOME"]
+fn physical_python_first_installs() -> Result<(), String> {
+    let home = std::env::var_os("VITRALLIS_QA_HOME")
+        .map(std::path::PathBuf::from)
+        .ok_or("Set a new isolated VITRALLIS_QA_HOME")?;
+    storage::safe(&home)?;
+    let loc = storage::Locations {
+        data: home.join(".local/share"),
+        state: home.join(".local/share/vitrallis/app-center"),
+        sources: home.join(".config/vitrallis/app-center.json"),
+        home,
+    };
+    for suffix in ["one", "two", "three"] {
+        let started = std::time::Instant::now();
+        let (mut p, mut files) = generic()?;
+        p.id = format!("io.vitrallis.qapython{suffix}");
+        p.name = format!("Python QA {suffix}");
+        let manifest = String::from_utf8(files["app.toml"].clone()).map_err(|e| e.to_string())?;
+        let original = metadata::manifest(manifest.as_bytes())?;
+        files.insert(
+            "app.toml".into(),
+            manifest
+                .replace(metadata::text(&original["id"], 128)?, &p.id)
+                .replace(metadata::text(&original["name"], 1000)?, &p.name)
+                .into_bytes(),
+        );
+        files.insert("requirements.txt".into(), b"pyfiglet==1.0.2\n".to_vec());
+        files.insert("main.py".into(), b"import pyfiglet\nimport tkinter as tk\nroot = tk.Tk()\nroot.title('Python QA')\nroot.geometry('480x272')\ntk.Label(root, text=pyfiglet.figlet_format('QA'), font=('monospace', 8)).pack()\nroot.bind('<Escape>', lambda event: root.destroy())\nroot.mainloop()\n".to_vec());
+        p = inventory(p, &files);
+        if loc.root(&p).exists() {
+            return Err("QA app root already exists; use a new isolated home".into());
+        }
+        eprintln!("QA cold dependency install: {}", p.id);
+        install::install(&loc, &install::prepare(&loc, p.clone(), files.clone())?)?;
+        assert!(
+            loc.root(&p).join("runtime").is_dir(),
+            "must exercise actual isolated pip installation"
+        );
+        assert!(!install::check(&loc, p.clone())?.ready);
+        for _ in 0..3 {
+            assert!(
+                install::prepare(&loc, p.clone(), files.clone())?
+                    .prepared
+                    .is_none()
+            );
+        }
+        let runtime = super::runtime::detect(&loc.root(&p), &files)?;
+        let result = std::process::Command::new(&runtime.program)
+            .args([
+                "-I",
+                "-c",
+                "import pyfiglet; assert pyfiglet.figlet_format('QA')",
+            ])
+            .status()
+            .map_err(|e| e.to_string())?;
+        assert!(result.success());
+        eprintln!(
+            "QA passed {}: {:.2}s, cold install + 3 repeat preparations, dependency imported",
+            p.id,
+            started.elapsed().as_secs_f64()
         );
     }
     Ok(())

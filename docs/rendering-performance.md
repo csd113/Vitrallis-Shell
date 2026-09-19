@@ -242,3 +242,14 @@ own renderers; this contract does not force their swaps to synchronize. SDL's
 [swap interval API](https://wiki.libsdl.org/SDL2/SDL_GL_SetSwapInterval) explain the
 underlying behavior. Actual presentation is still subject to the active display
 driver, compositor and administrator driver overrides.
+
+## App Manager input and running state
+
+The launcher consumes queued SDL input between presentations, presenting at most
+once per 16 ms while input remains queued. This prevents each key-down/text pair
+from waiting behind a separate VSync on a slow backend; an empty queue still
+presents changed state immediately. Idle screens remain event-driven. App running
+badges are static geometry at a fixed tile position, with no animation timer or
+text reflow. Folder navigation refreshes artwork only when the visible app view
+changes. Rendering continues through the shared complete-frame SDL backbuffer and
+existing verified synchronization selection.

@@ -55,11 +55,7 @@ fn empty_desktop_toolbar_has_visible_keyboard_focus_and_matching_actions() -> Re
     use crate::input::DesktopAction;
     let layout = Layout::home(480, 272)?;
     let mut desktop = Desktop::default();
-    for (target, action) in [
-        (Toolbar::Settings, DesktopAction::Settings),
-        (Toolbar::Add, DesktopAction::Add),
-        (Toolbar::Actions, DesktopAction::Menu(None)),
-    ] {
+    for (target, action) in [(Toolbar::Actions, DesktopAction::Menu(None))] {
         desktop.toolbar = None;
         for _ in 0..3 {
             desktop.toolbar_event(&key(Keycode::Tab, Mod::NOMOD));
@@ -176,5 +172,70 @@ fn menu_labels_and_authority_come_from_provenance() {
         );
     }
     desktop.menu(None);
-    assert_eq!(desktop.rows(), [(Target::Add, "Add shortcut".into())]);
+    assert_eq!(
+        desktop.rows(),
+        [
+            (Target::Add, "Add shortcut".into()),
+            (Target::CreateFolder, "Create folder".into())
+        ]
+    );
+}
+
+#[test]
+fn folder_actions_keyboard_destinations_and_safe_delete_are_reachable() -> Result<(), String> {
+    for (width, height) in [(480, 272), (800, 480)] {
+        let layout = Layout::home(width, height)?;
+        let mut desktop = Desktop::default();
+        let id = format!("{}{}", crate::folders::PREFIX, "a".repeat(64));
+        desktop.folders.names.insert(id.clone(), "Tools".into());
+        desktop.folder_context = Some(id.clone());
+        desktop.in_folder = true;
+        desktop.menu(Some(
+            crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis")).remove(0),
+        ));
+        for target in [
+            Target::CreateFolder,
+            Target::RenameFolder,
+            Target::DeleteFolder,
+            Target::MoveApp,
+        ] {
+            desktop.page(Page::Menu);
+            let targets = desktop.targets(&layout);
+            let index = targets
+                .iter()
+                .position(|(t, _, _)| *t == target)
+                .ok_or("Missing folder action")?;
+            for _ in 0..index {
+                desktop.event(&key(Keycode::Tab, Mod::NOMOD), &layout);
+            }
+            desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout);
+            if target == Target::DeleteFolder {
+                assert_eq!(desktop.targets(&layout)[desktop.selected].0, Target::Cancel);
+                assert!(
+                    desktop
+                        .event(&key(Keycode::Return, Mod::NOMOD), &layout)
+                        .is_none()
+                );
+                assert_eq!(desktop.page, Page::Menu);
+            } else if target == Target::MoveApp {
+                assert_eq!(desktop.targets(&layout)[0].0, Target::Unfile);
+                desktop.event(&key(Keycode::Down, Mod::NOMOD), &layout);
+                assert!(
+                    matches!(desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout), Some(Request::Folder(crate::folders::Change::Move(_,Some(folder)))) if folder == id)
+                );
+            } else {
+                assert!(desktop.editing());
+                assert_eq!(desktop.targets(&layout)[desktop.selected].0, Target::Done);
+            }
+        }
+        desktop.open = false;
+        desktop.toolbar = None;
+        desktop.toolbar_event(&key(Keycode::Tab, Mod::NOMOD));
+        assert_eq!(desktop.toolbar, Some(Toolbar::Back));
+        assert_eq!(
+            desktop.toolbar_event(&key(Keycode::Return, Mod::NOMOD)),
+            Some(crate::input::DesktopAction::Back)
+        );
+    }
+    Ok(())
 }

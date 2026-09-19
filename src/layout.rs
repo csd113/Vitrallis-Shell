@@ -32,7 +32,7 @@ pub struct Layout {
     pub footer: Rect,
     pub previous: Rect,
     pub next: Rect,
-    pub add_shortcut: Rect,
+    pub folder_back: Rect,
     pub desktop_menu: Rect,
 }
 impl Layout {
@@ -99,7 +99,7 @@ impl Layout {
                 w: w - 2 * margin,
                 h: bottom,
             },
-            add_shortcut: Rect {
+            folder_back: Rect {
                 x: margin + (w - 2 * margin) / 3,
                 y: h - bottom,
                 w: (w - 2 * margin) / 3,

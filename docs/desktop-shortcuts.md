@@ -1,6 +1,6 @@
 # Desktop shortcuts
 
-Choose **Add shortcut** on the desktop or press **F2**. You can add an ordinary
+Choose **Actions → Add shortcut** on the Apps page or press **F2**. You can add an ordinary
 Linux program or script without a Vitrallis package, SDK, Python runtime, or App
 Center installation. The desktop action remains available when no apps are shown.
 

@@ -99,7 +99,8 @@ pub fn inherit_runtime(apps: &mut [AppEntry], previous: &[AppEntry]) {
 }
 pub fn broker(state: &mut Launcher) -> Result<Broker, String> {
     let broker = Broker::new().map_err(|e| format!("Native application requests: {e}"))?;
-    configure(&mut state.apps, &broker);
+    configure(&mut state.all_apps, &broker);
+    state.rebuild_view(None);
     Ok(broker)
 }
 pub fn requested(broker: &Broker, state: &mut Launcher) -> Result<Option<usize>, String> {
@@ -122,6 +123,7 @@ pub fn requested(broker: &Broker, state: &mut Launcher) -> Result<Option<usize>,
     {
         return Err("Notepad can open only readable text files".into());
     }
+    state.reveal("io.vitrallis.notepad");
     let index = state
         .apps
         .iter()

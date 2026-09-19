@@ -1,4 +1,4 @@
-//! Match a user's exact Python script and process start identity before TERM.
+//! Match an owned Python script or native executable and process start identity before TERM.
 use std::{
     path::Path,
     time::{Duration, Instant},
@@ -86,11 +86,13 @@ fn linux(entry: &Path) -> Result<Vec<Identity>, String> {
                 .iter()
                 .filter_map(|a| std::str::from_utf8(a).ok())
                 .collect::<Vec<_>>();
-            if args.len() < 2
-                || !std::str::from_utf8(args[0]).is_ok_and(python)
-                || texts.len() != args.len()
-                || script_argument(&texts[1..]).map(str::as_bytes)
-                    != Some(entry.as_os_str().as_encoded_bytes())
+            let native = std::fs::read_link(path.join("exe")).is_ok_and(|exe| exe == entry);
+            if !native
+                && (args.len() < 2
+                    || !std::str::from_utf8(args[0]).is_ok_and(python)
+                    || texts.len() != args.len()
+                    || script_argument(&texts[1..]).map(str::as_bytes)
+                        != Some(entry.as_os_str().as_encoded_bytes()))
             {
                 return Ok(None);
             }
@@ -129,6 +131,13 @@ fn portable(entry: &Path) -> Result<Vec<Identity>, String> {
             continue;
         }
         let program = parts[7..].join(" ");
+        if program == script {
+            found.push(Identity {
+                pid: parts[1].parse::<u32>().map_err(|_| "Invalid PID")?,
+                start: parts[2..7].join(" "),
+            });
+            continue;
+        }
         if !python(&program) {
             continue;
         }

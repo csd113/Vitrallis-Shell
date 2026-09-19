@@ -1,4 +1,4 @@
-//! Manifest-based Python package installation and receipt-scoped repair.
+//! Manifest-based application package installation and receipt-scoped repair.
 use super::{
     metadata::{self, Files, Package},
     runtime::{self, Runtime},
@@ -63,6 +63,12 @@ pub fn check(loc: &Locations, p: Package) -> Result<Checked, String> {
                 None => ready = true,
                 Some(_) => (),
             }
+        }
+        if matches!(p.runtime, metadata::RuntimeKind::Rust(_))
+            && storage::read(&root.join(&p.entry), metadata::FILE_LIMIT)?
+                .is_none_or(|file| file.mode & 0o111 == 0)
+        {
+            ready = true;
         }
         let launcher = loc.state.join("launchers").join(&p.id);
         if storage::read(&launcher, metadata::FILE_LIMIT)?.is_none_or(|f| f.mode & 0o111 == 0) {
@@ -187,20 +193,25 @@ pub fn prepare_with_modes(
     let installed = label(loc, &p)?;
     let old_receipt = receipt(&root)?;
     protect(&p, &root, &files, old_receipt.as_ref())?;
-    let runtime = runtime::ensure(&root, &files)?;
-    runtime::validate(&runtime, &files)?;
+    let runtime = if p.runtime == metadata::RuntimeKind::Python {
+        let runtime = runtime::ensure(&root, &files)?;
+        runtime::validate(&runtime, &files)?;
+        Some(runtime)
+    } else {
+        None
+    };
     let mut writes = Vec::new();
     for (name, bytes) in &files {
         writes.push(transaction::plan(
             root.join(name),
             FileData {
                 bytes: bytes.clone(),
-                mode: modes.get(name).copied().unwrap_or(0o644),
+                mode: if matches!(&p.runtime, metadata::RuntimeKind::Rust(binaries) if binaries.values().any(|entry| entry == name)) { 0o755 } else { modes.get(name).copied().unwrap_or(0o644) },
             },
         )?);
     }
     obsolete(&root, &files, old_receipt.as_ref(), &mut writes)?;
-    support(loc, &p, &runtime, &mut writes)?;
+    support(loc, &p, runtime.as_ref(), &mut writes)?;
     let changed = writes.iter().any(|w| w.before != w.after);
     let pending = storage::read(&root.join(".installation-pending"), 1024)?.is_some();
     let receipt = serde_json::json!({"version":p.version.to_string(),"origin":p.origin.as_str(),"repository":p.repository.as_str(),"commit":p.commit,"id":p.id,"files":files.iter().map(|(k,v)|(k.clone(),Value::String(storage::sha(v)))).collect::<serde_json::Map<_,_>>()});
@@ -331,14 +342,17 @@ fn protect(p: &Package, root: &Path, files: &Files, receipt: Option<&Value>) -> 
 fn support(
     loc: &Locations,
     p: &Package,
-    runtime: &Runtime,
+    runtime: Option<&Runtime>,
     writes: &mut Vec<Write>,
 ) -> Result<(), String> {
     let root = loc.root(p);
     let launch_path = loc.state.join("launchers").join(&p.id);
     let before = storage::read(&launch_path, metadata::FILE_LIMIT)?;
     let after = FileData {
-        bytes: runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
+        bytes: match runtime {
+            Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
+            None => super::native::launcher(&root.join(&p.entry))?,
+        },
         mode: 0o755,
     };
     if let Some(old) = &before {
@@ -351,11 +365,18 @@ fn support(
         if let Some(requirements) = storage::read(&root.join("requirements.txt"), 65536)? {
             old_files.insert("requirements.txt".into(), requirements.bytes);
         }
-        let managed_launcher = runtime::candidates(&root, &old_files)
-            .into_iter()
-            .map(|program| runtime::launcher(&Runtime { program }, &old_entry, old_commit))
-            .collect::<Result<Vec<_>, _>>()?
-            .contains(&old.bytes);
+        let manifest = storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)?
+            .ok_or("Installed manifest missing; cannot verify launcher ownership")?;
+        let old_runtime = metadata::RuntimeKind::parse(&metadata::manifest(&manifest.bytes)?)?;
+        let managed_launcher = if old_runtime == metadata::RuntimeKind::Python {
+            runtime::candidates(&root, &old_files)
+                .into_iter()
+                .map(|program| runtime::launcher(&Runtime { program }, &old_entry, old_commit))
+                .collect::<Result<Vec<_>, _>>()?
+                .contains(&old.bytes)
+        } else {
+            old.bytes == super::native::launcher(&old_entry)?
+        };
         if old.bytes != after.bytes && !managed_launcher {
             return Err("App launcher was edited; preserve your changes and restore the managed launcher before updating".into());
         }

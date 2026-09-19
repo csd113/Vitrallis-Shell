@@ -75,8 +75,10 @@ pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), St
             if item.file_name() != std::ffi::OsStr::new(id) {
                 return Err("App directory must match app ID".into());
             }
-            let entry = path.join(metadata::text(&v["entry"], 240)?);
-            storage::read(&entry, metadata::FILE_LIMIT)?.ok_or("App entry missing")?;
+            let entry = path.join(metadata::manifest_entry(&v)?);
+            let executable =
+                storage::read(&entry, metadata::FILE_LIMIT)?.ok_or("App entry missing")?;
+            let native_ready = v["runtime"] != "rust" || executable.mode & 0o111 != 0;
             let launch = loc.state.join("launchers").join(id);
             let available =
                 storage::read(&launch, metadata::FILE_LIMIT)?.is_some_and(|d| d.mode & 0o111 != 0);
@@ -93,7 +95,8 @@ pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), St
                 unavailable: if pending {
                     Some("Installation incomplete; repair in App Center".into())
                 } else {
-                    (!available).then(|| "Missing launcher; repair in App Center".into())
+                    (!available || !native_ready)
+                        .then(|| "Missing executable; repair in App Center".into())
                 },
             }))
         })();

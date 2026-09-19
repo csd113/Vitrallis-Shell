@@ -20,6 +20,11 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     let catalog = crate::discovery::load(config)?;
     let mut state = Launcher::new(catalog.apps, layout.columns, layout.tiles.len())?;
     state.preferences = catalog.preferences;
+    match crate::folders::Folders::load() {
+        Ok(folders) => state.folders = folders,
+        Err(error) => state.status = format!("Folder state unavailable: {error}"),
+    }
+    state.rebuild_view(None);
     if !catalog.diagnostics.is_empty() {
         state.status = format!("{} APP WARNINGS - SEE LOG", catalog.diagnostics.len());
         if state.apps.is_empty() {
@@ -88,6 +93,7 @@ fn event_loop(
     let mut desktop_input = crate::input::DesktopInput::default();
     let mut accept_after = Instant::now();
     let mut dirty = false;
+    let mut last_present = Instant::now();
     let mut last_wait_error = None;
     let mut next_poll = Instant::now();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -96,6 +102,10 @@ fn event_loop(
     }
     present_initial(canvas, layout, &state, &textures)?;
     loop {
+        if std::mem::take(&mut state.view_changed) {
+            textures.refresh(&creator, &state);
+            dirty = true;
+        }
         let layout = &current_layout;
         dirty |= refresh_system(&mut worker, &mut state.settings);
         if refresh_app_center(sdl, config, &mut state, &mut dirty)? {
@@ -105,11 +115,15 @@ fn event_loop(
         dirty |= refresh_shell(&mut state, &mut child);
         dirty |= launch_from_center(canvas, layout, &mut state, &textures, &mut child)?;
         dirty |= open_native(&broker, canvas, layout, &mut state, &textures, &mut child)?;
-        if dirty {
+        // Coalesce queued input before presenting. Rendering every key/text pair
+        // makes rapid typing accumulate behind VSync on slow software backends.
+        let queued = events.poll_event();
+        if dirty && (queued.is_none() || last_present.elapsed() >= Duration::from_millis(16)) {
             state.running = child.running_ids();
             dirty = present_frame(canvas, layout, &mut state, &textures, &mut worker)?;
+            last_present = Instant::now();
         }
-        let event = wait_event(&mut events, state.phase, next_poll, dirty);
+        let event = queued.or_else(|| wait_event(&mut events, state.phase, next_poll, dirty));
         if let Some(mut event) = event {
             keyboard.event(&mut event);
             if closing(&event) && !state.app_center.busy {
@@ -260,13 +274,24 @@ fn desktop_event(
             .toolbar_event(event)
             .or_else(|| input.event(event, layout, state.visible_count()))
         {
-            Some(DesktopAction::Settings) => state.settings.show(),
+            Some(DesktopAction::Back) => {
+                if state.folder.is_some() {
+                    state.leave_folder();
+                }
+            }
             Some(DesktopAction::Focus) => (),
             Some(DesktopAction::Add) => state.desktop.add(),
             Some(DesktopAction::Menu(index)) => {
                 if let Some(index) = index {
                     state.selected = state.page_start() + index;
                 }
+                state.desktop.folders = state.folders.clone();
+                state.desktop.folder_context = state
+                    .apps
+                    .get(state.selected)
+                    .filter(|app| app.source == crate::app::AppSource::Folder)
+                    .map(|app| app.id.clone())
+                    .or_else(|| state.folder.clone());
                 state.desktop.menu(state.apps.get(state.selected).cloned());
             }
             None => return (false, false),
@@ -282,6 +307,12 @@ fn desktop_event(
             let app = state.desktop.entry.as_ref().ok_or("No app selected")?;
             state.app_center.uninstall_entry(app)?;
             return Ok(false);
+        }
+        if let Request::Folder(change) = request {
+            let selected = state.desktop.entry.as_ref().map(|app| app.id.clone());
+            state.folders = crate::folders::Folders::change(change)?;
+            state.rebuild_view(selected.as_deref());
+            return Ok(true);
         }
         let store = Store::current()?;
         match request {
@@ -299,10 +330,10 @@ fn desktop_event(
                     store.hide(app)?;
                 }
             }
-            Request::Uninstall => (),
+            Request::Uninstall | Request::Folder(_) => (),
         }
         let mut catalog = crate::discovery::Catalog {
-            apps: state.apps.clone(),
+            apps: state.all_apps.clone(),
             ..crate::discovery::Catalog::default()
         };
         crate::shortcuts::integrate(&mut catalog);
@@ -345,7 +376,12 @@ fn open_native(
 ) -> Result<bool, String> {
     match crate::native::requested(broker, state) {
         Ok(Some(index)) => {
-            render(canvas, layout, state, icons)?;
+            render(
+                canvas,
+                layout,
+                state,
+                if state.view_changed { &[] } else { icons },
+            )?;
             canvas.present();
             process::activate(state, child, index);
             state.apps[index].manifest.args.clear();
@@ -397,6 +433,7 @@ fn launch_from_center(
     let Some(id) = state.app_center.launch.take() else {
         return Ok(false);
     };
+    state.reveal(&id);
     if let Some(index) = state.apps.iter().position(|app| app.id == id) {
         state.app_center.open = false;
         state.selected = index;
@@ -424,7 +461,7 @@ fn refresh_app_center(
 ) -> Result<bool, String> {
     *dirty |= state.app_center.poll();
     let artwork_changed = if state.app_center.refresh && state.phase == Phase::Ready {
-        match crate::app_center::refresh_apps(&state.apps).and_then(|mut apps| {
+        match crate::app_center::refresh_apps(&state.all_apps).and_then(|mut apps| {
             if config.linux_handheld {
                 use crate::platform::Platform;
                 for app in &mut apps {
@@ -458,7 +495,8 @@ fn refresh_app_center(
 }
 
 fn terminate_selected(event: &Event, state: &mut Launcher, child: &mut ProcessSet) -> bool {
-    if state.phase != Phase::Ready
+    if state.folder.is_some()
+        || state.phase != Phase::Ready
         || state.settings.open
         || state.app_center.open
         || state.desktop.open
@@ -603,7 +641,7 @@ fn system_worker(
 
 fn reload_catalog(config: &Config, state: &mut Launcher) -> bool {
     let result = crate::discovery::refresh(config).and_then(|mut catalog| {
-        crate::native::inherit_runtime(&mut catalog.apps, &state.apps);
+        crate::native::inherit_runtime(&mut catalog.apps, &state.all_apps);
         if catalog.apps.is_empty() && !catalog.diagnostics.is_empty() {
             return Err("catalogue unavailable; keeping previous apps".into());
         }
@@ -673,7 +711,7 @@ fn translate_action(
         return (None, panel_input(event));
     }
     state.settings.network_available = state
-        .apps
+        .all_apps
         .iter()
         .any(|app| app.is_system_settings() && app.unavailable.is_none());
     if state.settings.open {
@@ -900,7 +938,7 @@ fn open_calibration(state: &mut Launcher, child: &mut impl Processes) {
 fn open_network(state: &mut Launcher, child: &mut impl Processes) {
     state.settings.network = crate::settings::NetworkState::Idle;
     let Some(mut app) = state
-        .apps
+        .all_apps
         .iter()
         .find(|app| app.is_system_settings())
         .cloned()
@@ -954,7 +992,12 @@ fn handle_action(
     let was_ready = state.phase == Phase::Ready;
     if let Some(index) = state.input(action) {
         // Present transition feedback before process creation.
-        render(canvas, layout, state, icons)?;
+        render(
+            canvas,
+            layout,
+            state,
+            if state.view_changed { &[] } else { icons },
+        )?;
         canvas.present();
         state.settings.network = crate::settings::NetworkState::Idle;
         process::activate(state, child, index);
@@ -994,7 +1037,12 @@ fn finish_smoke(
     icons: &[Option<Texture<'_>>],
     status: std::process::ExitStatus,
 ) -> Result<(), String> {
-    render(canvas, layout, state, icons)?;
+    render(
+        canvas,
+        layout,
+        state,
+        if state.view_changed { &[] } else { icons },
+    )?;
     canvas.present();
     if !status.success() {
         return Err("smoke child failed".into());

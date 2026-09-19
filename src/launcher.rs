@@ -17,6 +17,10 @@ pub struct Launcher {
     pub app_center: crate::app_center::Center,
     pub desktop: crate::shortcuts::screen::Desktop,
     pub apps: Vec<AppEntry>,
+    pub all_apps: Vec<AppEntry>,
+    pub folders: crate::folders::Folders,
+    pub folder: Option<String>,
+    pub view_changed: bool,
     pub selected: usize,
     pub phase: Phase,
     pub status: String,
@@ -54,6 +58,10 @@ impl Launcher {
                 "ARROWS: SELECT   ENTER / TAP: OPEN"
             }
             .into(),
+            all_apps: apps.clone(),
+            folders: crate::folders::Folders::default(),
+            folder: None,
+            view_changed: false,
             apps,
             columns,
             capacity,
@@ -90,12 +98,22 @@ impl Launcher {
                 self.selected = (target * self.capacity + self.selected % self.capacity)
                     .min(self.apps.len().saturating_sub(1));
             }
-            Action::Back => self.status = "ARROWS: SELECT   ENTER / TAP: OPEN".into(),
+            Action::Back => {
+                if self.folder.is_some() {
+                    self.leave_folder();
+                }
+                self.status = "ARROWS: SELECT   ENTER / TAP: OPEN".into();
+            }
             Action::SelectAndActivate(index) if index < self.apps.len() => {
                 self.selected = index;
                 return self.input(Action::Activate);
             }
             Action::Activate if !self.apps.is_empty() => {
+                if self.apps[self.selected].source == crate::app::AppSource::Folder {
+                    self.folder = Some(self.apps[self.selected].id.clone());
+                    self.rebuild_view(None);
+                    return None;
+                }
                 if self.apps[self.selected].id == crate::app_center::TILE_ID {
                     self.app_center.show();
                     return None;
@@ -133,7 +151,7 @@ impl Launcher {
         self.opening = None;
         if self.phase == Phase::Running {
             self.phase = Phase::Ready;
-            self.status = "SELECT AN APP - RUNNING APPS MARKED *".into();
+            self.status = "SELECT AN APP - RUNNING APPS HAVE A BADGE".into();
         }
     }
     pub fn failed(&mut self, message: String) {
@@ -154,17 +172,37 @@ impl Launcher {
             return Err("cannot reload while an app is running".into());
         }
         let replacement = Self::new(apps, self.columns, self.capacity)?;
-        if self.apps == replacement.apps {
+        if self.all_apps == replacement.apps {
             return Ok(false);
         }
-        let selected = self
-            .apps
-            .get(self.selected)
-            .and_then(|old| replacement.apps.iter().position(|app| app.id == old.id));
-        self.selected =
-            selected.unwrap_or_else(|| self.selected.min(replacement.apps.len().saturating_sub(1)));
-        self.apps = replacement.apps;
+        let selected = self.apps.get(self.selected).map(|app| app.id.clone());
+        self.all_apps = replacement.apps;
+        self.rebuild_view(selected.as_deref());
         Ok(true)
+    }
+    pub fn rebuild_view(&mut self, selected: Option<&str>) {
+        if self
+            .folder
+            .as_ref()
+            .is_some_and(|id| !self.folders.names.contains_key(id))
+        {
+            self.folder = None;
+        }
+        self.apps = self.folders.view(&self.all_apps, self.folder.as_deref());
+        self.selected = selected
+            .and_then(|id| self.apps.iter().position(|app| app.id == id))
+            .unwrap_or(0);
+        self.desktop.in_folder = self.folder.is_some();
+        self.desktop.toolbar = None;
+        self.view_changed = true;
+    }
+    pub fn leave_folder(&mut self) {
+        let old = self.folder.take();
+        self.rebuild_view(old.as_deref());
+    }
+    pub fn reveal(&mut self, id: &str) {
+        self.folder = self.folders.members.get(id).cloned();
+        self.rebuild_view(Some(id));
     }
 }
 
@@ -349,6 +387,31 @@ mod pagination_tests {
         state.input(Action::Page(false));
         assert_eq!(state.selected, 1);
         assert!(Launcher::new(apps(1), 3, 0).is_err());
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod folder_tests {
+    use super::*;
+    #[test]
+    fn opening_folder_launches_real_app_and_back_restores_folder_selection() -> Result<(), String> {
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let mut state = Launcher::new(apps.clone(), 3, 6)?;
+        let id = format!("{}{}", crate::folders::PREFIX, "a".repeat(64));
+        state.folders.names.insert(id.clone(), "Utilities".into());
+        state.folders.members.insert(apps[0].id.clone(), id.clone());
+        state.rebuild_view(None);
+        assert!(state.input(Action::Activate).is_none());
+        assert_eq!(state.apps, apps[..1]);
+        assert_eq!(state.input(Action::Activate), Some(0));
+        assert_eq!(state.apps[0].manifest, apps[0].manifest);
+        state.started();
+        state.returned_home();
+        state.input(Action::Back);
+        assert_eq!(state.apps[state.selected].id, id);
+        state.reveal(&apps[0].id);
+        assert_eq!(state.folder.as_deref(), Some(id.as_str()));
         Ok(())
     }
 }

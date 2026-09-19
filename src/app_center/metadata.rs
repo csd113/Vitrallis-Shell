@@ -201,8 +201,87 @@ pub struct FileRow {
     pub size: usize,
     pub sha256: String,
 }
+/// Runtime is explicit; native packages carry one executable per supported ABI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RuntimeKind {
+    Python,
+    Rust(BTreeMap<String, String>),
+}
+impl RuntimeKind {
+    pub fn parse(value: &Value) -> Result<Self, String> {
+        match value["runtime"].as_str() {
+            Some("python") => Ok(Self::Python),
+            Some("rust") => {
+                let map = value["binaries"]
+                    .as_object()
+                    .filter(|m| !m.is_empty() && m.len() <= 16)
+                    .ok_or("Rust apps require a bounded binaries table")?;
+                let mut binaries = BTreeMap::new();
+                for (target, entry) in map {
+                    if !matches!(
+                        target.as_str(),
+                        "armv7-unknown-linux-gnueabihf"
+                            | "aarch64-unknown-linux-gnu"
+                            | "x86_64-unknown-linux-gnu"
+                    ) {
+                        return Err(format!("Unsupported native target: {target}"));
+                    }
+                    let entry = text(entry, 240)?;
+                    path(entry)?;
+                    binaries.insert(target.clone(), entry.into());
+                }
+                Ok(Self::Rust(binaries))
+            }
+            _ => Err("Unsupported application runtime".into()),
+        }
+    }
+    pub fn entry(&self, value: &Value) -> Result<String, String> {
+        match self {
+            Self::Python => {
+                let entry = text(&value["entry"], 240)?;
+                path(entry)?;
+                if std::path::Path::new(entry).extension() != Some(std::ffi::OsStr::new("py")) {
+                    return Err("entry must be Python".into());
+                }
+                Ok(entry.into())
+            }
+            Self::Rust(binaries) => binaries
+                .get(native_target())
+                .cloned()
+                .ok_or_else(|| format!("No compatible Rust binary for {}", native_target())),
+        }
+    }
+}
+pub const fn native_target() -> &'static str {
+    if cfg!(all(
+        target_os = "linux",
+        target_arch = "arm",
+        target_env = "gnu",
+        target_abi = "eabihf"
+    )) {
+        "armv7-unknown-linux-gnueabihf"
+    } else if cfg!(all(
+        target_os = "linux",
+        target_arch = "aarch64",
+        target_env = "gnu"
+    )) {
+        "aarch64-unknown-linux-gnu"
+    } else if cfg!(all(
+        target_os = "linux",
+        target_arch = "x86_64",
+        target_env = "gnu"
+    )) {
+        "x86_64-unknown-linux-gnu"
+    } else {
+        "unsupported host"
+    }
+}
+pub fn manifest_entry(value: &Value) -> Result<String, String> {
+    RuntimeKind::parse(value)?.entry(value)
+}
 #[derive(Debug, Clone)]
 pub struct Package {
+    pub runtime: RuntimeKind,
     pub origin: Repository,
     pub id: String,
     pub name: String,
@@ -225,6 +304,7 @@ impl Package {
     }
     pub fn display_metadata(&self) -> Self {
         Self {
+            runtime: self.runtime.clone(),
             origin: self.origin.clone(),
             id: self.id.clone(),
             name: self.name.clone(),
@@ -279,7 +359,11 @@ pub fn catalog_entries(
 fn parse_package(origin: &Repository, v: &Value) -> Result<Package, String> {
     fields(
         v,
-        "id name version description runtime entry permissions installable compatibility_notes source files",
+        if v["runtime"] == "rust" {
+            "id name version description runtime binaries permissions installable compatibility_notes source files"
+        } else {
+            "id name version description runtime entry permissions installable compatibility_notes source files"
+        },
     )?;
     let id = text(&v["id"], 128)?.to_owned();
     identity(&id)?;
@@ -287,11 +371,8 @@ fn parse_package(origin: &Repository, v: &Value) -> Result<Package, String> {
     let description = text(&v["description"], 1000)?.to_owned();
     let notes = text(&v["compatibility_notes"], 1000)?.to_owned();
     let version = version(text(&v["version"], 32)?)?;
-    if v["runtime"] != "python" {
-        return Err("Unsupported runtime".into());
-    }
-    let entry = text(&v["entry"], 240)?.to_owned();
-    path(&entry)?;
+    let runtime = RuntimeKind::parse(v)?;
+    let entry = runtime.entry(v)?;
     permissions(&v["permissions"])?;
     let installable = v["installable"]
         .as_bool()
@@ -302,6 +383,7 @@ fn parse_package(origin: &Repository, v: &Value) -> Result<Package, String> {
         return Err("Entry missing from inventory".into());
     }
     Ok(Package {
+        runtime,
         origin: origin.clone(),
         id,
         name,
@@ -392,20 +474,23 @@ pub fn manifest(bytes: &[u8]) -> Result<Value, String> {
     let v = serde_json::to_value(parsed).map_err(|e| e.to_string())?;
     fields(
         &v,
-        "manifest_version name id version runtime entry permissions",
+        if v["runtime"] == "rust" {
+            "manifest_version name id version runtime binaries permissions"
+        } else {
+            "manifest_version name id version runtime entry permissions"
+        },
     )?;
-    if v["manifest_version"].as_u64() != Some(1) || v["runtime"] != "python" {
+    if v["manifest_version"].as_u64() != Some(1) {
         return Err("unsupported manifest/runtime".into());
     }
     text(&v["name"], 1000)?;
     identity(text(&v["id"], 128)?)?;
     version(text(&v["version"], 32)?)?;
-    path(text(&v["entry"], 240)?)?;
-    permissions(&v["permissions"])?;
-    if std::path::Path::new(text(&v["entry"], 240)?).extension() != Some(std::ffi::OsStr::new("py"))
-    {
-        return Err("entry must be Python".into());
+    RuntimeKind::parse(&v)?;
+    if v["runtime"] == "python" {
+        manifest_entry(&v)?;
     }
+    permissions(&v["permissions"])?;
     Ok(v)
 }
 pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
@@ -421,15 +506,26 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
             return Err(format!("size/SHA-256 mismatch: {}", row.path));
         }
     }
-    for name in [
-        "app.toml",
-        "icon.png",
-        "main.py",
-        "requirements.txt",
-        "README.md",
-    ] {
+    for name in ["app.toml", "icon.png", "README.md"] {
         if !files.contains_key(name) {
             return Err(format!("missing {name}"));
+        }
+    }
+    if p.runtime == RuntimeKind::Python {
+        for name in ["main.py", "requirements.txt"] {
+            if !files.contains_key(name) {
+                return Err(format!("missing {name}"));
+            }
+        }
+    }
+    if let RuntimeKind::Rust(binaries) = &p.runtime {
+        for (target, entry) in binaries {
+            super::native::validate_binary(
+                files
+                    .get(entry)
+                    .ok_or("Native binary missing from inventory")?,
+                target,
+            )?;
         }
     }
     // Development tests are required in the source repository, but current
@@ -441,7 +537,8 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
     if v["id"] != p.id
         || v["name"] != p.name
         || v["version"] != p.version.to_string()
-        || v["entry"] != p.entry
+        || manifest_entry(&v)? != p.entry
+        || RuntimeKind::parse(&v)? != p.runtime
         || v["permissions"] != p.permissions
     {
         return Err("catalog/manifest disagreement".into());

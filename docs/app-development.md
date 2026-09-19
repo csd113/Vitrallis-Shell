@@ -40,8 +40,8 @@ audio = false
 storage = false
 ```
 
-These seven top-level fields and three boolean permissions are the complete v1
-vocabulary. Unknown or duplicate fields are errors. IDs are lowercase reverse-domain
+For Python, these seven top-level fields and three boolean permissions are the complete v1
+vocabulary. Rust packages use the alternative below. Unknown or duplicate fields are errors. IDs are lowercase reverse-domain
 identifiers; versions are stable numeric `MAJOR.MINOR.PATCH`. Permissions declare
 requirements, not a sandbox or a grant of authority. Package icons are noninterlaced
 PNGs of 1–512 pixels per dimension. App Center validates their decoded contents.
@@ -52,6 +52,50 @@ SHA-256 values. Catalog and manifest metadata must agree. Source paths come from
 the catalog and must meet `apps/<app-slug>`; the shell never guesses directories.
 Keep `installable` false until the app's target runtime and client integration
 have been verified. Existing packages follow the same workflow as new ones.
+
+## Precompiled Rust packages
+
+Native Rust apps use `runtime = "rust"` and a `binaries` table instead of `entry`.
+The catalog has the same `runtime` and `binaries` values. No Python supervisor,
+`main.py`, `requirements.txt`, Cargo or compiler is required on the target.
+
+```toml
+manifest_version = 1
+name = "Native Example"
+id = "org.example.nativeapp"
+version = "0.1.0"
+runtime = "rust"
+
+[binaries]
+armv7-unknown-linux-gnueabihf = "bin/armv7/app"
+aarch64-unknown-linux-gnu = "bin/aarch64/app"
+x86_64-unknown-linux-gnu = "bin/x86_64/app"
+
+[permissions]
+network = false
+audio = false
+storage = false
+```
+
+Include only targets you actually build. Each executable must be in the sorted
+package inventory. App Center selects the exact host OS/architecture/ABI, checks
+ELF class and machine (and ARM EABI5 hard-float), and refuses an incompatible
+package before execution. The publisher must also build for the target's libc
+baseline and document dynamic library prerequisites; an ELF header does not prove
+that all runtime libraries are available. PocketCHIP builds use ARMv7 hard-float,
+Cortex-A8 and a compatible GNU libc baseline (the Shell build uses 2.36).
+
+`app.toml`, `icon.png`, `README.md` and populated `assets/` remain required.
+The current limits are 2 MiB per file, 16 MiB per package and 256 files.
+Strip release executables. Declared binaries are installed executable (0755),
+regardless of the source file mode. Generated launchers exec the selected binary
+directly. Updates and removals use the same receipt-scoped transactions and
+local-edit protection as Python apps. Native process checks use the user's exact
+`/proc/<pid>/exe` and process start identity on Linux, rather than a process name.
+
+Folder membership is user state, outside the package manifest and receipt. Apps
+must not modify it or assume a fixed folder. Uninstalling an app does not delete
+its saved folder preference, and deleting a folder never uninstalls an app.
 
 ## Installation, launch and data
 

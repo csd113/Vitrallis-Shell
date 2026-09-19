@@ -2,7 +2,8 @@
 mod cache;
 mod discovery;
 mod install;
-mod metadata;
+pub mod metadata;
+mod native;
 mod network;
 mod running;
 mod runtime;
@@ -350,6 +351,16 @@ fn acquire(
     }
     let bundle = network::download(fetch, &row.package, &mut progress)?;
     progress(format!("Verifying {}", row.package.name))?;
+    progress(match row.package.runtime {
+        metadata::RuntimeKind::Python => format!(
+            "Checking/installing Python dependencies for {}",
+            row.package.name
+        ),
+        metadata::RuntimeKind::Rust(_) => format!(
+            "Checking native binary compatibility for {}",
+            row.package.name
+        ),
+    })?;
     install::prepare_with_modes(loc, row.package.clone(), bundle.files, &bundle.modes)
 }
 
@@ -422,6 +433,7 @@ fn refresh_local(loc: &Locations, sources: &Sources, row: &mut Checked) {
 fn source_error(origin: &sources::Repository, error: &str) -> Checked {
     Checked {
         package: metadata::Package {
+            runtime: metadata::RuntimeKind::Python,
             origin: origin.clone(),
             repository: origin.clone(),
             id: "io.vitrallis.sourceerror".into(),
@@ -476,3 +488,6 @@ impl Row {
                 .is_ok_and(|installed| self.package.version > installed)
     }
 }
+
+#[cfg(test)]
+mod native_tests;

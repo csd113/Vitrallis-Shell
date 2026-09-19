@@ -137,7 +137,13 @@ pub fn ensure(root: &Path, files: &Files) -> Result<Runtime, String> {
 }
 
 fn probe(program: &Path, script: &str, tk: bool, deps: &[String]) -> Result<(), String> {
-    run_probe(program, script, tk, deps, std::time::Duration::from_secs(3))
+    run_probe(
+        program,
+        script,
+        tk,
+        deps,
+        std::time::Duration::from_secs(30),
+    )
 }
 fn run_probe(
     program: &Path,
@@ -165,31 +171,79 @@ fn run_probe(
     command.env_remove("PYTHONPATH");
     let mut child = command
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
     let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                return if status.success() {
-                    Ok(())
-                } else {
-                    crate::process::cleanup_group(child.id());
-                    Err("Runtime/dependency probe failed".into())
-                };
+    let stdout = child.stdout.take().ok_or("Missing runtime stdout")?;
+    let stderr = child.stderr.take().ok_or("Missing runtime stderr")?;
+    let outputs = [drain(stdout), drain(stderr)];
+    let outcome = (|| {
+        let status = loop {
+            match child
+                .try_wait()
+                .map_err(|e| format!("Runtime wait failed: {e}"))?
+            {
+                Some(status) => break status,
+                None if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
+                None => return Err("Runtime/dependency process timed out".into()),
             }
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
-            _ => {
-                crate::process::cleanup_group(child.id());
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err("Runtime probe timed out".into());
-            }
+        };
+        // EOF covers inherited output pipes as well as the direct child. The
+        // provisioning helper itself waits for venv and every pip subprocess.
+        let mut diagnostics = String::new();
+        for output in outputs {
+            let bytes = output?
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .map_err(|_| "Runtime/dependency output did not finish before deadline")??;
+            diagnostics.push_str(&String::from_utf8_lossy(&bytes));
         }
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!(
+                "Runtime/dependency process exited {status}: {}",
+                diagnostics.trim()
+            ))
+        }
+    })();
+    if outcome.is_err() {
+        crate::process::cleanup_group(child.id());
+        let _ = child.kill();
+        let _ = child.wait();
     }
+    outcome
 }
+
+fn drain(
+    output: impl std::io::Read + Send + 'static,
+) -> Result<std::sync::mpsc::Receiver<Result<Vec<u8>, String>>, String> {
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    std::thread::Builder::new()
+        .name("app-runtime-output".into())
+        .spawn(move || {
+            let mut output = output;
+            let mut tail = Vec::new();
+            let mut buffer = [0; 4096];
+            let result = (|| {
+                loop {
+                    let count = output.read(&mut buffer).map_err(|e| e.to_string())?;
+                    if count == 0 {
+                        return Ok(tail);
+                    }
+                    tail.extend_from_slice(&buffer[..count]);
+                    if tail.len() > 8192 {
+                        tail.drain(..tail.len() - 8192);
+                    }
+                }
+            })();
+            let _ = send.send(result);
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(receive)
+}
+
 pub fn launcher(runtime: &Runtime, entry: &Path, commit: &str) -> Result<Vec<u8>, String> {
     fn quote(s: &str) -> String {
         format!("'{}'", s.replace('\'', "'\\''"))
@@ -267,7 +321,7 @@ fn compile_sources(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<()
             return Err(e.to_string());
         }
     };
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
     let result: Result<(), String> = loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -330,5 +384,49 @@ with tempfile.TemporaryDirectory() as directory:
             false,
             &[super::PROVISION.into()],
         )
+    }
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+    #[test]
+    fn dependency_chain_waits_for_real_completion_and_preserves_failure_output()
+    -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let marker = scratch.0.join("dependency-ready");
+        let script = "import subprocess,sys; subprocess.run([sys.executable, '-c', 'import pathlib,sys,time; time.sleep(0.15); pathlib.Path(sys.argv[1]).write_text(\"installed\")', sys.argv[2]], check=True)";
+        for _ in 0..3 {
+            run_probe(
+                Path::new("/usr/bin/python3"),
+                script,
+                false,
+                &[marker.to_string_lossy().into_owned()],
+                Duration::from_secs(10),
+            )?;
+            assert_eq!(
+                std::fs::read_to_string(&marker).map_err(|e| e.to_string())?,
+                "installed"
+            );
+            std::fs::remove_file(&marker).map_err(|e| e.to_string())?;
+        }
+        let error = run_probe(Path::new("/usr/bin/python3"), "import sys; print('x'*100000); print('pip dependency failed: wheel unavailable',file=sys.stderr); sys.exit(7)", false, &[], Duration::from_secs(10)).expect_err("failed installer cannot succeed");
+        assert!(error.contains("wheel unavailable") && error.contains('7'));
+        assert!(error.len() < 17000);
+        Ok(())
+    }
+    #[test]
+    fn descendants_cannot_outlive_the_completion_deadline() {
+        let start = Instant::now();
+        let result = run_probe(
+            Path::new("/usr/bin/python3"),
+            "import subprocess,sys; subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(10)'])",
+            false,
+            &[],
+            Duration::from_millis(200),
+        );
+        assert!(result.is_err());
+        assert!(start.elapsed() < Duration::from_secs(3));
     }
 }

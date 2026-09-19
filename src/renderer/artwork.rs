@@ -48,7 +48,9 @@ fn source(state: &Launcher, index: usize) -> Result<Option<Vec<u8>>, String> {
             return Ok(Some(bytes));
         }
         let builtin = crate::native::icon(app).or_else(|| {
-            if app.id == crate::app_center::TILE_ID {
+            if app.source == crate::app::AppSource::Folder {
+                Some(include_bytes!("../../assets/native/files.png").as_slice())
+            } else if app.id == crate::app_center::TILE_ID {
                 Some(include_bytes!("../../assets/system/apps.png").as_slice())
             } else if app.is_system_settings() {
                 Some(include_bytes!("../../assets/system/gear.png").as_slice())

@@ -13,6 +13,7 @@ pub struct AppManifest {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppSource {
+    Folder,
     Native,
     AppCenter,
     PocketHome,

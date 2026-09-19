@@ -26,6 +26,7 @@ pub(super) fn local_package(loc: &Locations, id: &str) -> Result<metadata::Packa
         return Err("Installed manifest ID differs; uninstall refused".into());
     }
     Ok(metadata::Package {
+        runtime: metadata::RuntimeKind::parse(&manifest)?,
         origin: super::sources::Repository::parse(metadata::text(&receipt["origin"], 160)?)?,
         repository: super::sources::Repository::parse(metadata::text(
             &receipt["repository"],
@@ -33,7 +34,7 @@ pub(super) fn local_package(loc: &Locations, id: &str) -> Result<metadata::Packa
         )?)?,
         id: id.into(),
         name: metadata::text(&manifest["name"], 1000)?.into(),
-        entry: metadata::text(&manifest["entry"], 240)?.into(),
+        entry: metadata::manifest_entry(&manifest)?,
         version: metadata::version(metadata::text(&receipt["version"], 32)?)?,
         commit: metadata::text(&receipt["commit"], 40)?.into(),
         description: "Installed application (local receipt)".into(),
@@ -85,7 +86,7 @@ pub(super) fn installed_entry(
         if manifest["id"] != p.id {
             return Err("Installed app ID differs; uninstall refused".into());
         }
-        return Ok(root.join(metadata::text(&manifest["entry"], 240)?));
+        return Ok(root.join(metadata::manifest_entry(&manifest)?));
     }
     metadata::path(&p.entry)?;
     Ok(root.join(&p.entry))

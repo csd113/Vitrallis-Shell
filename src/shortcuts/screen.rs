@@ -20,25 +20,22 @@ pub enum Field {
     Name,
     Command,
     Cwd,
+    FolderName,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Toolbar {
-    Settings,
-    Add,
     Actions,
+    Back,
 }
 impl Toolbar {
     pub const fn bounds(self, layout: &Layout) -> Rect {
         match self {
-            Self::Settings => Rect {
-                w: layout.footer.w / 3,
-                ..layout.footer
-            },
-            Self::Add => layout.add_shortcut,
             Self::Actions => layout.desktop_menu,
+            Self::Back => layout.folder_back,
         }
     }
 }
+pub const ACTIONS_LABEL: &str = "Actions [F10]";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Page {
     Menu,
@@ -46,6 +43,8 @@ enum Page {
     Text(Field),
     Browse(bool),
     Remove,
+    FolderMove,
+    FolderDelete,
 }
 #[derive(Debug, Clone, Copy, Default)]
 enum KeyboardPage {
@@ -79,6 +78,12 @@ impl KeyboardPage {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
+    CreateFolder,
+    RenameFolder,
+    DeleteFolder,
+    MoveApp,
+    Destination(usize),
+    Unfile,
     Add,
     Edit,
     Remove,
@@ -103,6 +108,7 @@ pub enum Target {
 }
 #[derive(Debug)]
 pub enum Request {
+    Folder(crate::folders::Change),
     Save,
     Remove,
     Uninstall,
@@ -111,6 +117,10 @@ pub enum Request {
 #[derive(Debug)]
 pub struct Desktop {
     pub toolbar: Option<Toolbar>,
+    pub in_folder: bool,
+    pub folders: crate::folders::Folders,
+    pub folder_context: Option<String>,
+    folder_edit: Option<String>,
     pub open: bool,
     pub draft: Draft,
     pub entry: Option<AppEntry>,
@@ -128,6 +138,10 @@ impl Default for Desktop {
     fn default() -> Self {
         Self {
             toolbar: None,
+            in_folder: false,
+            folders: crate::folders::Folders::default(),
+            folder_context: None,
+            folder_edit: None,
             open: false,
             draft: Draft::default(),
             entry: None,
@@ -196,12 +210,11 @@ impl Desktop {
         match *key {
             Keycode::Tab => {
                 let previous = keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD);
-                self.toolbar = match (self.toolbar, previous) {
-                    (None, false) | (Some(Toolbar::Add), true) => Some(Toolbar::Settings),
-                    (Some(Toolbar::Settings), false) | (Some(Toolbar::Actions), true) => {
-                        Some(Toolbar::Add)
+                self.toolbar = match (self.toolbar, previous, self.in_folder) {
+                    (None, false, true) | (Some(Toolbar::Actions), true, true) => {
+                        Some(Toolbar::Back)
                     }
-                    (Some(Toolbar::Add), false) | (None, true) => Some(Toolbar::Actions),
+                    (None, _, _) | (Some(Toolbar::Back), false, _) => Some(Toolbar::Actions),
                     _ => None,
                 };
                 Some(DesktopAction::Focus)
@@ -211,21 +224,18 @@ impl Desktop {
                 Some(DesktopAction::Focus)
             }
             Keycode::Left | Keycode::Right if self.toolbar.is_some() => {
-                self.toolbar = match (self.toolbar, *key == Keycode::Left) {
-                    (Some(Toolbar::Settings), false) | (Some(Toolbar::Actions), true) => {
-                        Some(Toolbar::Add)
-                    }
-                    (Some(Toolbar::Add), false) | (Some(Toolbar::Settings), true) => {
-                        Some(Toolbar::Actions)
-                    }
-                    _ => Some(Toolbar::Settings),
-                };
+                self.toolbar = Some(
+                    if self.in_folder && self.toolbar == Some(Toolbar::Actions) {
+                        Toolbar::Back
+                    } else {
+                        Toolbar::Actions
+                    },
+                );
                 Some(DesktopAction::Focus)
             }
-            Keycode::Return | Keycode::KpEnter if self.toolbar.is_some() => {
+            Keycode::Return | Keycode::KpEnter | Keycode::Space if self.toolbar.is_some() => {
                 match self.toolbar.take()? {
-                    Toolbar::Settings => Some(DesktopAction::Settings),
-                    Toolbar::Add => Some(DesktopAction::Add),
+                    Toolbar::Back => Some(DesktopAction::Back),
                     Toolbar::Actions => Some(DesktopAction::Menu(None)),
                 }
             }
@@ -264,6 +274,9 @@ impl Desktop {
             Page::Text(Field::Name) => "Name",
             Page::Text(Field::Command) => "Command",
             Page::Text(Field::Cwd) => "Working directory (optional)",
+            Page::Text(Field::FolderName) => "Folder name",
+            Page::FolderMove => "Move app to folder",
+            Page::FolderDelete => "Delete folder?",
             Page::Browse(true) => "Choose icon: PNG / BMP, up to 512x512",
             Page::Browse(false) => "Choose executable or script",
             Page::Remove => "Remove shortcut?",
@@ -281,6 +294,8 @@ impl Desktop {
             Page::Editor => "Tab/arrows: select | Enter/tap: edit | PgUp/PgDn: scroll".into(),
             Page::Text(_) => format!("{}|", self.text),
             Page::Browse(_) => self.directory.display().to_string(),
+            Page::FolderMove => "Choose a destination; apps stay installed".into(),
+            Page::FolderDelete => "Apps return to Apps. No app or data will be deleted.".into(),
             Page::Remove => {
                 "Only the shortcut is removed. The program and its data are kept.".into()
             }
@@ -294,8 +309,20 @@ impl Desktop {
     fn rows(&self) -> Vec<(Target, String)> {
         match self.page {
             Page::Menu => {
-                let mut rows = vec![(Target::Add, "Add shortcut".into())];
+                let mut rows = vec![
+                    (Target::Add, "Add shortcut".into()),
+                    (Target::CreateFolder, "Create folder".into()),
+                ];
+                if self.folder_context.is_some() {
+                    rows.extend([
+                        (Target::RenameFolder, "Rename folder".into()),
+                        (Target::DeleteFolder, "Delete folder".into()),
+                    ]);
+                }
                 if let Some(app) = &self.entry {
+                    if !matches!(app.source, AppSource::System | AppSource::Folder) {
+                        rows.push((Target::MoveApp, "Move app to folder / Apps".into()));
+                    }
                     match app.source {
                         AppSource::Custom => rows.extend([
                             (Target::Edit, "Edit shortcut".into()),
@@ -312,6 +339,15 @@ impl Desktop {
                 }
                 rows
             }
+            Page::FolderMove => std::iter::once((Target::Unfile, "Apps (unfiled)".into()))
+                .chain(
+                    self.folders
+                        .names
+                        .values()
+                        .enumerate()
+                        .map(|(index, name)| (Target::Destination(index), name.clone())),
+                )
+                .collect(),
             Page::Editor => vec![
                 (
                     Target::Field(Field::Name),
@@ -369,7 +405,7 @@ impl Desktop {
                     )
                 })
                 .collect(),
-            Page::Text(_) | Page::Remove => Vec::new(),
+            Page::Text(_) | Page::Remove | Page::FolderDelete => Vec::new(),
         }
     }
     fn capacity(layout: &Layout) -> usize {
@@ -461,7 +497,11 @@ impl Desktop {
     fn footer(&self) -> Vec<(Target, &'static str)> {
         match self.page {
             Page::Editor => vec![(Target::Cancel, "Cancel"), (Target::Save, "Save")],
-            Page::Menu => vec![(Target::Cancel, "Cancel")],
+            Page::Menu | Page::FolderMove => vec![(Target::Cancel, "Cancel")],
+            Page::FolderDelete => vec![
+                (Target::Cancel, "Cancel"),
+                (Target::Confirm, "Delete folder"),
+            ],
             Page::Browse(_) => vec![
                 (Target::Cancel, "Cancel"),
                 (Target::Parent, "Parent folder"),
@@ -503,8 +543,60 @@ impl Desktop {
         self.selected = 0;
         Ok(())
     }
+    fn folder_action(
+        &mut self,
+        target: Target,
+        layout: &Layout,
+    ) -> Result<Option<Request>, String> {
+        match target {
+            Target::CreateFolder | Target::RenameFolder => {
+                self.folder_edit = if target == Target::RenameFolder {
+                    self.folder_context.clone()
+                } else {
+                    None
+                };
+                self.text = self
+                    .folder_edit
+                    .as_ref()
+                    .and_then(|id| self.folders.names.get(id))
+                    .cloned()
+                    .unwrap_or_default();
+                self.page(Page::Text(Field::FolderName));
+                self.selected = self.targets(layout).len().saturating_sub(1);
+            }
+            Target::DeleteFolder => self.page(Page::FolderDelete),
+            Target::MoveApp => self.page(Page::FolderMove),
+            Target::Unfile | Target::Destination(_) => {
+                let app = self.entry.as_ref().ok_or("No app selected")?;
+                let folder = if let Target::Destination(index) = target {
+                    Some(
+                        self.folders
+                            .names
+                            .keys()
+                            .nth(index)
+                            .ok_or("Folder no longer exists")?
+                            .clone(),
+                    )
+                } else {
+                    None
+                };
+                return Ok(Some(Request::Folder(crate::folders::Change::Move(
+                    app.id.clone(),
+                    folder,
+                ))));
+            }
+            _ => return Err("Invalid folder action".into()),
+        }
+        Ok(None)
+    }
     fn activate(&mut self, target: Target, layout: &Layout) -> Result<Option<Request>, String> {
         match target {
+            Target::CreateFolder
+            | Target::RenameFolder
+            | Target::DeleteFolder
+            | Target::MoveApp
+            | Target::Unfile
+            | Target::Destination(_) => return self.folder_action(target, layout),
             Target::Add => self.add(),
             Target::Edit => {
                 self.draft = Store::current()?
@@ -514,8 +606,16 @@ impl Desktop {
             Target::Remove => self.page(Page::Remove),
             Target::Uninstall => return Ok(Some(Request::Uninstall)),
             Target::Save => return Ok(Some(Request::Save)),
+            Target::Confirm if self.page == Page::FolderDelete => {
+                return Ok(Some(Request::Folder(crate::folders::Change::Delete(
+                    self.folder_context.clone().ok_or("No folder selected")?,
+                ))));
+            }
             Target::Confirm => return Ok(Some(Request::Remove)),
             Target::Cancel => match self.page {
+                Page::Text(Field::FolderName) | Page::FolderMove | Page::FolderDelete => {
+                    self.page(Page::Menu);
+                }
                 Page::Text(_) | Page::Browse(_) => self.page(Page::Editor),
                 Page::Remove => self.page(Page::Menu),
                 _ => {
@@ -528,22 +628,13 @@ impl Desktop {
                     Field::Name => &self.draft.name,
                     Field::Command => &self.draft.command,
                     Field::Cwd => &self.draft.cwd,
+                    Field::FolderName => return Err("Use folder actions to edit names".into()),
                 }
                 .clone();
                 self.page(Page::Text(field));
                 self.selected = self.targets(layout).len().saturating_sub(1);
             }
-            Target::Done => {
-                if let Page::Text(field) = self.page {
-                    let text = std::mem::take(&mut self.text);
-                    match field {
-                        Field::Name => self.draft.name = text,
-                        Field::Command => self.draft.command = text,
-                        Field::Cwd => self.draft.cwd = text,
-                    }
-                    self.page(Page::Editor);
-                }
-            }
+            Target::Done => return self.finish_text(),
             Target::Character(c) => self.insert(&c.to_string()),
             Target::Delete => {
                 self.text.pop();
@@ -591,9 +682,28 @@ impl Desktop {
         }
         Ok(None)
     }
+    fn finish_text(&mut self) -> Result<Option<Request>, String> {
+        if let Page::Text(field) = self.page {
+            if field == Field::FolderName {
+                return Ok(Some(Request::Folder(match self.folder_edit.clone() {
+                    Some(id) => crate::folders::Change::Rename(id, self.text.clone()),
+                    None => crate::folders::Change::Create(self.text.clone()),
+                })));
+            }
+            let text = std::mem::take(&mut self.text);
+            match field {
+                Field::Name => self.draft.name = text,
+                Field::Command => self.draft.command = text,
+                Field::Cwd => self.draft.cwd = text,
+                Field::FolderName => return Err("Folder field already handled".into()),
+            }
+            self.page(Page::Editor);
+        }
+        Ok(None)
+    }
     fn insert(&mut self, text: &str) {
         let limit = match self.page {
-            Page::Text(Field::Name) => 100,
+            Page::Text(Field::Name | Field::FolderName) => 100,
             Page::Text(Field::Cwd) => 4096,
             _ => 8192,
         };
@@ -611,7 +721,8 @@ impl Desktop {
         self.contact = None;
         match key {
             Keycode::Escape | Keycode::Home => activate = Some(Target::Cancel),
-            Keycode::Return | Keycode::KpEnter => {
+            Keycode::Space if self.editing() => (),
+            Keycode::Return | Keycode::KpEnter | Keycode::Space => {
                 activate = targets.get(self.selected).map(|(t, _, _)| *t);
             }
             Keycode::Tab if keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD) => {
@@ -730,7 +841,7 @@ impl Desktop {
                 ..
             } => {
                 self.contact = None;
-                if self.page == Page::Remove {
+                if matches!(self.page, Page::Remove | Page::FolderDelete) {
                     self.page(Page::Menu);
                 }
             }

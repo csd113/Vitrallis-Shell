@@ -329,8 +329,10 @@ impl Store {
 }
 
 pub fn hidden_key(app: &AppEntry) -> Option<String> {
-    if matches!(app.source, AppSource::Custom | AppSource::AppCenter)
-        || app.id == crate::app_center::TILE_ID
+    if matches!(
+        app.source,
+        AppSource::Custom | AppSource::AppCenter | AppSource::Folder
+    ) || app.id == crate::app_center::TILE_ID
         || app.is_system_settings()
     {
         return None;

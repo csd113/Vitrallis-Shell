@@ -50,9 +50,6 @@ mod sdl {
     }
 
     fn pointer(layout: &Layout, x: f64, y: f64, count: usize) -> Option<Action> {
-        if layout.footer.contains(x, y) {
-            return Some(Action::System);
-        }
         if layout.previous.contains(x, y) {
             return Some(Action::Page(false));
         }
@@ -123,7 +120,7 @@ pub use sdl::action;
 pub enum DesktopAction {
     Add,
     Menu(Option<usize>),
-    Settings,
+    Back,
     Focus,
 }
 #[derive(Debug, Default)]
@@ -278,8 +275,8 @@ fn desktop_target(
     x: f64,
     y: f64,
 ) -> Option<DesktopAction> {
-    if layout.add_shortcut.contains(x, y) {
-        Some(DesktopAction::Add)
+    if layout.folder_back.contains(x, y) {
+        Some(DesktopAction::Back)
     } else if layout.desktop_menu.contains(x, y) {
         Some(DesktopAction::Menu(None))
     } else {

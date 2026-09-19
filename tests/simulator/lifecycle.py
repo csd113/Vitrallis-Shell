@@ -118,10 +118,12 @@ class Shell:
         time.sleep(.5)
 
     def select(self, name):
+        title = self.shot("search-list-title").crop((0, 0, 480, 30)).tobytes()
         self.click(170, 78)
         self.click(180, 45)  # Clear search text
         self.xdo('type', '--window', self.window, '--clearmodifiers', name)
-        self.click(60, 45)  # Apply search
+        self.key("Left", "Return")  # Clear retains focus; Search is previous.
+        wait_for(lambda: self.shot("search-applied").crop((0, 0, 480, 30)).tobytes() == title, "search applied to list")
         image = self.shot('selection')
         if image.getpixel((9, 106)) != (93, 218, 201):
             self.click(220, 120)

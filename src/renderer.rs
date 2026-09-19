@@ -241,6 +241,12 @@ fn render_launcher(
         canvas,
         &if state.settings.open {
             format!("SYSTEM SETTINGS {}", env!("CARGO_PKG_VERSION"))
+        } else if let Some(name) = state
+            .folder
+            .as_ref()
+            .and_then(|id| state.folders.names.get(id))
+        {
+            format!("APPS / {name}")
         } else {
             "VITRALLIS".into()
         },
@@ -320,20 +326,21 @@ fn desktop_footer(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Res
     }
     text(
         canvas,
-        "Settings [Power]",
-        Rect {
-            w: layout.footer.w / 3,
-            ..layout.footer
-        },
-        layout.text_scale,
-        Color::RGB(173, 194, 210),
+        crate::shortcuts::screen::ACTIONS_LABEL,
+        layout.desktop_menu,
+        1,
+        Color::RGB(93, 218, 201),
     )?;
-    for (bounds, label) in [
-        (layout.add_shortcut, "Add shortcut [F2]"),
-        (layout.desktop_menu, "Actions [F10]"),
-    ] {
-        text(canvas, label, bounds, 1, Color::RGB(93, 218, 201))?;
+    if state.folder.is_some() {
+        text(
+            canvas,
+            "Back to Apps",
+            layout.folder_back,
+            1,
+            Color::RGB(93, 218, 201),
+        )?;
     }
+
     Ok(())
 }
 
@@ -392,18 +399,22 @@ fn render_tile(
         },
     )?;
     if running {
-        text(
-            canvas,
-            "*",
-            Rect {
-                x: tile.x,
-                y: tile.y,
-                w: 16,
-                h: 16,
-            },
-            1,
-            Color::RGB(93, 218, 201),
-        )?;
+        // Static play badge: fixed corner space, no timer or text reflow.
+        let badge = Rect {
+            x: tile.x + 5,
+            y: tile.y + 5,
+            w: 13,
+            h: 13,
+        };
+        fill(canvas, badge, Color::RGB(8, 24, 32))?;
+        canvas.set_draw_color(Color::RGB(93, 218, 201));
+        canvas.draw_rect(rect(badge)?)?;
+        for offset in 0..5 {
+            canvas.draw_line(
+                (badge.x + 4 + offset, badge.y + 3 + offset / 2),
+                (badge.x + 4 + offset, badge.y + 9 - offset / 2),
+            )?;
+        }
     }
     if selected {
         canvas.set_draw_color(Color::RGB(93, 218, 201));

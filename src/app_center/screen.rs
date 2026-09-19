@@ -1006,6 +1006,7 @@ impl Center {
     fn keyboard(&mut self, event: &Event, layout: &Layout, targets: &[(Target, String, Rect)]) {
         if let Event::KeyDown {
             keycode: Some(key),
+            keymod,
             repeat: false,
             ..
         } = event
@@ -1019,7 +1020,15 @@ impl Center {
                 Keycode::Left | Keycode::Kp4 => self.horizontal(false, targets),
                 Keycode::Right | Keycode::Kp6 => self.horizontal(true, targets),
                 Keycode::Tab => {
-                    self.selected = (self.selected + 1) % targets.len().max(1);
+                    self.selected = if keymod
+                        .intersects(sdl2::keyboard::Mod::LSHIFTMOD | sdl2::keyboard::Mod::RSHIFTMOD)
+                    {
+                        self.selected
+                            .checked_sub(1)
+                            .unwrap_or_else(|| targets.len().saturating_sub(1))
+                    } else {
+                        (self.selected + 1) % targets.len().max(1)
+                    };
                 }
                 Keycode::Space if self.editing() => (),
                 Keycode::Return | Keycode::KpEnter | Keycode::Space => {

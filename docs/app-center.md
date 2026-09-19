@@ -43,6 +43,27 @@ backs out, declines a confirmation, or cancels acquisition on the app list.
 Page Up/Down and the mouse wheel scroll. Touch/mouse require a matching
 press/release target. Losing focus declines pending confirmations.
 
+## Apps page actions and folders
+
+The Apps page bottom bar contains **Actions**. Add Shortcut is available in that
+menu (F2 also opens its editor); system controls remain accessible through the
+System Settings tile and Power key. Tab selects Actions; Enter or Space opens it.
+The action label is centralized for a future rename.
+
+Actions includes Create folder, Rename folder, Delete folder and Move app to
+folder / Apps. Open a folder like an app. Inside a folder, the header shows its
+name, **Back to Apps** is reachable with Tab and touch, and Escape returns to the
+folder tile without closing its running app. Deletion defaults to Cancel and
+returns contained apps to the unfiled Apps view. The app binaries, receipts and
+saved data are untouched. The folder editor shares the shortcut editor's keyboard
+and touchscreen text entry. Folder state is stored atomically in
+`$XDG_DATA_HOME/vitrallis/folders.json`, independently of shell generations and
+app installations. Malformed or unsafe state cannot be overwritten by an action.
+
+Running apps have a small outlined play badge in a fixed corner of the tile.
+This uses the launcher's semantic running IDs and no animation timer, preserving
+text positions and idle rendering behavior.
+
 ## Repositories and cached metadata
 
 **Sources** opens repository management. Add/Edit accept `owner/repo` or an HTTPS
@@ -116,8 +137,8 @@ there is no mutable archive cache to reuse across releases. Pinned Git executabl
 modes are retained. Untrusted paths, symlinks, submodules, special files, incomplete
 trees, collisions and reserved runtime/installer paths fail closed.
 
-Catalog v1 and manifest v1 must agree on ID, name, version, Python runtime, entry
-and network/audio/storage requirements. Packages require `app.toml`, `main.py`,
+Catalog v1 and manifest v1 must agree on ID, name, version, runtime, runtime-specific
+entry/binaries and network/audio/storage requirements. Python packages require `app.toml`, `main.py`,
 `icon.png`, `requirements.txt`, `README.md` and populated `assets/`. The declared
 entry must be an inventoried Python file. Runtime detection checks a managed
 app-local environment, an existing `.venv/bin/python3`, then system Python
@@ -126,11 +147,20 @@ creates an isolated environment under `runtime/<requirements hash>` and installs
 `requirements.txt` plus `packaging` using pip. Failed provisioning removes the
 staged environment; existing environments are preserved. Python/Tk and venv/pip
 must be available on the system, and dependency downloads require network access.
-Pip options, paths, URLs and extras in requirements are rejected. Declared
+The worker reports dependency checking/installation separately from package commit.
+It waits for venv and pip completion, consumes bounded stdout/stderr through EOF,
+and preserves the last 8 KiB of each output on failure. Runtime checks wait for
+process completion with a 30-second deadline (provisioning: 660 seconds), including
+the first check after provisioning on slow hardware. Pip options, paths, URLs and
+extras in requirements are rejected. Declared
 distributions, Tk imports and syntax are checked without importing app code.
 Catalog checks do not install dependencies. App Center does not run apt or
 publisher install scripts, and does not install Python dependencies globally.
 Permissions are requirements; applications are not sandboxed.
+
+Rust packages declare precompiled binaries by target ABI and do not run Python or
+Cargo. See the [Rust package contract](app-development.md#precompiled-rust-packages)
+for manifests, binary checks, executable permissions and publisher prerequisites.
 
 Installed packages live at `$XDG_DATA_HOME/vitrallis/apps/<id>` (default
 `~/.local/share/vitrallis/apps/<id>`). Receipts, generated launchers, application
@@ -148,9 +178,9 @@ startup/home/path overrides are excluded consistently with runtime preflight.
 Same-version republishing, downgrades, source switches and modified managed source
 files are rejected before replacement.
 
-Running-app detection reads the **installed manifest's entry**, even when the
+Running-app detection reads the **installed manifest's runtime entry**, even when the
 available version changes entry paths. **Close and update** defaults to Cancel.
-Confirmation matches the exact script and process start identity, then sends TERM
+Confirmation matches the exact Python script or native executable and process start identity, then sends TERM
 and waits up to eight seconds. New or unclosed matching processes block mutation.
 Updated apps remain closed until the user opens them.
 
@@ -187,3 +217,9 @@ No obsolete package-layout migrations or compatibility paths are provided.
 
 See [the validation report](app-center-validation.md) and
 [Docker simulator instructions](../tests/simulator/README.md).
+
+## Physical validation
+
+See the [PocketCHIP App Manager validation record](devices/pocketchip/app-manager-validation.md)
+for the isolated hardware deployment, dependency prerequisites, lifecycle results,
+resource measurements and physical display verification limits.

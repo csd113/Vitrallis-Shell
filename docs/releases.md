@@ -1,5 +1,26 @@
 # Release validation and assets
 
+## 0.1.0-beta3.1
+
+This release improves App Manager installation synchronization, keeps the Apps
+footer focused on Actions, adds static running-app badges and persistent local
+folders, and supports precompiled Rust application packages alongside Python.
+Native packages select a compatible Linux target, validate ELF architecture and
+permissions, and use the existing install, update and uninstall transactions.
+
+Python dependency provisioning waits for process completion and output EOF,
+preserves useful failure diagnostics, and reports dependency work separately from
+the application commit. Folder deletion returns apps to the normal view without
+uninstalling them. Folder actions, navigation and confirmations remain usable with
+keyboard and touch.
+
+The [PocketCHIP validation record](devices/pocketchip/app-manager-validation.md)
+documents the development build's Python and Rust lifecycles, folder and keyboard
+checks, resource samples and the user's clean physical display observation. The
+release artifacts are rebuilt from the versioned tag and follow the CI, checksum
+and bundle review gates below. The maintainer explicitly authorized this version,
+commit/push and GitHub prerelease publication.
+
 ## 0.1.0-beta3
 
 This release merges the GPU hardware acceleration work into main. The shell,
