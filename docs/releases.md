@@ -1,5 +1,25 @@
 # Release validation and assets
 
+## 0.1.0-beta4
+
+Adds shared, Shell-managed Arti as a separate supervised process, on-demand Tor
+application requirements, fail-closed required-app networking and keyboard/touch
+Tor Settings. Arti 2.6.0 is the fifth executable in the complete v2 bundle.
+See [Tor architecture](tor.md) and [Tor validation](tor-validation.md).
+
+Existing users update through Settings. beta3.9 installs the full beta4 bundle
+directly. Users skipping beta3.9 receive a compatible four-executable beta4 entry
+point, then repeat Check/Install/Relaunch once to complete the same release with
+Arti. Complete installations do not repeat the update. See the
+[upgrade paths and prerequisites](beta4-upgrade.md) for the tested contracts.
+
+## 0.1.0-beta3.9
+
+A four-executable update bridge that prepares existing Shell installations for
+beta4's full five-executable bundle and Arti's independent version. It preserves
+the existing atomic generation-switch transaction and ordinary app behavior.
+It does not include the Tor service. No manual reinstallation is needed.
+
 ## 0.1.0-beta3.1
 
 This release improves App Manager installation synchronization, keeps the Apps
@@ -85,34 +105,34 @@ is a beta prerelease.
 
 ## Current source asset inventory
 
-The beta2.7 source contract requires `install-session.py`; published beta2.6
-predates that installer and is not selected by the current bootstrap. Each
-architecture has a four-binary bundle and sidecar:
+The complete beta4 bundle contains Shell, Terminal, Notepad, Files and Arti:
 
-- `vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle`
-- `vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle.sha256`
-- `vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle`
-- `vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle.sha256`
+- `vitrallis-x86_64-unknown-linux-gnu-glibc2.36-v2.vtrbundle`
+- `vitrallis-x86_64-unknown-linux-gnu-glibc2.36-v2.vtrbundle.sha256`
+- `vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle`
+- `vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle.sha256`
 
-The ARM job also packages `bootstrap.py`, `install-session.py`, `uninstall.py`,
-`vitrallis-session.py`, `platform-setup.py` and `media-setup.py`, each with its own `.sha256` sidecar. The resulting 16
-assets come from the tagged checkout. The bootstrap obtains matching helpers
-and bundle from one release; native OTA updates replace only the four-binary
-generation. Installer/session helper updates require rerunning the reviewed
-bootstrap with the Vitrallis session closed.
+beta4 additionally publishes both architecture bundles under the original names
+(without `-v2`) as four-executable OTA entry points, each with its own sidecar.
+The ARM job packages `bootstrap.py`, `install-session.py`, `uninstall.py`,
+`vitrallis-session.py`, `platform-setup.py` and `media-setup.py`, each with its own
+sidecar. beta4 therefore has 20 assets. beta3.9 has the original 16-asset inventory.
+The matching beta4 bootstrap uses the complete v2 bundle directly.
 
-The earlier published beta2.5 standalone binaries cannot satisfy this contract.
-Obsolete pre-release installations/layouts are not migrated. Use the current
-complete-bundle installation flow when replacing an obsolete layout.
+Native OTA updates switch the binary generation and preserve installed session
+helpers and user configuration. The narrowly scoped four-file transition exists
+for the explicitly supported beta3.9/beta4 upgrade; older standalone layouts
+remain outside the managed updater contract. See [upgrade details](beta4-upgrade.md).
 
 ## Release gates
 
 The tag workflow builds on Debian 12 with Rust 1.91.1 and runs
 `sh scripts/validate.sh`: formatting, locked workspace check, strict Clippy,
-complete Rust/Python tests, four-binary release build, SDL smoke checks and
+complete Rust/Python tests, native release build, SDL smoke checks and
 repository/documentation validation. Separate host CI also validates Rust 1.91.0.
 
-Packaging checks each executable's target and exact workspace version. ARMv7
+Packaging checks each executable's target and version: the four Vitrallis binaries
+match the workspace version; Arti independently reports 2.6.0. ARMv7
 cross-builds are checked under QEMU with the Cortex-A8 CPU model, including
 version probes, a 480×272 shell frame and native-app smokes. Both architecture
 bundles require glibc 2.36+ and SDL2 2.26.5+.
