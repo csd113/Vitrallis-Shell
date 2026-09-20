@@ -5,6 +5,7 @@ mod geometry;
 #[cfg(test)]
 mod keyboard_tests;
 mod pointer;
+mod preferences;
 mod storage;
 mod tor;
 mod update;
@@ -44,6 +45,7 @@ pub enum NetworkState {
 pub enum Page {
     #[default]
     General,
+    Preferences,
     Device,
     Timezones,
     Updates,
@@ -91,6 +93,9 @@ pub enum SystemState {
 
 #[derive(Debug, Default)]
 pub struct Settings {
+    pub policy: crate::preferences::Policy,
+    pub policy_apps: Vec<(String, String)>,
+    pub policy_app: usize,
     pub tor: crate::tor::Snapshot,
     pub tor_control: Option<crate::tor::Control>,
     pub storage: crate::storage::Storage,
@@ -178,6 +183,10 @@ impl Settings {
         if self.open && self.footer_input(action) {
             return None;
         }
+        if self.open && self.page == Page::Preferences {
+            self.preferences_input(action);
+            return None;
+        }
         if self.open && matches!(self.page, Page::Tor | Page::TorDetails) {
             self.tor_input(action);
             return None;
@@ -242,7 +251,7 @@ impl Settings {
                 if self.available(self.selected) {
                     match self.selected {
                         0 | 1 => self.message = "Drag the slider or use left / right".into(),
-                        2 => return Some(Request::Network),
+                        2 => self.page(Page::Wireless),
                         5 => self.page(Page::Device),
                         3 | 4 => {
                             self.confirmation = Some((
@@ -318,9 +327,8 @@ impl Settings {
         match index {
             0 => self.status.brightness.is_some(),
             1 => self.status.volume.is_some(),
-            2 => self.network_available,
+            2 | 5 => true,
             3 | 4 => self.status.power_controls,
-            5 => true,
             _ => false,
         }
     }
@@ -382,10 +390,13 @@ mod tests {
             settings.input(Action::Move(Direction::Left)),
             Some(Request::Control(Control::Volume(Percent::new(0)?)))
         );
+        assert_eq!(settings.input(Action::SelectAndActivate(2)), None);
+        assert_eq!(settings.page, Page::Wireless);
         assert_eq!(
             settings.input(Action::SelectAndActivate(2)),
             Some(Request::Network)
         );
+        settings.input(Action::Back);
         settings.pending = true;
         assert_eq!(
             settings.adjust(0, Percent::new(50)?),

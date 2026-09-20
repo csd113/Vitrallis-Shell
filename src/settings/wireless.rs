@@ -5,7 +5,6 @@ use crate::{
     navigation::Direction,
     platform::system::{Control, Radio},
 };
-pub(super) const WIRELESS: usize = 9;
 impl Settings {
     pub const fn radio_value(&self, index: usize) -> Option<bool> {
         match index {
@@ -36,7 +35,7 @@ impl Settings {
     }
     pub(super) fn wireless_input(&mut self, action: Action) -> Option<Request> {
         match action {
-            Action::Back | Action::System | Action::Page(_) => self.page(Page::Device),
+            Action::Back | Action::System | Action::Page(_) => self.page(Page::General),
             Action::Move(Direction::Up) => self.selected = self.selected.saturating_sub(1),
             Action::Move(Direction::Down) => {
                 self.selected = if self.selected >= 2 {
@@ -80,10 +79,7 @@ mod tests {
         let layout = Layout::home(480, 272)?;
         let mut settings = Settings::default();
         settings.show();
-        settings.page(Page::Device);
-        settings.selected = BACK;
-        settings.input(Action::Move(Direction::Right));
-        settings.input(Action::Activate);
+        settings.input(Action::SelectAndActivate(2));
         assert_eq!(settings.page, Page::Wireless);
         settings.status.wifi_enabled = Some(false);
         settings.status.bluetooth = Some(true);
@@ -137,7 +133,7 @@ mod tests {
         assert_eq!(settings.input(Action::Activate), Some(Request::Network));
         settings.input(Action::Move(Direction::Down));
         settings.input(Action::Activate);
-        assert_eq!(settings.page, Page::Device);
+        assert_eq!(settings.page, Page::General);
         Ok(())
     }
     #[test]

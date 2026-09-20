@@ -11,9 +11,11 @@ pub const PREFIX: &str = "vitrallis-folder-";
 pub struct Folders {
     pub names: BTreeMap<String, String>,
     pub members: BTreeMap<String, String>,
+    pub order: Vec<String>,
 }
 #[derive(Debug)]
 pub enum Change {
+    Reorder(Vec<String>),
     Create(String),
     Rename(String, String),
     Delete(String),
@@ -33,7 +35,7 @@ impl Folders {
             return Ok(Self::default());
         };
         let value = crate::app_center::metadata::json(&file.bytes)?;
-        crate::app_center::metadata::fields(&value, "folders members")?;
+        crate::app_center::metadata::fields(&value, "folders members order")?;
         let decode = |key: &str| -> Result<BTreeMap<String, String>, String> {
             value[key]
                 .as_object()
@@ -51,13 +53,32 @@ impl Folders {
         let state = Self {
             names: decode("folders")?,
             members: decode("members")?,
+            order: value.get("order").map_or(Ok(Vec::new()), |v| {
+                v.as_array()
+                    .ok_or("Invalid menu order")?
+                    .iter()
+                    .map(|id| id.as_str().map(str::to_owned).ok_or("Invalid menu ID"))
+                    .collect::<Result<Vec<_>, _>>()
+            })?,
         };
         state.validate()?;
         Ok(state)
     }
     fn validate(&self) -> Result<(), String> {
-        if self.names.len() > 1000 || self.members.len() > 1000 {
+        if self.names.len() > 1000 || self.members.len() > 1000 || self.order.len() > 2000 {
             return Err("Folder limit reached".into());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for id in &self.order {
+            if id.is_empty()
+                || id.len() > 256
+                || !id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+                || !seen.insert(id)
+            {
+                return Err("Invalid menu order".into());
+            }
         }
         for (id, name) in &self.names {
             crate::app_center::metadata::hex(
@@ -95,13 +116,16 @@ impl Folders {
         let mut state = Self::read(path)?;
         state.apply(change)?;
         state.validate()?;
-        let bytes = serde_json::to_vec(&json!({"folders": state.names, "members": state.members}))
-            .map_err(|e| e.to_string())?;
+        let bytes = serde_json::to_vec(
+            &json!({"folders": state.names, "members": state.members, "order": state.order}),
+        )
+        .map_err(|e| e.to_string())?;
         storage::atomic(path, &FileData { bytes, mode: 0o600 })?;
         Ok(state)
     }
     fn apply(&mut self, change: Change) -> Result<(), String> {
         match change {
+            Change::Reorder(order) => self.order = order,
             Change::Create(name) => {
                 Self::name(&name)?;
                 let stamp = std::time::SystemTime::now()
@@ -157,6 +181,17 @@ impl Folders {
                 .filter(|app| self.members.get(&app.id).map(String::as_str) == folder)
                 .cloned(),
         );
+        if !self.order.is_empty() {
+            visible.sort_by(|a, b| {
+                let rank = |app: &AppEntry| {
+                    self.order
+                        .iter()
+                        .position(|id| id == &app.id)
+                        .unwrap_or(usize::MAX)
+                };
+                rank(a).cmp(&rank(b)).then_with(|| a.id.cmp(&b.id))
+            });
+        }
         visible
     }
 }
@@ -164,6 +199,47 @@ impl Folders {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ordering_uses_ids_and_survives_catalog_changes() -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let path = scratch
+            .0
+            .canonicalize()
+            .map_err(|e| e.to_string())?
+            .join("folders.json");
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let mut state = Folders::write_change(&path, Change::Create("Tools".into()))?;
+        let folder = state.names.keys().next().ok_or("missing folder")?.clone();
+        let order = vec![
+            apps[1].id.clone(),
+            folder.clone(),
+            apps[0].id.clone(),
+            "missing-app".into(),
+        ];
+        state = Folders::write_change(&path, Change::Reorder(order.clone()))?;
+        assert_eq!(Folders::read(&path)?, state);
+        let visible = state.view(&apps, None);
+        assert_eq!(
+            visible[..3]
+                .iter()
+                .map(|a| a.id.as_str())
+                .collect::<Vec<_>>(),
+            [&apps[1].id, &folder, &apps[0].id]
+        );
+        let mut refreshed = apps.clone();
+        refreshed.reverse();
+        refreshed.retain(|a| a.id != apps[0].id);
+        refreshed[0].name = "Renamed".into();
+        let visible = state.view(&refreshed, None);
+        assert_eq!(visible[0].id, apps[1].id);
+        assert_eq!(visible[1].id, folder);
+        assert_eq!(state.order, order);
+        assert!(
+            Folders::write_change(&path, Change::Reorder(vec!["same".into(), "same".into()]))
+                .is_err()
+        );
+        Ok(())
+    }
     #[test]
     fn folders_persist_moves_and_delete_returns_apps_without_touching_installations()
     -> Result<(), String> {

@@ -21,7 +21,7 @@ pub fn run() -> Result<(), String> {
     let session = vitrallis_native::ui::Session::new("Files", &options)?;
     let creator = session.canvas.texture_creator();
     let mut ui = Ui::new(session, &creator)?;
-    let _inbox = ui.inbox("files")?;
+    let inbox = ui.inbox("files")?;
     let start = options.path.clone().unwrap_or_else(vitrallis_native::home);
     let browser = match Browser::new(&start) {
         Ok(browser) => browser,
@@ -40,6 +40,13 @@ pub fn run() -> Result<(), String> {
     }
     loop {
         let input = ui.wait()?;
+        if inbox
+            .as_ref()
+            .is_some_and(vitrallis_native::ipc::Inbox::take_close_request)
+            && ui.idle_for_auto_close(&input)
+        {
+            return Ok(());
+        }
         if matches!(input, Input::Ignore | Input::Wake) {
             continue;
         }
@@ -73,7 +80,12 @@ impl Manager {
     fn input(&mut self, ui: &mut Ui, input: &Input) -> Result<bool, String> {
         let rows = Browser::visible_rows(ui, ui.header_height() + 4);
         let action = match *input {
-            Input::Close | Input::Key(Keycode::Escape, _) => Some(3),
+            Input::Close => Some(3),
+            Input::Key(Keycode::Escape, _) => {
+                self.browser.parent().map_err(|e| e.to_string())?;
+                self.footer = None;
+                None
+            }
             Input::Key(Keycode::Tab | Keycode::F6, _) => {
                 self.footer = match self.footer {
                     None => Some(0),
@@ -476,6 +488,22 @@ mod tests {
         assert_eq!(manager.browser.selected, 0);
         manager.render(&mut ui)?;
         assert!(Browser::row_height(&ui) >= 20);
+        ui.sdl.event()?.push_event(Event::KeyDown {
+            timestamp: 0,
+            window_id: 0,
+            keycode: Some(Keycode::Escape),
+            scancode: None,
+            keymod: Mod::NOMOD,
+            repeat: false,
+        })?;
+        manager.menu(&mut ui)?;
+        assert_eq!(manager.browser.path, scratch.0); // Modal consumes Escape first.
+        assert!(!manager.input(&mut ui, &Input::Key(Keycode::Escape, Mod::NOMOD))?);
+        assert_eq!(manager.browser.path, scratch.0.parent().ok_or("parent")?);
+        manager.browser = Browser::new(std::path::Path::new("/"))?;
+        assert!(!manager.input(&mut ui, &Input::Key(Keycode::Escape, Mod::NOMOD))?);
+        assert_eq!(manager.browser.path, std::path::Path::new("/"));
+        assert!(manager.input(&mut ui, &Input::Close)?);
         Ok(())
     }
 }

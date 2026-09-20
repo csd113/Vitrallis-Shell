@@ -131,8 +131,19 @@ pub fn focus(path: &Path) -> io::Result<()> {
     sender.send_to(b"", path)?;
     Ok(())
 }
+/// Ask a native app to close only if it can do so without losing work.
+/// Delivery is not an acknowledgement; process ownership is retained until exit.
+/// # Errors
+/// Reports an absent native inbox or failed delivery.
+pub fn close_if_safe(path: &Path) -> io::Result<()> {
+    let sender = UnixDatagram::unbound()?;
+    sender.set_nonblocking(true)?;
+    sender.send_to(b"close-if-safe", path)?;
+    Ok(())
+}
 /// One blocking IPC thread only when launched by Vitrallis. Requests never repaint while idle.
 pub struct Inbox {
+    close_requested: Arc<AtomicBool>,
     receiver: mpsc::Receiver<PathBuf>,
     overflow: Arc<AtomicBool>,
     path: PathBuf,
@@ -166,6 +177,8 @@ impl Inbox {
         let stop = Arc::clone(&stopped);
         let overflow = Arc::new(AtomicBool::new(false));
         let dropped = Arc::clone(&overflow);
+        let close_requested = Arc::new(AtomicBool::new(false));
+        let close = Arc::clone(&close_requested);
         let worker = thread::Builder::new()
             .name("native-inbox".into())
             .stack_size(128 * 1024)
@@ -174,6 +187,11 @@ impl Inbox {
                 while let Ok(count) = socket.recv(&mut bytes) {
                     if stop.load(Ordering::Acquire) {
                         break;
+                    }
+                    if &bytes[..count] == b"close-if-safe" {
+                        close.store(true, Ordering::Release);
+                        let _ = crate::ui::wake(&sender);
+                        continue;
                     }
                     if count == 0 {
                         if !focus.swap(true, Ordering::AcqRel) {
@@ -201,12 +219,19 @@ impl Inbox {
             }
         };
         Ok(Self {
+            close_requested,
             receiver,
             overflow,
             path,
             stopped,
             worker: Some(worker),
         })
+    }
+    /// Consume an advisory automatic close. Apps must veto while busy, focused,
+    /// or holding unsaved work; unsupported apps simply ignore this request.
+    #[must_use]
+    pub fn take_close_request(&self) -> bool {
+        self.close_requested.swap(false, Ordering::AcqRel)
     }
     /// # Errors
     /// Reports request overflow instead of silently dropping an open request.
@@ -286,9 +311,13 @@ pub(crate) fn test_private_inbox(sdl: &sdl2::Sdl) -> Result<(), String> {
         assert_eq!(broker.receive()?, Some(path.to_path_buf()));
         forward(&broker.path, path)?;
         focus(&inbox.path)?;
+        close_if_safe(&inbox.path)?;
         let deadline = Instant::now() + Duration::from_secs(3);
         let mut received = None;
-        while received.is_none() || !raised.load(Ordering::Acquire) {
+        while received.is_none()
+            || !raised.load(Ordering::Acquire)
+            || !inbox.close_requested.load(Ordering::Acquire)
+        {
             if received.is_none() {
                 received = inbox.receive()?;
             }
@@ -301,6 +330,8 @@ pub(crate) fn test_private_inbox(sdl: &sdl2::Sdl) -> Result<(), String> {
         assert!(send(&broker.path, Path::new("relative")).is_err());
         assert!(decode(b"/bad\0path").is_err());
         assert_eq!(inbox.receive()?, None);
+        assert!(inbox.take_close_request());
+        assert!(!inbox.take_close_request());
         let socket = inbox.path.clone();
         drop(inbox);
         assert!(!socket.exists());

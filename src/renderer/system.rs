@@ -295,20 +295,14 @@ pub(super) fn panel(
     settings: &Settings,
     textures: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
-    if matches!(settings.page, Page::Tor | Page::TorDetails) {
-        return tor::panel(canvas, layout, settings);
-    }
-    if settings.page == Page::Wireless {
-        return wireless::panel(canvas, layout, settings);
-    }
-    if settings.page == Page::Storage {
-        return storage::panel(canvas, layout, settings);
-    }
-    if settings.page == Page::Updates {
-        return update_panel(canvas, layout, settings);
-    }
-    if settings.page != Page::General {
-        return device_panel(canvas, layout, settings);
+    match settings.page {
+        Page::Tor | Page::TorDetails => return tor::panel(canvas, layout, settings),
+        Page::Preferences => return preferences_panel(canvas, layout, settings),
+        Page::Wireless => return wireless::panel(canvas, layout, settings),
+        Page::Storage => return storage::panel(canvas, layout, settings),
+        Page::Updates => return update_panel(canvas, layout, settings),
+        Page::Device | Page::Timezones => return device_panel(canvas, layout, settings),
+        Page::General => (),
     }
     let geometry = PanelLayout::new(layout);
     if settings.confirmation.is_some() {
@@ -335,7 +329,7 @@ pub(super) fn panel(
     let x = network.x + network.h;
     label(
         canvas,
-        "Wi-Fi",
+        "Wireless",
         Rect {
             x,
             y: network.y,
@@ -396,12 +390,30 @@ pub(super) fn panel(
     }
     panel_footer(canvas, layout, settings)
 }
+fn preferences_panel(
+    canvas: &mut Screen,
+    layout: &Layout,
+    settings: &Settings,
+) -> Result<(), String> {
+    for (index, (bounds, value)) in PanelLayout::rows(layout, 4)
+        .into_iter()
+        .zip(settings.preference_rows())
+        .enumerate()
+    {
+        card(canvas, bounds, settings.selected == index)?;
+        text(canvas, &value, bounds, layout.text_scale, INK)?;
+    }
+    panel_footer(canvas, layout, settings)
+}
+
 fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
     let storage_hint = storage::hint(settings);
     let hint = match settings.page {
         Page::General => "Left/right: adjust   Esc: close",
         Page::Storage => &storage_hint,
-        Page::Updates | Page::Tor | Page::TorDetails => "Esc: back   Enter: select",
+        Page::Preferences | Page::Updates | Page::Tor | Page::TorDetails => {
+            "Esc: back   Enter: select"
+        }
         Page::Device => "Left/right: timeout   Enter: select",
         Page::Wireless => "Left: off   Right: on   Enter: toggle",
         Page::Timezones => "Arrows: select   Enter: apply",

@@ -10,23 +10,23 @@
 
 ## App data and storage accounting
 
-- [ ] Store app-created data in per-app directories under `/home/<user>/documents/` instead of root-level directories; distinguish user documents/media from internal settings and caches.
-- [ ] Include app-created files in each app's Settings → Storage total; show installed files, runtime dependencies, user data, and caches separately.
-- [ ] Attribute Carousel's stored images/media to its shared Python/Rust library; count the shared allocation only once in aggregate totals.
+- [x] Store app-created data in per-app directories under `/home/<user>/documents/` instead of root-level directories; distinguish user documents/media from internal settings and caches.
+- [x] Include app-created files in each app's Settings → Storage total; show installed files, runtime dependencies, user data, and caches separately.
+- [x] Attribute Carousel's stored images/media to its shared Python/Rust library; count the shared allocation only once in aggregate totals.
 
 ## Background-app policy and startup
 
-- [ ] Add a configurable background-app timeout and per-app **Essential / Keep Running** flags; essential apps remain running until manually closed. Remove the manually assigned default policy and hard-coded exemptions.
-- [ ] Expose the effective policy in Settings and persist it by stable app ID.
-- [ ] Define safe shutdown behavior for apps with unsaved work; do not silently force-kill them on timeout.
-- [ ] Continue tracking delayed windows without requiring another launch, spawning duplicates, or stealing focus after the user navigates elsewhere.
+- [x] Add a configurable background-app timeout and per-app **Essential / Keep Running** flags; essential apps remain running until manually closed. Remove the manually assigned default policy and hard-coded exemptions.
+- [x] Expose the effective policy in Settings and persist it by stable app ID.
+- [x] Define safe shutdown behavior for apps with unsaved work; do not silently force-kill them on timeout.
+- [x] Continue tracking delayed windows without requiring another launch, spawning duplicates, or stealing focus after the user navigates elsewhere.
       
 ## Everyday interface fixes
 
-- [ ] Restore the 12/24-hour clock setting and persistence.
-- [ ] Make Escape in Files dismiss active dialogs first, otherwise navigate to the parent directory instead of closing the app. Retain an explicit exit action.
-- [ ] Merge Wi-Fi, wireless switches, and Tor settings under the existing Wi-Fi button; rename it **Wireless Network Controls**.
-- [ ] Support reordering apps and folders on the main menu; persist order by stable IDs across restarts and catalog changes.
+- [x] Restore the 12/24-hour clock setting and persistence.
+- [x] Make Escape in Files dismiss active dialogs first, otherwise navigate to the parent directory instead of closing the app. Retain an explicit exit action.
+- [x] Merge Wi-Fi, wireless switches, and Tor settings under the existing Wi-Fi button; rename it **Wireless Network Controls**.
+- [x] Support reordering apps and folders on the main menu; persist order by stable IDs across restarts and catalog changes.
 
 ## Documentation and licensing
 
@@ -45,10 +45,10 @@
 
 ## Non-blocking visual polish
 
-- [ ] Correct progress-bar colour blending.
-- [ ] Remove the stray line at the bottom-right and occasional bottom-left edges of the app selection window.
-- [ ] Expand Actions menu options across the available screen width.
-- [ ] Fade the boot animation into the desktop instead of ending abruptly.
+- [x] Correct progress-bar colour blending.
+- [x] Remove the stray line at the bottom-right and occasional bottom-left edges of the app selection window.
+- [x] Expand Actions menu options across the available screen width.
+- [x] Fade the boot animation into the desktop instead of ending abruptly.
 
 ## Additional apps and hardware validation (non-blocking)
 

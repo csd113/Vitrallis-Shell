@@ -53,6 +53,14 @@ pub fn run() -> Result<(), String> {
             Ok(None) => {}
         }
         let input = ui.wait()?;
+        if inbox
+            .as_ref()
+            .is_some_and(vitrallis_native::ipc::Inbox::take_close_request)
+            && !editor.document.dirty
+            && ui.idle_for_auto_close(&input)
+        {
+            return Ok(());
+        }
         if matches!(input, Input::Ignore) {
             continue;
         }
@@ -364,12 +372,20 @@ impl Editor {
         }
     }
     fn save(&mut self, ui: &mut Ui, save_as: bool) -> Result<bool, String> {
+        let default_directory = if self.document.path.is_none() {
+            Some(
+                vitrallis_native::paths::create_documents("io.vitrallis.notepad")
+                    .map_err(|e| e.to_string())?,
+            )
+        } else {
+            None
+        };
         let path = if save_as || self.document.path.is_none() {
-            let initial = self
-                .document
-                .path
-                .clone()
-                .unwrap_or_else(|| self.directory().join("Untitled.txt"));
+            let initial = self.document.path.clone().unwrap_or_else(|| {
+                default_directory
+                    .unwrap_or_else(|| self.directory())
+                    .join("Untitled.txt")
+            });
             let Some(path) = ui.prompt("Save as", &initial.to_string_lossy())? else {
                 return Ok(false);
             };

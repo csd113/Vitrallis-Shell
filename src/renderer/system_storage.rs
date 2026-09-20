@@ -28,7 +28,16 @@ pub(super) fn panel(
                         .zip(&app.parts)
                         .map(|(name, size)| format!("{name}: {}", size.label())),
                 );
-                lines.push("Known locations only; shared files counted once.".into());
+                lines.push(
+                    if matches!(
+                        app.id.as_str(),
+                        "io.vitrallis.mediacarousel" | "io.vitrallis.carouselrust"
+                    ) {
+                        "Carousel library shared; counted once.".into()
+                    } else {
+                        "Known locations; shared files counted once.".into()
+                    },
+                );
                 lines.push(
                     app.total.issue.clone().unwrap_or_else(|| {
                         "Data outside managed locations is not included.".into()
@@ -203,7 +212,7 @@ fn overview(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result
         || storage_state(settings).to_owned(),
         |report| {
             format!(
-                "App Manager: {} in {} apps",
+                "Applications: {} in {} apps",
                 report.app_total.label(),
                 report.apps.len()
             )
@@ -238,7 +247,7 @@ fn apps(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(),
                 if report.issue.is_some() {
                     "Installed app list unavailable".into()
                 } else {
-                    "No App Manager apps installed".into()
+                    "No applications found".into()
                 },
                 report
                     .issue

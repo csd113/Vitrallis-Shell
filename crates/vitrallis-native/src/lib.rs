@@ -5,6 +5,7 @@ pub mod files;
 pub mod font;
 pub mod ipc;
 pub mod keyboard;
+pub mod paths;
 pub mod renderer;
 pub mod theme;
 pub mod ui;

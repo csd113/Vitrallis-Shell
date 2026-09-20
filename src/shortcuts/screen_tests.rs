@@ -200,6 +200,14 @@ fn folder_actions_keyboard_destinations_and_safe_delete_are_reachable() -> Resul
             Target::MoveApp,
         ] {
             desktop.page(Page::Menu);
+            if !desktop
+                .targets(&layout)
+                .iter()
+                .any(|(t, _, _)| *t == target)
+            {
+                desktop.event(&key(Keycode::PageDown, Mod::NOMOD), &layout);
+                desktop.selected = 0;
+            }
             let targets = desktop.targets(&layout);
             let index = targets
                 .iter()
@@ -236,6 +244,41 @@ fn folder_actions_keyboard_destinations_and_safe_delete_are_reachable() -> Resul
             desktop.toolbar_event(&key(Keycode::Return, Mod::NOMOD)),
             Some(crate::input::DesktopAction::Back)
         );
+    }
+    Ok(())
+}
+
+#[test]
+fn actions_use_full_width_and_reordering_remains_keyboard_reachable() -> Result<(), String> {
+    for (w, h) in [(320, 200), (480, 272), (800, 480)] {
+        let layout = Layout::home(w, h)?;
+        let mut desktop = Desktop::default();
+        desktop.menu(Some(
+            crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis")).remove(0),
+        ));
+        for wanted in [Target::MoveEarlier, Target::MoveLater] {
+            desktop.page(Page::Menu);
+            while !desktop
+                .targets(&layout)
+                .iter()
+                .any(|(target, _, _)| *target == wanted)
+            {
+                desktop.event(&key(Keycode::PageDown, Mod::NOMOD), &layout);
+            }
+            let targets = desktop.targets(&layout);
+            let index = targets
+                .iter()
+                .position(|(t, _, _)| *t == wanted)
+                .ok_or("missing reorder")?;
+            assert_eq!(targets[index].2.w, i32::from(w) - 16);
+            desktop.selected = 0;
+            for _ in 0..index {
+                desktop.event(&key(Keycode::Tab, Mod::NOMOD), &layout);
+            }
+            assert!(
+                matches!(desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout), Some(Request::Reorder(later)) if later == (wanted == Target::MoveLater))
+            );
+        }
     }
     Ok(())
 }

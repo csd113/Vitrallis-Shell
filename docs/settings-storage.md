@@ -23,10 +23,26 @@ For each installed app, the scanner measures:
 
 - Installed files listed in its local receipt.
 - Private runtimes inside `runtime` or `.venv`.
-- Python caches in `.vitrallis-bytecode` and `__pycache__`.
-- Other files under that app's installation directory, including saved data and
-  configuration, plus its managed launcher, verified desktop entries and its
-  transaction backups when a receipt establishes ownership.
+- Python caches in `.vitrallis-bytecode` and `__pycache__`, plus the app's XDG cache.
+- User documents under `$HOME/documents/<stable-app-id>/`.
+- Internal settings/state under the app's XDG config/data roots, other installation
+  files and transaction backups. Managed launchers and verified desktop entries
+  are attributed to application files.
+
+Bundled Terminal, Notepad and Files appear alongside installed packages. Notepad
+uses its canonical documents directory for new saves; explicitly selected paths
+remain under the user's control. The launcher exports `VITRALLIS_APP_ID` and
+`VITRALLIS_DOCUMENTS_DIR` for applications that create documents. These variables
+do not redirect XDG configuration or caches, nor override an application's
+explicit output path.
+
+Python Carousel (`io.vitrallis.mediacarousel`) and Carousel-Rust
+(`io.vitrallis.carouselrust`) use the existing shared library beneath
+`$XDG_DATA_HOME/io.vitrallis.mediacarousel/` (default `~/.local/share`). Its `media`
+and `uploads` directories are one user-data allocation. They are neither copied
+nor moved for accounting. Both variants' shared settings/cache roots are also
+counted once. The first installed variant in stable ID order receives the shared
+allocation; both details pages identify it as shared.
 
 An app without a valid receipt still appears, but its classification is marked
 incomplete. Missing manifests are treated like App Manager discovery: leftover
@@ -87,7 +103,28 @@ worker behavior and cancellation. Keyboard/touch tests cover Storage navigation,
 refresh, paging and details. Software-rendered screenshot fixtures exercise
 480×272 and larger/smaller layouts, including loading/error/empty/partial states.
 
-For a PocketCHIP hardware check: open Storage while installing an app, leave and
+Optional device usability checks: open Storage while installing an app, leave and
 reopen while scanning, refresh after changing app data, navigate every action with
 keys and touch, and confirm that unavailable media and low free space do not
-freeze input. Hardware timing and resistive-touch accuracy require a device test.
+freeze input. The logic and layout changes use host-side tests; physical hardware is not a release gate for them.
+
+## Preferences and lifecycle
+
+**Settings → Device → Preferences** controls the persisted 12/24-hour clock,
+global background timeout, and each selected app's **Essential / Keep Running**
+flag. App choices use stable IDs. Timeout is disabled by default, matching this
+checkout's previous unlimited background lifetime. Essential apps are exempt.
+After a configured timeout the shell sends one advisory safe-close request per
+background period through the existing native inbox. Notepad vetoes while dirty,
+Files finishes modal/file operations first, and foreground apps veto. Terminal
+and applications without a safe-close implementation remain running. There is
+no forced termination or escalation after an unanswered request.
+
+The Wi-Fi entry opens **Wireless Network Controls**, containing the radio switches,
+connection manager and Tor controls. Actions offers **Move earlier / Move later**
+for apps and folders. Ordering is stored in the existing folder state by stable
+ID; absent IDs remain harmless and newly discovered IDs follow saved items.
+
+Late windows stay attached to the existing process owner. After returning home
+or the initial launch wait, background discovery never requests focus or spawns
+another copy.

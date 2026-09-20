@@ -366,6 +366,17 @@ impl<'a> Ui<'a> {
             }
         }
     }
+    /// An advisory close may only consume an idle wake, never queued user input.
+    /// A failed queue query or a foreground window conservatively vetoes closing.
+    #[must_use]
+    pub fn idle_for_auto_close(&self, input: &Input) -> bool {
+        *input == Input::Wake
+            && !self.canvas.window().has_input_focus()
+            && self
+                .sdl
+                .event()
+                .is_ok_and(|events| events.peek_events::<Vec<Event>>(1).is_empty())
+    }
     /// Drain a bounded batch in applications with high output rates.
     /// # Errors
     /// Reports a display resize error.
@@ -692,6 +703,7 @@ mod tests {
             )?;
             let creator = session.canvas.texture_creator();
             let mut ui = Ui::new(session, &creator)?;
+            crate::theme::tests::primitive_pixels(&mut ui.canvas)?;
             crate::font::tests::pixel_parity(&mut ui.canvas, &mut ui.font)?;
             ui.translate(Event::RenderDeviceReset { timestamp: 0 })?;
             crate::font::tests::pixel_parity(&mut ui.canvas, &mut ui.font)?;
@@ -718,6 +730,11 @@ mod tests {
             ui.release(2, 10, 51);
             assert_eq!(ui.press, None);
             crate::ipc::test_private_inbox(&ui.sdl)?;
+            while ui.events.poll_event().is_some() {}
+            assert!(!ui.idle_for_auto_close(&Input::Text("pending edit".into())));
+            key(&ui, Keycode::A)?;
+            assert!(!ui.idle_for_auto_close(&Input::Wake));
+            while ui.events.poll_event().is_some() {}
         }
         assert!(wrap(&"x".repeat(100_000), 10).len() <= 256);
         Ok(())

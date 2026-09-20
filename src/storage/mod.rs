@@ -31,7 +31,9 @@ pub struct Report {
 fn report(cancel: &AtomicBool) -> Result<Report, String> {
     let loc = Locations::current()?;
     let mut scanner = Scanner::new(cancel);
-    let (apps, issue) = accounting::installed(&loc, &mut scanner)?;
+    let (mut apps, issue) = accounting::installed(&loc, &mut scanner)?;
+    apps.extend(accounting::native(&loc, &mut scanner)?);
+    accounting::sort(&mut apps);
     let mut app_total = accounting::aggregate(apps.iter().map(|app| &app.total));
     if let Some(issue) = &issue {
         app_total.fail(issue);

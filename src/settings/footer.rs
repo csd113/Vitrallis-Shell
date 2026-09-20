@@ -19,10 +19,12 @@ impl Settings {
             ],
             Page::Device => [
                 Some((BACK, "< Back")),
-                Some((super::wireless::WIRELESS, "Wireless")),
+                Some((super::preferences::PREFERENCES, "Preferences")),
                 Some((NEXT, "Storage >")),
             ],
-            Page::Tor | Page::TorDetails | Page::Updates => [Some((BACK, "< Back")), None, None],
+            Page::Preferences | Page::Tor | Page::TorDetails | Page::Updates => {
+                [Some((BACK, "< Back")), None, None]
+            }
             Page::Wireless => [
                 Some((BACK, "< Back")),
                 Some((super::tor::TOR, "Tor >")),
@@ -77,7 +79,7 @@ impl Settings {
                 self.selected = match self.page {
                     Page::General if index == NEXT => 4,
                     Page::General | Page::Wireless => 2,
-                    Page::Device | Page::Tor => 3,
+                    Page::Device | Page::Tor | Page::Preferences => 3,
                     Page::Storage | Page::Updates | Page::TorDetails => 0,
                     Page::Timezones => self.visible_zones().saturating_sub(1),
                 };
@@ -88,8 +90,8 @@ impl Settings {
                     self.page(Page::Tor);
                     return true;
                 }
-                if self.page == Page::Device && index == super::wireless::WIRELESS {
-                    self.page(Page::Wireless);
+                if self.page == Page::Device && index == super::preferences::PREFERENCES {
+                    self.page(Page::Preferences);
                     return true;
                 }
                 if (self.page == Page::Device && index == NEXT)

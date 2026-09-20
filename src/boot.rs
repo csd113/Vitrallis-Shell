@@ -151,6 +151,7 @@ fn play<T>(
                 "level=info event=boot_complete elapsed_ms={}",
                 elapsed.as_millis()
             );
+            draw(canvas, layout, art.as_mut(), 35)?;
             return Ok(result);
         }
         let frame = u32::try_from(elapsed.as_nanos() / FRAME.as_nanos())

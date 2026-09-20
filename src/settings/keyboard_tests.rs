@@ -101,7 +101,11 @@ fn system_controls_and_confirmations_are_reachable_using_only_keys() -> Result<(
         Some(Request::Control(Control::Volume(Percent::new(40)?)))
     );
     move_keys(&mut settings, &[Keycode::Down]);
-    assert_eq!(key(&mut settings, Keycode::Return), Some(Request::Network));
+    assert_eq!(key(&mut settings, Keycode::Return), None);
+    assert_eq!(settings.page, Page::Wireless);
+    settings.input(crate::input::Action::SelectAndActivate(2));
+    key(&mut settings, Keycode::Escape);
+    settings.selected = 2;
     move_keys(&mut settings, &[Keycode::Right, Keycode::Return]);
     assert!(settings.confirmation.is_some());
     move_keys(&mut settings, &[Keycode::Return]);

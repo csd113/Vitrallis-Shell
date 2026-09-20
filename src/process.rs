@@ -45,6 +45,12 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
         command.arg(&m.entry);
     }
     command.envs(&m.env);
+    command.env("VITRALLIS_APP_ID", &app.id);
+    command.env(
+        "VITRALLIS_DOCUMENTS_DIR",
+        vitrallis_native::paths::documents(&vitrallis_native::home(), &app.id)
+            .map_err(|e| e.to_string())?,
+    );
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -62,6 +68,13 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
 }
 
 pub trait Processes {
+    fn cancel_focus(&mut self) {}
+    fn discover_window(&mut self) -> Result<bool, String> {
+        Ok(false)
+    }
+    fn close_if_safe(&mut self) -> Result<(), String> {
+        Ok(())
+    }
     fn start(&mut self, app: &AppEntry) -> Result<(), String>;
     fn deliver(&mut self, _app: &AppEntry) -> Result<(), String> {
         Ok(())
@@ -83,6 +96,8 @@ pub trait Processes {
 #[derive(Debug, Default)]
 pub struct ProcessSet<P = NativeProcess> {
     members: Vec<(String, P)>,
+    waiting_windows: std::collections::BTreeSet<String>,
+    background_since: std::collections::BTreeMap<String, (Instant, bool)>,
     pub tor: crate::tor::Service,
     tor_apps: std::collections::BTreeSet<String>,
     tor_pending: Option<(AppEntry, Instant)>,
@@ -130,6 +145,46 @@ impl ProcessSet<NativeProcess> {
     }
 }
 impl<P: Processes + Default> ProcessSet<P> {
+    /// Leaving the launch view cancels focus retries, never process/window tracking.
+    pub fn stop_focus_retry(&mut self) {
+        self.resume = None;
+        for (_, process) in &mut self.members {
+            process.cancel_focus();
+        }
+    }
+    pub fn returned_home(&mut self) {
+        self.stop_focus_retry();
+        self.active = None;
+    }
+    pub fn background_policy(&mut self, policy: &crate::preferences::Policy, now: Instant) {
+        self.background_since
+            .retain(|id, _| self.members.iter().any(|(member, _)| member == id));
+        self.waiting_windows
+            .retain(|id| self.members.iter().any(|(member, _)| member == id));
+        for (id, process) in &mut self.members {
+            if self.active.as_ref() == Some(id) || policy.timeout(id).is_none() {
+                self.background_since.remove(id);
+                continue;
+            }
+            let (since, requested) = self
+                .background_since
+                .entry(id.clone())
+                .or_insert((now, false));
+            if !*requested
+                && policy
+                    .timeout(id)
+                    .is_some_and(|timeout| now.saturating_duration_since(*since) >= timeout)
+            {
+                // Never drop/kill the process following this advisory request.
+                // Apps with unsaved work may veto; no response also means keep running.
+                if let Err(error) = process.close_if_safe() {
+                    eprintln!("level=warn event=auto_close_deferred app={id:?} error={error:?}");
+                }
+                *requested = true;
+            }
+        }
+    }
+
     fn poll_tor_launch(&mut self) -> Result<Option<FocusResult>, String> {
         use crate::tor::{Requirement, State};
         let snapshot = self.tor.snapshot();
@@ -202,6 +257,7 @@ impl<P: Processes + Default> ProcessSet<P> {
         let mut process = P::default();
         process.start(app)?;
         if process.waits_for_window() {
+            self.waiting_windows.insert(app.id.clone());
             process.focus()?;
             self.resume = Some(Resume {
                 app: app.clone(),
@@ -240,6 +296,14 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
     }
     fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
         let mut failure = None;
+        for (id, process) in &mut self.members {
+            if self.waiting_windows.contains(id)
+                && self.resume.as_ref().is_none_or(|r| &r.app.id != id)
+                && process.discover_window().unwrap_or(false)
+            {
+                self.waiting_windows.remove(id);
+            }
+        }
         for index in 0..self.members.len() {
             // A pending activation owns its exit/restart transition. Do not reap
             // it here and lose the user's request between window close and exit.
@@ -300,6 +364,7 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
         }
         match self.members[index].1.poll_focus() {
             Ok(Some(FocusResult::Focused)) => {
+                self.waiting_windows.remove(&self.members[index].0);
                 self.resume = None;
                 Ok(Some(FocusResult::Focused))
             }
@@ -334,9 +399,45 @@ pub struct NativeProcess {
     child: Option<Child>,
     window_hint: Option<crate::platform::AppWindow>,
     focus_result: Option<mpsc::Receiver<Result<FocusResult, String>>>,
+    discovery_result: Option<mpsc::Receiver<Result<FocusResult, String>>>,
+    focus_cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
     native_socket: Option<std::path::PathBuf>,
 }
 impl Processes for NativeProcess {
+    fn cancel_focus(&mut self) {
+        self.focus_cancelled
+            .store(true, std::sync::atomic::Ordering::Release);
+        self.focus_result = None;
+    }
+    fn close_if_safe(&mut self) -> Result<(), String> {
+        if let Some(path) = &self.native_socket {
+            vitrallis_native::ipc::close_if_safe(path).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+    fn discover_window(&mut self) -> Result<bool, String> {
+        if let Some(path) = &self.native_socket {
+            return Ok(path.exists());
+        }
+        if let Some(result) = &self.discovery_result {
+            match result.try_recv() {
+                Ok(result) => {
+                    self.discovery_result = None;
+                    return result.map(|r| r == FocusResult::Focused);
+                }
+                Err(mpsc::TryRecvError::Empty) => return Ok(false),
+                Err(mpsc::TryRecvError::Disconnected) => self.discovery_result = None,
+            }
+        }
+        if let Some(child) = &self.child {
+            let pid = child.id();
+            self.discovery_result = Some(request_focus(move || {
+                crate::platform::application_window(pid, false)
+            })?);
+        }
+        Ok(false)
+    }
+
     fn deliver(&mut self, app: &AppEntry) -> Result<(), String> {
         if app.source == crate::app::AppSource::Native
             && app.id == "io.vitrallis.notepad"
@@ -373,7 +474,12 @@ impl Processes for NativeProcess {
         let pid = child.id();
         let hint = self.window_hint;
         let native = self.native_socket.clone();
+        self.focus_cancelled = std::sync::Arc::default();
+        let cancelled = std::sync::Arc::clone(&self.focus_cancelled);
         self.focus_result = Some(request_focus(move || {
+            if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                return Ok(FocusResult::Missing);
+            }
             let result = native.map_or_else(
                 || crate::platform::focus_application(pid, hint),
                 |path| match vitrallis_native::ipc::focus(&path) {
@@ -654,6 +760,28 @@ mod tests {
         Ok(())
     }
     #[test]
+    fn cancelled_focus_cannot_satisfy_a_later_activation() -> Result<(), String> {
+        let (send, receive) = mpsc::channel();
+        send.send(Ok(FocusResult::Focused))
+            .map_err(|e| e.to_string())?;
+        let mut process = NativeProcess {
+            focus_result: Some(receive),
+            child: None,
+            window_hint: None,
+            native_socket: None,
+            discovery_result: None,
+            focus_cancelled: std::sync::Arc::default(),
+        };
+        process.cancel_focus();
+        assert_eq!(process.poll_focus()?, None);
+        assert!(
+            process
+                .focus_cancelled
+                .load(std::sync::atomic::Ordering::Acquire)
+        );
+        Ok(())
+    }
+    #[test]
     fn slow_focus_is_nonblocking_and_reports_failure() -> Result<(), String> {
         let (release, wait) = mpsc::channel();
         let receive = request_focus(move || {
@@ -666,6 +794,8 @@ mod tests {
             child: None,
             window_hint: None,
             native_socket: None,
+            discovery_result: None,
+            focus_cancelled: std::sync::Arc::default(),
         };
         assert_eq!(process.poll_focus()?, None);
         release.send(()).map_err(|error| error.to_string())?;
@@ -743,6 +873,7 @@ mod tests {
     }
     #[derive(Default)]
     struct ClosingWindow {
+        close_requests: usize,
         focus_error: Option<String>,
         exited: bool,
         window_ready: bool,
@@ -750,6 +881,13 @@ mod tests {
         focuses: usize,
     }
     impl Processes for ClosingWindow {
+        fn close_if_safe(&mut self) -> Result<(), String> {
+            self.close_requests += 1;
+            Ok(())
+        }
+        fn discover_window(&mut self) -> Result<bool, String> {
+            Ok(self.window_ready)
+        }
         fn start(&mut self, _: &AppEntry) -> Result<(), String> {
             self.starts += 1;
             Ok(())
@@ -772,6 +910,76 @@ mod tests {
                 FocusResult::Missing
             }))
         }
+    }
+    #[test]
+    fn delayed_window_is_discovered_after_leaving_without_relaunch_or_focus() -> Result<(), String>
+    {
+        #[derive(Default)]
+        struct Delayed(ClosingWindow);
+        impl Processes for Delayed {
+            fn start(&mut self, app: &AppEntry) -> Result<(), String> {
+                self.0.start(app)
+            }
+            fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
+                self.0.poll()
+            }
+            fn focus(&mut self) -> Result<(), String> {
+                self.0.focus()
+            }
+            fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
+                self.0.poll_focus()
+            }
+            fn waits_for_window(&self) -> bool {
+                true
+            }
+            fn discover_window(&mut self) -> Result<bool, String> {
+                self.0.discover_window()
+            }
+        }
+        for navigated_away in [false, true] {
+            let mut processes = ProcessSet::<Delayed>::default();
+            processes.start(&app())?;
+            if navigated_away {
+                processes.returned_home();
+            } else {
+                processes.resume.as_mut().ok_or("missing launch")?.deadline = Instant::now();
+                assert_eq!(processes.poll_focus()?, Some(FocusResult::Missing));
+            }
+            assert_eq!(processes.poll()?, None);
+            assert!(processes.waiting_windows.contains("test"));
+            processes.members[0].1.0.window_ready = true;
+            assert_eq!(processes.poll()?, None);
+            assert!(processes.waiting_windows.is_empty());
+            assert_eq!(processes.members[0].1.0.starts, 1);
+            assert_eq!(processes.members[0].1.0.focuses, 1); // Only the original launch request.
+            assert_eq!(processes.poll_focus()?, None);
+        }
+        Ok(())
+    }
+    #[test]
+    fn timeout_is_advisory_and_essential_apps_are_exempt_by_id() -> Result<(), String> {
+        let mut processes = ProcessSet::<ClosingWindow>::default();
+        processes.start(&app())?;
+        processes.returned_home();
+        let now = Instant::now();
+        let mut policy = crate::preferences::Policy {
+            background_seconds: 60,
+            ..Default::default()
+        };
+        processes.background_policy(&policy, now);
+        processes.background_policy(&policy, now + Duration::from_secs(59));
+        assert!(!processes.background_since["test"].1);
+        processes.background_policy(&policy, now + Duration::from_secs(60));
+        assert!(processes.background_since["test"].1);
+        processes.background_policy(&policy, now + Duration::from_secs(90));
+        assert_eq!(processes.members[0].1.close_requests, 1);
+        assert_eq!(processes.members.len(), 1); // The app deferred its close request: keep running.
+        policy.essential.insert("test".into());
+        processes.background_policy(&policy, now + Duration::from_secs(120));
+        assert!(processes.background_since.is_empty());
+        assert_eq!(processes.members[0].1.close_requests, 1);
+        assert_eq!(processes.members.len(), 1);
+        Ok(())
     }
     #[test]
     fn reopen_waits_for_closing_process_then_spawns_exactly_once() -> Result<(), String> {

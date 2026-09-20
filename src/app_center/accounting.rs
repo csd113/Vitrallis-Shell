@@ -8,14 +8,15 @@ pub struct AppUsage {
     pub id: String,
     pub name: String,
     pub icon: Option<Vec<u8>>,
-    pub parts: [Size; 4],
+    pub parts: [Size; 5],
     pub total: Size,
 }
-pub const PARTS: [&str; 4] = [
+pub const PARTS: [&str; 5] = [
     "Application files",
-    "App runtime",
+    "Runtime / dependencies",
     "App cache",
-    "Data / managed files",
+    "User documents / media",
+    "Internal settings / state",
 ];
 
 pub fn installed(
@@ -84,11 +85,12 @@ pub fn installed(
             }
         }
         for path in managed_locations(loc, &id, receipt.as_ref().ok().and_then(Option::as_ref)) {
-            parts[3].add(&scanner.measure(&path, true));
+            parts[4].add(&scanner.measure(&path, true));
         }
         if !scanner.stopped() {
-            desktop_files(loc, &id, scanner, &mut parts[3]);
+            desktop_files(loc, &id, scanner, &mut parts[0]);
         }
+        user_locations(loc, &id, scanner, &mut parts)?;
         let total = aggregate(parts.iter());
         let icon = if scanner.stopped() {
             None
@@ -110,6 +112,61 @@ pub fn installed(
     Ok((apps, issue))
 }
 
+// Both Carousel frontends deliberately use this existing shared media library.
+// Scanner claims each physical root once, including when only one variant exists.
+const CAROUSEL: &str = "io.vitrallis.mediacarousel";
+fn user_locations(
+    loc: &Locations,
+    id: &str,
+    scanner: &mut Scanner<'_>,
+    parts: &mut [Size; 5],
+) -> Result<(), String> {
+    let documents = vitrallis_native::paths::documents(&loc.home, id).map_err(|e| e.to_string())?;
+    parts[3].add(&scanner.measure(&documents, true));
+    let shared = if matches!(
+        id,
+        "io.vitrallis.mediacarousel" | "io.vitrallis.carouselrust"
+    ) {
+        CAROUSEL
+    } else {
+        id
+    };
+    let data = loc.data.join(shared);
+    if shared == CAROUSEL {
+        for directory in ["media", "uploads"] {
+            parts[3].add(&scanner.measure(&data.join(directory), true));
+        }
+    }
+    parts[4].add(&scanner.measure(&data, true));
+    if let Some(config) = loc.sources.parent().and_then(std::path::Path::parent) {
+        parts[4].add(&scanner.measure(&config.join(shared), true));
+    }
+    let cache =
+        std::env::var_os("XDG_CACHE_HOME").map_or_else(|| loc.home.join(".cache"), PathBuf::from);
+    parts[2].add(&scanner.measure(&cache.join(shared), true));
+    Ok(())
+}
+
+/// Include bundled native applications using the same allocation scanner.
+pub fn native(loc: &Locations, scanner: &mut Scanner<'_>) -> Result<Vec<AppUsage>, String> {
+    let mut apps = Vec::new();
+    for app in vitrallis_native::APPLICATIONS {
+        let mut parts = std::array::from_fn(|_| Size::default());
+        if let Ok(path) = vitrallis_native::companion(app.executable) {
+            parts[0] = scanner.measure(&path, true);
+        }
+        user_locations(loc, app.id, scanner, &mut parts)?;
+        apps.push(AppUsage {
+            id: app.id.into(),
+            name: app.name.into(),
+            icon: None,
+            total: aggregate(parts.iter()),
+            parts,
+        });
+    }
+    Ok(apps)
+}
+
 fn category(path: &std::path::Path, owned: &BTreeSet<String>) -> usize {
     if path
         .components()
@@ -121,7 +178,7 @@ fn category(path: &std::path::Path, owned: &BTreeSet<String>) -> usize {
     } else if path.to_str().is_some_and(|p| owned.contains(p)) || path.as_os_str().is_empty() {
         0
     } else {
-        3
+        4
     }
 }
 
@@ -255,7 +312,12 @@ mod tests {
                 app.total.bytes,
                 app.parts.iter().map(|part| part.bytes).sum::<u64>()
             );
-            assert!(app.parts.iter().all(|part| part.bytes > 0));
+            assert!(
+                app.parts
+                    .iter()
+                    .enumerate()
+                    .all(|(i, part)| i == 3 || part.bytes > 0)
+            );
             let mut independent = Scanner::new(&cancel);
             let root_size =
                 independent.measure(&loc.data.join("vitrallis/apps").join(&app.id), false);
@@ -270,6 +332,36 @@ mod tests {
                 .bytes,
             0
         );
+        Ok(())
+    }
+    #[test]
+    fn documents_cache_and_shared_carousel_media_are_separate_and_counted_once()
+    -> Result<(), String> {
+        let (_scratch, loc) = super::super::tests::locations()?;
+        for (id, rust) in [(CAROUSEL, false), ("io.vitrallis.carouselrust", true)] {
+            installed_fixture(&loc, id, rust)?;
+            let directory = loc.home.join("documents").join(id);
+            super::super::storage::directory(&directory)?;
+            fs::write(directory.join("saved.txt"), vec![7; 8192]).map_err(|e| e.to_string())?;
+        }
+        let media = loc.data.join(CAROUSEL).join("media");
+        super::super::storage::directory(&media)?;
+        fs::write(media.join("shared.mp4"), vec![8; 16384]).map_err(|e| e.to_string())?;
+        let cancel = AtomicBool::new(false);
+        let mut scanner = Scanner::new(&cancel);
+        let (apps, issue) = installed(&loc, &mut scanner)?;
+        assert!(issue.is_none());
+        let actual = aggregate(apps.iter().map(|app| &app.parts[3]));
+        let mut independent = Scanner::new(&cancel);
+        let mut expected = independent.measure(&media, true);
+        for id in [CAROUSEL, "io.vitrallis.carouselrust"] {
+            expected.add(&independent.measure(&loc.home.join("documents").join(id), true));
+        }
+        assert_eq!(actual, expected);
+        assert_eq!(scanner.measure(&media, true).bytes, 0);
+        for app in &apps {
+            assert_eq!(app.total, aggregate(app.parts.iter()));
+        }
         Ok(())
     }
     #[test]

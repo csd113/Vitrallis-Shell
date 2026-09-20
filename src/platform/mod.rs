@@ -71,15 +71,25 @@ pub fn focus_application(pid: u32, hint: Option<AppWindow>) -> Result<FocusResul
     if std::env::var_os("VITRALLIS_SESSION").as_deref() != Some(std::ffi::OsStr::new("1")) {
         return Err("use the window manager to return to the running app".into());
     }
+    application_window(pid, true)
+}
+
+pub fn application_window(pid: u32, focus: bool) -> Result<FocusResult, String> {
+    let shell_pid = std::process::id();
+    let activation = if focus {
+        "if client.focus and client.focus~=c and client.focus.pid~=shell_pid then return 'no matching window' end; client.focus=c; c:raise();"
+    } else {
+        ""
+    };
     // The only interpolated value is a process ID obtained from Child::id.
     // A child window may belong to a descendant; match our private process group.
     let code = format!(
-        "for _,c in ipairs(client.get()) do \
+        "local shell_pid={shell_pid}; for _,c in ipairs(client.get()) do \
          local p=tonumber(c.pid); if p and p>0 and p%1==0 then \
          local f=io.open('/proc/'..string.format('%.0f',p)..'/stat','r'); \
          if f then local s=f:read('*l'); f:close(); \
          local group=s and s:match('.*%)%s+%S+%s+%d+%s+(%d+)'); \
-         if tonumber(group)=={pid} then client.focus=c; c:raise(); return 'focused' end \
+         if tonumber(group)=={pid} then {activation} return 'focused' end \
          end end end; \
          return 'no matching window'"
     );

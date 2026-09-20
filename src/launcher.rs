@@ -181,6 +181,30 @@ impl Launcher {
         Ok(true)
     }
     pub fn rebuild_view(&mut self, selected: Option<&str>) {
+        let policy_id = self
+            .settings
+            .policy_apps
+            .get(self.settings.policy_app)
+            .map(|(id, _)| id.clone());
+        self.settings.policy_apps = self
+            .all_apps
+            .iter()
+            .filter(|app| {
+                !matches!(
+                    app.source,
+                    crate::app::AppSource::System | crate::app::AppSource::Folder
+                )
+            })
+            .map(|app| (app.id.clone(), app.name.clone()))
+            .collect();
+        self.settings.policy_app = policy_id
+            .and_then(|id| {
+                self.settings
+                    .policy_apps
+                    .iter()
+                    .position(|(app, _)| app == &id)
+            })
+            .unwrap_or(0);
         if self
             .folder
             .as_ref()

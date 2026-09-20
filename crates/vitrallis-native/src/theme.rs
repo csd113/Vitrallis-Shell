@@ -36,23 +36,39 @@ pub fn card(canvas: &mut Canvas<Window>, bounds: Rect, focused: bool) -> Result<
     canvas.set_draw_color(if focused { SELECTED } else { PANEL });
     canvas.fill_rect(bounds)?;
     canvas.set_draw_color(if focused { ACCENT } else { BORDER });
-    canvas.draw_rect(bounds)?;
+    // SDL line rasterization differs at shared endpoints across backends. Use
+    // half-open filled strips so no border pixel can escape the rectangle.
+    canvas.fill_rect(Rect::new(bounds.x(), bounds.y(), bounds.width(), 1))?;
+    canvas.fill_rect(Rect::new(
+        bounds.x(),
+        bounds.bottom() - 1,
+        bounds.width(),
+        1,
+    ))?;
+    canvas.fill_rect(Rect::new(bounds.x(), bounds.y(), 1, bounds.height()))?;
+    canvas.fill_rect(Rect::new(
+        bounds.right() - 1,
+        bounds.y(),
+        1,
+        bounds.height(),
+    ))?;
     if focused && bounds.width() > 6 && bounds.height() > 6 {
         // Inset edges, never an outer blur that can cover neighboring text.
         canvas.set_draw_color(BLUE);
-        canvas.draw_line(
-            (bounds.x() + 1, bounds.y() + 2),
-            (bounds.x() + 1, bounds.bottom() - 3),
-        )?;
+        canvas.fill_rect(Rect::new(
+            bounds.x() + 1,
+            bounds.y() + 2,
+            1,
+            bounds.height() - 4,
+        ))?;
         canvas.set_draw_color(VIOLET);
-        canvas.draw_line(
-            (
-                bounds.right()
-                    - 12.min(i32::try_from(bounds.width()).map_err(|_| "panel width")? - 2),
-                bounds.bottom() - 2,
-            ),
-            (bounds.right() - 2, bounds.bottom() - 2),
-        )?;
+        let width = 11.min(bounds.width() - 3);
+        canvas.fill_rect(Rect::new(
+            bounds.right() - 1 - i32::try_from(width).map_err(|_| "panel width")?,
+            bounds.bottom() - 2,
+            width,
+            1,
+        ))?;
     }
     Ok(())
 }
@@ -62,6 +78,19 @@ pub fn card(canvas: &mut Canvas<Window>, bounds: Rect, focused: bool) -> Result<
 /// # Errors
 /// Returns SDL drawing errors.
 pub fn progress(
+    canvas: &mut Canvas<Window>,
+    bounds: Rect,
+    filled: u32,
+    warning: bool,
+) -> Result<(), String> {
+    let previous = canvas.blend_mode();
+    canvas.set_blend_mode(sdl2::render::BlendMode::None);
+    let result = progress_opaque(canvas, bounds, filled, warning);
+    canvas.set_blend_mode(previous);
+    result
+}
+
+fn progress_opaque(
     canvas: &mut Canvas<Window>,
     bounds: Rect,
     filled: u32,
@@ -88,8 +117,69 @@ pub fn progress(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    pub fn primitive_pixels(canvas: &mut Canvas<Window>) -> Result<(), String> {
+        use sdl2::{pixels::PixelFormatEnum, render::BlendMode};
+        let bounds = Rect::new(7, 9, 31, 13);
+        for amount in [0, 1, 10, 11, 20, 21, 30, 31, 99] {
+            for warning in [false, true] {
+                canvas.set_draw_color(BACKGROUND);
+                canvas.clear();
+                canvas.set_blend_mode(BlendMode::Add);
+                progress(canvas, bounds, amount, warning)?;
+                assert_eq!(canvas.blend_mode(), BlendMode::Add);
+                let pixels = canvas.read_pixels(Rect::new(0, 0, 40, 24), PixelFormatEnum::RGB24)?;
+                for y in 0..24 {
+                    for x in 0..40 {
+                        let expected = if bounds.contains_point((x, y)) {
+                            let offset =
+                                u32::try_from(x - bounds.x()).map_err(|e| e.to_string())?;
+                            if offset >= amount.min(bounds.width()) {
+                                TRACK
+                            } else if warning {
+                                WARNING
+                            } else if offset < bounds.width() / 3 {
+                                ACCENT
+                            } else if offset < bounds.width() * 2 / 3 {
+                                BLUE
+                            } else {
+                                VIOLET
+                            }
+                        } else {
+                            BACKGROUND
+                        };
+                        let offset =
+                            usize::try_from((y * 40 + x) * 3).map_err(|e| e.to_string())?;
+                        assert_eq!(
+                            &pixels[offset..offset + 3],
+                            &[expected.r, expected.g, expected.b]
+                        );
+                    }
+                }
+            }
+        }
+        canvas.set_blend_mode(BlendMode::None);
+        for focused in [false, true] {
+            canvas.set_draw_color(BACKGROUND);
+            canvas.clear();
+            card(canvas, bounds, focused)?;
+            let pixels = canvas.read_pixels(Rect::new(0, 0, 40, 24), PixelFormatEnum::RGB24)?;
+            for y in 0..24 {
+                for x in 0..40 {
+                    if !bounds.contains_point((x, y)) {
+                        let offset =
+                            usize::try_from((y * 40 + x) * 3).map_err(|e| e.to_string())?;
+                        assert_eq!(
+                            &pixels[offset..offset + 3],
+                            &[BACKGROUND.r, BACKGROUND.g, BACKGROUND.b]
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     fn luminance(c: Color) -> f64 {
         let component = |v: u8| {
             let v = f64::from(v) / 255.0;

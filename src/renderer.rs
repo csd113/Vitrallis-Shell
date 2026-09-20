@@ -256,6 +256,20 @@ pub fn render(
     render_launcher(canvas, layout, state, icons)
 }
 
+const fn settings_title(page: crate::settings::Page) -> &'static str {
+    match page {
+        crate::settings::Page::General => "SETTINGS / QUICK CONTROLS",
+        crate::settings::Page::Preferences => "SETTINGS / PREFERENCES",
+        crate::settings::Page::Device => "SETTINGS / DEVICE",
+        crate::settings::Page::Timezones => "SETTINGS / TIME ZONE",
+        crate::settings::Page::Updates => "SETTINGS / SOFTWARE UPDATES",
+        crate::settings::Page::Storage => "SETTINGS / STORAGE",
+        crate::settings::Page::Wireless => "Wireless Network Controls",
+        crate::settings::Page::Tor => "SETTINGS / TOR",
+        crate::settings::Page::TorDetails => "TOR / DETAILS",
+    }
+}
+
 fn render_launcher(
     canvas: &mut Screen,
     layout: &Layout,
@@ -278,17 +292,7 @@ fn render_launcher(
     text(
         canvas,
         &if state.settings.open {
-            match state.settings.page {
-                crate::settings::Page::General => "SETTINGS / QUICK CONTROLS",
-                crate::settings::Page::Device => "SETTINGS / DEVICE",
-                crate::settings::Page::Timezones => "SETTINGS / TIME ZONE",
-                crate::settings::Page::Updates => "SETTINGS / SOFTWARE UPDATES",
-                crate::settings::Page::Storage => "SETTINGS / STORAGE",
-                crate::settings::Page::Wireless => "SETTINGS / WIRELESS",
-                crate::settings::Page::Tor => "SETTINGS / TOR",
-                crate::settings::Page::TorDetails => "TOR / DETAILS",
-            }
-            .into()
+            settings_title(state.settings.page).into()
         } else if let Some(name) = state
             .folder
             .as_ref()
@@ -748,6 +752,7 @@ mod system_tests {
         for page in [
             Page::General,
             Page::Device,
+            Page::Preferences,
             Page::Timezones,
             Page::Updates,
             Page::Wireless,
@@ -930,6 +935,7 @@ mod system_tests {
             state.settings.input(Action::SelectAndActivate(5));
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("device-{w}x{h}.bmp")))?;
+            preferences_sample(&mut canvas, &layout, &mut state, &textures, output)?;
             state.settings.page(crate::settings::Page::Wireless);
             state.settings.status.wifi_enabled = Some(true);
             state.settings.status.bluetooth = Some(false);
@@ -971,6 +977,30 @@ mod system_tests {
         verify_references(output)
     }
 
+    fn preferences_sample(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &mut Launcher,
+        textures: &[Option<Texture<'_>>],
+        output: &std::path::Path,
+    ) -> Result<(), String> {
+        state.settings.page(crate::settings::Page::Preferences);
+        state.settings.policy_apps = vec![("io.vitrallis.notepad".into(), "Notepad".into())];
+        state.settings.policy.background_seconds = 300;
+        state.settings.policy.ampm = true;
+        let original_clock = state.preferences.ampm;
+        state.preferences.ampm = state.settings.policy.ampm;
+        render(canvas, layout, state, textures)?;
+        screenshot(
+            canvas,
+            &output.join(format!(
+                "preferences-{}x{}.bmp",
+                layout.width, layout.height
+            )),
+        )?;
+        state.preferences.ampm = original_clock;
+        Ok(())
+    }
     fn home_samples(
         canvas: &mut Screen,
         layout: &Layout,

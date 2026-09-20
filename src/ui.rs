@@ -38,6 +38,7 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     let mut canvas = Screen::new(canvas, &font_creator)?;
     eprintln!("{info}");
     let layout = window_layout(&canvas)?;
+    let animated = config.mode == crate::config::Mode::Launch && config.screenshot.is_none();
     let catalog = if config.mode == crate::config::Mode::Launch && config.screenshot.is_none() {
         let Some(catalog) = crate::boot::load(&sdl, &mut canvas, &layout, || {
             crate::discovery::load(config)
@@ -49,10 +50,23 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     } else {
         crate::discovery::load(config)?
     };
+    let boot_frame = if animated {
+        Some((
+            canvas.output_size()?,
+            canvas.read_pixels(None, sdl2::pixels::PixelFormatEnum::RGB24)?,
+        ))
+    } else {
+        None
+    };
     // Boot consumes resize events; rebuild hit boxes from the final window size.
     let layout = window_layout(&canvas)?;
     let mut state = Launcher::new(catalog.apps, layout.columns, layout.tiles.len())?;
     state.preferences = catalog.preferences;
+    match crate::preferences::Policy::load(state.preferences.ampm) {
+        Ok(policy) => state.settings.policy = policy,
+        Err(error) => state.status = error,
+    }
+    state.preferences.ampm = state.settings.policy.ampm;
     match crate::folders::Folders::load() {
         Ok(folders) => state.folders = folders,
         Err(error) => state.status = format!("Folder state unavailable: {error}"),
@@ -72,6 +86,28 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         render(&mut canvas, &layout, &state, &textures)?;
         screenshot(&canvas, path)?;
         return Ok(());
+    }
+    if let Some(((width, height), pixels)) = boot_frame {
+        let creator = canvas.texture_creator();
+        let textures = artwork(&creator, &state);
+        let mut overlay = creator
+            .create_texture_static(sdl2::pixels::PixelFormatEnum::RGB24, width, height)
+            .map_err(|e| e.to_string())?;
+        overlay
+            .update(
+                None,
+                &pixels,
+                usize::try_from(width).map_err(|_| "boot width")? * 3,
+            )
+            .map_err(|e| e.to_string())?;
+        overlay.set_blend_mode(sdl2::render::BlendMode::Blend);
+        for opacity in [224, 192, 160, 128, 96, 64, 32, 0] {
+            render(&mut canvas, &layout, &state, &textures)?;
+            overlay.set_alpha_mod(opacity);
+            canvas.copy(&overlay, None, None)?;
+            canvas.present();
+            std::thread::sleep(Duration::from_millis(16));
+        }
     }
     event_loop(&sdl, &mut canvas, &layout, state, platform, config)
 }
@@ -173,6 +209,15 @@ fn event_loop(
             }
             let layout = &current_layout;
             dirty |= exposed(&event);
+            if matches!(
+                event,
+                Event::Window {
+                    win_event: WindowEvent::FocusLost,
+                    ..
+                }
+            ) {
+                child.stop_focus_retry();
+            }
             dirty |= window_focus(&event, &mut state, &mut pointer, &mut accept_after);
             if Instant::now() >= accept_after {
                 let (consumed, changed) =
@@ -268,6 +313,31 @@ fn report_wait_error(error: String, last: &mut Option<String>, state: &mut Launc
     true
 }
 
+fn reorder(state: &mut Launcher, later: bool) -> Result<(), String> {
+    let mut order: Vec<_> = state.apps.iter().map(|app| app.id.clone()).collect();
+    let selected = state.selected;
+    let next = if later {
+        (selected + 1).min(order.len().saturating_sub(1))
+    } else {
+        selected.saturating_sub(1)
+    };
+    if selected < order.len() {
+        let id = order[selected].clone();
+        order.swap(selected, next);
+        order.extend(
+            state
+                .folders
+                .order
+                .iter()
+                .filter(|id| !state.apps.iter().any(|app| &app.id == *id))
+                .cloned(),
+        );
+        state.folders = crate::folders::Folders::change(crate::folders::Change::Reorder(order))?;
+        state.rebuild_view(Some(&id));
+    }
+    Ok(())
+}
+
 fn desktop_event(
     event: &Event,
     layout: &Layout,
@@ -326,6 +396,10 @@ fn desktop_event(
             state.app_center.uninstall_entry(app)?;
             return Ok(false);
         }
+        if let Request::Reorder(later) = request {
+            reorder(state, later)?;
+            return Ok(true);
+        }
         if let Request::Folder(change) = request {
             let selected = state.desktop.entry.as_ref().map(|app| app.id.clone());
             state.folders = crate::folders::Folders::change(change)?;
@@ -348,7 +422,7 @@ fn desktop_event(
                     store.hide(app)?;
                 }
             }
-            Request::Uninstall | Request::Folder(_) => (),
+            Request::Uninstall | Request::Folder(_) | Request::Reorder(_) => (),
         }
         let mut catalog = crate::discovery::Catalog {
             apps: state.all_apps.clone(),
@@ -425,6 +499,11 @@ fn poll_children(
 }
 
 fn refresh_shell(state: &mut Launcher, child: &mut ProcessSet) -> bool {
+    state.preferences.ampm = state.settings.policy.ampm;
+    if state.phase == Phase::Ready {
+        child.returned_home();
+    }
+    child.background_policy(&state.settings.policy, Instant::now());
     child.sync_tor_apps();
     if let Some(control) = state.settings.tor_control.take()
         && let Err(error) = child.tor.request(control)
@@ -621,7 +700,7 @@ fn refresh_focus(child: &mut impl Processes, state: &mut Launcher) -> bool {
         Ok(Some(crate::platform::FocusResult::Focused)) => state.status = "APP OPENED".into(),
         Err(error) => state.failed(error),
         Ok(Some(crate::platform::FocusResult::Missing)) => {
-            state.finished("Still starting - select the app to retry".into());
+            state.finished("Still starting in background".into());
         }
         Ok(None) => return false,
     }
@@ -680,6 +759,7 @@ fn reload_catalog(config: &Config, state: &mut Launcher) -> bool {
         let changed = state.reload(catalog.apps)?;
         let appearance_changed = state.preferences != catalog.preferences;
         state.preferences = catalog.preferences;
+        state.preferences.ampm = state.settings.policy.ampm;
         Ok(changed || appearance_changed)
     });
     result.unwrap_or_else(|error| {

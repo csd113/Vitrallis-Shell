@@ -78,6 +78,8 @@ impl KeyboardPage {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
+    MoveEarlier,
+    MoveLater,
     CreateFolder,
     RenameFolder,
     DeleteFolder,
@@ -108,6 +110,7 @@ pub enum Target {
 }
 #[derive(Debug)]
 pub enum Request {
+    Reorder(bool),
     Folder(crate::folders::Change),
     Save,
     Remove,
@@ -162,6 +165,7 @@ impl Desktop {
     #[cfg(test)]
     pub fn qa_samples(layout: &Layout) -> Vec<(&'static str, Self)> {
         [
+            ("actions", Page::Menu),
             ("editor", Page::Editor),
             ("command", Page::Text(Field::Command)),
             ("remove", Page::Remove),
@@ -172,6 +176,12 @@ impl Desktop {
             let mut desktop = Self::default();
             desktop.add();
             desktop.page = page;
+            if page == Page::Menu {
+                desktop.entry =
+                    crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"))
+                        .into_iter()
+                        .next();
+            }
             desktop.draft.name = "My Linux program".into();
             desktop.draft.command = "'/home/alex/My Tools/program' 'quoted argument'".into();
             desktop.draft.cwd = "/home/alex/My Documents".into();
@@ -306,39 +316,44 @@ impl Desktop {
             .then_some(self.draft.icon.as_deref())
             .flatten()
     }
+    fn menu_rows(&self) -> Vec<(Target, String)> {
+        let mut rows = vec![
+            (Target::Add, "Add shortcut".into()),
+            (Target::CreateFolder, "Create folder".into()),
+        ];
+        if self.folder_context.is_some() {
+            rows.extend([
+                (Target::RenameFolder, "Rename folder".into()),
+                (Target::DeleteFolder, "Delete folder".into()),
+            ]);
+        }
+        if let Some(app) = &self.entry {
+            rows.extend([
+                (Target::MoveEarlier, "Move earlier".into()),
+                (Target::MoveLater, "Move later".into()),
+            ]);
+            if !matches!(app.source, AppSource::System | AppSource::Folder) {
+                rows.push((Target::MoveApp, "Move app to folder / Apps".into()));
+            }
+            match app.source {
+                AppSource::Custom => rows.extend([
+                    (Target::Edit, "Edit shortcut".into()),
+                    (Target::Remove, "Remove shortcut".into()),
+                ]),
+                AppSource::AppCenter => {
+                    rows.push((Target::Uninstall, "Uninstall app".into()));
+                }
+                _ if super::hidden_key(app).is_some() => {
+                    rows.push((Target::Remove, "Remove shortcut".into()));
+                }
+                _ => (),
+            }
+        }
+        rows
+    }
     fn rows(&self) -> Vec<(Target, String)> {
         match self.page {
-            Page::Menu => {
-                let mut rows = vec![
-                    (Target::Add, "Add shortcut".into()),
-                    (Target::CreateFolder, "Create folder".into()),
-                ];
-                if self.folder_context.is_some() {
-                    rows.extend([
-                        (Target::RenameFolder, "Rename folder".into()),
-                        (Target::DeleteFolder, "Delete folder".into()),
-                    ]);
-                }
-                if let Some(app) = &self.entry {
-                    if !matches!(app.source, AppSource::System | AppSource::Folder) {
-                        rows.push((Target::MoveApp, "Move app to folder / Apps".into()));
-                    }
-                    match app.source {
-                        AppSource::Custom => rows.extend([
-                            (Target::Edit, "Edit shortcut".into()),
-                            (Target::Remove, "Remove shortcut".into()),
-                        ]),
-                        AppSource::AppCenter => {
-                            rows.push((Target::Uninstall, "Uninstall app".into()));
-                        }
-                        _ if super::hidden_key(app).is_some() => {
-                            rows.push((Target::Remove, "Remove shortcut".into()));
-                        }
-                        _ => (),
-                    }
-                }
-                rows
-            }
+            Page::Menu => self.menu_rows(),
             Page::FolderMove => std::iter::once((Target::Unfile, "Apps (unfiled)".into()))
                 .chain(
                     self.folders
@@ -448,12 +463,12 @@ impl Desktop {
                     Rect {
                         x: 8,
                         y: 64 + i32::try_from(i).unwrap_or(0) * 32,
-                        w: width - 64,
+                        w: width - if self.page == Page::Menu { 16 } else { 64 },
                         h: 30,
                     },
                 ));
             }
-            if self.rows().len() > Self::capacity(layout) {
+            if self.page != Page::Menu && self.rows().len() > Self::capacity(layout) {
                 targets.extend([
                     (
                         Target::Previous,
@@ -478,7 +493,10 @@ impl Desktop {
                 ]);
             }
         }
-        let footer = self.footer();
+        let mut footer = self.footer();
+        if self.page == Page::Menu && self.rows().len() > Self::capacity(layout) {
+            footer.extend([(Target::Previous, "Previous"), (Target::Next, "Next")]);
+        }
         let cell = (width - 16) / i32::try_from(footer.len()).unwrap_or(1);
         for (i, (target, label)) in footer.into_iter().enumerate() {
             targets.push((
@@ -549,6 +567,9 @@ impl Desktop {
         layout: &Layout,
     ) -> Result<Option<Request>, String> {
         match target {
+            Target::MoveEarlier | Target::MoveLater => {
+                return Ok(Some(Request::Reorder(target == Target::MoveLater)));
+            }
             Target::CreateFolder | Target::RenameFolder => {
                 self.folder_edit = if target == Target::RenameFolder {
                     self.folder_context.clone()
@@ -591,6 +612,9 @@ impl Desktop {
     }
     fn activate(&mut self, target: Target, layout: &Layout) -> Result<Option<Request>, String> {
         match target {
+            Target::MoveEarlier | Target::MoveLater => {
+                return Ok(Some(Request::Reorder(target == Target::MoveLater)));
+            }
             Target::CreateFolder
             | Target::RenameFolder
             | Target::DeleteFolder
