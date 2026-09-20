@@ -67,11 +67,6 @@
 - [ ] Expand Actions menu options across the available screen width.
 - [ ] Fade the boot animation into the desktop instead of ending abruptly.
 
-## Public support scope
-
-- [ ] State the tested PocketCHIP/Debian 13 configuration explicitly; separate other compatible configurations from hardware-validated support.
-- [ ] State that original Jessie is unsupported and physical flashing remains disabled in Vitrallis Flasher.
-
 ## Additional apps and hardware validation (non-blocking)
 
 - [ ] Create a calculator app.
