@@ -7,14 +7,15 @@ use std::{
     path::Path,
 };
 pub const MAGIC: &[u8; 16] = b"VITRALLIS-BUNDLE";
-pub const BINARIES: [&str; 4] = [
+pub const BINARIES: [&str; 5] = [
     "vitrallis",
     "vitrallis-terminal",
     "vitrallis-notepad",
     "vitrallis-files",
+    "arti",
 ];
 pub const MAX_BINARY: u64 = 64 * 1024 * 1024;
-pub const MAX_BUNDLE: u64 = 16 + 4 * (40 + MAX_BINARY);
+pub const MAX_BUNDLE: u64 = 16 + 5 * (40 + MAX_BINARY);
 
 pub fn unpack(
     input: &mut impl Read,
@@ -94,7 +95,7 @@ fn extract(
 }
 
 #[cfg(test)]
-pub fn fixture(payloads: &[Vec<u8>; 4]) -> Vec<u8> {
+pub fn fixture(payloads: &[Vec<u8>; 5]) -> Vec<u8> {
     let mut bytes = MAGIC.to_vec();
     for payload in payloads {
         bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
@@ -108,7 +109,13 @@ mod tests {
     use super::*;
     #[test]
     fn exact_inventory_hashes_and_truncation() -> Result<(), Box<dyn std::error::Error>> {
-        let data = fixture(&[vec![0; 64], vec![1; 64], vec![2; 64], vec![3; 64]]);
+        let data = fixture(&[
+            vec![0; 64],
+            vec![1; 64],
+            vec![2; 64],
+            vec![3; 64],
+            vec![4; 64],
+        ]);
         let scratch = crate::test_support::Scratch::new()?;
         let target = scratch.0.join("valid");
         std::fs::create_dir(&target)?;

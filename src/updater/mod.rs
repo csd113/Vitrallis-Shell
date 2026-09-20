@@ -51,6 +51,11 @@ impl State {
             Self::Idle => "Check the official shell releases".into(),
             Self::Checking => "Checking GitHub for shell updates...".into(),
             Self::Current => "Vitrallis is up to date.".into(),
+            Self::Available(release) if release.version.to_string() == VERSION => format!(
+                "Complete this release: {}\nDownload size: {} MB",
+                release.version,
+                megabytes(release.binary.size)
+            ),
             Self::Available(release) => format!(
                 "New version available: {}\nDownload size: {} MB",
                 release.version,
@@ -132,7 +137,12 @@ impl Updater {
             return;
         }
         self.start(State::Checking, |_| {
-            check(&Curl, VERSION, Target::current)
+            #[cfg(unix)]
+            let incomplete = crate::platform::update::Installation::current()
+                .is_ok_and(|installation| installation.needs_completion());
+            #[cfg(not(unix))]
+            let incomplete = false;
+            check_inventory(&Curl, VERSION, Target::current, incomplete)
                 .unwrap_or_else(|error| State::Failed(format!("Update check failed: {error}")))
         });
     }
@@ -216,10 +226,20 @@ impl Updater {
     }
 }
 
+#[cfg(test)]
 fn check(
     transport: &impl Transport,
     current: &str,
     target: impl FnOnce() -> Result<Target, String>,
+) -> Result<State, String> {
+    check_inventory(transport, current, target, false)
+}
+
+fn check_inventory(
+    transport: &impl Transport,
+    current: &str,
+    target: impl FnOnce() -> Result<Target, String>,
+    incomplete: bool,
 ) -> Result<State, String> {
     let current = Version::parse(current).map_err(|_| "Installed build has an invalid version")?;
     let mut releases = Vec::new();
@@ -238,7 +258,10 @@ fn check(
         releases.extend(values);
         if complete {
             let (latest, version) = release::latest(&releases, &current)?;
-            if !version.cmp_precedence(&current).is_gt() {
+            if version.cmp_precedence(&current).is_lt()
+                || (version.cmp_precedence(&current).is_eq()
+                    && !(incomplete && current.to_string() == "0.1.0-beta4"))
+            {
                 return Ok(State::Current);
             }
             let available = version.to_string();
