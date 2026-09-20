@@ -1,4 +1,8 @@
 //! Small native icons and the shared System Settings surface; no runtime assets.
+#[path = "system_storage.rs"]
+mod storage;
+#[path = "system_wireless.rs"]
+mod wireless;
 use super::{Screen, fill, rect, text};
 use crate::{
     layout::{Layout, Rect},
@@ -306,6 +310,12 @@ pub(super) fn panel(
     settings: &Settings,
     textures: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
+    if settings.page == Page::Wireless {
+        return wireless::panel(canvas, layout, settings);
+    }
+    if settings.page == Page::Storage {
+        return storage::panel(canvas, layout, settings);
+    }
     if settings.page == Page::Updates {
         return update_panel(canvas, layout, settings);
     }
@@ -399,11 +409,33 @@ pub(super) fn panel(
     panel_footer(canvas, layout, settings)
 }
 fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
+    let storage_hint = storage::hint(settings);
     let hint = match settings.page {
-        Page::General => "Drag / left-right: adjust",
+        Page::General => "Left/right: adjust   Esc: close",
+        Page::Storage => &storage_hint,
         Page::Updates => "Esc: back   Enter: select",
         Page::Device => "Left/right: timeout   Enter: select",
+        Page::Wireless => "Left: off   Right: on   Enter: toggle",
         Page::Timezones => "Arrows: select   Enter: apply",
+    };
+    let hint = if matches!(
+        settings.page,
+        Page::General | Page::Device | Page::Timezones
+    ) {
+        if settings.pending {
+            "Applying setting..."
+        } else {
+            match settings.system_state {
+                crate::settings::SystemState::Loading => "Reading device information...",
+                crate::settings::SystemState::Unavailable => "Device information unavailable",
+                crate::settings::SystemState::Stale => {
+                    "Device information is stale; waiting for refresh"
+                }
+                crate::settings::SystemState::Ready => hint,
+            }
+        }
+    } else {
+        hint
     };
     let half = layout.footer.h / 2;
     text(
@@ -468,7 +500,17 @@ fn slider(
     )?;
     label(
         canvas,
-        if index == 0 { "Brightness" } else { "Volume" },
+        &format!(
+            "{}{}",
+            if index == 0 { "Brightness" } else { "Volume" },
+            if available {
+                ""
+            } else if settings.system_state == crate::settings::SystemState::Loading {
+                " / loading"
+            } else {
+                " / unavailable"
+            }
+        ),
         Rect {
             x: track.x,
             y: r.y + 3 * scale,
@@ -633,7 +675,7 @@ fn device_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
                         .unwrap_or_else(|| "Unavailable".into()),
                 ),
                 3 => (
-                    "Check for Updates",
+                    "Software updates",
                     format!("Vitrallis Shell {}", crate::updater::VERSION),
                 ),
                 _ => (
@@ -667,7 +709,11 @@ fn device_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
                     h: bounds.h / 2,
                 },
                 layout.text_scale,
-                ACCENT,
+                if detail.starts_with("Unavailable") {
+                    MUTED
+                } else {
+                    ACCENT
+                },
             )?;
         }
     }
@@ -846,3 +892,6 @@ pub(super) fn power_splash(
     }
     Ok(())
 }
+
+#[cfg(test)]
+pub(super) use storage::qa as storage_qa;

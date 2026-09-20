@@ -143,14 +143,29 @@ entry/binaries and network/audio/storage requirements. Python packages require `
 entry must be an inventoried Python file. Runtime detection checks a managed
 app-local environment, an existing `.venv/bin/python3`, then system Python
 candidates. When declared Python dependencies are missing, installing an app
-creates an isolated environment under `runtime/<requirements hash>` and installs
-`requirements.txt` plus `packaging` using pip. Failed provisioning removes the
-staged environment; existing environments are preserved. Python/Tk and venv/pip
+creates an app-local environment under `runtime/<requirements hash>` with access
+to the base interpreter's system packages. Pip retains already-compatible system
+distributions (for example Debian's Pillow on ARMv7), installs missing or
+incompatible requirements locally, and never upgrades or removes system packages.
+`requirements.txt` plus `packaging` are passed to pip without `--upgrade`. This is
+an intentional extension of the existing system-Python trust boundary, not a
+package sandbox: system package updates can affect these environments. Existing
+private `.venv` packages are not copied into a new environment.
+
+Probes and provisioning use Python isolated mode (`-I`); launchers disable user
+site packages and Python startup/home/path overrides while retaining app-local
+imports. Pip settings from the environment and all pip configuration files are
+disabled, preventing inherited target/prefix/user settings from redirecting writes.
+The shared requirement validator rejects options, URLs, paths, extras (including
+inactive extras), and malformed specifiers before pip runs. Environment markers
+and version ranges are checked again, with Tk when required, in the staged
+interpreter before publication. Failed provisioning removes the staged environment; existing environments are preserved. Python/Tk and venv/pip
 must be available on the system, and dependency downloads require network access.
 The worker reports dependency checking/installation separately from package commit.
 It waits for venv and pip completion, consumes bounded stdout/stderr through EOF,
-and preserves the last 8 KiB of each output on failure. Runtime checks wait for
-process completion with a 30-second deadline (provisioning: 660 seconds), including
+and preserves the last 8 KiB of each output on failure. A useful compiler/pip
+error is repeated first; the complete retained output is scrollable in Details.
+Runtime checks wait for process completion with a 30-second deadline (provisioning: 720 seconds), including
 the first check after provisioning on slow hardware. Pip options, paths, URLs and
 extras in requirements are rejected. Declared
 distributions, Tk imports and syntax are checked without importing app code.

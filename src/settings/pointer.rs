@@ -86,6 +86,13 @@ fn contact(event: &Event, layout: &Layout) -> Option<(ContactId, Phase, f64, f64
     (x.is_finite() && y.is_finite()).then_some((id, phase, x, y))
 }
 impl Settings {
+    const fn row_count(&self) -> i32 {
+        match self.page {
+            Page::Timezones => 5,
+            Page::Wireless => 3,
+            _ => 4,
+        }
+    }
     pub fn event(&mut self, event: &Event, layout: &Layout) -> Option<Request> {
         if !self.open {
             return None;
@@ -96,8 +103,15 @@ impl Settings {
         }
         let (id, phase, x, y) = contact(event, layout)?;
         let geometry = PanelLayout::new(layout);
-        let rows = PanelLayout::rows(layout, if self.page == Page::Timezones { 5 } else { 4 });
-        let targets = if self.confirmation.is_some() || self.page == Page::Updates {
+        let rows = PanelLayout::rows(layout, self.row_count());
+        let storage_actions = PanelLayout::storage_actions(layout);
+        let targets = if self.page == Page::Storage {
+            match self.storage_view {
+                super::StorageView::Overview => storage_actions.as_slice(),
+                super::StorageView::Apps => &rows[..self.storage_rows()],
+                _ => &[],
+            }
+        } else if self.confirmation.is_some() || self.page == Page::Updates {
             geometry.confirmation.as_slice()
         } else if self.page != Page::General {
             rows.as_slice()
@@ -476,6 +490,50 @@ mod tests {
                 None
             );
             assert!(track.w > 0);
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod storage_tests {
+    use super::*;
+    use crate::settings::StorageView;
+    #[test]
+    fn storage_cards_activate_only_after_matching_touch_release() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut settings = Settings::default();
+        for (index, expected) in [(0, StorageView::Apps), (1, StorageView::Categories)] {
+            settings.show();
+            settings.page(Page::Storage);
+            let bounds = PanelLayout::storage_actions(&layout)[index];
+            let x = f32::from(u16::try_from(bounds.x + 4).map_err(|_| "x")?) / 480.;
+            let y = f32::from(u16::try_from(bounds.y + 4).map_err(|_| "y")?) / 272.;
+            let down = Event::FingerDown {
+                timestamp: 0,
+                touch_id: 1,
+                finger_id: 1,
+                x,
+                y,
+                dx: 0.,
+                dy: 0.,
+                pressure: 1.,
+            };
+            let up = Event::FingerUp {
+                timestamp: 0,
+                touch_id: 1,
+                finger_id: 1,
+                x,
+                y,
+                dx: 0.,
+                dy: 0.,
+                pressure: 0.,
+            };
+            settings.event(&up, &layout);
+            assert_eq!(settings.storage_view, StorageView::Overview);
+            settings.event(&down, &layout);
+            settings.event(&up, &layout);
+            assert_eq!(settings.storage_view, expected);
         }
         Ok(())
     }

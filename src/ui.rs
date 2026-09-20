@@ -738,8 +738,11 @@ fn refresh_system(
 ) -> bool {
     let mut dirty = settings.expire();
     dirty |= settings.updater.poll();
+    dirty |= settings.poll_storage();
     if let Some(worker) = worker {
         if let Some(update) = worker.update() {
+            dirty |= settings.system_state != crate::settings::SystemState::Ready;
+            settings.system_state = crate::settings::SystemState::Ready;
             dirty |= settings.status != update.status || update.result.is_some();
             settings.status = update.status;
             if let Some(result) = update.result {
@@ -768,11 +771,14 @@ fn refresh_system(
         }
         dirty |= settings.pending != worker.pending;
         settings.pending = worker.pending;
-        if worker.stale() && settings.status != crate::platform::system::Status::default() {
+        if worker.stale() && settings.system_state != crate::settings::SystemState::Stale {
             settings.status = crate::platform::system::Status::default();
-            settings.message = "SYSTEM STATUS STALE".into();
+            settings.system_state = crate::settings::SystemState::Stale;
             dirty = true;
         }
+    } else if settings.system_state != crate::settings::SystemState::Unavailable {
+        settings.system_state = crate::settings::SystemState::Unavailable;
+        dirty = true;
     }
     if settings.power_transition.is_none() && worker.as_ref().is_some_and(|worker| !worker.pending)
     {
@@ -828,7 +834,8 @@ fn submit_setting(
                 Control::Power(_)
                 | Control::ScreenTimeout(_)
                 | Control::Timezone(_)
-                | Control::ReadTimezone => None,
+                | Control::ReadTimezone
+                | Control::Radio(_, _) => None,
             };
             if let Some((index, value)) = slider
                 && worker.as_ref().is_some_and(|worker| worker.pending)
@@ -856,7 +863,8 @@ fn submit_setting(
                     Control::Power(_)
                     | Control::ScreenTimeout(_)
                     | Control::Timezone(_)
-                    | Control::ReadTimezone => None,
+                    | Control::ReadTimezone
+                    | Control::Radio(_, _) => None,
                 };
             }
             settings.message = result.map_or_else(|error| error, |()| "Applying...".into());

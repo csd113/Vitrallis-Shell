@@ -44,7 +44,21 @@ pub enum Power {
     Shutdown,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Radio {
+    Wifi,
+    Bluetooth,
+}
+impl Radio {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Wifi => "Wi-Fi",
+            Self::Bluetooth => "Bluetooth",
+        }
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Control {
+    Radio(Radio, bool),
     Brightness(Percent),
     Volume(Percent),
     Power(Power),
@@ -63,7 +77,7 @@ pub struct Status {
     pub charging: Option<bool>,
     pub external_power: Option<bool>,
     pub wifi: Option<Wifi>,
-    // The reference has no live Bluetooth backend.
+    pub wifi_enabled: Option<bool>,
     pub bluetooth: Option<bool>,
     pub brightness: Option<Percent>,
     pub brightness_minimum: Option<Percent>,
@@ -93,7 +107,7 @@ pub struct Worker {
     updates: mpsc::Receiver<Sample>,
     _stop: mpsc::Sender<()>,
     status: Status,
-    controlled: [Option<Instant>; 4],
+    controlled: [Option<Instant>; 6],
     pub pending: bool,
     received: Instant,
 }
@@ -152,7 +166,7 @@ impl Worker {
             updates,
             _stop: stop,
             status: Status::default(),
-            controlled: [None; 4],
+            controlled: [None; 6],
             pending: false,
             received: Instant::now(),
         })
@@ -179,6 +193,16 @@ impl Worker {
                     self.status.volume = sample.status.volume;
                     self.status.muted = sample.status.muted;
                     self.controlled[1] = Some(sample.started);
+                }
+                Control::Radio(Radio::Wifi, _) => {
+                    self.status.wifi_enabled = sample.status.wifi_enabled;
+                    self.status.wifi = sample.status.wifi;
+                    self.status.ip = sample.status.ip;
+                    self.controlled[4] = Some(sample.started);
+                }
+                Control::Radio(Radio::Bluetooth, _) => {
+                    self.status.bluetooth = sample.status.bluetooth;
+                    self.controlled[5] = Some(sample.started);
                 }
                 Control::Power(_) => {}
                 Control::ScreenTimeout(_) => {
@@ -209,6 +233,14 @@ impl Worker {
             if self.controlled[3].is_some_and(|time| time >= sample.started) {
                 status.timezone.clone_from(&self.status.timezone);
                 status.clock.clone_from(&self.status.clock);
+            }
+            if self.controlled[4].is_some_and(|time| time >= sample.started) {
+                status.wifi_enabled = self.status.wifi_enabled;
+                status.wifi = self.status.wifi;
+                status.ip = self.status.ip;
+            }
+            if self.controlled[5].is_some_and(|time| time >= sample.started) {
+                status.bluetooth = self.status.bluetooth;
             }
             self.status = status;
             self.received = Instant::now();
@@ -357,6 +389,40 @@ mod tests {
         });
         assert_eq!(updated.status.volume, Some(Percent::new(30)?));
         assert_eq!(updated.status.muted, Some(true));
+        Ok(())
+    }
+    #[test]
+    fn delayed_snapshots_cannot_revert_either_radio_switch() -> Result<(), String> {
+        let mut worker = Worker::start(Mock {
+            status: Status::default(),
+        })?;
+        let earlier = Instant::now();
+        let later = earlier + Duration::from_millis(1);
+        for radio in [Radio::Wifi, Radio::Bluetooth] {
+            worker.accept(Sample {
+                status: Status {
+                    wifi_enabled: Some(false),
+                    wifi: Some(Wifi::Off),
+                    bluetooth: Some(false),
+                    ..Status::default()
+                },
+                result: Some((Control::Radio(radio, false), Ok(()))),
+                started: later,
+            });
+        }
+        let result = worker.accept(Sample {
+            status: Status {
+                wifi_enabled: Some(true),
+                wifi: Some(Wifi::Connected),
+                bluetooth: Some(true),
+                ..Status::default()
+            },
+            result: None,
+            started: earlier,
+        });
+        assert_eq!(result.status.wifi_enabled, Some(false));
+        assert_eq!(result.status.wifi, Some(Wifi::Off));
+        assert_eq!(result.status.bluetooth, Some(false));
         Ok(())
     }
     #[test]

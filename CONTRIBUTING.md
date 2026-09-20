@@ -10,7 +10,8 @@ behavior or architecture change. See [SECURITY.md](SECURITY.md) for sensitive re
 Install Rust through rustup, SDL2 development libraries, and pkg-config on your
 **development host**. The repository pins Rust 1.91.1; all workspace packages
 support Rust 1.91. On Debian/Ubuntu the native development packages are
-`libsdl2-dev` and `pkg-config`; `python3-tk` supports runtime inspection tests.
+`libsdl2-dev` and `pkg-config`; `python3-tk`, `python3-venv` and
+`python3-packaging` support runtime inspection and offline dependency tests.
 On macOS, Homebrew's `sdl2` and `pkg-config` provide the native libraries.
 
 ```sh

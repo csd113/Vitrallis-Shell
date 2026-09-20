@@ -1,4 +1,5 @@
 //! Native App Center services and screen state, independent of device adapters.
+pub mod accounting;
 mod cache;
 mod discovery;
 mod install;
@@ -17,6 +18,11 @@ mod uninstall;
 pub use discovery::integrate;
 pub use discovery::refresh_apps;
 pub use screen::Center;
+static STORAGE_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub fn storage_revision() -> u64 {
+    STORAGE_REVISION.load(Ordering::Relaxed)
+}
+
 pub const TILE_ID: &str = "vitrallis-app-center";
 use install::Checked;
 use sources::Sources;
@@ -174,12 +180,23 @@ fn service(
             }
             Ok(())
         })();
-        let _ = updates.send(Update::Done(result.map(|()| success), changed));
+        finish_storage_operation(updates, result.map(|()| success), changed);
         if let Some(key) = selected_installed {
             let _ = updates.send(Update::SelectedInstalled(key));
         }
     }
 }
+fn finish_storage_operation(
+    updates: &Sender<Update>,
+    result: Result<String, String>,
+    changed: bool,
+) {
+    if changed {
+        STORAGE_REVISION.fetch_add(1, Ordering::Relaxed);
+    }
+    let _ = updates.send(Update::Done(result, changed));
+}
+
 fn scan_local(
     loc: &Locations,
     rows: &mut [Checked],

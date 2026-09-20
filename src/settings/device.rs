@@ -6,6 +6,19 @@ use super::{
 use crate::{input::Action, navigation::Direction, platform::system::Control};
 impl Settings {
     pub fn page(&mut self, page: Page) {
+        if self.page == Page::Storage && page != Page::Storage {
+            self.storage.close();
+        }
+        if page == Page::Storage {
+            self.storage_parent = if self.page == Page::General {
+                Page::General
+            } else {
+                Page::Device
+            };
+            self.storage.enter();
+            self.storage_view = super::StorageView::Overview;
+            self.storage_start = 0;
+        }
         self.page = page;
         self.selected = 0;
         self.confirmation = None;

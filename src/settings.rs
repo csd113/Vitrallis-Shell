@@ -5,8 +5,11 @@ mod geometry;
 #[cfg(test)]
 mod keyboard_tests;
 mod pointer;
+mod storage;
 mod update;
+mod wireless;
 pub use geometry::PanelLayout;
+pub use storage::StorageView;
 
 use crate::{
     input::Action,
@@ -43,6 +46,8 @@ pub enum Page {
     Device,
     Timezones,
     Updates,
+    Storage,
+    Wireless,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -72,8 +77,21 @@ impl PowerTransition {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum SystemState {
+    #[default]
+    Loading,
+    Ready,
+    Stale,
+    Unavailable,
+}
+
 #[derive(Debug, Default)]
 pub struct Settings {
+    pub storage: crate::storage::Storage,
+    pub storage_view: StorageView,
+    pub storage_start: usize,
+    pub storage_parent: Page,
     pub power_transition: Option<PowerTransition>,
     pub updater: crate::updater::Updater,
     pub update_confirmation: Option<Instant>,
@@ -81,6 +99,7 @@ pub struct Settings {
     pub page: Page,
     pub zone_start: usize,
     pub status: Status,
+    pub system_state: SystemState,
     pub open: bool,
     pub selected: usize,
     pub confirmation: Option<(Power, Instant)>,
@@ -102,6 +121,7 @@ impl Settings {
         self.open = true;
     }
     pub fn cancel(&mut self) {
+        self.storage.close();
         self.message.clear();
         self.open = false;
         self.page = Page::General;
@@ -146,8 +166,15 @@ impl Settings {
         }
     }
     pub fn input(&mut self, action: Action) -> Option<Request> {
+        if self.open && self.page == Page::Storage {
+            self.storage_input(action);
+            return None;
+        }
         if self.open && self.footer_input(action) {
             return None;
+        }
+        if self.open && self.page == Page::Wireless {
+            return self.wireless_input(action);
         }
         if self.open && self.page == Page::Updates {
             return self.update_input(action);

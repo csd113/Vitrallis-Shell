@@ -15,6 +15,7 @@ mod process;
 mod renderer;
 mod settings;
 mod shortcuts;
+mod storage;
 mod ui;
 mod updater;
 

@@ -240,7 +240,15 @@ fn render_launcher(
     text(
         canvas,
         &if state.settings.open {
-            format!("SYSTEM SETTINGS {}", env!("CARGO_PKG_VERSION"))
+            match state.settings.page {
+                crate::settings::Page::General => "SETTINGS / QUICK CONTROLS",
+                crate::settings::Page::Device => "SETTINGS / DEVICE",
+                crate::settings::Page::Timezones => "SETTINGS / TIME ZONE",
+                crate::settings::Page::Updates => "SETTINGS / SOFTWARE UPDATES",
+                crate::settings::Page::Storage => "SETTINGS / STORAGE",
+                crate::settings::Page::Wireless => "SETTINGS / WIRELESS",
+            }
+            .into()
         } else if let Some(name) = state
             .folder
             .as_ref()
@@ -697,7 +705,13 @@ mod system_tests {
     ) -> Result<(), String> {
         use crate::settings::Page;
         let original_page = state.settings.page;
-        for page in [Page::General, Page::Device, Page::Timezones, Page::Updates] {
+        for page in [
+            Page::General,
+            Page::Device,
+            Page::Timezones,
+            Page::Updates,
+            Page::Wireless,
+        ] {
             state.settings.page(page);
             for (index, _) in state.settings.footer_controls().into_iter().flatten() {
                 state.settings.selected = index;
@@ -829,6 +843,7 @@ mod system_tests {
                 cache_tests::lifecycle(&creator, &mut canvas)?;
             }
             power_samples(&mut canvas, &layout, &mut state, output)?;
+            state.settings.system_state = crate::settings::SystemState::Ready;
             state.settings.network_available = true;
             state.settings.input(Action::System);
             let creator = canvas.texture_creator();
@@ -838,6 +853,12 @@ mod system_tests {
             state.settings.input(Action::SelectAndActivate(5));
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("device-{w}x{h}.bmp")))?;
+            state.settings.page(crate::settings::Page::Wireless);
+            state.settings.status.wifi_enabled = Some(true);
+            state.settings.status.bluetooth = Some(false);
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(&canvas, &output.join(format!("wireless-{w}x{h}.bmp")))?;
+            state.settings.page(crate::settings::Page::Device);
             state.settings.input(Action::SelectAndActivate(3));
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("updates-{w}x{h}.bmp")))?;
@@ -855,6 +876,7 @@ mod system_tests {
             assert_eq!(state.settings.selected, 0);
             state.settings.cancel();
             state.settings.status = Status::default();
+            state.settings.system_state = crate::settings::SystemState::Unavailable;
             state.settings.input(Action::System);
             render(&mut canvas, &layout, &state, &[])?;
             screenshot(&canvas, &output.join(format!("unavailable-{w}x{h}.bmp")))?;
@@ -864,6 +886,9 @@ mod system_tests {
             screenshot(&canvas, &output.join(format!("loading-{w}x{h}.bmp")))?;
             app_center::qa(&mut canvas, &layout, output)?;
             shortcuts::qa(&mut canvas, &layout, output)?;
+            state.opening = None;
+            state.settings.show();
+            system::storage_qa(&mut canvas, &layout, &mut state, &[], output)?;
         }
         verify_references(output)
     }

@@ -14,10 +14,10 @@ on the inspected Debian 13 image.
 | Optional battery backend | Without that kernel driver, an already installed `i2cget` can read the AXP209 gauge/status registers. This is a supported OS integration option, not an older Vitrallis implementation. It installs no package or permissions. |
 | Brightness | Bounded backlight sysfs I/O. Requires the inspected native range of ten lit levels; unsupported ranges disable the control. No missing node is created. |
 | Audio | Existing `amixer` Power Amplifier control; validated percentages and actual readback. Missing, malformed or inconsistent channels are unavailable. |
-| Wi-Fi and IP | Existing NetworkManager `nmcli`; state includes off, disconnected, connecting, connected and unavailable. Header address prefers Wi-Fi IPv4 with USB IPv4 as fallback. Connection management opens the configured OS utility. |
+| Wi-Fi and IP | Existing NetworkManager `nmcli`; state includes off, disconnected, connecting, connected and unavailable. Header address prefers Wi-Fi IPv4 with USB IPv4 as fallback. Wireless settings control the software radio on/off with verified readback. Connection management opens the configured OS utility. |
 | Clock and time zone | Existing local clock and device zone database; selected zone changes use normal OS authorization. The status clock respects the PocketHome time format. |
 | Reboot and power-off | Fixed `systemctl` actions, explicit Cancel-default confirmation and normal OS permissions. No privilege rules are installed. |
-| Bluetooth | No validated live pairing backend; no connection claim or control is supplied. |
+| Bluetooth | Existing BlueZ `bluetoothctl` supplies default-controller powered state and on/off control with verified readback. Missing services/controllers are unavailable. Pairing and connection management are not supplied. |
 
 The optional register interpretation follows the
 [AXP209 datasheet](https://aw-som.com/docs/public/products/AXP209_Datasheet_v1.0en.pdf):

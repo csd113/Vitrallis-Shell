@@ -16,7 +16,7 @@ jobs:
       - name: Build prerequisites
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libsdl2-dev pkg-config python3 python3-tk gh
+          apt-get install -y --no-install-recommends libsdl2-dev pkg-config python3 python3-tk python3-venv python3-packaging gh
           rustup component add rustfmt clippy
           # The mounted checkout is owned by the host runner, not container root.
           git config --global --add safe.directory "$GITHUB_WORKSPACE"

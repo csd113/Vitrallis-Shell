@@ -47,9 +47,9 @@ fn general_footer_moves_left_from_more_to_back_and_activates_with_enter() {
         ],
     );
     assert_eq!(settings.selected, NEXT);
-    move_keys(&mut settings, &[Keycode::Left]);
+    move_keys(&mut settings, &[Keycode::Left, Keycode::Left]);
     assert_eq!(settings.selected, BACK);
-    move_keys(&mut settings, &[Keycode::Right]);
+    move_keys(&mut settings, &[Keycode::Right, Keycode::Right]);
     assert_eq!(settings.selected, NEXT);
     move_keys(&mut settings, &[Keycode::Up]);
     assert_eq!(settings.selected, 4);
@@ -73,6 +73,7 @@ fn general_footer_moves_left_from_more_to_back_and_activates_with_enter() {
             Keycode::Down,
             Keycode::Down,
             Keycode::Down,
+            Keycode::Left,
             Keycode::Left,
             Keycode::Return,
         ],
@@ -253,7 +254,14 @@ fn timezone_footer_handles_partial_pages_and_returns_without_applying() {
 fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<(), String> {
     for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
         let layout = Layout::home(width, height)?;
-        for page in [Page::General, Page::Device, Page::Timezones, Page::Updates] {
+        for page in [
+            Page::General,
+            Page::Device,
+            Page::Timezones,
+            Page::Updates,
+            Page::Storage,
+            Page::Wireless,
+        ] {
             let mut keyboard = Settings::default();
             keyboard.show();
             keyboard.page(page);
@@ -320,4 +328,87 @@ fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<
         }
     }
     Ok(())
+}
+
+#[test]
+fn storage_navigation_empty_states_refresh_and_safe_back_are_keyboard_accessible() {
+    let mut settings = Settings::default();
+    settings.show();
+    move_keys(
+        &mut settings,
+        &[
+            Keycode::PageDown,
+            Keycode::Down,
+            Keycode::Down,
+            Keycode::Down,
+            Keycode::Down,
+            Keycode::Right,
+            Keycode::Right,
+            Keycode::Return,
+        ],
+    );
+    assert_eq!(settings.page, Page::Storage);
+    move_keys(&mut settings, &[Keycode::Return]);
+    assert_eq!(settings.storage_view, super::StorageView::Apps);
+    assert_eq!(settings.selected, BACK);
+    move_keys(
+        &mut settings,
+        &[
+            Keycode::Right,
+            Keycode::Return,
+            Keycode::Right,
+            Keycode::Return,
+        ],
+    );
+    assert_eq!(settings.storage_start, 0);
+    move_keys(
+        &mut settings,
+        &[Keycode::Escape, Keycode::Down, Keycode::Return],
+    );
+    assert_eq!(settings.storage_view, super::StorageView::Categories);
+    move_keys(
+        &mut settings,
+        &[
+            Keycode::Return,
+            Keycode::Down,
+            Keycode::Down,
+            Keycode::Right,
+            Keycode::Return,
+        ],
+    );
+    assert_eq!(settings.page, Page::Storage);
+    move_keys(&mut settings, &[Keycode::Left, Keycode::Return]);
+    assert_eq!(settings.page, Page::Device);
+    assert!(settings.open);
+}
+
+#[test]
+fn storage_app_paging_handles_partial_last_pages_and_details() {
+    let mut settings = Settings::default();
+    settings.show();
+    settings.page(Page::Storage);
+    settings.storage.report = Some(crate::storage::Report {
+        apps: (0..7)
+            .map(|index| crate::app_center::accounting::AppUsage {
+                id: format!("io.test.app{index}"),
+                name: format!("App {index}"),
+                icon: None,
+                parts: Default::default(),
+                total: crate::storage::scan::Size::default(),
+            })
+            .collect(),
+        ..Default::default()
+    });
+    move_keys(&mut settings, &[Keycode::Return, Keycode::PageDown]);
+    assert_eq!(settings.storage_start, 4);
+    assert_eq!(settings.storage_rows(), 3);
+    move_keys(
+        &mut settings,
+        &[Keycode::Down, Keycode::Down, Keycode::Return],
+    );
+    assert_eq!(settings.storage_view, super::StorageView::App(6));
+    assert_eq!(settings.selected, BACK);
+    move_keys(&mut settings, &[Keycode::Return, Keycode::PageUp]);
+    assert_eq!(settings.storage_start, 0);
+    assert_eq!(settings.storage_rows(), 4);
 }

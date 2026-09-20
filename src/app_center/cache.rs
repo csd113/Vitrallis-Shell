@@ -157,7 +157,7 @@ fn presentation(loc: &Locations, p: &mut metadata::Package, fetch: Option<&impl 
         }
     }
 }
-fn icon(bytes: &[u8]) -> Result<Vec<u8>, String> {
+pub(super) fn icon(bytes: &[u8]) -> Result<Vec<u8>, String> {
     metadata::validate_icon(bytes)?;
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);

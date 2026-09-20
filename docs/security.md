@@ -16,8 +16,10 @@ executable names, bounded sizes, ARM ELF checks and matching version probes.
 App Center fetches bounded catalog/manifest metadata and commit-pinned payloads,
 checks complete inventories and hashes, and records publisher-bound receipts.
 Catalog source trust requires explicit confirmation. Permission metadata is
-informational, not enforcement. Runtime inspection does not import app code or
-install missing system/Python dependencies. Review the [App Center contract](app-center.md)
+informational, not enforcement. Runtime inspection does not import app code or install dependencies. Explicit app
+installation may provision app-local Python dependencies with read access to
+system packages; user-site packages and pip configuration are excluded. App
+Center never installs system packages. Review the [App Center contract](app-center.md)
 before trusting a new catalog or application.
 
 ## Filesystem and execution boundaries

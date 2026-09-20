@@ -48,37 +48,60 @@ pub fn refresh_apps(apps: &[AppEntry]) -> Result<Vec<AppEntry>, String> {
     }
     Ok(catalog.apps)
 }
-pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
+/// Shared, validated installed-manifest inventory for launcher and storage consumers.
+/// Invalid entries remain diagnostics instead of suppressing the rest of the inventory.
+type InstalledManifest = (std::path::PathBuf, serde_json::Value);
+
+pub(super) fn manifests(
+    loc: &Locations,
+    keep_going: impl Fn() -> bool,
+) -> Result<Vec<Result<InstalledManifest, String>>, String> {
     let root = loc.data.join("vitrallis/apps");
     storage::safe(&root)?;
     let entries = match std::fs::read_dir(&root) {
-        Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e.to_string()),
     };
+    let mut manifests = Vec::new();
     for (index, item) in entries.enumerate() {
+        if !keep_going() {
+            return Err("App discovery cancelled or limit reached".into());
+        }
         if index >= 1000 {
-            catalog
-                .diagnostics
-                .push("App discovery limited to 1000 directories".into());
+            manifests.push(Err("App discovery limited to 1000 directories".into()));
             break;
         }
-        let item = item.map_err(|e| e.to_string())?;
         let result = (|| {
+            let item = item.map_err(|e| e.to_string())?;
             let path = item.path();
             storage::safe(&path)?;
             let Some(file) = storage::read(&path.join("app.toml"), metadata::FILE_LIMIT)? else {
                 return Ok(None);
             };
-            let v = metadata::manifest(&file.bytes)?;
-            let id = metadata::text(&v["id"], 128)?;
-            if item.file_name() != std::ffi::OsStr::new(id) {
+            let value = metadata::manifest(&file.bytes)?;
+            if item.file_name() != std::ffi::OsStr::new(metadata::text(&value["id"], 128)?) {
                 return Err("App directory must match app ID".into());
             }
+            Ok(Some((path, value)))
+        })();
+        match result {
+            Ok(Some(app)) => manifests.push(Ok(app)),
+            Ok(None) => (),
+            Err(e) => manifests.push(Err(e)),
+        }
+    }
+    Ok(manifests)
+}
+pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), String> {
+    for manifest in manifests(loc, || true)? {
+        let result = (|| {
+            let (path, v) = manifest?;
+            let id = metadata::text(&v["id"], 128)?;
             let entry = path.join(metadata::manifest_entry(&v)?);
-            let executable =
-                storage::read(&entry, metadata::FILE_LIMIT)?.ok_or("App entry missing")?;
-            let native_ready = v["runtime"] != "rust" || executable.mode & 0o111 != 0;
+            let executable = storage::read(&entry, metadata::FILE_LIMIT)?;
+            let native_ready =
+                executable.is_some_and(|file| v["runtime"] != "rust" || file.mode & 0o111 != 0);
             let launch = loc.state.join("launchers").join(id);
             let available =
                 storage::read(&launch, metadata::FILE_LIMIT)?.is_some_and(|d| d.mode & 0o111 != 0);

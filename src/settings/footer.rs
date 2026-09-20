@@ -12,8 +12,30 @@ impl Settings {
             return [None; 3];
         }
         match self.page {
-            Page::General => [Some((BACK, "< Back")), None, Some((NEXT, "More >"))],
-            Page::Device | Page::Updates => [Some((BACK, "< Back")), None, None],
+            Page::General => [
+                Some((BACK, "< Back")),
+                Some((super::storage::REFRESH, "Storage")),
+                Some((NEXT, "Device >")),
+            ],
+            Page::Device => [
+                Some((BACK, "< Back")),
+                Some((super::wireless::WIRELESS, "Wireless")),
+                Some((NEXT, "Storage >")),
+            ],
+            Page::Wireless | Page::Updates => [Some((BACK, "< Back")), None, None],
+            Page::Storage => match self.storage_view {
+                super::StorageView::Overview => [
+                    Some((BACK, "< Back")),
+                    Some((super::storage::REFRESH, "Refresh")),
+                    None,
+                ],
+                super::StorageView::Apps => [
+                    Some((BACK, "< Back")),
+                    Some((super::storage::REFRESH, "Previous")),
+                    Some((NEXT, "Next >")),
+                ],
+                _ => [Some((BACK, "< Back")), None, None],
+            },
             Page::Timezones => [
                 Some((BACK, "< Previous")),
                 Some((ZONE_BACK, "Back")),
@@ -49,14 +71,24 @@ impl Settings {
             Action::Move(Direction::Up) => {
                 self.selected = match self.page {
                     Page::General if index == NEXT => 4,
-                    Page::General => 2,
+                    Page::General | Page::Wireless => 2,
                     Page::Device => 3,
-                    Page::Updates => 0,
+                    Page::Storage | Page::Updates => 0,
                     Page::Timezones => self.visible_zones().saturating_sub(1),
                 };
             }
             Action::Move(Direction::Down) => {}
             Action::Activate | Action::SelectAndActivate(_) => {
+                if self.page == Page::Device && index == super::wireless::WIRELESS {
+                    self.page(Page::Wireless);
+                    return true;
+                }
+                if (self.page == Page::Device && index == NEXT)
+                    || (self.page == Page::General && index == super::storage::REFRESH)
+                {
+                    self.page(Page::Storage);
+                    return true;
+                }
                 let action = match (self.page, index) {
                     (Page::General | Page::Timezones, NEXT) => Action::Page(true),
                     (Page::Timezones, BACK) => Action::Page(false),

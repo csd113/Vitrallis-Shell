@@ -28,42 +28,30 @@ fn find(root: &Path, files: &Files, check_dependencies: bool) -> Result<Runtime,
     if deps.len() > 256 || requirements.len() > 65536 {
         return Err("Dependency declaration exceeds bounds".into());
     }
-    let needs_tk = files
-        .iter()
-        .filter(|(name, _)| Path::new(name).extension() == Some(std::ffi::OsStr::new("py")))
-        .any(|(_, b)| {
-            std::str::from_utf8(b)
-                .is_ok_and(|s| s.contains("import tkinter") || s.contains("from tkinter"))
-        });
-    let script = r"import sys
-if sys.argv[1] == 'tk': import tkinter
-if len(sys.argv) > 2:
- import re, importlib.metadata as m
- for line in sys.argv[2:]:
-  if re.fullmatch(r'[A-Za-z0-9_.-]+(?:==[A-Za-z0-9_.+-]+)?', line):
-   name, _, pin = line.partition('==')
-   found = m.version(name)
-   if pin and found != pin: raise RuntimeError('dependency version mismatch: '+name)
-  else:
-   from packaging.requirements import Requirement
-   requirement = Requirement(line)
-   if requirement.url: raise RuntimeError('URL dependencies require manual review')
-   if requirement.marker is None or requirement.marker.evaluate():
-    if requirement.extras: raise RuntimeError('extras require manual dependency review')
-    if m.version(requirement.name) not in requirement.specifier: raise RuntimeError('dependency version mismatch')
-";
     for program in candidates {
-        let result = probe(&program, script, needs_tk, &deps);
+        let result = probe(&program, REQUIREMENTS, needs_tk(files), &deps);
         if result.is_ok() {
             return Ok(Runtime { program });
         }
     }
     Err(format!(
         "Missing compatible Python 3{} or dependencies [{}]",
-        if needs_tk { "/Tk" } else { "" },
+        if needs_tk(files) { "/Tk" } else { "" },
         deps.join(", ")
     ))
 }
+const REQUIREMENTS: &str = include_str!("python_requirements.py");
+
+fn needs_tk(files: &Files) -> bool {
+    files
+        .iter()
+        .filter(|(name, _)| Path::new(name).extension() == Some(std::ffi::OsStr::new("py")))
+        .any(|(_, b)| {
+            std::str::from_utf8(b)
+                .is_ok_and(|s| s.contains("import tkinter") || s.contains("from tkinter"))
+        })
+}
+
 fn managed(root: &Path, files: &Files) -> PathBuf {
     root.join("runtime").join(super::storage::sha(
         files.get("requirements.txt").map_or(&[], Vec::as_slice),
@@ -85,6 +73,13 @@ pub(super) fn candidates(root: &Path, files: &Files) -> Vec<PathBuf> {
 const PROVISION: &str = r"import os, pathlib, subprocess, sys, tempfile, venv
 root = pathlib.Path(sys.argv[2])
 requirements = sys.argv[3]
+validate = sys.argv[4]
+# pip --isolated still reads global configuration. Disable all configuration
+# files as well, and do not let inherited pip settings redirect writes.
+environment = {k: v for k, v in os.environ.items() if not k.startswith(('PIP_', 'PYTHON'))}
+environment.update(PIP_CONFIG_FILE=os.devnull, PYTHONNOUSERSITE='1')
+os.environ.clear()
+os.environ.update(environment)
 # Reject pip options, paths and URLs before creating an environment.
 import re
 lines = [line.strip() for line in requirements.splitlines() if line.strip() and not line.lstrip().startswith('#')]
@@ -93,11 +88,15 @@ for line in lines:
  if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*(?:\s*[<>=!~].*)?(?:\s*;.*)?', line) or any(c in line for c in '@/\\'):
   raise RuntimeError('Unsupported dependency declaration: '+line)
 with tempfile.TemporaryDirectory(prefix='.pending-', dir=str(root.parent)) as staging:
- venv.EnvBuilder(with_pip=True, symlinks=False).create(staging)
+ # System distributions are already trusted by runtime detection. Local site
+ # packages take precedence; -I excludes user site and environment overrides.
+ venv.EnvBuilder(with_pip=True, symlinks=False, system_site_packages=True).create(staging)
  python = str(pathlib.Path(staging) / 'bin/python3')
- validate = 'from pip._vendor.packaging.requirements import Requirement; import sys; [Requirement(line) for line in sys.argv[1:]]'
- subprocess.run([python, '-I', '-c', validate] + lines, check=True, timeout=10)
- subprocess.run([python, '-I', '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check', '--no-input', 'packaging'] + lines, check=True, timeout=600)
+ subprocess.run([python, '-I', '-c', validate, 'validate'] + lines, check=True, timeout=30, env=environment)
+ subprocess.run([python, '-I', '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check', '--no-input', 'packaging'] + lines, check=True, timeout=600, env=environment)
+ # Never publish an environment that pip claims succeeded but cannot satisfy
+ # the same metadata/Tk checks used when selecting it for launch.
+ subprocess.run([python, '-I', '-c', validate, sys.argv[1]] + lines, check=True, timeout=30, env=environment)
  os.rename(staging, root)
  pathlib.Path(staging).mkdir()
 ";
@@ -121,18 +120,15 @@ pub fn ensure(root: &Path, files: &Files) -> Result<Runtime, String> {
     run_probe(
         &base.program,
         PROVISION,
-        false,
+        needs_tk(files),
         &[
             target.to_str().ok_or("Runtime path must be UTF-8")?.into(),
             requirements.into(),
+            REQUIREMENTS.into(),
         ],
-        std::time::Duration::from_secs(660),
+        std::time::Duration::from_secs(720),
     )
-    .map_err(|e| {
-        format!(
-            "Could not install app dependencies (Python venv/pip and network access required): {e}"
-        )
-    })?;
+    .map_err(|e| format!("{e}\nApp dependency installation failed."))?;
     detect(root, files)
 }
 
@@ -163,7 +159,7 @@ fn run_probe(
         command.process_group(0);
     }
     command
-        .args(["-s", "-c", script, if tk { "tk" } else { "plain" }])
+        .args(["-I", "-c", script, if tk { "tk" } else { "plain" }])
         .args(deps)
         .current_dir("/")
         .env_remove("PYTHONSTARTUP")
@@ -203,7 +199,8 @@ fn run_probe(
             Ok(())
         } else {
             Err(format!(
-                "Runtime/dependency process exited {status}: {}",
+                "{}\nRuntime/dependency process exited {status}: {}",
+                failure_reason(&diagnostics),
                 diagnostics.trim()
             ))
         }
@@ -214,6 +211,22 @@ fn run_probe(
         let _ = child.wait();
     }
     outcome
+}
+
+fn failure_reason(diagnostics: &str) -> &str {
+    // Pip often prints a generic build summary after the useful compiler error.
+    diagnostics
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("error: ") && !line.contains("subprocess-exited-with-error"))
+        .or_else(|| {
+            diagnostics.lines().rev().map(str::trim).find(|line| {
+                line.starts_with("ERROR: ")
+                    || line.starts_with("RuntimeError: ")
+                    || line.contains("No module named")
+            })
+        })
+        .unwrap_or("Python venv/pip and network access are required; see details below")
 }
 
 fn drain(
@@ -348,46 +361,6 @@ fn compile_sources(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<()
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn dependency_provisioning_is_local_and_cleans_up_failures() -> Result<(), String> {
-        let script = r"import pathlib, subprocess, sys, tempfile
-from unittest.mock import patch
-provision = sys.argv[2]
-with tempfile.TemporaryDirectory() as directory:
- root = pathlib.Path(directory) / 'environment'
- def create(path):
-  (pathlib.Path(path) / 'ready').touch()
- for requirement, fail in [('Pillow>=10.4,<13', False), ('Pillow>=10.4,<13', True), ('--target=/tmp/unsafe', False), ('Pillow @ https://example.com/a.whl', False)]:
-  with patch('venv.EnvBuilder') as builder, patch('subprocess.run') as run:
-   builder.return_value.create.side_effect = create
-   if fail: run.side_effect = subprocess.CalledProcessError(1, 'pip')
-   sys.argv = ['installer', 'plain', str(root), requirement]
-   try:
-    exec(provision, {})
-   except (RuntimeError, subprocess.CalledProcessError):
-    assert not root.exists()
-    assert not list(pathlib.Path(directory).iterdir())
-    if not fail: builder.assert_not_called()
-   else:
-    assert not fail and requirement == 'Pillow>=10.4,<13'
-    assert (root / 'ready').is_file()
-    command = run.call_args_list[-1].args[0]
-    assert command[0].startswith(directory + '/')
-    assert command[1:] == ['-I', '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check', '--no-input', 'packaging', requirement]
-    (root / 'ready').unlink()
-    root.rmdir()
-";
-        super::probe(
-            std::path::Path::new("/usr/bin/python3"),
-            script,
-            false,
-            &[super::PROVISION.into()],
-        )
-    }
-}
-
-#[cfg(test)]
 mod completion_tests {
     use super::*;
     use std::time::{Duration, Instant};
@@ -413,7 +386,9 @@ mod completion_tests {
         }
         let error = run_probe(Path::new("/usr/bin/python3"), "import sys; print('x'*100000); print('pip dependency failed: wheel unavailable',file=sys.stderr); sys.exit(7)", false, &[], Duration::from_secs(10)).expect_err("failed installer cannot succeed");
         assert!(error.contains("wheel unavailable") && error.contains('7'));
-        assert!(error.len() < 17000);
+        assert!(error.len() < 17500);
+        let compiler = "Collecting Pillow\nerror: [Errno 2] No such file or directory: arm-linux-gnueabihf-gcc\nERROR: Failed building wheel for Pillow";
+        assert!(failure_reason(compiler).contains("arm-linux-gnueabihf-gcc"));
         Ok(())
     }
     #[test]

@@ -14,6 +14,10 @@ impl PanelLayout {
         })
     }
 
+    pub fn storage_actions(layout: &Layout) -> [Rect; 2] {
+        Self::new(layout).confirmation
+    }
+
     pub fn rows(layout: &Layout, count: i32) -> Vec<Rect> {
         let gap = (i32::from(layout.height) / 40).max(5);
         let top = layout.title.h + gap;

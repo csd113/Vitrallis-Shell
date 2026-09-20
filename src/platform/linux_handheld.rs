@@ -1,5 +1,6 @@
 //! Linux sysfs/ALSA controls and session-specific application policy.
 mod gpu;
+mod radio;
 use super::Platform;
 pub use gpu::setup_notice as gpu_setup_notice;
 mod display;
@@ -94,6 +95,9 @@ impl System for LinuxHandheld {
         snapshot(&Native)
     }
     fn control(&mut self, control: Control, status: &mut Status) -> Result<(), String> {
+        if let Control::Radio(radio, enabled) = control {
+            return radio::apply(&Native, radio, enabled, status);
+        }
         if control == Control::ReadTimezone {
             let actual =
                 Native.command("timedatectl", &["show", "--property=Timezone", "--value"])?;
@@ -136,7 +140,10 @@ impl System for LinuxHandheld {
                 status.volume = Some(volume);
                 status.muted = muted;
             }
-            Control::Power(_) | Control::Timezone(_) | Control::ReadTimezone => {}
+            Control::Power(_)
+            | Control::Timezone(_)
+            | Control::ReadTimezone
+            | Control::Radio(_, _) => {}
             Control::ScreenTimeout(_) => status.screen_timeout = display::timeout(&Native),
         }
         Ok(())
@@ -232,27 +239,10 @@ fn snapshot(io: &impl Hardware) -> Status {
         .command("amixer", &["sget", "Power Amplifier"])
         .ok()
         .and_then(|v| audio(&v).ok());
-    let radio = io.command("nmcli", &["radio", "wifi"]);
-    let wifi = match radio {
-        Ok(radio) if radio.trim() == "disabled" => Some(Wifi::Off),
-        Ok(radio) => io
-            .command(
-                "nmcli",
-                &["-t", "-f", "GENERAL.STATE", "device", "show", "wlan0"],
-            )
-            .ok()
-            .and_then(|state| wifi(&radio, &state)),
-        Err(_) => None,
-    };
+    let wifi_enabled = radio::read(io, super::system::Radio::Wifi).ok();
+    let wifi = radio::connection(io, wifi_enabled);
     Status {
-        ip: ["wlan0", "usb0"].into_iter().find_map(|device| {
-            io.command(
-                "ip",
-                &["-o", "-4", "addr", "show", "dev", device, "scope", "global"],
-            )
-            .ok()
-            .and_then(|text| display::ip(&text))
-        }),
+        ip: ip(io),
         screen_timeout: display::timeout(io),
         timezone: io
             .command("timedatectl", &["show", "--property=Timezone", "--value"])
@@ -265,7 +255,8 @@ fn snapshot(io: &impl Hardware) -> Status {
         charging,
         external_power,
         wifi,
-        bluetooth: None,
+        wifi_enabled,
+        bluetooth: radio::read(io, super::system::Radio::Bluetooth).ok(),
         brightness: brightness_percent(io),
         brightness_minimum: Percent::new(10).ok(),
         volume: audio.map(|v| v.0),
@@ -273,6 +264,16 @@ fn snapshot(io: &impl Hardware) -> Status {
         clock: command::clock(),
         power_controls: cfg!(target_os = "linux"),
     }
+}
+fn ip(io: &impl Hardware) -> Option<std::net::Ipv4Addr> {
+    ["wlan0", "usb0"].into_iter().find_map(|device| {
+        io.command(
+            "ip",
+            &["-o", "-4", "addr", "show", "dev", device, "scope", "global"],
+        )
+        .ok()
+        .and_then(|text| display::ip(&text))
+    })
 }
 fn battery_status(io: &impl Hardware) -> (Option<Percent>, Option<bool>, Option<bool>) {
     if io.kernel_battery() {
@@ -320,6 +321,7 @@ fn battery_status(io: &impl Hardware) -> (Option<Percent>, Option<bool>, Option<
 }
 fn apply(io: &impl Hardware, control: Control) -> Result<(), String> {
     match control {
+        Control::Radio(_, _) => Err("Radio control requires readback".into()),
         Control::ScreenTimeout(seconds) => display::apply(io, seconds),
         Control::Timezone(_) | Control::ReadTimezone => {
             Err("Time zone requires an available selection".into())

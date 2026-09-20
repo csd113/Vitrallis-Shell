@@ -1534,3 +1534,56 @@ fn physical_python_first_installs() -> Result<(), String> {
     }
     Ok(())
 }
+
+#[test]
+#[ignore = "explicit device QA: updates the named installed app in VITRALLIS_QA_HOME"]
+fn physical_python_managed_update() -> Result<(), String> {
+    let home = std::env::var_os("VITRALLIS_QA_HOME")
+        .map(std::path::PathBuf::from)
+        .ok_or("Set VITRALLIS_QA_HOME to the explicitly authorized device home")?;
+    let id = std::env::var("VITRALLIS_QA_APP").map_err(|e| e.to_string())?;
+    let commit = std::env::var("VITRALLIS_QA_COMMIT").map_err(|e| e.to_string())?;
+    let old = std::env::var("VITRALLIS_QA_OLD_VERSION").map_err(|e| e.to_string())?;
+    let new = std::env::var("VITRALLIS_QA_NEW_VERSION").map_err(|e| e.to_string())?;
+    storage::safe(&home)?;
+    let loc = storage::Locations {
+        data: home.join(".local/share"),
+        state: home.join(".local/share/vitrallis/app-center"),
+        sources: home.join(".config/vitrallis/app-center.json"),
+        home,
+    };
+    let _lock = storage::Lock::take(&loc.state)?;
+    let sources = Sources::load(&loc.sources)?;
+    let rows = super::cache::load(&loc, &sources);
+    let matches: Vec<_> = rows.iter().filter(|r| r.package.id == id).collect();
+    if matches.len() != 1 {
+        return Err("Expected exactly one cached app; refusing ambiguous selection".into());
+    }
+    let row = matches[0];
+    if row.package.commit != commit
+        || row.installed != old
+        || row.package.version.to_string() != new
+        || row.package.runtime != metadata::RuntimeKind::Python
+    {
+        return Err("Device update does not match the explicitly selected versions/commit".into());
+    }
+    let (_send, commands) = std::sync::mpsc::channel();
+    let (updates, receive) = std::sync::mpsc::channel();
+    let result = super::install_one(
+        &loc,
+        &sources,
+        row,
+        &commands,
+        &updates,
+        &std::sync::atomic::AtomicBool::new(false),
+        &network::Curl,
+    );
+    for update in receive.try_iter() {
+        eprintln!("{update:?}");
+    }
+    result?;
+    assert_eq!(install::label(&loc, &row.package)?, new);
+    assert!(!install::check(&loc, row.package.clone())?.ready);
+    eprintln!("Managed update verified: {id} {old} -> {new}, {commit}");
+    Ok(())
+}
