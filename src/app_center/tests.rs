@@ -1587,3 +1587,31 @@ fn physical_python_managed_update() -> Result<(), String> {
     eprintln!("Managed update verified: {id} {old} -> {new}, {commit}");
     Ok(())
 }
+
+#[test]
+fn tor_manifest_survives_install_discovery_and_launcher_ownership() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (package, mut files) = generic()?;
+    let manifest = files.get_mut("app.toml").ok_or("manifest")?;
+    manifest.extend_from_slice(b"\n[network]\ntor = \"required\"\n");
+    let package = inventory(package, &files);
+    install::install(
+        &loc,
+        &install::prepare(&loc, package.clone(), files.clone())?,
+    )?;
+    let mut catalog = crate::discovery::Catalog::default();
+    discovery::installed(&mut catalog, &loc)?;
+    assert_eq!(
+        catalog.apps[0].manifest.tor,
+        crate::tor::Requirement::Required
+    );
+    let launcher = std::fs::read_to_string(loc.state.join("launchers").join(&package.id))
+        .map_err(|e| e.to_string())?;
+    assert!(launcher.starts_with("#!/bin/sh\nexec /usr/bin/bwrap "));
+    assert!(launcher.contains("'--unshare-net'"));
+    assert!(!loc.root(&package).join("arti").exists());
+    assert!(!loc.data.join("vitrallis/tor").exists());
+    // Idempotent repair neither loses the requirement nor treats its wrapper as a user edit.
+    assert!(install::prepare(&loc, package, files)?.prepared.is_none());
+    Ok(())
+}

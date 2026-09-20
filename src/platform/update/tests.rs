@@ -240,3 +240,88 @@ fn relaunch_exec_helper() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     Err("exec returned".into())
 }
+
+#[test]
+fn transition_inventory_can_complete_but_cannot_hide_unsafe_arti()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (scratch, target) = fixture()?;
+    let arti = target.with_file_name("arti");
+    fs::remove_file(&arti)?;
+    let mut installation = Installation::open(&target)?;
+    assert!(installation.needs_completion());
+    prepare(&mut installation)?;
+    assert!(installation.commit()?);
+    assert!(scratch.0.join("current/arti").is_file());
+    assert!(!scratch.0.join("previous/arti").exists());
+    drop(installation);
+    let (_scratch, target) = fixture()?;
+    let arti = target.with_file_name("arti");
+    fs::remove_file(&arti)?;
+    symlink("missing", &arti)?;
+    assert!(Installation::open(&target).is_err());
+    fs::remove_file(&arti)?;
+    let installation = Installation::open(&target)?;
+    fs::write(&arti, "concurrent replacement")?;
+    assert!(installation.unchanged().is_err());
+    Ok(())
+}
+
+#[test]
+fn arti_version_is_independent_and_other_companions_remain_exact() -> Result<(), semver::Error> {
+    let version = semver::Version::parse("0.1.0-beta4")?;
+    assert!(version_matches(
+        "arti",
+        &version,
+        "Arti 2.6.0\nRuntime: tokio\n"
+    ));
+    for wrong in [
+        "arti 0.1.0-beta4",
+        "Arti 2.5.0",
+        "Arti 2.6.0-extra",
+        "\nArti 2.6.0",
+    ] {
+        assert!(!version_matches("arti", &version, wrong));
+    }
+    assert!(version_matches(
+        "vitrallis",
+        &version,
+        "vitrallis 0.1.0-beta4\n"
+    ));
+    assert!(!version_matches(
+        "vitrallis",
+        &version,
+        "vitrallis 0.1.0-beta3.9"
+    ));
+    assert!(!version_matches(
+        "vitrallis",
+        &version,
+        "vitrallis 0.1.0-beta4\nextra"
+    ));
+    Ok(())
+}
+
+// Run on Linux against actual release bytes, separately from offline unit tests.
+#[test]
+fn release_bundle_upgrade_probe() -> Result<(), Box<dyn std::error::Error>> {
+    let Some(bundle_path) = std::env::var_os("VITRALLIS_TEST_UPDATE_BUNDLE") else {
+        return Ok(());
+    };
+    let version = semver::Version::parse(&std::env::var("VITRALLIS_TEST_UPDATE_VERSION")?)?;
+    let (scratch, target) = fixture()?;
+    if std::env::var_os("VITRALLIS_TEST_FOUR_FILE_SOURCE").is_some() {
+        fs::remove_file(target.with_file_name("arti"))?;
+    }
+    let mut installation = Installation::open(&target)?;
+    let mut payload = installation.payload()?;
+    let mut source = File::open(bundle_path)?;
+    io::copy(&mut source, &mut payload)?;
+    payload.seek(SeekFrom::Start(0))?;
+    installation.ready(payload, &version, super::super::Target::current()?, [9; 32])?;
+    assert!(installation.commit()?);
+    assert!(scratch.0.join("current/arti").is_file());
+    let relaunch = installation.relaunch_target()?;
+    drop(installation);
+    let (_guard, command) = relaunch_command(&relaunch, [])?;
+    assert_eq!(command.get_program(), relaunch.executable);
+    Ok(())
+}

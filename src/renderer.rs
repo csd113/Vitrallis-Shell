@@ -285,6 +285,8 @@ fn render_launcher(
                 crate::settings::Page::Updates => "SETTINGS / SOFTWARE UPDATES",
                 crate::settings::Page::Storage => "SETTINGS / STORAGE",
                 crate::settings::Page::Wireless => "SETTINGS / WIRELESS",
+                crate::settings::Page::Tor => "SETTINGS / TOR",
+                crate::settings::Page::TorDetails => "TOR / DETAILS",
             }
             .into()
         } else if let Some(name) = state
@@ -749,6 +751,8 @@ mod system_tests {
             Page::Timezones,
             Page::Updates,
             Page::Wireless,
+            Page::Tor,
+            Page::TorDetails,
         ] {
             state.settings.page(page);
             for (index, _) in state.settings.footer_controls().into_iter().flatten() {
@@ -835,6 +839,38 @@ mod system_tests {
         Ok(())
     }
 
+    fn tor_samples(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &mut Launcher,
+        textures: &[Option<Texture<'_>>],
+        output: &std::path::Path,
+        (w, h): (u32, u32),
+    ) -> Result<(), String> {
+        state.settings.page(crate::settings::Page::Tor);
+        for (name, tor_state, percent) in [
+            ("connected", crate::tor::State::Connected, Some(100)),
+            ("bootstrap", crate::tor::State::Bootstrapping, Some(45)),
+            ("error", crate::tor::State::Error, None),
+            ("disabled", crate::tor::State::Disabled, None),
+        ] {
+            state.settings.tor.state = tor_state;
+            state.settings.tor.progress = percent;
+            state.settings.tor.apps = 1;
+            state.settings.tor.mode = if name == "disabled" {
+                crate::tor::Mode::Disabled
+            } else {
+                crate::tor::Mode::OnDemand
+            };
+            render(canvas, layout, state, textures)?;
+            screenshot(canvas, &output.join(format!("tor-{name}-{w}x{h}.bmp")))?;
+        }
+        state.settings.page(crate::settings::Page::TorDetails);
+        render(canvas, layout, state, textures)?;
+        screenshot(canvas, &output.join(format!("tor-details-{w}x{h}.bmp")))?;
+        Ok(())
+    }
+
     #[test]
     fn system_panels_render_at_device_and_scaled_sizes() -> Result<(), String> {
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
@@ -899,6 +935,7 @@ mod system_tests {
             state.settings.status.bluetooth = Some(false);
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("wireless-{w}x{h}.bmp")))?;
+            tor_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
             state.settings.page(crate::settings::Page::Device);
             state.settings.input(Action::SelectAndActivate(3));
             render(&mut canvas, &layout, &state, &textures)?;

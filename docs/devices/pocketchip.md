@@ -60,7 +60,7 @@ done
 vitrallis_tmp=$(mktemp -d /tmp/vitrallis-setup.XXXXXXXX)
 trap 'rm -rf "$vitrallis_tmp"' 0
 trap 'exit 130' 1 2 15
-vitrallis_packages='curl ca-certificates python3 libsdl2-2.0-0 picom device-tree-compiler python3-tk python3-venv python3-packaging'
+vitrallis_packages='curl ca-certificates python3 libsdl2-2.0-0 picom device-tree-compiler python3-tk python3-venv python3-packaging bubblewrap'
 vitrallis_missing=''
 for vitrallis_package in $vitrallis_packages; do
     if [ "$(dpkg-query -W -f='${Status}' "$vitrallis_package" 2>/dev/null || :)" != 'install ok installed' ]; then
@@ -128,7 +128,7 @@ sdl.SDL_GetVersion(version)
 if tuple(version) < (2, 26, 5):
     sys.exit("Requires SDL2 2.26.5+")
 ' || fail 'SDL2/Python/Tk/venv/packaging verification failed.'
-for vitrallis_tool in curl python3 picom dtc fdtoverlay; do
+for vitrallis_tool in curl python3 picom dtc fdtoverlay bwrap; do
     command -v "$vitrallis_tool" >/dev/null || fail "Missing runtime tool after preparation: $vitrallis_tool."
 done
 printf '%s\n' 'Prerequisites ready. Downloading the Vitrallis installer...'
@@ -172,7 +172,7 @@ release. To validate a complete locally built ARM bundle with this checkout's
 helpers after preparing prerequisites:
 
 ```sh
-python3 integrations/pocketchip/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle
+python3 integrations/pocketchip/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle
 ```
 
 That local installer is the bundle transaction; automatic package preparation and
@@ -266,7 +266,7 @@ tracks the current device results; it does not claim Raspberry Pi hardware testi
 
 Save and close Vitrallis apps and stop the previous session before reinstalling.
 The installer checks the OS/ABI and runtime libraries, validates every bundled
-ARM EABI5 hard-float executable, verifies per-file hashes, and probes all four
+ARM EABI5 hard-float executable, verifies per-file hashes, and probes all five
 matching versions with bounded output and time. The bootstrap also binds that
 version to the selected release tag.
 
@@ -277,6 +277,7 @@ version to the selected release tag.
     vitrallis-terminal
     vitrallis-notepad
     vitrallis-files
+    arti
   current -> generations/<active-bundle-sha256>
   previous -> generations/<previous-bundle-sha256>
   launch
@@ -452,3 +453,9 @@ Never substitute host SDL libraries or relabel a newer ABI as glibc 2.36.
 integration. [Native validation](pocketchip/history/native-validation.md) and the current
 [host test suite](../validation.md) have separate scopes. The current installer,
 uninstaller and native bundle still need fresh physical PocketCHIP validation.
+
+## Tor networking
+
+The complete bundle includes a separate shared Arti executable. Bootstrap also
+installs Bubblewrap for required-app network isolation. Tor defaults to On demand.
+See [Tor service](../tor.md) for Settings, app manifests and troubleshooting.

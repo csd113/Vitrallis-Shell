@@ -18,7 +18,7 @@ import tempfile
 sys.dont_write_bytecode = True
 
 
-BINARIES = ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files')
+BINARIES = ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-files', 'arti')
 MAGIC = b'VITRALLIS-BUNDLE'
 HELPERS = ('install-session.py', 'uninstall.py', 'vitrallis-session.py', 'platform-setup.py', 'media-setup.py')
 
@@ -144,7 +144,7 @@ PURGE = (BASE / 'session.log', BASE / 'session.log.1',
          Path('.config/vitrallis/screen-timeout'), Path('.config/vitrallis/app-center.json'))
 HEX = re.compile(r'[0-9a-f]{64}')
 INSTALL_STAGE = re.compile(r'install-[a-z0-9_]{8}')
-MAX_BUNDLE = 256 * 1024 * 1024 + 176
+MAX_BUNDLE = 320 * 1024 * 1024 + 216
 
 
 def exists(path):
@@ -271,7 +271,10 @@ def plan(home, purge=False):
                 print('Preserving unrecognized generation:', generation)
                 continue
             whole = hashlib.sha256(MAGIC)
-            paths = [generation / name for name in BINARIES]
+            # Retained beta3/beta3.9/transition generations contain four files;
+            # include Arti when present and still verify the exact bundle digest.
+            names = BINARIES if exists(generation / 'arti') else BINARIES[:4]
+            paths = [generation / name for name in names]
             expected_files = {}
             if any(not exists(path) for path in paths):
                 print('Preserving incomplete generation:', generation)

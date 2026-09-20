@@ -76,11 +76,29 @@ impl Installation {
             .iter()
             .map(|name| {
                 let path = generation.join(name);
-                let metadata = fs::symlink_metadata(&path)?;
+                let metadata = match fs::symlink_metadata(&path) {
+                    Ok(metadata) => metadata,
+                    // beta3.9 and beta4 explicitly bridge the published four-file
+                    // format. All incoming updates still require all five files.
+                    Err(error)
+                        if name == &"arti"
+                            && error.kind() == io::ErrorKind::NotFound
+                            && matches!(
+                                crate::updater::VERSION,
+                                "0.1.0-beta3.9" | "0.1.0-beta4"
+                            ) =>
+                    {
+                        return Ok(None);
+                    }
+                    Err(error) => return Err(error),
+                };
                 safe_file(&metadata, original.uid(), true)?;
-                Ok((path, metadata))
+                Ok(Some((path, metadata)))
             })
-            .collect::<io::Result<Vec<_>>>()?;
+            .collect::<io::Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
         let stage = root.join(".vitrallis-update");
         match fs::DirBuilder::new().mode(0o700).create(&stage) {
             Ok(()) => File::open(&root)?.sync_all()?,
@@ -123,6 +141,9 @@ impl Installation {
             .open(self.stage.join("download"))
             .map_err(|e| format!("Create bundle staging file: {e}"))
     }
+    pub const fn needs_completion(&self) -> bool {
+        self.originals.len() != bundle::BINARIES.len()
+    }
     pub fn ready(
         &mut self,
         mut file: File,
@@ -145,7 +166,7 @@ impl Installation {
                     .ok_or("Installation path is not UTF-8")?,
                 &["--version"],
             )?;
-            if output.trim() != format!("{name} {version}") {
+            if !version_matches(name, version, &output) {
                 return Err(format!("Bundled {name} version does not match the release"));
             }
         }
@@ -207,6 +228,15 @@ impl Installation {
                 return Err(io::Error::other("Installed binaries changed during update"));
             }
         }
+        if self.needs_completion() {
+            let arti = self.target.with_file_name("arti");
+            if !matches!(fs::symlink_metadata(arti), Err(error) if error.kind() == io::ErrorKind::NotFound)
+            {
+                return Err(io::Error::other(
+                    "Installed inventory changed during update",
+                ));
+            }
+        }
         Ok(())
     }
     pub fn relaunch_target(&self) -> Result<super::Relaunch, String> {
@@ -231,6 +261,13 @@ impl Installation {
             Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(e) => Err(e),
         }
+    }
+}
+fn version_matches(name: &str, version: &semver::Version, output: &str) -> bool {
+    if name == "arti" {
+        output.lines().next() == Some("Arti 2.6.0")
+    } else {
+        output.trim() == format!("{name} {version}")
     }
 }
 // std OpenOptions has no no-follow flag; this existing libc constant is provided

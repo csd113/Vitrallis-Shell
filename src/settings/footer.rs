@@ -22,7 +22,12 @@ impl Settings {
                 Some((super::wireless::WIRELESS, "Wireless")),
                 Some((NEXT, "Storage >")),
             ],
-            Page::Wireless | Page::Updates => [Some((BACK, "< Back")), None, None],
+            Page::Tor | Page::TorDetails | Page::Updates => [Some((BACK, "< Back")), None, None],
+            Page::Wireless => [
+                Some((BACK, "< Back")),
+                Some((super::tor::TOR, "Tor >")),
+                None,
+            ],
             Page::Storage => match self.storage_view {
                 super::StorageView::Overview => [
                     Some((BACK, "< Back")),
@@ -72,13 +77,17 @@ impl Settings {
                 self.selected = match self.page {
                     Page::General if index == NEXT => 4,
                     Page::General | Page::Wireless => 2,
-                    Page::Device => 3,
-                    Page::Storage | Page::Updates => 0,
+                    Page::Device | Page::Tor => 3,
+                    Page::Storage | Page::Updates | Page::TorDetails => 0,
                     Page::Timezones => self.visible_zones().saturating_sub(1),
                 };
             }
             Action::Move(Direction::Down) => {}
             Action::Activate | Action::SelectAndActivate(_) => {
+                if self.page == Page::Wireless && index == super::tor::TOR {
+                    self.page(Page::Tor);
+                    return true;
+                }
                 if self.page == Page::Device && index == super::wireless::WIRELESS {
                     self.page(Page::Wireless);
                     return true;

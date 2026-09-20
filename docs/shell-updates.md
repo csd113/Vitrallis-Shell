@@ -31,7 +31,7 @@ show a diagnostic and retain the relaunch button for retry. Close running apps a
 wait for App Center/system operations to finish before relaunching; the action
 does not kill apps or interrupt an installation.
 
-The updater replaces the shell and its three bundled native applications as one
+The updater replaces the shell, its three bundled native applications and shared Arti executable as one
 complete build generation. It does not change App Center packages, user documents,
 catalogs, preferences, session scripts or system packages.
 
@@ -60,26 +60,27 @@ An install requires a managed layout owned by the current user:
     vitrallis-terminal
     vitrallis-notepad
     vitrallis-files
+    arti
   current -> generations/<active-bundle-sha256>
   previous -> generations/<previous-bundle-sha256>
   .vitrallis-update/lock
 ```
 
 The running executable must resolve physically inside the active generation.
-All four files must be regular, single-link executables with matching ownership
+All five files must be regular, single-link executables with matching ownership
 and safe modes; installation directories and pointers are validated. Read-only
 or administrator-owned installs need the administrator's installation process.
 No privilege escalation or release-provided destination is accepted.
 
 Installer and updater share `.vitrallis-update/lock`. The updater streams the
 bounded download there, verifies whole-bundle SHA-256 and exact length, extracts
-only the four fixed binary names into a private generation, checks each digest
+only the five fixed binary names into a private generation, checks each digest
 and ELF target, and runs each bounded `--version` probe. All versions must match.
 There are no archive paths, compression, executable install hooks or optional
 missing companion files. Download and temporary generation cleanup runs on
 failure and the next locked attempt after interruption.
 
-Only after all four binaries pass does the updater sync the generation, retain
+Only after all five binaries pass does the updater sync the generation, retain
 the previous pointer, and atomically rename the new `current` symlink. A failure
 before this final rename leaves the entire active build unchanged. A sync failure
 after the rename is explicitly reported as installed with uncertain durability.
@@ -87,7 +88,7 @@ Running apps keep their old physical generation and locate companions there;
 relaunch starts the verified new generation. Previous generations are retained,
 not pruned while processes may still use them.
 
-For manual rollback, stop Vitrallis and its native apps, verify all four binaries
+For manual rollback, stop Vitrallis and its native apps, verify all five binaries
 under `previous`, and replace `current` atomically with that relative generation
 link. Do not copy individual binaries between generations. Retain the installation
 backups and markers until any interrupted helper/config transaction is repaired.
@@ -114,8 +115,8 @@ A `v*` tag creates a **draft** GitHub release; prerelease tags are marked as
 prereleases. Existing drafts can receive reviewed artifacts, but the workflow
 refuses to modify an already published release. Review/test the complete draft
 before publishing. Change the workspace version only with explicit permission.
-Tag and executable version must match Cargo metadata. Release beta2.7 includes
-the complete bundle and current session helpers; older standalone beta2.5 assets
+Tag and executable version must match Cargo metadata. The current bundle includes
+the shared Arti executable and current session helpers; standalone Shell assets
 cannot satisfy this contract. See
 [release validation and assets](releases.md).
 
@@ -128,8 +129,8 @@ session closed when updating installation tooling.
 Artifacts are complete, uncompressed Vitrallis bundles:
 
 ```
-vitrallis-<target-triple>-glibc2.36.vtrbundle
-vitrallis-<target-triple>-glibc2.36.vtrbundle.sha256
+vitrallis-<target-triple>-glibc2.36-v2.vtrbundle
+vitrallis-<target-triple>-glibc2.36-v2.vtrbundle.sha256
 ```
 
 The sidecar is exactly one SHA-256 line naming that bundle. GitHub's asset
@@ -144,8 +145,9 @@ with its explicit `--target`, `--bin-dir`, `--output` and `--tag` arguments. Pac
 runs every built executable's `--version`, either natively or through an explicitly
 provided local emulator executable such as `--runner /usr/bin/qemu-arm`. The
 runner is invoked directly without shell parsing. The existing ARM cross-build helper
-can supply all four binaries, but its image-matched libraries must satisfy this release
-ABI contract. Never relabel a newer ABI build as glibc 2.36. Upload the bundle/checksum and, for ARMv7, all matching helper assets to
+builds the four Vitrallis executables; run `scripts/build-arti.sh` with the same
+ARM target and output directory to complete the bundle. Its image-matched
+libraries must satisfy this release ABI contract. Never relabel a newer ABI build as glibc 2.36. Upload the bundle/checksum and, for ARMv7, all matching helper assets to
 the reviewed draft before publication. Additional architectures are opt-in and
 are never inferred from device names.
 
@@ -160,8 +162,8 @@ and [curl options](https://curl.se/docs/manpage.html).
 ## Bundle format
 
 `src/updater/bundle.rs`, the release packager and device installer share one fixed
-format: the 16 bytes `VITRALLIS-BUNDLE`, then four records in the order shell,
-Terminal, Notepad, Files. Each record contains an unsigned 64-bit little-endian
+format: the 16 bytes `VITRALLIS-BUNDLE`, then five records in the order shell,
+Terminal, Notepad, Files, Arti. Each record contains an unsigned 64-bit little-endian
 size, 32 raw SHA-256 bytes, then that executable's bytes. Each executable is
 64 bytes–64 MiB; truncation, bad hashes, wrong target and trailing bytes fail.
 The maximum total is 256 MiB plus 176 header bytes. Names never come from input.

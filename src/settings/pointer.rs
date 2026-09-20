@@ -93,6 +93,28 @@ impl Settings {
             _ => 4,
         }
     }
+    fn pointer_targets<'a>(
+        &self,
+        geometry: &'a PanelLayout,
+        rows: &'a [crate::layout::Rect],
+        storage: &'a [crate::layout::Rect],
+        tor: &'a [crate::layout::Rect],
+    ) -> &'a [crate::layout::Rect] {
+        match self.page {
+            Page::Tor => tor,
+            Page::TorDetails => &[],
+            Page::Storage => match self.storage_view {
+                super::StorageView::Overview => storage,
+                super::StorageView::Apps => &rows[..self.storage_rows()],
+                _ => &[],
+            },
+            _ if self.confirmation.is_some() || self.page == Page::Updates => {
+                &geometry.confirmation
+            }
+            Page::General => &geometry.controls,
+            _ => rows,
+        }
+    }
     pub fn event(&mut self, event: &Event, layout: &Layout) -> Option<Request> {
         if !self.open {
             return None;
@@ -105,19 +127,8 @@ impl Settings {
         let geometry = PanelLayout::new(layout);
         let rows = PanelLayout::rows(layout, self.row_count());
         let storage_actions = PanelLayout::storage_actions(layout);
-        let targets = if self.page == Page::Storage {
-            match self.storage_view {
-                super::StorageView::Overview => storage_actions.as_slice(),
-                super::StorageView::Apps => &rows[..self.storage_rows()],
-                _ => &[],
-            }
-        } else if self.confirmation.is_some() || self.page == Page::Updates {
-            geometry.confirmation.as_slice()
-        } else if self.page != Page::General {
-            rows.as_slice()
-        } else {
-            geometry.controls.as_slice()
-        };
+        let tor_controls = PanelLayout::tor_controls(layout);
+        let targets = self.pointer_targets(&geometry, &rows, &storage_actions, &tor_controls);
         let hit = targets.iter().position(|r| r.contains(x, y)).or_else(|| {
             PanelLayout::footer(layout)
                 .into_iter()

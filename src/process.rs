@@ -25,7 +25,22 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
     {
         return Err("installation incomplete; use App Center to repair this app".into());
     }
-    let mut command = Command::new(m.runtime.as_ref().unwrap_or(&m.entry));
+    if m.tor == crate::tor::Requirement::Required && app.source == crate::app::AppSource::AppCenter
+    {
+        // The exported launcher owns its namespace, but missing prerequisites
+        // must be diagnosed before spawning it rather than only on stderr.
+        crate::tor::required_command()?;
+    }
+    let program = m.runtime.as_ref().unwrap_or(&m.entry);
+    let mut command = if m.tor == crate::tor::Requirement::Required
+        && app.source != crate::app::AppSource::AppCenter
+    {
+        let mut command = crate::tor::required_command()?;
+        command.arg(program);
+        command
+    } else {
+        Command::new(program)
+    };
     if m.runtime.is_some() {
         command.arg(&m.entry);
     }
@@ -68,6 +83,9 @@ pub trait Processes {
 #[derive(Debug, Default)]
 pub struct ProcessSet<P = NativeProcess> {
     members: Vec<(String, P)>,
+    pub tor: crate::tor::Service,
+    tor_apps: std::collections::BTreeSet<String>,
+    tor_pending: Option<(AppEntry, Instant)>,
     active: Option<String>,
     pub exited_active: bool,
     resume: Option<Resume>,
@@ -82,7 +100,10 @@ struct Resume {
 }
 impl<P> ProcessSet<P> {
     pub const fn has_children(&self) -> bool {
-        !self.members.is_empty()
+        !self.members.is_empty() || self.tor_pending.is_some()
+    }
+    pub const fn waiting_for_tor(&self) -> bool {
+        self.tor_pending.is_some()
     }
     pub fn running_ids(&self) -> Vec<String> {
         self.members.iter().map(|(id, _)| id.clone()).collect()
@@ -108,8 +129,53 @@ impl ProcessSet<NativeProcess> {
         true
     }
 }
-impl<P: Processes + Default> Processes for ProcessSet<P> {
-    fn start(&mut self, app: &AppEntry) -> Result<(), String> {
+impl<P: Processes + Default> ProcessSet<P> {
+    fn poll_tor_launch(&mut self) -> Result<Option<FocusResult>, String> {
+        use crate::tor::{Requirement, State};
+        let snapshot = self.tor.snapshot();
+        let Some((_, deadline)) = &self.tor_pending else {
+            return Ok(None);
+        };
+        let ready = snapshot.state == State::Connected;
+        let failed =
+            matches!(snapshot.state, State::Error | State::Disabled) || Instant::now() >= *deadline;
+        if !ready && !failed {
+            return Ok(None);
+        }
+        let Some((mut app, _)) = self.tor_pending.take() else {
+            return Ok(None);
+        };
+        if !ready && app.manifest.tor == Requirement::Required {
+            self.tor_apps.remove(&app.id);
+            self.tor
+                .request(crate::tor::Control::Demand(self.tor_apps.len()))?;
+            return Err(format!(
+                "Tor required: {}. {}",
+                snapshot.state.label(),
+                snapshot.diagnostic
+            ));
+        }
+        crate::tor::configure_app(&mut app, &snapshot);
+        let result = self.start_ready(&app);
+        self.sync_tor_apps();
+        result.map(|()| self.resume.is_none().then_some(FocusResult::Focused))
+    }
+    pub fn sync_tor_apps(&mut self) {
+        let previous = self.tor_apps.len();
+        self.tor_apps.retain(|id| {
+            self.members.iter().any(|(member, _)| member == id)
+                || self
+                    .tor_pending
+                    .as_ref()
+                    .is_some_and(|(app, _)| &app.id == id)
+        });
+        if self.tor_apps.len() != previous {
+            let _ = self
+                .tor
+                .request(crate::tor::Control::Demand(self.tor_apps.len()));
+        }
+    }
+    fn start_ready(&mut self, app: &AppEntry) -> Result<(), String> {
         if let Some(index) = self.members.iter().position(|(id, _)| id == &app.id) {
             // A window can close before the next scheduled child poll. Reap it
             // now so activation does not try to resume an already exited app.
@@ -127,6 +193,10 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
                 return Ok(());
             }
             self.members.remove(index);
+            // A stopped Tor app must re-enter the readiness gate before relaunch.
+            if app.manifest.tor != crate::tor::Requirement::None {
+                return self.start(app);
+            }
         }
         self.resume = None;
         let mut process = P::default();
@@ -143,6 +213,29 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
         }
         self.members.push((app.id.clone(), process));
         self.active = Some(app.id.clone());
+        Ok(())
+    }
+}
+impl<P: Processes + Default> Processes for ProcessSet<P> {
+    fn start(&mut self, app: &AppEntry) -> Result<(), String> {
+        if app.manifest.tor == crate::tor::Requirement::None
+            || self.members.iter().any(|(id, _)| id == &app.id)
+        {
+            return self.start_ready(app);
+        }
+        if self.tor_pending.is_some() {
+            return Err("Another application is waiting for Tor".into());
+        }
+        app.validate()?;
+        self.tor_apps.insert(app.id.clone());
+        if let Err(error) = self
+            .tor
+            .request(crate::tor::Control::Demand(self.tor_apps.len()))
+        {
+            self.tor_apps.remove(&app.id);
+            return Err(error);
+        }
+        self.tor_pending = Some((app.clone(), Instant::now() + Duration::from_secs(190)));
         Ok(())
     }
     fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
@@ -185,6 +278,9 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
             .focus()
     }
     fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
+        if self.tor_pending.is_some() {
+            return self.poll_tor_launch();
+        }
         let Some(resume) = &self.resume else {
             return Ok(None);
         };
@@ -815,8 +911,7 @@ mod tests {
                 ("exited".into(), Fake(false)),
             ],
             active: Some("exited".into()),
-            exited_active: false,
-            resume: None,
+            ..ProcessSet::default()
         };
         assert!(processes.poll()?.is_some());
         assert!(processes.exited_active);

@@ -58,7 +58,7 @@ def preflight():
     sdl.SDL_GetVersion(ctypes.byref(version))
     if (version.major, version.minor, version.patch) < (2, 26, 5):
         raise ValueError('Requires SDL2 2.26.5 or newer')
-    for name in ('python3', 'curl', 'systemctl', 'systemd-run', 'awesome', 'awesome-client', 'picom'):
+    for name in ('python3', 'curl', 'systemctl', 'systemd-run', 'awesome', 'awesome-client', 'picom', 'bwrap'):
         if not os.access('/usr/bin/' + name, os.X_OK):
             raise ValueError('Missing runtime prerequisite: /usr/bin/' + name)
     awesome = subprocess.check_output(['/usr/bin/awesome', '--version'], timeout=5, text=True)
@@ -124,6 +124,10 @@ def verify_versions(generation, expected=None):
                            preexec_fn=limit_probe_output)
             output.seek(0)
             text = output.read(4097).decode('ascii').strip()
+        if name == 'arti':
+            if text.splitlines()[:1] != ['Arti 2.6.0']:
+                raise ValueError('Bundled executable version mismatch: arti')
+            continue
         match = re.fullmatch(re.escape(name) + r' ([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)', text)
         if match is None or (expected is not None and expected != match.group(1)):
             raise ValueError('Bundled executable version mismatch: ' + name)
@@ -255,6 +259,35 @@ def setup_platform(source):
         print('GPU utilization is unavailable: ' + status.get('trace_error', 'inspect platform setup status'), flush=True)
 
 
+def tor_defaults(home, writes):
+    """Validate all owned service paths before the installation transaction."""
+    root = home / '.local/share/vitrallis/tor'
+    directories = [root, root / 'cache', root / 'state']
+    for path in directories:
+        safe(path / ".permission-check")
+        if path.exists() and (not path.is_dir() or path.stat().st_uid != os.getuid()
+                              or stat.S_IMODE(path.stat().st_mode) != 0o700):
+            raise ValueError('Tor directories must be private (0700): ' + str(path))
+    config = home / '.config/vitrallis/tor.json'
+    safe(config)
+    if config.exists():
+        def unique(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result: raise ValueError('Duplicate Tor setting')
+                result[key] = value
+            return result
+        value = json.loads(read_file(config, 4096), object_pairs_hook=unique)
+        if (not isinstance(value, dict) or set(value) != {'startup'}
+                or value['startup'] not in ('on-demand', 'always-on', 'disabled')):
+            raise ValueError('Malformed Tor startup configuration')
+        if stat.S_IMODE(config.stat().st_mode) != 0o600:
+            raise ValueError('Tor startup configuration must be private (0600)')
+    else:
+        writes[config] = (b'{"startup":"on-demand"}\n', 0o600)
+    return directories
+
+
 def install_locked(generation, digest, home, inputs):
     target = home / '.local/share/vitrallis'
     helpers = inputs
@@ -278,6 +311,7 @@ def install_locked(generation, digest, home, inputs):
             '[Desktop Entry]\nType=Application\nName=Vitrallis\nExec="' + str(launch) +
             '"\nTerminal=false\nCategories=System;\n').encode(), 0o644),
     }
+    tor_directories = tor_defaults(home, writes)
     receipt_path = target / 'installed.json'
     safe(receipt_path)
     receipt = json.loads(read_file(receipt_path)) if receipt_path.exists() else {}
@@ -333,7 +367,12 @@ def install_locked(generation, digest, home, inputs):
                  hashlib.sha256(writes[p][0]).hexdigest()]
         for p, old in previous.items() if p.parent == target}}).encode(), 0o600)
     changed = []
+    created_tor = []
     try:
+        for directory in tor_directories:
+            if not directory.exists():
+                make_directories(directory, 0o700)
+                created_tor.append(directory)
         if not destination.exists():
             generation.rename(destination)
             directory = os.open(generations, os.O_RDONLY | os.O_DIRECTORY)
@@ -376,6 +415,9 @@ def install_locked(generation, digest, home, inputs):
                 path.unlink(missing_ok=True)
             else:
                 atomic(path, *old)
+        for directory in reversed(created_tor):
+            try: directory.rmdir()
+            except OSError: pass  # Preserve any concurrent service data.
         raise
     print('Installed:', target)
     print('Backups:', backup)

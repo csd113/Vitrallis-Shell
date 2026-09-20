@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 /// a runtime executes entry as its first argument (Python is only one possibility).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AppManifest {
+    pub tor: crate::tor::Requirement,
     pub runtime: Option<PathBuf>,
     pub entry: PathBuf,
     pub args: Vec<OsString>,

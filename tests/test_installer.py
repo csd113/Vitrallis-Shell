@@ -74,6 +74,22 @@ class Installer(unittest.TestCase):
         self.assertTrue((self.target / 'current/vitrallis').stat().st_mode & 0o111)
         self.assertEqual(self.config.stat().st_mode & 0o777, 0o600)
 
+    def test_tor_defaults_are_private_idempotent_and_preserve_startup_selection(self):
+        self.install()
+        root = self.target / 'tor'
+        config = self.home / '.config/vitrallis/tor.json'
+        self.assertEqual(json.loads(config.read_text()), {'startup': 'on-demand'})
+        self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+        for path in (root, root / 'cache', root / 'state'):
+            self.assertEqual(path.stat().st_mode & 0o777, 0o700)
+        config.write_text('{"startup":"disabled"}')
+        self.install()
+        self.assertEqual(json.loads(config.read_text()), {'startup': 'disabled'})
+        config.write_text('{"startup":"sometimes"}')
+        with self.assertRaisesRegex(ValueError, 'Malformed Tor'):
+            self.install()
+        self.assertEqual(config.read_text(), '{"startup":"sometimes"}')
+
     def test_group_writable_umask_does_not_make_new_ota_directories_unsafe(self):
         previous = os.umask(0o002)
         try:
@@ -268,7 +284,8 @@ class Installer(unittest.TestCase):
         generation.mkdir()
         for name in m.BINARIES:
             path = generation / name
-            path.write_text('#!/bin/sh\nprintf "' + name + ' 0.1.0-test\\n"\n')
+            version = '2.6.0' if name == 'arti' else '0.1.0-test'
+            path.write_text('#!/bin/sh\nprintf "' + ('Arti' if name == 'arti' else name) + ' ' + version + '\\n"\n')
             path.chmod(0o755)
         m.verify_versions(generation)
         (generation / 'vitrallis-files').write_text('#!/bin/sh\nprintf "vitrallis-files 0.2.0\\n"\n')

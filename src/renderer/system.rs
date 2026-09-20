@@ -2,6 +2,8 @@
 use vitrallis_native::theme;
 #[path = "system_storage.rs"]
 mod storage;
+#[path = "system_tor.rs"]
+mod tor;
 #[path = "system_wireless.rs"]
 mod wireless;
 use super::{Screen, card, fill, progress, rect, text};
@@ -293,6 +295,9 @@ pub(super) fn panel(
     settings: &Settings,
     textures: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
+    if matches!(settings.page, Page::Tor | Page::TorDetails) {
+        return tor::panel(canvas, layout, settings);
+    }
     if settings.page == Page::Wireless {
         return wireless::panel(canvas, layout, settings);
     }
@@ -396,7 +401,7 @@ fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
     let hint = match settings.page {
         Page::General => "Left/right: adjust   Esc: close",
         Page::Storage => &storage_hint,
-        Page::Updates => "Esc: back   Enter: select",
+        Page::Updates | Page::Tor | Page::TorDetails => "Esc: back   Enter: select",
         Page::Device => "Left/right: timeout   Enter: select",
         Page::Wireless => "Left: off   Right: on   Enter: toggle",
         Page::Timezones => "Arrows: select   Enter: apply",

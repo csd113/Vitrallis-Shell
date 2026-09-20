@@ -211,7 +211,14 @@ pub fn prepare_with_modes(
         )?);
     }
     obsolete(&root, &files, old_receipt.as_ref(), &mut writes)?;
-    support(loc, &p, runtime.as_ref(), &mut writes)?;
+    let manifest = metadata::manifest(files.get("app.toml").ok_or("Missing app manifest")?)?;
+    support(
+        loc,
+        &p,
+        runtime.as_ref(),
+        crate::tor::Requirement::parse(&manifest)?,
+        &mut writes,
+    )?;
     let changed = writes.iter().any(|w| w.before != w.after);
     let pending = storage::read(&root.join(".installation-pending"), 1024)?.is_some();
     let receipt = serde_json::json!({"version":p.version.to_string(),"origin":p.origin.as_str(),"repository":p.repository.as_str(),"commit":p.commit,"id":p.id,"files":files.iter().map(|(k,v)|(k.clone(),Value::String(storage::sha(v)))).collect::<serde_json::Map<_,_>>()});
@@ -343,16 +350,21 @@ fn support(
     loc: &Locations,
     p: &Package,
     runtime: Option<&Runtime>,
+    tor: crate::tor::Requirement,
     writes: &mut Vec<Write>,
 ) -> Result<(), String> {
     let root = loc.root(p);
     let launch_path = loc.state.join("launchers").join(&p.id);
     let before = storage::read(&launch_path, metadata::FILE_LIMIT)?;
     let after = FileData {
-        bytes: match runtime {
-            Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
-            None => super::native::launcher(&root.join(&p.entry))?,
-        },
+        bytes: crate::tor::wrap_launcher(
+            match runtime {
+                Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
+                None => super::native::launcher(&root.join(&p.entry))?,
+            },
+            tor,
+            &loc.data.join("vitrallis/tor"),
+        )?,
         mode: 0o755,
     };
     if let Some(old) = &before {
@@ -367,15 +379,21 @@ fn support(
         }
         let manifest = storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)?
             .ok_or("Installed manifest missing; cannot verify launcher ownership")?;
-        let old_runtime = metadata::RuntimeKind::parse(&metadata::manifest(&manifest.bytes)?)?;
+        let old_manifest = metadata::manifest(&manifest.bytes)?;
+        let old_runtime = metadata::RuntimeKind::parse(&old_manifest)?;
+        let old_tor = crate::tor::Requirement::parse(&old_manifest)?;
+        let wrap =
+            |bytes| crate::tor::wrap_launcher(bytes, old_tor, &loc.data.join("vitrallis/tor"));
         let managed_launcher = if old_runtime == metadata::RuntimeKind::Python {
             runtime::candidates(&root, &old_files)
                 .into_iter()
-                .map(|program| runtime::launcher(&Runtime { program }, &old_entry, old_commit))
+                .map(|program| {
+                    runtime::launcher(&Runtime { program }, &old_entry, old_commit).and_then(wrap)
+                })
                 .collect::<Result<Vec<_>, _>>()?
                 .contains(&old.bytes)
         } else {
-            old.bytes == super::native::launcher(&old_entry)?
+            old.bytes == wrap(super::native::launcher(&old_entry)?)?
         };
         if old.bytes != after.bytes && !managed_launcher {
             return Err("App launcher was edited; preserve your changes and restore the managed launcher before updating".into());

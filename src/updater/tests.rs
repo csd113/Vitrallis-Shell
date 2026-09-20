@@ -140,7 +140,7 @@ fn armhf_beta_selects_the_standard_arm_artifact_and_verifies_download()
     let name = arm()?.artifact();
     assert_eq!(
         name,
-        "vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle"
+        "vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle"
     );
     let mut value = metadata("0.1.0-beta.2")?;
     value["prerelease"] = true.into();
@@ -498,4 +498,36 @@ fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
     updater.request_relaunch();
     assert!(updater.relaunch_with(false, |_| Ok(())));
     assert!(updater.relaunch_error.is_none());
+}
+
+#[test]
+fn bridge_and_skipped_bridge_both_select_full_beta4_without_downgrades()
+-> Result<(), Box<dyn std::error::Error>> {
+    let releases = [metadata("0.1.0-beta4")?, metadata("0.1.0-beta3.9")?];
+    for (current, incomplete, available) in [
+        ("0.1.0-beta3.9", true, true),
+        ("0.1.0-beta4", true, true),
+        ("0.1.0-beta4", false, false),
+        ("0.1.0-beta5", true, false),
+    ] {
+        let state = check_inventory(&mock(&releases)?, current, target, incomplete)?;
+        assert_eq!(matches!(state, State::Available(_)), available);
+        if let State::Available(release) = state {
+            assert_eq!(release.version.to_string(), "0.1.0-beta4");
+            assert!(release.name.ends_with("-v2.vtrbundle"));
+        }
+    }
+    assert!(matches!(
+        check_inventory(
+            &mock(&[metadata("0.1.0-beta3.9")?])?,
+            "0.1.0-beta3.9",
+            target,
+            true
+        )?,
+        State::Current
+    ));
+    let mut missing = metadata("0.1.0-beta4")?;
+    missing["assets"] = serde_json::json!([]);
+    assert!(check_inventory(&mock(&[missing])?, "0.1.0-beta4", target, true).is_err());
+    Ok(())
 }

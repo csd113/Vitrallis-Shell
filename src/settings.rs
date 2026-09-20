@@ -6,6 +6,7 @@ mod geometry;
 mod keyboard_tests;
 mod pointer;
 mod storage;
+mod tor;
 mod update;
 mod wireless;
 pub use geometry::PanelLayout;
@@ -48,6 +49,8 @@ pub enum Page {
     Updates,
     Storage,
     Wireless,
+    Tor,
+    TorDetails,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -88,6 +91,8 @@ pub enum SystemState {
 
 #[derive(Debug, Default)]
 pub struct Settings {
+    pub tor: crate::tor::Snapshot,
+    pub tor_control: Option<crate::tor::Control>,
     pub storage: crate::storage::Storage,
     pub storage_view: StorageView,
     pub storage_start: usize,
@@ -171,6 +176,10 @@ impl Settings {
             return None;
         }
         if self.open && self.footer_input(action) {
+            return None;
+        }
+        if self.open && matches!(self.page, Page::Tor | Page::TorDetails) {
+            self.tor_input(action);
             return None;
         }
         if self.open && self.page == Page::Wireless {

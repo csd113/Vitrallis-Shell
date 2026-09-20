@@ -206,11 +206,12 @@ service. See [dependency review](dependencies.md) and [measured validation](devi
 Use `cargo build --workspace --locked` or `cargo build --workspace --release --locked`
 to produce `vitrallis`, `vitrallis-terminal`, `vitrallis-notepad`, `vitrallis-files`.
 `sh scripts/validate.sh` checks every member, the production inventory and both
-480×272/800×480 native SDL smoke frames. Release packaging requires all four
-matching versions and architectures; a shell-only artifact is rejected.
+480×272/800×480 native SDL smoke frames. Release packaging requires all five
+executables with matching architectures; the four Vitrallis executables share
+a version and Arti has its own pinned version; a shell-only artifact is rejected.
 
 The [installer](devices/pocketchip.md) and [self-updater](shell-updates.md) publish
-an immutable generation containing all four binaries and atomically switch one
+an immutable generation containing all five binaries and atomically switch one
 `current` pointer. Apps resolve companions alongside their own executable, so an
 already-running generation stays internally consistent after an update. Previous
 generations remain for rollback. Third-party App Center installs and user files

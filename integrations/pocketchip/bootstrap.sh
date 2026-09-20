@@ -37,7 +37,7 @@ done
 vitrallis_tmp=$(mktemp -d /tmp/vitrallis-setup.XXXXXXXX)
 trap 'rm -rf "$vitrallis_tmp"' 0
 trap 'exit 130' 1 2 15
-vitrallis_packages='curl ca-certificates python3 libsdl2-2.0-0 picom device-tree-compiler python3-tk python3-venv python3-packaging'
+vitrallis_packages='curl ca-certificates python3 libsdl2-2.0-0 picom device-tree-compiler python3-tk python3-venv python3-packaging bubblewrap'
 vitrallis_missing=''
 for vitrallis_package in $vitrallis_packages; do
     if [ "$(dpkg-query -W -f='${Status}' "$vitrallis_package" 2>/dev/null || :)" != 'install ok installed' ]; then
@@ -105,7 +105,7 @@ sdl.SDL_GetVersion(version)
 if tuple(version) < (2, 26, 5):
     sys.exit("Requires SDL2 2.26.5+")
 ' || fail 'SDL2/Python/Tk/venv/packaging verification failed.'
-for vitrallis_tool in curl python3 picom dtc fdtoverlay; do
+for vitrallis_tool in curl python3 picom dtc fdtoverlay bwrap; do
     command -v "$vitrallis_tool" >/dev/null || fail "Missing runtime tool after preparation: $vitrallis_tool."
 done
 printf '%s\n' 'Prerequisites ready. Downloading the Vitrallis installer...'

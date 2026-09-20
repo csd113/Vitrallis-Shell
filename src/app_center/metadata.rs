@@ -472,14 +472,16 @@ pub fn manifest(bytes: &[u8]) -> Result<Value, String> {
     let s = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
     let parsed: toml::Value = toml::from_str(s).map_err(|e| e.to_string())?;
     let v = serde_json::to_value(parsed).map_err(|e| e.to_string())?;
-    fields(
-        &v,
-        if v["runtime"] == "rust" {
-            "manifest_version name id version runtime binaries permissions"
-        } else {
-            "manifest_version name id version runtime entry permissions"
-        },
-    )?;
+    let mut keys = if v["runtime"] == "rust" {
+        "manifest_version name id version runtime binaries permissions".to_owned()
+    } else {
+        "manifest_version name id version runtime entry permissions".to_owned()
+    };
+    if v.get("network").is_some() {
+        keys.push_str(" network");
+    }
+    fields(&v, &keys)?;
+    crate::tor::Requirement::parse(&v)?;
     if v["manifest_version"].as_u64() != Some(1) {
         return Err("unsupported manifest/runtime".into());
     }

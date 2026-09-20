@@ -14,6 +14,19 @@ impl PanelLayout {
         })
     }
 
+    pub fn tor_controls(layout: &Layout) -> [Rect; 6] {
+        let rows = Self::rows(layout, 4);
+        std::array::from_fn(|index| {
+            let row = rows[2 + index / 3];
+            let column = i32::try_from(index % 3).unwrap_or(0);
+            let width = (row.w - 12) / 3;
+            Rect {
+                x: row.x + column * (width + 6),
+                w: width,
+                ..row
+            }
+        })
+    }
     pub fn storage_actions(layout: &Layout) -> [Rect; 2] {
         Self::new(layout).confirmation
     }

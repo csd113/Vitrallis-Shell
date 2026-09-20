@@ -39,7 +39,7 @@ class ShellFixture:
         self.write('uname', 'print("Linux" if sys.argv[1] == "-s" else "armv7l")')
         self.write('dpkg', 'print("armhf") if sys.argv[1] == "--print-architecture" else None')
         self.write('getconf', 'print("glibc 2.36")')
-        for tool in ('picom', 'dtc', 'fdtoverlay'):
+        for tool in ('picom', 'dtc', 'fdtoverlay', 'bwrap'):
             self.write(tool, 'pass')
         self.write('awesome-client', 'print(\'string "vitrallis-desktop-available"\')')
         self.write('awesome', 'print("awesome v4.3")')

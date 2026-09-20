@@ -113,6 +113,7 @@ pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), St
                 icon: Some(path.join("icon.png")),
                 manifest: AppManifest {
                     entry: launch,
+                    tor: crate::tor::Requirement::parse(&v)?,
                     ..AppManifest::default()
                 },
                 unavailable: if pending {

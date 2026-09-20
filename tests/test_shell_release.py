@@ -35,16 +35,16 @@ class ShellRelease(unittest.TestCase):
             (self.binaries / name).write_bytes(self.data)
 
     def version(self, version):
-        self.check.side_effect = [json.dumps({'packages': [{'name': 'vitrallis-shell', 'version': version}]}).encode()] + [name + ' ' + version + '\n' for name in RELEASE.BINARIES]
+        self.check.side_effect = [json.dumps({'packages': [{'name': 'vitrallis-shell', 'version': version}]}).encode()] + [('Arti 2.6.0' if name == 'arti' else name + ' ' + version) + '\n' for name in RELEASE.BINARIES]
 
     def package(self, target='x86_64-unknown-linux-gnu', tag='v1.2.3', runner=None):
         RELEASE.package(self.binaries, target, self.output, tag, runner)
 
-    def contents(self, name):
+    def contents(self, name, binaries=None):
         payload = (self.output / name).read_bytes()
         self.assertTrue(payload.startswith(RELEASE.MAGIC))
         offset = len(RELEASE.MAGIC)
-        for binary in RELEASE.BINARIES:
+        for binary in binaries or RELEASE.BINARIES:
             size = struct.unpack_from('<Q', payload, offset)[0]
             digest = payload[offset + 8:offset + 40]
             content = payload[offset + 40:offset + 40 + size]
@@ -54,18 +54,34 @@ class ShellRelease(unittest.TestCase):
         self.assertEqual(offset, len(payload))
         self.assertEqual((self.output / (name + '.sha256')).read_text(), hashlib.sha256(payload).hexdigest() + '  ' + name + '\n')
 
-    def test_packages_exactly_four_native_binaries_and_checksum(self):
+    def test_packages_exactly_five_native_binaries_and_checksum(self):
         apps = self.root / 'apps'
         apps.mkdir()
         (apps / 'sentinel').write_text('untouched')
         self.package()
-        name = 'vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle'
+        name = 'vitrallis-x86_64-unknown-linux-gnu-glibc2.36-v2.vtrbundle'
         self.assertEqual(sorted(p.name for p in self.output.iterdir()), [name, name + '.sha256'])
         self.contents(name)
         self.assertEqual((apps / 'sentinel').read_text(), 'untouched')
-        self.assertEqual(self.check.call_count, 5)
+        self.assertEqual(self.check.call_count, 6)
         for i, binary in enumerate(RELEASE.BINARIES, 1):
             self.assertEqual(self.check.call_args_list[i].args[0], [str((self.binaries / binary).resolve()), '--version'])
+
+    def test_beta4_entry_point_preserves_old_inventory_and_full_v2(self):
+        self.version('0.1.0-beta4')
+        RELEASE.package(self.binaries, 'x86_64-unknown-linux-gnu', self.output,
+                        'v0.1.0-beta4', transition=True)
+        old = 'vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle'
+        full = old.replace('.vtrbundle', '-v2.vtrbundle')
+        self.contents(old, RELEASE.BINARIES[:4])
+        self.contents(full)
+        self.assertEqual(len(list(self.output.iterdir())), 4)
+
+    def test_transition_is_not_silently_reused_for_future_releases(self):
+        with self.assertRaisesRegex(ValueError, 'only authorized'):
+            RELEASE.package(self.binaries, 'x86_64-unknown-linux-gnu', self.output,
+                            'v1.2.3', transition=True)
+        self.assertFalse(self.output.exists())
 
     def test_missing_companion_prevents_artifact_publication(self):
         (self.binaries / 'vitrallis-files').unlink()
@@ -105,7 +121,7 @@ class ShellRelease(unittest.TestCase):
         self.version('0.1.0-beta.2')
         runner = Path('/local emulator/qemu-arm')
         self.package('armv7-unknown-linux-gnueabihf', 'v0.1.0-beta.2', runner)
-        self.contents('vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36.vtrbundle')
+        self.contents('vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle')
         for i, binary in enumerate(RELEASE.BINARIES, 1):
             self.assertEqual(self.check.call_args_list[i].args[0], [str(runner), str((self.binaries / binary).resolve()), '--version'])
 

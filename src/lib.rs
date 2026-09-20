@@ -17,6 +17,7 @@ mod renderer;
 mod settings;
 mod shortcuts;
 mod storage;
+mod tor;
 mod ui;
 mod updater;
 
