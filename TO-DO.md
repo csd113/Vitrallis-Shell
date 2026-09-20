@@ -11,28 +11,22 @@
 ## App data and storage accounting
 
 - [ ] Store app-created data in per-app directories under `/home/<user>/documents/` instead of root-level directories; distinguish user documents/media from internal settings and caches.
-- [ ] Attribute declared external data directories to their owning apps without scanning arbitrary home directories or following unsafe symlinks.
 - [ ] Include app-created files in each app's Settings → Storage total; show installed files, runtime dependencies, user data, and caches separately.
 - [ ] Attribute Carousel's stored images/media to its shared Python/Rust library; count the shared allocation only once in aggregate totals.
-- [ ] Preserve existing user data when changing storage locations; document any required relocation.
-- [ ] Test shared directories, missing paths, permission failures, separate filesystems, and refresh after media changes.
 
 ## Background-app policy and startup
 
 - [ ] Add a configurable background-app timeout and per-app **Essential / Keep Running** flags; essential apps remain running until manually closed. Remove the manually assigned default policy and hard-coded exemptions.
 - [ ] Expose the effective policy in Settings and persist it by stable app ID.
 - [ ] Define safe shutdown behavior for apps with unsaved work; do not silently force-kill them on timeout.
-- [ ] Update window-readiness handling in `src/process.rs` and `src/ui.rs` for cold starts exceeding the current 30-second deadline.
 - [ ] Continue tracking delayed windows without requiring another launch, spawning duplicates, or stealing focus after the user navigates elsewhere.
-- [ ] Test slow startup, startup failure, repeated activation, background timeout, exemptions, and return-to-shell behavior.
-
+      
 ## Everyday interface fixes
 
 - [ ] Restore the 12/24-hour clock setting and persistence.
 - [ ] Make Escape in Files dismiss active dialogs first, otherwise navigate to the parent directory instead of closing the app. Retain an explicit exit action.
 - [ ] Merge Wi-Fi, wireless switches, and Tor settings under the existing Wi-Fi button; rename it **Wireless Network Controls**.
 - [ ] Support reordering apps and folders on the main menu; persist order by stable IDs across restarts and catalog changes.
-- [ ] Verify changed controls with keyboard and touch at 480×272.
 
 ## Documentation and licensing
 
@@ -42,17 +36,6 @@
 - [ ] Remove stale release-readiness statements; distinguish current implementation, published artifacts, and dated hardware evidence.
 - [ ] Choose and publish project licensing terms for Shell, Apps, and Flasher; align Cargo metadata, READMEs, and contribution guidance.
 - [ ] Review imported code, artwork, and bundled dependencies for redistribution requirements and required notices.
-
-## Release qualification
-
-- [ ] Freeze a release candidate; record Shell commit/tag, bundle checksums, catalog commit, and app versions.
-- [ ] Run existing validation and release CI against that candidate; retain results without weakening checks.
-- [ ] Install the published candidate on a clean, compatible test system using only public instructions and no development-device configuration.
-- [ ] Verify install → launch → settings → app install → launch/return → update → uninstall → shell update → relaunch → reboot.
-- [ ] Verify user documents, app data, configuration, and the original desktop remain intact through default update/removal flows; test explicit purge separately.
-- [ ] Run controlled network-loss, low-space, interrupted-transaction, and corrupt-package tests on isolated test data; confirm diagnostics and recovery.
-- [ ] Run extended idle and representative-app workloads; record duration, CPU, RSS trend, battery consumption, background behavior, and physical tearing/input observations.
-- [ ] Record final-artifact results separately from earlier development-build validation; document unresolved limitations.
 
 ## Optional recovery improvement
 
