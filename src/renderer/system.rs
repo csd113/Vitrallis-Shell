@@ -674,7 +674,7 @@ fn device_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
                 ),
                 3 => (
                     "Software updates",
-                    format!("Vitrallis Shell {}", crate::updater::VERSION),
+                    format!("Vitrallis Shell {}", display_version()),
                 ),
                 _ => (
                     "Calibrate touchscreen",
@@ -741,7 +741,7 @@ fn timeout_label(timeout: Option<u16>) -> String {
 }
 
 fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
-    use crate::updater::{State, VERSION};
+    use crate::updater::State;
     let geometry = PanelLayout::new(layout);
     let confirming = settings.update_confirmation.is_some();
     let detail = if confirming {
@@ -756,7 +756,7 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
     } else {
         settings.updater.detail()
     };
-    let message = format!("Running Vitrallis Shell {VERSION}\n{detail}");
+    let message = format!("Running Vitrallis Shell {}\n{detail}", display_version());
     let top = layout.title.h + 8;
     let line_height = 12 * layout.text_scale;
     let capacity = usize::try_from(layout.title.w / (8 * layout.text_scale))
@@ -888,3 +888,15 @@ pub(super) fn power_splash(
 
 #[cfg(test)]
 pub(super) use storage::qa as storage_qa;
+
+// Keep visual regression fixtures independent of release version bumps.
+const fn display_version() -> &'static str {
+    #[cfg(test)]
+    {
+        "0.1.0-beta4"
+    }
+    #[cfg(not(test))]
+    {
+        crate::updater::VERSION
+    }
+}

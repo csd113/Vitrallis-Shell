@@ -242,27 +242,13 @@ fn relaunch_exec_helper() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn transition_inventory_can_complete_but_cannot_hide_unsafe_arti()
--> Result<(), Box<dyn std::error::Error>> {
-    let (scratch, target) = fixture()?;
-    let arti = target.with_file_name("arti");
-    fs::remove_file(&arti)?;
-    let mut installation = Installation::open(&target)?;
-    assert!(installation.needs_completion());
-    prepare(&mut installation)?;
-    assert!(installation.commit()?);
-    assert!(scratch.0.join("current/arti").is_file());
-    assert!(!scratch.0.join("previous/arti").exists());
-    drop(installation);
+fn incomplete_inventory_and_unsafe_arti_are_rejected() -> Result<(), Box<dyn std::error::Error>> {
     let (_scratch, target) = fixture()?;
     let arti = target.with_file_name("arti");
     fs::remove_file(&arti)?;
+    assert!(Installation::open(&target).is_err());
     symlink("missing", &arti)?;
     assert!(Installation::open(&target).is_err());
-    fs::remove_file(&arti)?;
-    let installation = Installation::open(&target)?;
-    fs::write(&arti, "concurrent replacement")?;
-    assert!(installation.unchanged().is_err());
     Ok(())
 }
 

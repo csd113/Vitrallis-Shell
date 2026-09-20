@@ -1,5 +1,13 @@
 # Release validation and assets
 
+## 0.1.0-beta4.1
+
+Merges the polish run, including shell UI refinements, safe background application
+policy, storage accounting and the desktop's `Manage [F10]` action label.
+The release contains complete five-executable bundles for Linux x86-64 and ARMv7,
+with matching session helpers and SHA-256 sidecars. The beta4-only four-executable
+transition bundles are not included.
+
 ## 0.1.0-beta4
 
 Adds shared, Shell-managed Arti as a separate supervised process, on-demand Tor
