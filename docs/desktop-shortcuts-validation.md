@@ -90,4 +90,4 @@ Process ownership covers ordinary child process groups; programs that deliberate
 detach into independent sessions retain the existing supervision limitation.
 Atomic storage uses the existing filesystem sync/rename implementation; this run
 did not simulate sudden power loss. No dependencies changed. The implementation
-audit preceded the separately authorized beta2.7 version bump and release commit.
+audit preceded the beta2.7 version bump and release commit.

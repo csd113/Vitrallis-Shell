@@ -18,8 +18,7 @@ The [PocketCHIP validation record](devices/pocketchip/app-manager-validation.md)
 documents the development build's Python and Rust lifecycles, folder and keyboard
 checks, resource samples and the user's clean physical display observation. The
 release artifacts are rebuilt from the versioned tag and follow the CI, checksum
-and bundle review gates below. The maintainer explicitly authorized this version,
-commit/push and GitHub prerelease publication.
+and bundle review gates below.
 
 ## 0.1.0-beta3
 
@@ -44,9 +43,8 @@ and app code is validated before installation. System Python/Tk and venv support
 remain prerequisites; dependency downloads require network access.
 
 This release also includes the removal of obsolete shell implementations already
-on main. The maintainer authorized this version, push and release publication.
-Validation uses the host and release CI gates below; no device testing was
-requested for this patch.
+on main. Validation uses the host and release CI gates below; this patch has no
+recorded device validation.
 
 ## 0.1.0-beta2.7.1
 
@@ -56,8 +54,7 @@ without an unintended Alt/Meta Escape prefix. Desktop keyboards retain their
 existing behavior. See the [device keyboard notes](devices/pocketchip.md#built-in-fn-keyboard)
 for device verification and its limits.
 
-The maintainer authorized this version and release publication. Both architecture
-bundles and matching helpers follow the release gates below.
+Both architecture bundles and matching helpers follow the release gates below.
 
 ## 0.1.0-beta2.7
 
@@ -70,11 +67,9 @@ unmanaged entries are hidden only. See the [shortcut guide](desktop-shortcuts.md
 and [validation audit](desktop-shortcuts-validation.md).
 
 This release also includes the stock PocketHome/session integration and matching
-`install-session.py` helper added since beta2.6. The maintainer explicitly
-authorized version `0.1.0-beta2.7`, commit/push and GitHub prerelease publication.
-This authorization does not cover future versions. Release CI builds and checks
-both architecture bundles; the draft's uploaded assets must pass the review
-below before publication.
+`install-session.py` helper added since beta2.6. Release CI builds and checks both
+architecture bundles; the draft's uploaded assets must pass the review below
+before publication.
 
 ## 0.1.0-beta2.6
 
@@ -85,8 +80,6 @@ verified update finalization, and a reproducible Docker lifecycle simulator.
 See the [App Center audit](app-center-validation.md) for reproduced causes,
 regressions, scenario results and software/device boundaries.
 
-The maintainer explicitly authorized version `0.1.0-beta2.6`, commit/push and
-GitHub release publication. This authorization does not cover future versions.
 The [GitHub release](https://github.com/csd113/Vitrallis-Shell/releases/tag/v0.1.0-beta2.6)
 is a beta prerelease.
 
@@ -133,12 +126,3 @@ Published validation and its limits are recorded in the [hardware follow-up](dev
 Those beta2.6 artifacts predate the stock-session integration changes. Beta2.7
 packages matching bundles and helpers; the previous hardware checks do not
 constitute physical-device validation of beta2.7.
-
-## Repository About
-
-Suggested description: **A compact Rust + SDL2 launcher for small-screen Linux,
-with native Terminal, Notepad and Files, App Center, and reversible session
-integration. Currently in beta.**
-
-Suggested topics: `embedded-linux`, `rust`, `sdl2`, `launcher`,
-`touchscreen`. Repository settings are unchanged by the release.

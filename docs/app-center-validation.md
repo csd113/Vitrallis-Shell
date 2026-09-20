@@ -4,7 +4,7 @@ Completed 2026-09-12. Shell baseline:
 `02df65ba08e694777031fe3bd7a0b8274ddf4e45`. Publisher checkout:
 [`cd1cbf913044bfe7edd3e2ade656a85b90b06e9c`](https://github.com/csd113/Vitrallis-Apps/commit/cd1cbf913044bfe7edd3e2ade656a85b90b06e9c).
 The stabilization audit changed no dependencies or neighboring publisher checkout.
-The subsequent, separately authorized release updates the workspace version to
+The subsequent release updates the workspace version to
 `0.1.0-beta2.6` and publishes this work; the validation below records the audit pass.
 
 There was no existing Docker simulator. This pass adds a reproducible Linux SDL2,
@@ -125,9 +125,9 @@ empty Updates, offline restart, live Apps menu and published Tk windows. Device-
 ## Docker scenario coverage
 
 The lifecycle runner reports 20 fixture scenario groups; the published-app pass
-reports three more. Grouped below are all 30 requested checks. Every row passed.
+reports three more. The table groups the 30 validation checks. Every row passed.
 
-| Requested checks | Executed path |
+| Check numbers | Executed path |
 | --- | --- |
 | 1–3 | Fresh shell/App Center, explicit repository load, stable populated list during interaction. |
 | 4–8 | Install Debug and Carousel; retain catalog/search/selection; immediately activate Carousel from the live menu; assert actual executed canonical script path. |

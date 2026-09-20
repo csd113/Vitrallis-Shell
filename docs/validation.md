@@ -109,5 +109,5 @@ original desktop integration observations. The scopes must remain distinct.
 
 No physical device was connected during that repository audit. Version numbers and
 the dependency lockfile were unchanged in that pass. The later App Center audit is
-recorded in [App Center validation](app-center-validation.md), and the separately
-authorized beta2.6 release is documented in [release validation](releases.md).
+recorded in [App Center validation](app-center-validation.md), and the beta2.6
+release is documented in [release validation](releases.md).

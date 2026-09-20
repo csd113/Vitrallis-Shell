@@ -2,8 +2,8 @@
 
 Implementation was tested on the USB-connected PocketCHIP after the local and
 Linux simulator checks passed. These development-build checks preceded the
-separately authorized `0.1.0-beta3.1` version bump and release commit. The validated
-development shell SHA-256 is
+`0.1.0-beta3.1` version bump and release commit. The validated development shell
+SHA-256 is
 `a80372985ba8c59b8175dbe7c702c1ad9df384bc04982bebb033c50349c05166`.
 
 ## Deployment and preservation

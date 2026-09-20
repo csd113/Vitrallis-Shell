@@ -6,7 +6,7 @@ Baseline source: `c4c6d20467e28126ab00ebbf93679bb6d5d79be1` (Phase 1).
 Measurements use the release-profile test harness, SDL dummy/software, 480x272,
 200 warm frames per workload. They measure CPU submission plus software rasterization
 and presentation, not physical Mali-400 performance or power. The local host is
-macOS; PocketCHIP and Raspberry Pi measurements are not available in this session.
+macOS; no PocketCHIP or Raspberry Pi measurements were taken for this baseline.
 
 Before changing rendering architecture:
 
@@ -50,7 +50,7 @@ initialization and `Ui` borrows its texture creator. The creator outlives every
 texture. Initialization retries finish before textures exist. Normal window size
 changes recompute layout and preserve textures; device resets rebuild the atlas,
 clear App Center textures and rebuild shell artwork. Render-target resets only
-invalidate presentation because this implementation has no target textures.
+invalidate presentation because the renderer has no target textures.
 Returning from another application raises/repaints without rebuilding static assets.
 
 Launcher artwork refresh hashes one bounded encoded source at a time with the
@@ -170,7 +170,7 @@ keyboard/mouse/touch shortcuts, and GLES2 hardware/auto/software readback. See
 Raw local logs and screenshots live under `target/renderer-phase2/` (ignored).
 The published third-party network variant is optional; the complete deterministic
 fixture lifecycle, smoke, integration, screenshot and host gates are the required
-local checks. No version numbers, dependencies or commits were added.
+local checks.
 
 ### Recorded results
 

@@ -162,8 +162,6 @@ Raw evidence: [installation](evidence/gpu-vsync/install.txt),
 and [changed files](evidence/gpu-vsync/changed-files.txt).
 
 Debug source changes live in the separate Vitrallis Apps repository and were
-tested as a staged normal-user app, including the coordinated Apps worktree.
-They have not been published as an App Center catalog release. No commit, release,
-or version bump was performed by this Shell task. Physical results cover this
-PocketCHIP; other hardware and externally managed compositors need their own
-scanout verification.
+tested as a staged normal-user app. They have not been published as an App Center
+catalog release. Physical results cover this PocketCHIP; other hardware and
+externally managed compositors need their own scanout verification.
