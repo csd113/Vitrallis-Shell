@@ -35,7 +35,7 @@ impl Toolbar {
         }
     }
 }
-pub const ACTIONS_LABEL: &str = "Actions [F10]";
+pub const ACTIONS_LABEL: &str = "Manage [F10]";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Page {
     Menu,
