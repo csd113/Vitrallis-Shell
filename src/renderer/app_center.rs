@@ -4,6 +4,7 @@ use crate::{
     layout::{Layout, Rect},
 };
 use sdl2::pixels::Color;
+use vitrallis_native::theme;
 pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<(), String> {
     let width = i32::from(layout.width);
     let height = i32::from(layout.height);
@@ -15,7 +16,7 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
             w: width,
             h: height,
         },
-        Color::RGB(14, 24, 34),
+        theme::BACKGROUND,
     )?;
     text(
         canvas,
@@ -27,14 +28,38 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
             h: 24,
         },
         1,
-        Color::RGB(93, 218, 201),
+        theme::ACCENT,
     )?;
+    fill(
+        canvas,
+        Rect {
+            x: theme::INSET,
+            y: 25,
+            w: width - 2 * theme::INSET,
+            h: 1,
+        },
+        theme::BORDER,
+    )?;
+    if center.busy {
+        // Activity treatment without a fabricated percentage or idle animation.
+        super::progress(
+            canvas,
+            Rect {
+                x: theme::INSET,
+                y: 25,
+                w: width - 2 * theme::INSET,
+                h: 2,
+            },
+            width - 16,
+            false,
+        )?;
+    }
     if let Some(pixels) = center.detail_icon() {
         draw_icon(
             canvas,
             pixels,
             Rect {
-                x: 8,
+                x: theme::INSET,
                 y: 0,
                 w: 24,
                 h: 24,
@@ -44,27 +69,15 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<()
     let targets = center.targets(layout);
     for (i, (target, label, bounds)) in targets.iter().enumerate() {
         let enabled = center.enabled(target);
-        fill(
-            canvas,
-            *bounds,
-            if i == center.selected {
-                Color::RGB(42, 77, 92)
-            } else {
-                Color::RGB(33, 45, 58)
-            },
-        )?;
-        if i == center.selected {
-            canvas.set_draw_color(Color::RGB(120, 240, 220));
-            canvas.draw_rect(super::rect(*bounds)?)?;
-        }
+        super::card(canvas, *bounds, i == center.selected)?;
         let color = if enabled {
-            Color::RGB(239, 241, 245)
+            theme::TEXT
         } else {
-            Color::RGB(139, 149, 159)
+            theme::DISABLED
         };
         if let Some((name, description, status)) = center.row_content(target) {
             if center.row_chosen(target) {
-                fill(canvas, Rect { w: 3, ..*bounds }, Color::RGB(93, 218, 201))?;
+                fill(canvas, Rect { w: 3, ..*bounds }, theme::ACCENT)?;
             }
             app_row(
                 canvas,
@@ -99,12 +112,12 @@ fn body(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<(), Str
             canvas,
             line,
             Rect {
-                x: 8,
-                y: y + i32::try_from(i).map_err(|_| "Too many lines")? * 12,
-                w: width - 16,
-                h: 12,
+                x: theme::INSET,
+                y: y + i32::try_from(i).map_err(|_| "Too many lines")? * theme::LINE,
+                w: width - 2 * theme::INSET,
+                h: theme::LINE,
             },
-            Color::RGB(220, 224, 231),
+            theme::TEXT,
         )?;
     }
     if let Some(message) = center.empty_message() {
@@ -112,13 +125,13 @@ fn body(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<(), Str
             canvas,
             message,
             Rect {
-                x: 8,
+                x: theme::INSET,
                 y: 130,
-                w: width - 16,
+                w: width - 2 * theme::INSET,
                 h: 32,
             },
             1,
-            Color::RGB(181, 199, 211),
+            theme::MUTED,
         )?;
     }
     if center.full_details() || center.editing() {
@@ -127,12 +140,12 @@ fn body(canvas: &mut Screen, layout: &Layout, center: &Center) -> Result<(), Str
             center.footer(),
             Rect {
                 x: 4,
-                y: height - 12,
+                y: height - theme::LINE,
                 w: width - 8,
-                h: 12,
+                h: theme::LINE,
             },
             1,
-            Color::RGB(239, 206, 129),
+            theme::WARNING,
         )?;
     }
     Ok(())
@@ -162,21 +175,21 @@ fn app_row(
     bounds: Rect,
 ) -> Result<(), String> {
     let icon_bounds = Rect {
-        x: bounds.x + 8,
-        y: bounds.y + 8,
+        x: bounds.x + theme::INSET,
+        y: bounds.y + theme::INSET,
         w: 32,
         h: 32,
     };
     if let Some(pixels) = icon {
         draw_icon(canvas, pixels, icon_bounds)?;
     } else {
-        fill(canvas, icon_bounds, Color::RGB(43, 93, 103))?;
+        fill(canvas, icon_bounds, theme::BORDER)?;
         text(
             canvas,
             &name.chars().take(1).collect::<String>(),
             icon_bounds,
             2,
-            Color::RGB(210, 246, 237),
+            theme::TEXT,
         )?;
     }
     let text_bounds = Rect {
@@ -185,7 +198,7 @@ fn app_row(
         w: bounds.w - 58,
         h: 14,
     };
-    left(canvas, name, text_bounds, Color::RGB(245, 249, 251))?;
+    left(canvas, name, text_bounds, theme::TEXT)?;
     left(
         canvas,
         description,
@@ -193,7 +206,7 @@ fn app_row(
             y: bounds.y + 17,
             ..text_bounds
         },
-        Color::RGB(172, 190, 205),
+        theme::MUTED,
     )?;
     left(
         canvas,
@@ -203,9 +216,9 @@ fn app_row(
             ..text_bounds
         },
         if status.starts_with("Update") {
-            Color::RGB(158, 243, 180)
+            theme::VIOLET
         } else {
-            Color::RGB(103, 215, 203)
+            theme::ACCENT
         },
     )
 }

@@ -13,12 +13,7 @@ use std::{
     path::PathBuf,
 };
 
-pub const BACKGROUND: Color = Color::RGB(17, 29, 40);
-pub const PANEL: Color = Color::RGB(29, 46, 59);
-pub const TEXT: Color = Color::RGB(231, 240, 242);
-pub const MUTED: Color = Color::RGB(148, 170, 181);
-pub const ACCENT: Color = Color::RGB(102, 224, 201);
-pub const SELECTED: Color = Color::RGB(46, 85, 95);
+use crate::theme::{self, ACCENT, BACKGROUND, MUTED, PANEL, SELECTED, TEXT};
 
 /// Common native command-line options; paths stay in their original OS encoding.
 #[derive(Debug, Default)]
@@ -228,11 +223,11 @@ impl<'a> Ui<'a> {
     }
     #[must_use]
     pub const fn line(&self) -> i32 {
-        12 * self.scale
+        theme::LINE * self.scale
     }
     #[must_use]
     pub const fn cell(&self) -> i32 {
-        8 * self.scale
+        theme::CELL * self.scale
     }
     #[must_use]
     pub const fn header_height(&self) -> i32 {
@@ -285,8 +280,8 @@ impl<'a> Ui<'a> {
             Rect::new(
                 x,
                 y,
-                8 * self.scale.unsigned_abs(),
-                8 * self.scale.unsigned_abs(),
+                theme::CELL.unsigned_abs() * self.scale.unsigned_abs(),
+                theme::CELL.unsigned_abs() * self.scale.unsigned_abs(),
             ),
             color,
         )
@@ -322,14 +317,7 @@ impl<'a> Ui<'a> {
     pub fn buttons(&mut self, labels: &[&str], focus: Option<usize>) -> Result<(), String> {
         for (index, label) in labels.iter().enumerate() {
             let rect = self.button_rect(index, labels.len());
-            self.fill(
-                rect,
-                if focus == Some(index) {
-                    SELECTED
-                } else {
-                    PANEL
-                },
-            )?;
+            theme::card(&mut self.canvas, rect, focus == Some(index))?;
             self.text(
                 label,
                 rect.x() + 6,

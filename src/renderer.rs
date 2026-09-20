@@ -1,3 +1,4 @@
+use vitrallis_native::theme;
 mod app_center;
 #[cfg(test)]
 mod cache_tests;
@@ -109,7 +110,36 @@ fn fill(canvas: &mut Screen, r: Rect, color: Color) -> Result<(), String> {
     }
     canvas.fill_rect(rect(r)?)
 }
-fn text(
+fn card(canvas: &mut Screen, bounds: Rect, selected: bool) -> Result<(), String> {
+    theme::card(canvas, rect(bounds)?, selected)
+}
+
+fn progress(canvas: &mut Screen, bounds: Rect, filled: i32, warning: bool) -> Result<(), String> {
+    theme::progress(canvas, rect(bounds)?, filled.max(0).unsigned_abs(), warning)
+}
+
+fn chrome(canvas: &mut Screen, layout: &Layout) -> Result<(), String> {
+    fill(
+        canvas,
+        Rect {
+            x: 0,
+            w: i32::from(layout.width),
+            ..layout.title
+        },
+        theme::BACKGROUND,
+    )?;
+    fill(
+        canvas,
+        Rect {
+            x: 0,
+            w: i32::from(layout.width),
+            ..layout.footer
+        },
+        theme::BACKGROUND,
+    )?;
+    Ok(())
+}
+pub fn text(
     canvas: &mut Screen,
     value: &str,
     bounds: Rect,
@@ -119,10 +149,11 @@ fn text(
     if scale <= 0 {
         return Err("invalid text scale".into());
     }
-    let limit = usize::try_from(bounds.w / (8 * scale)).map_err(|_| "invalid text width")?;
+    let limit =
+        usize::try_from(bounds.w / (theme::CELL * scale)).map_err(|_| "invalid text width")?;
     let count = i32::try_from(value.chars().take(limit).count()).map_err(|_| "text too long")?;
-    let mut x = bounds.x + (bounds.w - count * 8 * scale) / 2;
-    let y = bounds.y + (bounds.h - 8 * scale) / 2;
+    let mut x = bounds.x + (bounds.w - count * theme::CELL * scale) / 2;
+    let y = bounds.y + (bounds.h - theme::CELL * scale) / 2;
     for character in value.chars().take(limit) {
         #[cfg(test)]
         performance::count(|c| c.glyphs += 1);
@@ -137,12 +168,12 @@ fn text(
             rect(Rect {
                 x,
                 y,
-                w: 8 * scale,
-                h: 8 * scale,
+                w: theme::CELL * scale,
+                h: theme::CELL * scale,
             })?,
             color,
         )?;
-        x += 8 * scale;
+        x += theme::CELL * scale;
     }
     Ok(())
 }
@@ -232,11 +263,18 @@ fn render_launcher(
     icons: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
     let [red, green, blue] = state.preferences.color;
-    canvas.set_draw_color(Color::RGB(red, green, blue));
+    canvas.set_draw_color(if state.settings.open {
+        theme::BACKGROUND
+    } else {
+        Color::RGB(red, green, blue)
+    });
     canvas.clear();
-    if let Some(Some(wallpaper)) = icons.get(state.apps.len()) {
+    if !state.settings.open
+        && let Some(Some(wallpaper)) = icons.get(state.apps.len())
+    {
         canvas.copy(wallpaper, None, None)?;
     }
+    chrome(canvas, layout)?;
     text(
         canvas,
         &if state.settings.open {
@@ -263,7 +301,7 @@ fn render_launcher(
             ..layout.title
         },
         layout.text_scale,
-        Color::RGB(93, 218, 201),
+        theme::ACCENT,
     )?;
     let system_icons = icons.get(state.apps.len() + 1..).unwrap_or(&[]);
     system::status(
@@ -295,9 +333,9 @@ fn render_launcher(
             },
             (layout.text_scale + 1).min(bounds.h / 16),
             if enabled {
-                Color::RGB(93, 218, 201)
+                theme::ACCENT
             } else {
-                Color::RGB(64, 78, 90)
+                theme::DISABLED
             },
         )?;
     }
@@ -326,27 +364,26 @@ fn render_launcher(
 }
 
 fn desktop_footer(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
-    if let Some(toolbar) = state.desktop.toolbar {
-        let bounds = toolbar.bounds(layout);
-        fill(canvas, bounds, Color::RGB(42, 77, 92))?;
-        canvas.set_draw_color(Color::RGB(120, 240, 220));
-        canvas.draw_rect(rect(bounds)?)?;
-    }
+    let focus = state.desktop.toolbar.map(|toolbar| toolbar.bounds(layout));
+    card(
+        canvas,
+        layout.desktop_menu,
+        focus == Some(layout.desktop_menu),
+    )?;
     text(
         canvas,
         crate::shortcuts::screen::ACTIONS_LABEL,
         layout.desktop_menu,
         1,
-        Color::RGB(93, 218, 201),
+        theme::ACCENT,
     )?;
     if state.folder.is_some() {
-        text(
+        card(
             canvas,
-            "Back to Apps",
             layout.folder_back,
-            1,
-            Color::RGB(93, 218, 201),
+            focus == Some(layout.folder_back),
         )?;
+        text(canvas, "Back to Apps", layout.folder_back, 1, theme::ACCENT)?;
     }
 
     Ok(())
@@ -362,9 +399,7 @@ fn loading_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Res
         w: layout.title.w - 24,
         h: 80 * layout.text_scale,
     };
-    fill(canvas, bounds, Color::RGB(23, 39, 53))?;
-    canvas.set_draw_color(Color::RGB(93, 218, 201));
-    canvas.draw_rect(rect(bounds)?)?;
+    card(canvas, bounds, true)?;
     text(
         canvas,
         &format!("Opening {name}..."),
@@ -373,7 +408,7 @@ fn loading_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Res
             ..bounds
         },
         layout.text_scale,
-        Color::RGB(232, 241, 247),
+        theme::TEXT,
     )?;
     text(
         canvas,
@@ -384,7 +419,7 @@ fn loading_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Res
             ..bounds
         },
         layout.text_scale,
-        Color::RGB(93, 218, 201),
+        theme::ACCENT,
     )
 }
 
@@ -397,25 +432,18 @@ fn render_tile(
     running: bool,
     texture: Option<&Texture<'_>>,
 ) -> Result<(), String> {
-    fill(
-        canvas,
-        tile,
-        if selected {
-            Color::RGB(44, 82, 99)
-        } else {
-            Color::RGB(25, 40, 55)
-        },
-    )?;
+    card(canvas, tile, selected)?;
     if running {
-        // Static play badge: fixed corner space, no timer or text reflow.
+        // Faceted activity badge: cyan play silhouette, violet edge and a short
+        // active rail. Static, legible, and independent of keyboard selection.
         let badge = Rect {
             x: tile.x + 5,
             y: tile.y + 5,
             w: 13,
             h: 13,
         };
-        fill(canvas, badge, Color::RGB(8, 24, 32))?;
-        canvas.set_draw_color(Color::RGB(93, 218, 201));
+        fill(canvas, badge, theme::BACKGROUND)?;
+        canvas.set_draw_color(theme::ACCENT);
         canvas.draw_rect(rect(badge)?)?;
         for offset in 0..5 {
             canvas.draw_line(
@@ -423,10 +451,26 @@ fn render_tile(
                 (badge.x + 4 + offset, badge.y + 9 - offset / 2),
             )?;
         }
-    }
-    if selected {
-        canvas.set_draw_color(Color::RGB(93, 218, 201));
-        canvas.draw_rect(rect(tile)?)?;
+        fill(
+            canvas,
+            Rect {
+                x: badge.x + 3,
+                y: badge.y + badge.h - 1,
+                w: 8,
+                h: 1,
+            },
+            theme::VIOLET,
+        )?;
+        fill(
+            canvas,
+            Rect {
+                x: tile.x + 5,
+                y: tile.y + tile.h - 3,
+                w: 16,
+                h: 1,
+            },
+            theme::ACCENT,
+        )?;
     }
     let icon = Rect {
         x: tile.x + (tile.w - layout.icon_size) / 2,
@@ -451,15 +495,9 @@ fn render_tile(
             })?,
         )?;
     } else {
-        fill(canvas, icon, Color::RGB(57, 115, 137))?;
+        fill(canvas, icon, theme::BORDER)?;
         let mark = if app.unavailable.is_some() { "!" } else { "+" };
-        text(
-            canvas,
-            mark,
-            icon,
-            layout.text_scale + 1,
-            Color::RGB(219, 243, 240),
-        )?;
+        text(canvas, mark, icon, layout.text_scale + 1, theme::TEXT)?;
     }
     if app.unavailable.is_some() && !app.is_system_settings() {
         text(
@@ -472,7 +510,7 @@ fn render_tile(
                 h: 20,
             },
             layout.text_scale,
-            Color::RGB(255, 185, 96),
+            theme::WARNING,
         )?;
     }
     let label_top = icon.y + icon.h;
@@ -480,13 +518,13 @@ fn render_tile(
         canvas,
         &app.name,
         Rect {
-            x: tile.x + 4,
+            x: tile.x + theme::SPACE,
             y: label_top,
-            w: tile.w - 8,
+            w: tile.w - 2 * theme::SPACE,
             h: tile.y + tile.h - label_top,
         },
         layout.text_scale,
-        Color::RGB(235, 242, 249),
+        theme::TEXT,
     )?;
     Ok(())
 }
@@ -501,7 +539,7 @@ fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Resul
         w: layout.title.w,
         h: layout.footer.y - layout.title.h,
     };
-    fill(canvas, bounds, Color::RGB(48, 32, 35))?;
+    fill(canvas, bounds, theme::ERROR_SURFACE)?;
     let line_height = 16 * layout.text_scale;
     text(
         canvas,
@@ -511,7 +549,7 @@ fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Resul
             ..bounds
         },
         layout.text_scale,
-        Color::RGB(255, 185, 96),
+        theme::WARNING,
     )?;
     let columns =
         usize::try_from((bounds.w - 16) / (8 * layout.text_scale)).map_err(|_| "dialog columns")?;
@@ -529,7 +567,7 @@ fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Resul
                 h: line_height,
             },
             layout.text_scale,
-            Color::RGB(235, 242, 249),
+            theme::TEXT,
         )?;
     }
     Ok(())
@@ -839,9 +877,12 @@ mod system_tests {
             };
             let creator = canvas.texture_creator();
             let mut canvas = Screen::new(canvas, &creator)?;
+            home_samples(&mut canvas, &layout, output)?;
             if w == 480 {
                 cache_tests::lifecycle(&creator, &mut canvas)?;
+                crate::boot::lifecycle(&sdl, &mut canvas, &layout)?;
             }
+            crate::boot::qa(&mut canvas, &layout, output)?;
             power_samples(&mut canvas, &layout, &mut state, output)?;
             state.settings.system_state = crate::settings::SystemState::Ready;
             state.settings.network_available = true;
@@ -893,6 +934,54 @@ mod system_tests {
         verify_references(output)
     }
 
+    fn home_samples(
+        canvas: &mut Screen,
+        layout: &Layout,
+        output: &std::path::Path,
+    ) -> Result<(), String> {
+        use crate::app::{AppEntry, AppManifest, AppSource};
+        let apps = [
+            ("io.vitrallis.terminal", "Terminal", AppSource::Native),
+            ("io.vitrallis.notepad", "Notepad", AppSource::Native),
+            ("io.vitrallis.files", "Files", AppSource::Native),
+            (crate::app_center::TILE_ID, "App Center", AppSource::Native),
+            ("vitrallis-wifi-settings", "Settings", AppSource::Native),
+            ("folder", "Tools", AppSource::Folder),
+        ]
+        .into_iter()
+        .map(|(id, name, source)| AppEntry {
+            id: id.into(),
+            name: name.into(),
+            source,
+            icon: None,
+            unavailable: None,
+            manifest: AppManifest {
+                entry: "/fixture/app".into(),
+                ..AppManifest::default()
+            },
+        })
+        .collect();
+        let mut state = Launcher::new(apps, layout.columns, layout.tiles.len())?;
+        state.running.push("io.vitrallis.notepad".into());
+        let creator = canvas.texture_creator();
+        let textures = artwork(&creator, &state);
+        for (name, toolbar) in [
+            ("tiles", None),
+            ("actions", Some(crate::shortcuts::screen::Toolbar::Actions)),
+        ] {
+            state.desktop.toolbar = toolbar;
+            render(canvas, layout, &state, &textures)?;
+            screenshot(
+                canvas,
+                &output.join(format!(
+                    "home-{name}-{}x{}.bmp",
+                    layout.width, layout.height
+                )),
+            )?;
+        }
+        Ok(())
+    }
+
     fn verify_references(output: &std::path::Path) -> Result<(), String> {
         use sha2::{Digest, Sha256};
         let references: std::collections::BTreeMap<
@@ -913,7 +1002,7 @@ mod system_tests {
                         out
                     }),
                 *expected,
-                "Phase 1 pixels changed: {name}"
+                "Reference pixels changed: {name}"
             );
         }
         Ok(())

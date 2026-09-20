@@ -1,10 +1,11 @@
 //! Compact native PTY terminal; no external terminal application or GUI framework.
+use vitrallis_native::theme::{BACKGROUND, TEXT};
 mod command;
 mod model;
 mod pty;
 use model::Terminal;
 use sdl2::{keyboard::Keycode, pixels::Color, rect::Rect};
-use vitrallis_native::ui::{self, BACKGROUND, Input, TEXT, Ui};
+use vitrallis_native::ui::{self, Input, Ui};
 
 /// # Errors
 /// Reports SDL initialization errors; PTY/shell failures are shown in a dismissible dialog.
@@ -186,7 +187,11 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
     ui.clear();
     ui.fill(
         Rect::new(0, 0, ui.width.unsigned_abs(), 20 * ui.scale.unsigned_abs()),
-        if menu { ui::SELECTED } else { ui::PANEL },
+        if menu {
+            vitrallis_native::theme::SELECTED
+        } else {
+            vitrallis_native::theme::PANEL
+        },
     )?;
     let screen = terminal.parser.screen();
     let (rows, cols) = screen.size();
@@ -195,7 +200,7 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
         5,
         6,
         ui.width - 10,
-        ui::ACCENT,
+        vitrallis_native::theme::ACCENT,
     )?;
     for row in 0..rows {
         for col in 0..cols {
@@ -237,7 +242,7 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
                     ui.cell().unsigned_abs(),
                     1,
                 ),
-                ui::ACCENT,
+                vitrallis_native::theme::ACCENT,
             )?;
         }
     }

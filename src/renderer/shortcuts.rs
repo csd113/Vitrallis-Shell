@@ -3,7 +3,7 @@ use crate::{
     layout::{Layout, Rect},
     shortcuts::screen::Desktop,
 };
-use sdl2::pixels::Color;
+use vitrallis_native::theme;
 
 #[cfg(test)]
 pub fn qa(canvas: &mut Screen, layout: &Layout, output: &std::path::Path) -> Result<(), String> {
@@ -24,7 +24,7 @@ pub fn qa(canvas: &mut Screen, layout: &Layout, output: &std::path::Path) -> Res
 }
 
 pub fn panel(canvas: &mut Screen, layout: &Layout, desktop: &Desktop) -> Result<(), String> {
-    canvas.set_draw_color(Color::RGB(14, 24, 34));
+    canvas.set_draw_color(theme::BACKGROUND);
     canvas.clear();
     let width = i32::from(layout.width);
     text(
@@ -37,7 +37,7 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, desktop: &Desktop) -> Result<
             h: 24,
         },
         1,
-        Color::RGB(93, 218, 201),
+        theme::ACCENT,
     )?;
     let description = desktop.description();
     let columns = usize::from(layout.width.saturating_sub(16) / 8);
@@ -59,26 +59,14 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, desktop: &Desktop) -> Result<
             },
             1,
             if desktop.error.is_empty() {
-                Color::RGB(190, 204, 218)
+                theme::MUTED
             } else {
-                Color::RGB(255, 179, 151)
+                theme::WARNING
             },
         )?;
     }
     for (i, (_, label, bounds)) in desktop.targets(layout).iter().enumerate() {
-        fill(
-            canvas,
-            *bounds,
-            if i == desktop.selected {
-                Color::RGB(42, 77, 92)
-            } else {
-                Color::RGB(33, 45, 58)
-            },
-        )?;
-        if i == desktop.selected {
-            canvas.set_draw_color(Color::RGB(120, 240, 220));
-            canvas.draw_rect(super::rect(*bounds)?)?;
-        }
+        super::card(canvas, *bounds, i == desktop.selected)?;
         let limit = usize::try_from(bounds.w / 8).map_err(|_| "Button width")?;
         let label = if label.chars().count() > limit {
             format!(
@@ -91,7 +79,7 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, desktop: &Desktop) -> Result<
         } else {
             label.clone()
         };
-        text(canvas, &label, *bounds, 1, Color::RGB(239, 241, 245))?;
+        text(canvas, &label, *bounds, 1, theme::TEXT)?;
     }
     let preview = Rect {
         x: width - 36,
@@ -109,8 +97,8 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, desktop: &Desktop) -> Result<
             .map_err(|e| e.to_string())?;
         canvas.copy(&texture, None, super::rect(preview)?)?;
     } else {
-        fill(canvas, preview, Color::RGB(57, 115, 137))?;
-        text(canvas, "+", preview, 1, Color::RGB(219, 243, 240))?;
+        fill(canvas, preview, theme::BORDER)?;
+        text(canvas, "+", preview, 1, theme::TEXT)?;
     }
     Ok(())
 }

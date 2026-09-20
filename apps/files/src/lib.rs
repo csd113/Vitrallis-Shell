@@ -247,10 +247,10 @@ impl Manager {
                             (ui.width - 8).unsigned_abs(),
                             height.unsigned_abs(),
                         ),
-                        vitrallis_native::ui::SELECTED,
+                        vitrallis_native::theme::SELECTED,
                     )?;
                 }
-                ui.text(label, 12, y, ui.width - 24, vitrallis_native::ui::TEXT)?;
+                ui.text(label, 12, y, ui.width - 24, vitrallis_native::theme::TEXT)?;
             }
             ui.buttons(&["Back", "Choose"], selected.checked_sub(labels.len()))?;
             ui.present();
@@ -406,14 +406,14 @@ fn copy(ui: &mut Ui, source: PathBuf, destination: PathBuf) -> Result<(), String
             8,
             ui.header_height() + 16,
             ui.width - 16,
-            vitrallis_native::ui::TEXT,
+            vitrallis_native::theme::TEXT,
         )?;
         ui.text(
             "Please wait before closing Files",
             8,
             ui.header_height() + ui.line() + 16,
             ui.width - 16,
-            vitrallis_native::ui::MUTED,
+            vitrallis_native::theme::MUTED,
         )?;
         ui.present();
         ui.wait()?;

@@ -74,7 +74,7 @@ impl Layout {
             columns: usize::from(columns),
             tiles,
             icon_size: (cell_h * 3 / 5).min(cell_w / 2),
-            text_scale: ((h + 80) / 272).max(1),
+            text_scale: vitrallis_native::theme::text_scale(h),
             title: Rect {
                 x: margin,
                 y: 0,
@@ -106,9 +106,9 @@ impl Layout {
                 h: bottom,
             },
             desktop_menu: Rect {
-                x: margin + 2 * (w - 2 * margin) / 3,
+                x: margin + (i32::from(columns) - 1) * (cell_w + gap),
                 y: h - bottom,
-                w: (w - 2 * margin) / 3,
+                w: cell_w,
                 h: bottom,
             },
         })

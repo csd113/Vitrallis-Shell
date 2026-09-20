@@ -213,13 +213,14 @@ fn hardware_scenes_match_software() -> Result<(), String> {
                     .zip(reference)
                     .filter(|(a, b)| a.abs_diff(**b) > 2)
                     .count();
-                // SDL software and Lima linear filtering differ by up to 6/255
-                // on this densely scaled icon fixture (measured physical output).
+                // SDL software and Lima linear filtering differ by up to 7/255
+                // on this densely scaled icon fixture with the navy theme
+                // (two channels at 7/255 in measured physical output).
                 // Bound every channel and the total error; do not permit shifts,
                 // missing icons or arbitrary percentages of corrupted pixels.
                 let valid = if name == "many-icons" {
                     let errors = pixels.iter().zip(reference).map(|(a, b)| a.abs_diff(*b));
-                    errors.clone().all(|error| error <= 6)
+                    errors.clone().all(|error| error <= 7)
                         && errors.map(usize::from).sum::<usize>() <= pixels.len() / 5
                 } else {
                     different < pixels.len() / 100

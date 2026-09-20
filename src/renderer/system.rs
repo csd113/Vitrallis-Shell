@@ -1,9 +1,10 @@
 //! Small native icons and the shared System Settings surface; no runtime assets.
+use vitrallis_native::theme;
 #[path = "system_storage.rs"]
 mod storage;
 #[path = "system_wireless.rs"]
 mod wireless;
-use super::{Screen, fill, rect, text};
+use super::{Screen, card, fill, progress, rect, text};
 use crate::{
     layout::{Layout, Rect},
     platform::system::{Power, Status, Wifi},
@@ -19,11 +20,10 @@ pub(super) const ASSETS: [&[u8]; 5] = [
     include_bytes!("../../assets/system/restart.png"),
 ];
 
-const INK: Color = Color::RGB(232, 241, 247);
-const MUTED: Color = Color::RGB(139, 160, 176);
-const ACCENT: Color = Color::RGB(93, 218, 201);
-const TRACK: Color = Color::RGB(55, 76, 91);
-const AMBER: Color = Color::RGB(255, 188, 103);
+const INK: Color = theme::TEXT;
+const MUTED: Color = theme::MUTED;
+const ACCENT: Color = theme::ACCENT;
+const AMBER: Color = theme::WARNING;
 
 #[derive(Clone, Copy)]
 pub(super) enum Icon {
@@ -143,23 +143,6 @@ fn circle(canvas: &mut Screen, x: i32, y: i32, radius: i32, color: Color) -> Res
         canvas.draw_line((x - dx, y + dy), (x + dx, y + dy))?;
     }
     Ok(())
-}
-fn card(canvas: &mut Screen, bounds: Rect, selected: bool) -> Result<(), String> {
-    fill(
-        canvas,
-        bounds,
-        if selected {
-            Color::RGB(31, 65, 78)
-        } else {
-            Color::RGB(23, 39, 53)
-        },
-    )?;
-    canvas.set_draw_color(if selected {
-        ACCENT
-    } else {
-        Color::RGB(41, 61, 77)
-    });
-    canvas.draw_rect(rect(bounds)?)
 }
 
 pub(super) fn status(
@@ -538,12 +521,10 @@ fn slider(
         scale,
         if available { INK } else { MUTED },
     )?;
-    fill(canvas, track, TRACK)?;
-    if let Some(value) = value {
-        let width = track.w * i32::from(value.value()) / 100;
-        if width > 0 {
-            fill(canvas, Rect { w: width, ..track }, ACCENT)?;
-        }
+    let value_width = value.map_or(0, |value| track.w * i32::from(value.value()) / 100);
+    progress(canvas, track, value_width, false)?;
+    if value.is_some() {
+        let width = value_width;
         circle(
             canvas,
             track.x + width,
@@ -791,22 +772,17 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
             w: layout.title.w,
             h: 12,
         };
-        fill(canvas, track, TRACK)?;
         let width = u64::try_from(track.w)
             .map_err(|_| "update progress width")?
             .saturating_mul(received.min(total))
             .checked_div(total)
             .unwrap_or(0);
-        if width > 0 {
-            fill(
-                canvas,
-                Rect {
-                    w: i32::try_from(width).map_err(|_| "update progress width")?,
-                    ..track
-                },
-                ACCENT,
-            )?;
-        }
+        progress(
+            canvas,
+            track,
+            i32::try_from(width).map_err(|_| "update progress width")?,
+            false,
+        )?;
     }
     let action = if confirming {
         "Confirm Install"
@@ -869,7 +845,7 @@ pub(super) fn power_splash(
     layout: &Layout,
     message: &str,
 ) -> Result<(), String> {
-    canvas.set_draw_color(Color::RGB(12, 23, 33));
+    canvas.set_draw_color(theme::BACKGROUND);
     canvas.clear();
     let center = i32::from(layout.height) / 2;
     for (title, y, color) in [

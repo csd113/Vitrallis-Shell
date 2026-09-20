@@ -16,6 +16,7 @@ import unittest
 from unittest.mock import patch
 
 import test_installer as fixture
+from bootstrap_fixture import ShellFixture
 
 ROOT = fixture.ROOT
 DEVICE = fixture.DEVICE
@@ -172,15 +173,19 @@ class ReadmeCommands(unittest.TestCase):
         self.fixture.setUp()
         self.addCleanup(self.fixture.doCleanups)
         self.home = self.fixture.home
-        self.commands = self.home / 'mock-bin'
-        self.commands.mkdir()
+        shell_temp = tempfile.TemporaryDirectory(prefix='vtr-', dir='/tmp')
+        self.addCleanup(shell_temp.cleanup)
+        self.shell = ShellFixture(Path(shell_temp.name), (DEVICE / 'bootstrap.sh').read_text())
+        self.addCleanup(self.shell.bus.close)
+        self.shell.marker.touch()
+        self.commands = self.shell.commands
         self.network = self.home / 'network'
         self.network.mkdir()
         value, data = release(payload=self.fixture.binary.read_bytes())
         (self.network / 'releases.json').write_text(json.dumps([value]))
         for name, content in data.items():
             (self.network / name).write_bytes(content)
-        self.env = dict(os.environ, HOME=str(self.home),
+        self.env = dict(self.shell.env, HOME=str(self.home),
                         PATH=str(self.commands) + os.pathsep + os.environ['PATH'],
                         VITRALLIS_TEST_NETWORK=str(self.network), VITRALLIS_TEST_LOG=str(self.home / 'outer-download'))
         self.write_command('curl', '''#!/bin/sh
@@ -195,10 +200,12 @@ if [ "${VITRALLIS_TEST_FAIL-}" = yes ]; then
 fi
 cp ''' + shlex.quote(str(DEVICE / 'bootstrap.py')) + ''' "$output"
 ''')
-        self.write_command('python3', '#!/bin/sh\nexec ' + shlex.quote(sys.executable) + ' ' +
+        self.write_command('python3', '#!/bin/sh\nif [ "$2" = -c ]; then exit 0; fi\nexec ' + shlex.quote(sys.executable) + ' ' +
                            shlex.quote(str(Path(__file__).resolve())) + ' --readme-driver "$@"\n')
         readme = (ROOT / 'docs/devices/pocketchip.md').read_text()
-        self.install_line = re.search(r'```sh\n(\(set -eu;[^\n]+)\n```', readme).group(1)
+        block = re.search(r'<!-- pocketchip-bootstrap -->\n```sh\n(.*?)\n```', readme, re.S).group(1)
+        self.assertEqual(block, (DEVICE / 'bootstrap.sh').read_text().split('\n', 2)[2].rstrip())
+        self.install_line = self.shell.script
         self.uninstall_line = re.search(r'## Uninstall\n.*?```sh\n([^\n]+)\n```', (ROOT / 'README.md').read_text(), re.S).group(1)
 
     def write_command(self, name, data):
@@ -230,7 +237,7 @@ cp ''' + shlex.quote(str(DEVICE / 'bootstrap.py')) + ''' "$output"
 
     def test_failed_literal_download_cleans_temp_and_never_executes_python(self):
         self.env['VITRALLIS_TEST_FAIL'] = 'yes'
-        self.write_command('python3', '#!/bin/sh\ntouch "$HOME/incorrectly-executed"\n')
+        self.write_command('python3', '#!/bin/sh\nif [ "$2" = -c ]; then exit 0; fi\ntouch "$HOME/incorrectly-executed"\n')
         result = self.run_line(self.install_line)
         self.assertEqual(result.returncode, 22)
         self.assertFalse((self.home / 'incorrectly-executed').exists())
@@ -252,6 +259,8 @@ def readme_driver():
     # This driver changes only transport, runtime probes and session boundaries.
     # Production scripts have no fixture-mode flags or environment bypasses.
     sys.argv = sys.argv[2:]
+    if sys.argv[0] == '-I':
+        sys.argv = sys.argv[1:]
     script = Path(sys.argv[0])
     sys.dont_write_bytecode = True
     module = load('readme_script', script)
@@ -267,6 +276,9 @@ def readme_driver():
             raise ValueError('oversized mock response')
         path.write_bytes(content)
     def install(args, **kwargs):
+        if args[1] != '-I':
+            raise AssertionError('installer must use isolated Python')
+        args = [args[0]] + args[2:]
         installer = load('readme_installer', Path(args[1]))
         with patch.object(installer, 'preflight'), patch.object(installer, 'require_stopped_session'), patch.object(installer, 'verify_versions') as probe:
             installer.install(Path(args[2]), Path(args[1]).parent, Path.home(), args[4])
@@ -275,6 +287,8 @@ def readme_driver():
                 raise AssertionError('release tag was not passed to the installer')
         return subprocess.CompletedProcess(args, 0)
     with patch.object(os, 'geteuid', return_value=1000), patch.object(module, 'fetch', side_effect=fetch), \
+            patch.object(module, 'installation_environment', return_value=dict(os.environ)), \
+            patch.object(module, 'desktop_available', return_value=False), \
             patch.object(module.subprocess, 'run', side_effect=install):
         module.main()
 

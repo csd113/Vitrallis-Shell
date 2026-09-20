@@ -20,13 +20,18 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 
 **Beta.** Install the complete bundle containing the shell, Terminal, Notepad and Files.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
-OS/runtime requirements, setup commands and hardware validation limits. The current
-source changes require a matching bundle and helpers; the bootstrap refuses earlier releases
-without the current session installer.
+OS/runtime requirements, the single copy-and-paste setup block and hardware
+validation limits. Setup prepares missing Debian packages and installs a verified
+complete bundle. Run it as your normal desktop user; sudo is used for package
+and platform preparation. The updated entry point must be published before
+these source changes are available through the public download URL.
 
 ## First launch and controls
 
-After installation, run `~/.local/share/vitrallis/launch` from a terminal in the existing graphical session.
+Setup from the PocketCHIP graphical Terminal opens Vitrallis and checks that its
+window appears. Setup over SSH prints the on-device launch command:
+`~/.local/share/vitrallis/launch`. You can also use that command for later launches.
+Setup preserves the original boot default.
 
 | Action | Control |
 | --- | --- |

@@ -97,7 +97,7 @@ return "stock key installed"
 ''')
         supervisor = spawn('supervised-native', '/usr/bin/python3', str(helper), 'run')
         wait_for(lambda: windows('Vitrallis'), 'supervised shell')
-        time.sleep(.6)
+        wait_for(lambda: (BASE / 'session.log').exists() and 'event=ready' in (BASE / 'session.log').read_text(), 'supervised boot handoff')
         shell = windows('Vitrallis')[-1]
         (OUT / 'session-windows.txt').write_text(run('xwininfo', '-root', '-tree'))
         run('import', '-window', 'root', str(OUT / 'session-before.png'))

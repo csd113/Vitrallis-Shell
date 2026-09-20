@@ -1,6 +1,7 @@
 //! Portable Vitrallis application launcher. Core tests run without initializing a display.
 mod app;
 mod app_center;
+mod boot;
 mod config;
 mod discovery;
 mod folders;

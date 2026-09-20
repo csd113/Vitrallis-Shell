@@ -1,5 +1,8 @@
 //! Shared, explicitly refreshed directory model and Notepad's compact picker.
-use crate::ui::{Input, SELECTED, TEXT, Ui};
+use crate::{
+    theme::{SELECTED, TEXT},
+    ui::{Input, Ui},
+};
 use sdl2::{keyboard::Keycode, rect::Rect};
 use std::{
     fs, io,
@@ -156,7 +159,11 @@ impl Browser {
                         (ui.width - 8).unsigned_abs(),
                         Self::row_height(ui).unsigned_abs(),
                     ),
-                    if focused { SELECTED } else { crate::ui::PANEL },
+                    if focused {
+                        SELECTED
+                    } else {
+                        crate::theme::PANEL
+                    },
                 )?;
             }
             if index == 0 {

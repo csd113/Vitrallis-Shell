@@ -6,6 +6,7 @@ pub mod font;
 pub mod ipc;
 pub mod keyboard;
 pub mod renderer;
+pub mod theme;
 pub mod ui;
 
 /// Executables shipped and updated together. Order is the launcher order.

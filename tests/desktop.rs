@@ -85,7 +85,10 @@ fn renderer_outputs_native_size_bmp_and_refuses_overwrite() -> Result<(), Box<dy
     assert_eq!(&bytes[18..22], &480_u32.to_le_bytes());
     assert_eq!(&bytes[22..26], &272_u32.to_le_bytes());
     // A frame must contain more than a cleared background.
-    assert!(bytes[54..].windows(3).any(|pixel| pixel == [201, 218, 93]));
+    assert!(bytes[54..].windows(3).any(|pixel| pixel == {
+        let accent = vitrallis_native::theme::ACCENT;
+        [accent.b, accent.g, accent.r]
+    }));
     assert!(!command.output()?.status.success());
     assert_eq!(std::fs::read(&file)?, bytes);
     let software_file = scratch.0.join("software.bmp");
@@ -318,7 +321,10 @@ fn accelerated_readback_and_presentation() -> Result<(), Box<dyn std::error::Err
             assert_eq!(&bytes[..2], b"BM");
             assert_eq!(&bytes[18..22], &width.to_le_bytes());
             assert_eq!(&bytes[22..26], &height.to_le_bytes());
-            assert!(bytes[54..].windows(3).any(|pixel| pixel == [201, 218, 93]));
+            assert!(bytes[54..].windows(3).any(|pixel| pixel == {
+                let accent = vitrallis_native::theme::ACCENT;
+                [accent.b, accent.g, accent.r]
+            }));
             if baseline.is_empty() {
                 baseline = bytes;
             } else {

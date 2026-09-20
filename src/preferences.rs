@@ -12,7 +12,10 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
-            color: [13, 22, 33],
+            color: {
+                let color = vitrallis_native::theme::BACKGROUND;
+                [color.r, color.g, color.b]
+            },
             wallpaper: None,
             show_clock: true,
             ampm: false,

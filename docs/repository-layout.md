@@ -6,7 +6,8 @@ responsibilities. A matching screen size does not establish device support.
 
 ```text
 integrations/pocketchip/
-  bootstrap.py                Bounded release download and verification
+  bootstrap.sh                Copy-and-paste prerequisite preparation
+  bootstrap.py                Verified release download and checked first launch
   install-session.py                  Canonical user installer
   uninstall.py                Offline receipt-based removal and recovery
   vitrallis-session.py         Awesome/systemd session and recovery

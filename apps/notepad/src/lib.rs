@@ -1,10 +1,11 @@
 //! Native, bounded plain-text editor.
 use sdl2::{keyboard::Keycode, rect::Rect};
 use std::path::{Path, PathBuf};
+use vitrallis_native::theme::{ACCENT, MUTED, TEXT};
 use vitrallis_native::{
     browser,
     document::Document,
-    ui::{self, ACCENT, Input, MUTED, Options, TEXT, Ui},
+    ui::{self, Input, Options, Ui},
 };
 const BUTTONS: [&str; 6] = ["New", "Open", "Save", "Save as", "Find", "Close"];
 
@@ -126,7 +127,7 @@ impl Editor {
                 if selection.contains(&(self.document.line_start(row).unwrap_or(0) + byte)) {
                     ui.fill(
                         Rect::new(x, y, ui.cell().unsigned_abs(), ui.line().unsigned_abs()),
-                        ui::SELECTED,
+                        vitrallis_native::theme::SELECTED,
                     )?;
                 }
                 ui.glyph(if ch == '\t' { '→' } else { ch }, x, y, TEXT)?;

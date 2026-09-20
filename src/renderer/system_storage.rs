@@ -1,5 +1,5 @@
 //! Compact storage views; rendering reads snapshots only.
-use super::{ACCENT, AMBER, INK, MUTED, Screen, TRACK, card, fill, label, panel_footer, text};
+use super::{ACCENT, AMBER, INK, MUTED, Screen, card, label, panel_footer, progress, text};
 use crate::{
     layout::{Layout, Rect},
     settings::{PanelLayout, Settings, StorageView},
@@ -175,14 +175,11 @@ fn overview(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result
                 h: 5 * layout.text_scale,
                 ..row(3)
             };
-            fill(canvas, track, TRACK)?;
-            fill(
+            progress(
                 canvas,
-                Rect {
-                    w: track.w * i32::from(disk.percent()) / 100,
-                    ..track
-                },
-                if critical { AMBER } else { ACCENT },
+                track,
+                track.w * i32::from(disk.percent()) / 100,
+                critical,
             )?;
         }
         disk => {

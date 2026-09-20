@@ -16,25 +16,11 @@ use std::time::{Duration, Instant};
 
 pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     let (width, height) = config.size.unwrap_or_else(|| platform.resolution());
-    let layout = Layout::home(width, height)?;
-    let catalog = crate::discovery::load(config)?;
-    let mut state = Launcher::new(catalog.apps, layout.columns, layout.tiles.len())?;
-    state.preferences = catalog.preferences;
-    match crate::folders::Folders::load() {
-        Ok(folders) => state.folders = folders,
-        Err(error) => state.status = format!("Folder state unavailable: {error}"),
-    }
-    state.rebuild_view(None);
-    if !catalog.diagnostics.is_empty() {
-        state.status = format!("{} APP WARNINGS - SEE LOG", catalog.diagnostics.len());
-        if state.apps.is_empty() {
-            state.status = "NO APPS - CHECK CONFIG / LOG".into();
-        }
-    }
+    Layout::home(width, height)?;
     sdl2::hint::set("SDL_VIDEO_ALLOW_SCREENSAVER", "1");
     let sdl = sdl2::init().map_err(|e| format!("SDL init: {e}"))?;
     let video = sdl.video().map_err(|e| format!("SDL video: {e}"))?;
-    sdl.mouse().show_cursor(state.preferences.show_cursor);
+    sdl.mouse().show_cursor(false);
     sdl2::hint::set("SDL_TOUCH_MOUSE_EVENTS", "0");
     sdl2::hint::set("SDL_MOUSE_TOUCH_EVENTS", "0");
     // A touch used to focus the launcher must also deliver its matching press.
@@ -50,15 +36,36 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     })?;
     let font_creator = canvas.texture_creator();
     let mut canvas = Screen::new(canvas, &font_creator)?;
-    state.renderer_info = Some(info);
-    if let Some(info) = &state.renderer_info {
-        eprintln!("{info}");
+    eprintln!("{info}");
+    let layout = window_layout(&canvas)?;
+    let catalog = if config.mode == crate::config::Mode::Launch && config.screenshot.is_none() {
+        let Some(catalog) = crate::boot::load(&sdl, &mut canvas, &layout, || {
+            crate::discovery::load(config)
+        })?
+        else {
+            return Ok(());
+        };
+        catalog
+    } else {
+        crate::discovery::load(config)?
+    };
+    // Boot consumes resize events; rebuild hit boxes from the final window size.
+    let layout = window_layout(&canvas)?;
+    let mut state = Launcher::new(catalog.apps, layout.columns, layout.tiles.len())?;
+    state.preferences = catalog.preferences;
+    match crate::folders::Folders::load() {
+        Ok(folders) => state.folders = folders,
+        Err(error) => state.status = format!("Folder state unavailable: {error}"),
     }
-    let (actual_w, actual_h) = canvas.window().size();
-    let layout = Layout::home(
-        u16::try_from(actual_w).map_err(|_| "window too wide")?,
-        u16::try_from(actual_h).map_err(|_| "window too tall")?,
-    )?;
+    state.rebuild_view(None);
+    if !catalog.diagnostics.is_empty() {
+        state.status = format!("{} APP WARNINGS - SEE LOG", catalog.diagnostics.len());
+        if state.apps.is_empty() {
+            state.status = "NO APPS - CHECK CONFIG / LOG".into();
+        }
+    }
+    state.renderer_info = Some(info);
+    sdl.mouse().show_cursor(state.preferences.show_cursor);
     if let Some(path) = &config.screenshot {
         let creator = canvas.texture_creator();
         let textures = artwork(&creator, &state);
@@ -67,6 +74,14 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         return Ok(());
     }
     event_loop(&sdl, &mut canvas, &layout, state, platform, config)
+}
+
+fn window_layout(canvas: &Screen) -> Result<Layout, String> {
+    let (width, height) = canvas.window().size();
+    Layout::home(
+        u16::try_from(width).map_err(|_| "window too wide")?,
+        u16::try_from(height).map_err(|_| "window too tall")?,
+    )
 }
 
 // Keep input suppression, frame presentation and child-exit ordering together;
@@ -360,7 +375,7 @@ fn refresh_exit_catalog(
 ) -> bool {
     let changed = state.phase == Phase::Ready && reload_catalog(config, state);
     if changed {
-        sdl.mouse().show_cursor(state.preferences.show_cursor);
+        sdl.mouse().show_cursor(false);
         pointer.clear();
     }
     changed
