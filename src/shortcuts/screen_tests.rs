@@ -270,7 +270,7 @@ fn actions_use_full_width_and_reordering_remains_keyboard_reachable() -> Result<
                 .iter()
                 .position(|(t, _, _)| *t == wanted)
                 .ok_or("missing reorder")?;
-            assert_eq!(targets[index].2.w, i32::from(w) - 16);
+            assert_eq!(targets[index].2.w, i32::from(w) - 16 * layout.text_scale);
             desktop.selected = 0;
             for _ in 0..index {
                 desktop.event(&key(Keycode::Tab, Mod::NOMOD), &layout);

@@ -6,7 +6,7 @@ mod storage;
 mod tor;
 #[path = "system_wireless.rs"]
 mod wireless;
-use super::{Screen, card, fill, progress, rect, text};
+use super::{Screen, advance, card, fill, progress, rect, text, text_left};
 use crate::{
     layout::{Layout, Rect},
     platform::system::{Power, Status, Wifi},
@@ -124,17 +124,17 @@ fn polygon(points: &[(i32, i32)], x: i32, y: i32) -> bool {
     winding != 0
 }
 
+/// Left-aligned single-line label. Measurement, padding and the overflow
+/// policy come from the shared renderer helpers so every Settings surface
+/// shortens long values the same way.
 fn label(
     canvas: &mut Screen,
     value: &str,
-    mut bounds: Rect,
+    bounds: Rect,
     scale: i32,
     color: Color,
 ) -> Result<(), String> {
-    bounds.w = bounds
-        .w
-        .min(i32::try_from(value.chars().count()).map_err(|_| "label length")? * 8 * scale);
-    text(canvas, value, bounds, scale, color)
+    text_left(canvas, value, bounds, scale, color)
 }
 fn circle(canvas: &mut Screen, x: i32, y: i32, radius: i32, color: Color) -> Result<(), String> {
     canvas.set_draw_color(color);
@@ -157,7 +157,8 @@ pub(super) fn status(
 ) -> Result<(), String> {
     let scale = layout.text_scale;
     let clock = preferences.clock(status.clock.as_deref());
-    let clock_width = i32::try_from(clock.len()).map_err(|_| "clock length")? * 8 * scale;
+    let clock_width = i32::try_from(clock.len()).map_err(|_| "clock length")? * advance(scale);
+    // Fixed slots from the right edge: battery, charge marker, radio mark, clock.
     let width = 128 * scale + clock_width;
     let x = i32::from(layout.width) - layout.title.x - width;
     label(
@@ -168,7 +169,7 @@ pub(super) fn status(
         Rect {
             x: layout.title.x,
             y: layout.title.h / 2,
-            w: x - layout.title.x - 8,
+            w: x - layout.title.x - 8 * scale,
             h: layout.title.h / 2,
         },
         scale,
@@ -576,6 +577,13 @@ fn about_rows(settings: &Settings) -> Vec<(String, String)> {
 
 /// Time zones remain a bounded, paged selector under Date & Time.
 fn zones_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
+    let scale = layout.text_scale;
+    // The "current" marker owns the right end of the row, so a long zone name
+    // is shortened before it instead of growing into the marker, and the marker
+    // itself always has room for its whole word.
+    let marker = 60 * scale;
+    let inset = 12 * scale;
+    let gap = 8 * scale;
     for (index, bounds) in PanelLayout::rows(layout, 5).into_iter().enumerate() {
         let Some(zone) = settings.status.timezones.get(settings.zone_start + index) else {
             continue;
@@ -585,11 +593,11 @@ fn zones_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Res
             canvas,
             zone,
             Rect {
-                x: bounds.x + 12,
-                w: bounds.w - 36,
+                x: bounds.x + inset,
+                w: bounds.w - inset - marker - gap,
                 ..bounds
             },
-            layout.text_scale,
+            scale,
             INK,
         )?;
         if settings.status.timezone.as_ref() == Some(zone) {
@@ -597,11 +605,11 @@ fn zones_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Res
                 canvas,
                 "current",
                 Rect {
-                    x: bounds.x + bounds.w - 68,
-                    w: 60,
+                    x: bounds.x + bounds.w - marker - gap,
+                    w: marker,
                     ..bounds
                 },
-                layout.text_scale,
+                scale,
                 ACCENT,
             )?;
         }
@@ -1050,28 +1058,7 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
 }
 
 fn update_lines(message: &str, capacity: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    for paragraph in message.lines() {
-        let mut line = String::new();
-        for word in paragraph.split_whitespace() {
-            if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > capacity {
-                lines.push(std::mem::take(&mut line));
-            }
-            if !line.is_empty() {
-                line.push(' ');
-            }
-            for character in word.chars() {
-                if line.chars().count() == capacity {
-                    lines.push(std::mem::take(&mut line));
-                }
-                line.push(character);
-            }
-        }
-        if !line.is_empty() {
-            lines.push(line);
-        }
-    }
-    lines
+    super::wrap_words(message, capacity)
 }
 
 pub(super) fn power_splash(

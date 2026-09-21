@@ -424,28 +424,34 @@ impl Desktop {
         }
     }
     fn capacity(layout: &Layout) -> usize {
-        usize::from(layout.height.saturating_sub(100) / 32).max(1)
+        let scale = layout.text_scale.max(1);
+        usize::try_from((i32::from(layout.height) - 100 * scale).max(0) / (32 * scale))
+            .unwrap_or(1)
+            .max(1)
     }
     pub fn targets(&self, layout: &Layout) -> Vec<(Target, String, Rect)> {
+        let scale = layout.text_scale;
         let width = i32::from(layout.width);
         let height = i32::from(layout.height);
         let mut targets = Vec::new();
         if matches!(self.page, Page::Text(_)) {
             let keys = self.keyboard_page.keys();
+            let key_width = (width - 16 * scale) / 10;
             for (i, key) in keys.chars().enumerate() {
                 let i = i32::try_from(i).unwrap_or(0);
+                let key_label = if key == ' ' {
+                    crate::renderer::space_legend(key_width - 2 * scale, scale).to_owned()
+                } else {
+                    key.to_string()
+                };
                 targets.push((
                     Target::Character(key),
-                    if key == ' ' {
-                        "Space".into()
-                    } else {
-                        key.to_string()
-                    },
+                    key_label,
                     Rect {
-                        x: 8 + (i % 10) * ((width - 16) / 10),
-                        y: 72 + (i / 10) * 28,
-                        w: (width - 16) / 10 - 2,
-                        h: 26,
+                        x: 8 * scale + (i % 10) * key_width,
+                        y: 72 * scale + (i / 10) * 28 * scale,
+                        w: key_width - 2 * scale,
+                        h: 26 * scale,
                     },
                 ));
             }
@@ -461,10 +467,15 @@ impl Desktop {
                     target,
                     label,
                     Rect {
-                        x: 8,
-                        y: 64 + i32::try_from(i).unwrap_or(0) * 32,
-                        w: width - if self.page == Page::Menu { 16 } else { 64 },
-                        h: 30,
+                        x: 8 * scale,
+                        y: 64 * scale + i32::try_from(i).unwrap_or(0) * 32 * scale,
+                        w: width
+                            - if self.page == Page::Menu {
+                                16 * scale
+                            } else {
+                                64 * scale
+                            },
+                        h: 30 * scale,
                     },
                 ));
             }
@@ -474,20 +485,20 @@ impl Desktop {
                         Target::Previous,
                         "Up".into(),
                         Rect {
-                            x: width - 52,
-                            y: 64,
-                            w: 44,
-                            h: 44,
+                            x: width - 52 * scale,
+                            y: 64 * scale,
+                            w: 44 * scale,
+                            h: 44 * scale,
                         },
                     ),
                     (
                         Target::Next,
                         "Down".into(),
                         Rect {
-                            x: width - 52,
-                            y: 112,
-                            w: 44,
-                            h: 44,
+                            x: width - 52 * scale,
+                            y: 112 * scale,
+                            w: 44 * scale,
+                            h: 44 * scale,
                         },
                     ),
                 ]);
@@ -497,16 +508,16 @@ impl Desktop {
         if self.page == Page::Menu && self.rows().len() > Self::capacity(layout) {
             footer.extend([(Target::Previous, "Previous"), (Target::Next, "Next")]);
         }
-        let cell = (width - 16) / i32::try_from(footer.len()).unwrap_or(1);
+        let cell = (width - 16 * scale) / i32::try_from(footer.len()).unwrap_or(1);
         for (i, (target, label)) in footer.into_iter().enumerate() {
             targets.push((
                 target,
                 label.into(),
                 Rect {
-                    x: 8 + i32::try_from(i).unwrap_or(0) * cell,
-                    y: height - 34,
-                    w: cell - 4,
-                    h: 30,
+                    x: 8 * scale + i32::try_from(i).unwrap_or(0) * cell,
+                    y: height - 34 * scale,
+                    w: cell - 4 * scale,
+                    h: 30 * scale,
                 },
             ));
         }

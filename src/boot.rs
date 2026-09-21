@@ -237,30 +237,32 @@ fn draw(
     } else {
         canvas.set_draw_color(theme::BACKGROUND);
         canvas.clear();
+        let scale = layout.text_scale;
         renderer::text(
             canvas,
             "VITRALLIS",
             Rect {
                 x: 0,
-                y: height / 2 - 16,
+                y: height / 2 - 16 * scale,
                 w: width,
-                h: 32,
+                h: 32 * scale,
             },
-            layout.text_scale,
+            scale,
             theme::TEXT,
         )?;
     }
     if frame == 36 {
+        let scale = layout.text_scale;
         renderer::text(
             canvas,
             "Starting...",
             Rect {
                 x: 0,
-                y: height - 24,
+                y: height - 24 * scale,
                 w: width,
-                h: 16,
+                h: 16 * scale,
             },
-            1,
+            scale,
             theme::MUTED,
         )?;
     }

@@ -956,11 +956,12 @@ impl Center {
             let available = (geometry.footer.y - top).max(grid_rows * 16 * geometry.scale);
             let pitch = (available / grid_rows).clamp(16 * geometry.scale, 28 * geometry.scale);
             let key_height = (pitch - 4 * geometry.scale).max(12 * geometry.scale);
+            let key_width = character_width - 3 * geometry.scale;
             for (i, c) in keys.chars().enumerate() {
                 out.push((
                     Target::Character(c),
                     if c == ' ' {
-                        "Space".into()
+                        crate::renderer::space_legend(key_width, geometry.scale).into()
                     } else {
                         c.to_string()
                     },
@@ -968,7 +969,7 @@ impl Center {
                         x: 8 * geometry.scale
                             + i32::try_from(i % 10).unwrap_or(0) * character_width,
                         y: top + i32::try_from(i / 10).unwrap_or(0) * pitch,
-                        w: character_width - 3 * geometry.scale,
+                        w: key_width,
                         h: key_height,
                     },
                 ));
@@ -1649,6 +1650,37 @@ impl Center {
         center.rows[0].installed = "1.0.0".into();
         center.rows[0].package.name = "Bitcoin Dashboard".into();
         out.push(("update-badge", center));
+        // Long catalogue and failure content exercises the explicit widening
+        // policies: the row name, the state chip, the description and the
+        // eight-field details page.
+        let long = "A deliberately long catalogue description that has to wrap across more than one details line and still keep the field list readable on a 480x272 screen.";
+        let widest = |center: &mut Self| -> Result<(), String> {
+            center.rows[0].package.name = "Experimental Rust Application".into();
+            center.rows[0].package.description = long.into();
+            center.rows[0].package.origin =
+                super::sources::Repository::parse("example-org/a-long-publisher-name")?;
+            center.rows[0].package.repository = super::sources::Repository::parse(
+                "https://github.com/example-org/an-extremely-long-repository-name-for-testing",
+            )?;
+            center.rows[0].package.notes =
+                "network, audio, storage, camera, location, bluetooth, notifications".into();
+            center.rows[0].installed = "0.1.0-beta4.1".into();
+            Ok(())
+        };
+        let mut center = Self::fixture()?;
+        widest(&mut center)?;
+        center.page(Page::Apps);
+        out.push(("apps-long", center));
+        let mut center = Self::fixture()?;
+        widest(&mut center)?;
+        center.row = 0;
+        center.chosen = Some(center.rows[0].package.key());
+        center.errors.insert(
+            center.rows[0].package.key(),
+            "The staged payload failed signature verification before install".into(),
+        );
+        center.page(Page::Details);
+        out.push(("details-long", center));
         let mut center = Self::fixture()?;
         center.rows[0].installed = "1.0.0".into();
         center.chosen = Some(center.rows[0].package.key());

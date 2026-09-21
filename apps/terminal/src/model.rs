@@ -232,6 +232,41 @@ pub fn text(text: &str, mods: Mod) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The character grid and the status bar must never overlap, and the grid
+    /// must fill its region exactly at every supported size and scale.
+    #[test]
+    fn grid_and_status_leave_room_for_every_cell() {
+        for scale in 1..=3 {
+            let status = status_height(scale);
+            let cell = 8 * scale;
+            // The status bar centers one glyph cell with a pixel above and below.
+            assert!(status >= cell + 2 * scale, "scale={scale}");
+            assert_eq!((status - cell) / 2, scale, "scale={scale}");
+            for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+                let (rows, cols) = geometry(width, height, scale);
+                assert!(rows >= 1 && cols >= 1, "{width}x{height}@{scale}");
+                assert!(
+                    i32::from(rows) * 9 * scale <= height - status,
+                    "{width}x{height}@{scale}: rows reach the status bar"
+                );
+                assert!(
+                    i32::from(cols) * 8 * scale <= width,
+                    "{width}x{height}@{scale}: columns exceed the window"
+                );
+                // One more row must not fit: the grid uses its whole region.
+                assert!(
+                    i32::from(rows) * 9 * scale + 9 * scale > height - status,
+                    "{width}x{height}@{scale}: a row was dropped"
+                );
+            }
+        }
+        // The fixed "Terminal" legend always fits the left third of the bar.
+        let legend = i32::try_from("Terminal".len()).unwrap_or(0) * 8;
+        for width in [320, 480, 800, 1280] {
+            assert!(width / 3 >= legend);
+        }
+    }
     #[test]
     fn function_keys_and_fn_punctuation_have_no_meta_prefix() {
         for (code, sequence) in [

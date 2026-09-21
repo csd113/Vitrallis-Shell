@@ -239,9 +239,7 @@ impl<'a> Ui<'a> {
     }
     #[must_use]
     pub fn rows(&self, top: i32) -> usize {
-        usize::try_from((self.height - self.footer_height() - top) / self.line())
-            .unwrap_or(1)
-            .max(1)
+        text_rows(self.height, self.footer_height(), self.line(), top)
     }
     pub fn clear(&mut self) {
         self.canvas.set_draw_color(BACKGROUND);
@@ -301,16 +299,23 @@ impl<'a> Ui<'a> {
         self.text(title, 8, 5, self.width - 16, ACCENT)?;
         self.text(detail, 8, 5 + self.line(), self.width - 16, MUTED)
     }
+    /// Header whose second line is a filesystem path. The path is trimmed from
+    /// the left so the file name stays visible in deep directories.
+    /// # Errors
+    /// Reports a renderer error.
+    pub fn header_path(&mut self, title: &str, path: &str) -> Result<(), String> {
+        let columns = self.columns(self.width - 16);
+        let shown = tail(path, columns);
+        self.header(title, &shown)
+    }
+    /// Whole characters that fit in `width` pixels at this session's scale.
+    #[must_use]
+    pub fn columns(&self, width: i32) -> usize {
+        usize::try_from(width.max(0) / self.cell()).unwrap_or(0)
+    }
     #[must_use]
     pub fn button_rect(&self, index: usize, count: usize) -> Rect {
-        let count = i32::try_from(count).unwrap_or(1).max(1);
-        let width = self.width / count;
-        Rect::new(
-            i32::try_from(index).unwrap_or(0) * width,
-            self.height - self.footer_height(),
-            width.unsigned_abs(),
-            self.footer_height().unsigned_abs(),
-        )
+        button_bounds(self.height, self.footer_height(), self.width, index, count)
     }
     /// # Errors
     /// Reports a renderer error.
@@ -593,19 +598,22 @@ impl<'a> Ui<'a> {
         loop {
             self.clear();
             self.header(title, "Type a path or name   Tab selects controls")?;
+            let field = Rect::new(
+                8,
+                self.header_height() + 12,
+                (self.width - 16).unsigned_abs(),
+                (28 * self.scale).unsigned_abs(),
+            );
             let visible = usize::try_from((self.width - 24) / self.cell()).unwrap_or(1);
             let count = value.chars().count();
             let tail: String = value.chars().skip(count.saturating_sub(visible)).collect();
-            self.fill(
-                Rect::new(
-                    8,
-                    self.header_height() + 12,
-                    (self.width - 16).unsigned_abs(),
-                    28 * self.scale.unsigned_abs(),
-                ),
-                if focus == 0 { SELECTED } else { PANEL },
-            )?;
-            self.text(&tail, 12, self.header_height() + 20, self.width - 24, TEXT)?;
+            self.fill(field, if focus == 0 { SELECTED } else { PANEL })?;
+            // The value sits on the field's own vertical centre, with the same
+            // inset the caret uses horizontally.
+            let text_y = self.header_height()
+                + 12
+                + (i32::try_from(field.height()).unwrap_or(0) - 8 * self.scale) / 2;
+            self.text(&tail, 12, text_y, self.width - 24, TEXT)?;
             self.buttons(&["Cancel", "OK"], focus.checked_sub(1))?;
             self.present();
             match self.wait()? {
@@ -639,6 +647,56 @@ pub const fn ctrl(mods: Mod) -> bool {
 #[must_use]
 pub const fn shift(mods: Mod) -> bool {
     mods.intersects(Mod::LSHIFTMOD.union(Mod::RSHIFTMOD))
+}
+
+/// Whole text rows that fit between `top` and the footer. Every screen that
+/// reserves rows for a status line or a field row derives them here, so a row
+/// can never be drawn under the footer.
+#[must_use]
+pub fn text_rows(height: i32, footer: i32, line: i32, top: i32) -> usize {
+    if line <= 0 {
+        return 1;
+    }
+    usize::try_from((height - footer - top) / line)
+        .unwrap_or(1)
+        .max(1)
+}
+
+/// Equal-width footer controls. The last column absorbs the remainder of a
+/// width that does not divide evenly, so the controls always tile the row
+/// without overlapping or leaving a gap at the right edge.
+#[must_use]
+pub fn button_bounds(height: i32, footer: i32, width: i32, index: usize, count: usize) -> Rect {
+    let count = i32::try_from(count).unwrap_or(1).max(1);
+    let column = width / count;
+    let x = i32::try_from(index).unwrap_or(0) * column;
+    let w = if i32::try_from(index).unwrap_or(0) + 1 == count {
+        width - x
+    } else {
+        column
+    };
+    Rect::new(x, height - footer, w.unsigned_abs(), footer.unsigned_abs())
+}
+
+/// Keep the end of a path or name visible when it does not fit a line. A
+/// budget too narrow for a marker keeps its last visible characters, and the
+/// result never exceeds `columns` characters.
+#[must_use]
+pub fn tail(value: &str, columns: usize) -> String {
+    let count = value.chars().count();
+    if count <= columns {
+        return value.to_owned();
+    }
+    if columns <= 3 {
+        return value.chars().skip(count - columns).collect();
+    }
+    let mut out = String::from("...");
+    out.extend(
+        value
+            .chars()
+            .skip(count.saturating_sub(columns.saturating_sub(3))),
+    );
+    out
 }
 
 /// SDL's safe event sender transports no raw pointers or heap event payloads.
@@ -680,6 +738,49 @@ fn wrap(body: &str, columns: usize) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shared footer controls tile the row exactly and the shared row count
+    /// never places a text line under the footer, at any supported size.
+    #[test]
+    fn shared_control_geometry_never_overlaps_its_own_chrome() {
+        for (height, top, line) in [(200, 40, 12), (272, 40, 12), (480, 56, 24)] {
+            let footer = 28;
+            let rows = text_rows(height, footer, line, top);
+            assert!(rows >= 1);
+            assert!(
+                top + i32::try_from(rows).unwrap_or(0) * line <= height - footer,
+                "{height}: rows reach the footer"
+            );
+            assert!(
+                top + i32::try_from(rows + 1).unwrap_or(0) * line > height - footer,
+                "{height}: a row was dropped"
+            );
+        }
+        assert_eq!(text_rows(272, 28, 0, 40), 1);
+        for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+            for count in 1..=6_usize {
+                let mut previous_end = 0;
+                for index in 0..count {
+                    let rect = button_bounds(height, 28, width, index, count);
+                    assert_eq!(rect.y(), height - 28, "{width}x{height}/{count}");
+                    assert_eq!(rect.height(), 28, "{width}x{height}/{count}");
+                    let x = rect.x();
+                    let w = i32::try_from(rect.width()).unwrap_or(0);
+                    assert!(w >= 1, "{width}x{height}/{count}");
+                    assert!(x >= previous_end, "{width}x{height}/{count}: overlap");
+                    assert!(x + w <= width, "{width}x{height}/{count}: past the edge");
+                    previous_end = x + w;
+                }
+                // The controls cover the row: nothing narrower than one column.
+                assert!(
+                    previous_end > width - i32::try_from(count).unwrap_or(1),
+                    "{width}x{height}/{count} leaves {} empty",
+                    width - previous_end
+                );
+            }
+        }
+    }
+
     fn key(ui: &Ui, keycode: Keycode) -> Result<(), String> {
         ui.sdl.event()?.push_event(Event::KeyDown {
             timestamp: 0,

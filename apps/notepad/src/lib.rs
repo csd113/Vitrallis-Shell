@@ -6,7 +6,7 @@ use vitrallis_native::theme::{ACCENT, MUTED, TEXT};
 use vitrallis_native::{
     browser,
     document::Document,
-    ui::{self, Input, Options, Ui},
+    ui::{self, Input, Options, Ui, tail},
 };
 const BUTTONS: [&str; 6] = ["New", "Open", "Save", "Save as", "Find", "Close"];
 
@@ -224,7 +224,9 @@ impl Editor {
     }
 
     /// Status line: position and size on the left, save or error state on the
-    /// right, so it never displaces a whole editor row.
+    /// right, so it never displaces a whole editor row. Both halves keep one
+    /// cell of clearance, so a wide line/column/size readout can never print
+    /// into the state text beside it.
     fn status(
         &self,
         ui: &mut Ui,
@@ -238,14 +240,14 @@ impl Editor {
             column + 1,
             self.document.text().len(),
         );
+        let state = self.status_text(selection);
         ui.text(
             &status,
             0,
             ui.height - ui.footer_height() - ui.line(),
-            ui.width * 2 / 3,
+            ui.width / 2 - ui.cell(),
             MUTED,
         )?;
-        let state = self.status_text(selection);
         ui.text(
             state,
             ui.width / 2,
@@ -521,25 +523,18 @@ impl Editor {
     }
 }
 
-/// Keep the end of a path visible when it does not fit the header.
-fn tail(value: &str, columns: usize) -> String {
-    let count = value.chars().count();
-    if count <= columns || columns == 0 {
-        return value.to_owned();
-    }
-    let mut out = String::from("...");
-    out.extend(
-        value
-            .chars()
-            .skip(count.saturating_sub(columns.saturating_sub(3))),
-    );
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use sdl2::{event::Event, keyboard::Mod};
+
+    /// SDL initializes once per process, so tests that own a session serialize.
+    fn sdl_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn keys(ui: &Ui, values: &[Keycode]) -> Result<(), String> {
         for &keycode in values {
             ui.sdl.event()?.push_event(Event::KeyDown {
@@ -553,9 +548,73 @@ mod tests {
         }
         Ok(())
     }
+
+    /// The editor grid, the status line and the button row must never occupy
+    /// the same pixels at any supported size.
+    #[test]
+    fn editor_rows_stop_before_the_status_line_and_buttons() -> Result<(), String> {
+        let _guard = sdl_lock();
+        for size in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+            let session = vitrallis_native::ui::Session::new(
+                "Notepad geometry",
+                &Options {
+                    size: Some(size),
+                    ..Options::default()
+                },
+            )?;
+            let creator = session.canvas.texture_creator();
+            let ui = Ui::new(session, &creator)?;
+            let top = ui.header_height() + ui.line();
+            let rows = i32::try_from(Editor::rows(&ui)).unwrap_or(0);
+            let status_y = ui.height - ui.footer_height() - ui.line();
+            assert!(top >= ui.header_height(), "{size:?}");
+            assert!(
+                top + rows * ui.line() <= status_y,
+                "{size:?}: text rows reach the status line"
+            );
+            assert!(
+                status_y + ui.line() <= ui.height - ui.footer_height(),
+                "{size:?}: the status line reaches the buttons"
+            );
+            // The two status halves keep one cell between them.
+            let half = ui.width / 2;
+            assert!(half > ui.cell(), "{size:?}");
+            assert!(half - ui.cell() + ui.cell() <= half, "{size:?}");
+        }
+        Ok(())
+    }
+
+    /// The visible path never exceeds the column budget it was given.
+    #[test]
+    fn trimmed_paths_stay_inside_their_column_budget() {
+        let path = "/home/alex/Very Long Documents/projects/notes.txt";
+        let count = path.chars().count();
+        for columns in 0..40 {
+            let shown = tail(path, columns);
+            assert!(
+                shown.chars().count() <= columns,
+                "columns={columns} shown={shown:?}"
+            );
+            if count <= columns {
+                assert_eq!(shown, path);
+            } else if columns <= 3 {
+                // No room for a marker: the last visible characters stay.
+                let keep: String = path.chars().skip(count - columns).collect();
+                assert_eq!(shown, keep, "columns={columns}");
+            } else {
+                let keep: String = path.chars().skip(count - (columns - 3)).collect();
+                assert_eq!(shown, format!("...{keep}"), "columns={columns}");
+            }
+        }
+        assert_eq!(tail("a.txt", 40), "a.txt");
+        assert_eq!(tail("a.txt", 0), "");
+    }
+
     #[test]
     fn unsaved_actions_default_to_cancel_and_save_before_discard()
     -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = sdl_lock();
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
         let session = vitrallis_native::ui::Session::new(
             "Notepad test",

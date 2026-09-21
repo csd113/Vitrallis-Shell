@@ -21,10 +21,37 @@ primitive animates and neither allocates per frame.
 
 The Shell's existing renderer delegates to those primitives. Settings, wireless,
 storage, updates, App Manager, desktop dialogs and bundled native application
-controls use the same palette. Existing text sizing and geometry are preserved;
-the theme names the 8-pixel cell, 12-pixel text line, spacing and border metrics.
-Body text, secondary labels, disabled text and focus colors are checked for a
-minimum 4.5:1 contrast ratio against the interface surfaces.
+controls use the same palette. Body text, secondary labels, disabled text and
+focus colors are checked for a minimum 4.5:1 contrast ratio against the interface
+surfaces.
+
+## Text layout and overflow
+
+`src/renderer.rs` owns the one text measurement for the Shell. The atlas is a
+fixed 8-pixel cell and the theme names the 12-pixel text line, spacing and border
+metrics, so `advance(scale)` and `fit_columns(width, scale)` are exact
+multiplications with no font queries and no allocation. Every centered label uses
+`text` (glyphs centered inside the content rectangle) and every left-aligned
+label uses `text_left`; both share one drawing path and one overflow policy:
+
+- Text that does not fit its rectangle is shortened to the last whole character
+  that leaves room for a three-cell ellipsis. Nothing is ever cut through a
+  glyph, and the marker is the same everywhere.
+- A rectangle too narrow for the marker keeps its leading characters, which is
+  what the tiny arrow and badge cells need.
+- Rectangles too narrow for a whole cell draw nothing rather than a dot.
+- Measurement stops one character past the rectangle, so a label that cannot fit
+  never scans its whole string.
+- Typographic punctuation the 8-pixel atlas lacks (`’ “ — •`) maps onto the
+  ASCII glyph that stands in for it, so an authored label never shows the
+  unsupported-character fallback. Document and terminal content is untouched.
+
+Content padding scales with the display text scale, while the one-pixel card
+border stays one pixel at every size. A debug assertion in the shared drawing
+path fails any future caller whose rectangle cannot hold the glyph cell it
+centers, which is how text used to cross a row border. Measurement, ellipsis,
+wrapping, chip containment and the App Center details body are covered by
+deterministic unit tests in `src/renderer.rs`.
 
 User wallpaper/color preferences remain available on the home screen. Settings
 uses the clean background so wallpaper cannot obscure its information. External
@@ -78,7 +105,11 @@ Settings, the App Center and the desktop share one presentation vocabulary:
   AVAILABLE, UNAVAILABLE, FAILED), the short description and the current
   operation. The details page leads with the name, state, description and the
   metadata a user needs, and failures are summarised in one line while the full
-  backend error stays in the log. Long operations reuse the shared progress ramp.
+  backend error stays in the log. The details body is laid out inside the space
+  above the pinned action row: the description yields its lines to the fields
+  when a screen is too short for both, an omitted field is marked with the shared
+  ellipsis, and a recorded failure keeps its line. Long operations reuse the
+  shared progress ramp.
 - **Running state** is one filled chip derived from the authoritative process
   state, identical in the main menu, inside folders and in the App Center list.
   Launching and exit notifications appear in the lower-left status area, never as
@@ -104,7 +135,10 @@ VITRALLIS_QA_DIR="$PWD/target/visual-qa" cargo test --lib system_panels_render_a
 ```
 
 The checked pixel hashes are reviewed snapshots, not generated automatically by
-normal tests. The current `macos` block was regenerated for this interface pass.
+normal tests. The current `macos` block was regenerated for the text-geometry
+audit pass, which also added deterministic `home-folder`, `home-error`,
+`app-center-apps-long` and `app-center-details-long` samples (widest plausible
+catalogue content, folder contents and the error dialog) at the same four sizes.
 The `linux` block was removed with the same change, so Linux runs skip the
 comparison until the documented command above is run on the simulator and the
 new screenshots are reviewed; that re-baseline is still pending and must happen

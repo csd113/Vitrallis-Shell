@@ -1,5 +1,30 @@
 # Release validation and assets
 
+## Unreleased
+
+A UI geometry and text-layout audit focused on 480×272 PocketCHIP correctness,
+with the same screens re-checked at 800×480, 1280×720 and other supported sizes.
+Text that was clipped or drawn across a control's border now shortens with a
+visible ellipsis, so long application names, versions, status strings, storage
+values, network names and paths stay inside their own control. Centering, padding,
+row baselines, selection highlights and control spacing now come from one shared
+measurement, wrapping and centering path instead of per-screen arithmetic.
+
+The user-visible fixes: the App Center list no longer draws a row name over its
+border, and its details page keeps every line above the pinned buttons with the
+failure summary always visible; Files, the file pickers and Notepad keep the end
+of long paths visible; the Timezone page's `current` marker scales with the
+display; Notepad's position readout can no longer collide with its status text;
+Files rows center their label in the selection highlight; and the desktop
+Actions/Shortcuts screens and the boot fallback text now scale with the display
+like every other surface.
+
+The audit added deterministic geometry and layout regression tests and
+re-baselined the renderer reference images, expanded with folder, error-dialog and
+long-content samples at the checked sizes. It also removed two per-frame
+text-allocation paths from the App Center and the shortcut editor while making
+these corrections.
+
 ## 0.1.0-beta4.1
 
 Merges the polish run, including shell UI refinements, safe background application
