@@ -471,7 +471,9 @@ fn sizes_and_progress_use_decimal_megabytes() -> Result<(), String> {
 fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
     let mut updater = Updater::default();
     updater.request_relaunch();
-    assert!(!updater.relaunch_with(false, |_| panic!("not installed")));
+    assert!(!updater.relaunch_with(false, |_| {
+        unreachable!("relaunch must be refused before the executable is installed")
+    }));
     updater.state = State::Installed {
         version: Version::new(1, 2, 3),
         durable: true,
@@ -480,9 +482,13 @@ fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
             sha256: [0; 32],
         },
     };
-    assert!(!updater.relaunch_with(false, |_| panic!("not requested")));
+    assert!(!updater.relaunch_with(false, |_| {
+        unreachable!("relaunch must be refused without an explicit request")
+    }));
     updater.request_relaunch();
-    assert!(updater.relaunch_with(true, |_| panic!("operation in progress")));
+    assert!(updater.relaunch_with(true, |_| {
+        unreachable!("relaunch must be refused while an operation is in progress")
+    }));
     assert!(updater.detail().contains("Close running apps"));
     updater.request_relaunch();
     assert!(updater.relaunch_with(false, |target| {
@@ -494,7 +500,9 @@ fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
     }));
     assert_eq!(updater.detail(), "exec failed");
     assert!(matches!(updater.state, State::Installed { .. }));
-    assert!(!updater.relaunch_with(false, |_| panic!("duplicate attempt")));
+    assert!(!updater.relaunch_with(false, |_| {
+        unreachable!("a failed relaunch must not be attempted twice")
+    }));
     updater.request_relaunch();
     assert!(updater.relaunch_with(false, |_| Ok(())));
     assert!(updater.relaunch_error.is_none());

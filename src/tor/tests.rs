@@ -164,7 +164,8 @@ fn required_launch_waits_for_readiness_and_fails_closed_while_preferred_can_cont
             // through poll_launch instead of synchronously. Waiting for Tor is
             // reported as "no child yet" rather than as a completed launch.
             if requirement == Requirement::None {
-                launched(&mut processes).expect("Tor-free app starts")?;
+                let started = launched(&mut processes)?;
+                started.map_err(|error| format!("Tor-free app must start: {error}"))?;
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
                 continue;
             }
@@ -184,11 +185,14 @@ fn required_launch_waits_for_readiness_and_fails_closed_while_preferred_can_cont
                     ..Snapshot::default()
                 };
                 processes.poll_focus()?;
-                launched(&mut processes).expect("ready Tor starts the app")?;
+                let started = launched(&mut processes)?;
+                started.map_err(|error| format!("An app with ready Tor must start: {error}"))?;
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
             } else {
                 result?;
-                launched(&mut processes).expect("connected Tor starts the app")?;
+                let started = launched(&mut processes)?;
+                started
+                    .map_err(|error| format!("An app with connected Tor must start: {error}"))?;
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
             }
         }

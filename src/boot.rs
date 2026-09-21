@@ -348,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn timeline_reaches_the_storyboard_and_holds_without_wrapping() {
+    fn timeline_reaches_the_storyboard_and_holds_without_wrapping() -> Result<(), String> {
         assert_eq!(sample(0).0, None);
         assert_eq!(sample(3).0, Some(0));
         for (frame, stage) in [(11, 1), (15, 2), (19, 3), (27, 4)] {
@@ -370,9 +370,10 @@ mod tests {
             ((960, 544), 2),
             ((1280, 720), 2),
         ] {
-            let rect = destination(size).unwrap();
+            let rect = destination(size)?;
             assert_eq!((rect.width(), rect.height()), (480 * scale, 272 * scale));
         }
+        Ok(())
     }
 
     // Run inside the existing SDL fixture, never a second simultaneous SDL thread.

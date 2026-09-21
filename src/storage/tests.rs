@@ -16,11 +16,10 @@ fn decimal_units_are_bounded_and_precise() {
     }
 }
 #[test]
-fn disk_calculations_reserve_blocks_and_reject_invalid_output() {
+fn disk_calculations_reserve_blocks_and_reject_invalid_output() -> Result<(), String> {
     let disk = disk::parse(
         "Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 1000 800 150 84% /\n",
-    )
-    .unwrap();
+    )?;
     assert_eq!(
         (disk.total, disk.used, disk.available, disk.percent()),
         (1_024_000, 819_200, 153_600, 80)
@@ -30,11 +29,10 @@ fn disk_calculations_reserve_blocks_and_reject_invalid_output() {
     assert!(disk::parse("header\n/dev/root 18446744073709551615 0 0 0% /\n").is_err());
     assert!(disk::parse("missing").is_err());
     assert_eq!(
-        disk::parse("header\n/dev/root 100 99 -1 100% /Volumes/App Data\n")
-            .unwrap()
-            .mount,
+        disk::parse("header\n/dev/root 100 99 -1 100% /Volumes/App Data\n")?.mount,
         "/Volumes/App Data"
     );
+    Ok(())
 }
 #[test]
 fn thresholds_include_exact_limits() {
@@ -91,9 +89,10 @@ fn app(name: &str, bytes: u64, incomplete: bool) -> AppUsage {
     }
 }
 #[test]
-fn missing_optional_locations_are_empty_but_missing_required_ones_are_unknown() {
-    let scratch = Scratch::new().unwrap();
-    let root = scratch.0.canonicalize().unwrap();
+fn missing_optional_locations_are_empty_but_missing_required_ones_are_unknown() -> Result<(), String>
+{
+    let scratch = Scratch::new().map_err(|e| e.to_string())?;
+    let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
     let cancel = AtomicBool::new(false);
     let mut scanner = Scanner::new(&cancel);
     assert_eq!(
@@ -101,22 +100,23 @@ fn missing_optional_locations_are_empty_but_missing_required_ones_are_unknown() 
         Size::default()
     );
     assert!(scanner.measure(&root.join("missing"), false).incomplete);
-    std::fs::write(root.join("file"), "data").unwrap();
+    std::fs::write(root.join("file"), "data").map_err(|e| e.to_string())?;
     assert!(scanner.measure(&root.join("file/child"), false).incomplete);
     assert!(scanner.measure(Path::new("relative"), false).incomplete);
     assert!(scanner.measure(&root.join("../outside"), false).incomplete);
+    Ok(())
 }
 #[cfg(unix)]
 #[test]
-fn symlinks_hardlinks_and_overlapping_roots_are_not_counted_twice() {
+fn symlinks_hardlinks_and_overlapping_roots_are_not_counted_twice() -> Result<(), String> {
     use std::os::unix::fs::{MetadataExt, symlink};
-    let scratch = Scratch::new().unwrap();
-    let root = scratch.0.canonicalize().unwrap();
-    std::fs::create_dir(root.join("nested")).unwrap();
-    std::fs::write(root.join("nested/file"), vec![1; 8192]).unwrap();
-    std::fs::hard_link(root.join("nested/file"), root.join("alias")).unwrap();
-    symlink(&root, root.join("nested/loop")).unwrap();
-    symlink(root.join("missing"), root.join("broken")).unwrap();
+    let scratch = Scratch::new().map_err(|e| e.to_string())?;
+    let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+    std::fs::create_dir(root.join("nested")).map_err(|e| e.to_string())?;
+    std::fs::write(root.join("nested/file"), vec![1; 8192]).map_err(|e| e.to_string())?;
+    std::fs::hard_link(root.join("nested/file"), root.join("alias")).map_err(|e| e.to_string())?;
+    symlink(&root, root.join("nested/loop")).map_err(|e| e.to_string())?;
+    symlink(root.join("missing"), root.join("broken")).map_err(|e| e.to_string())?;
     let cancel = AtomicBool::new(false);
     let mut scanner = Scanner::new(&cancel);
     let nested = scanner.measure(&root.join("nested"), false);
@@ -126,10 +126,11 @@ fn symlinks_hardlinks_and_overlapping_roots_are_not_counted_twice() {
     let mut whole_scanner = Scanner::new(&cancel);
     let whole = whole_scanner.measure(&root, false);
     assert_eq!(nested.bytes + rest.bytes, whole.bytes);
-    let expected: u64 = ["", "nested", "nested/file", "nested/loop", "broken"]
-        .iter()
-        .map(|name| std::fs::symlink_metadata(root.join(name)).unwrap().blocks() * 512)
-        .sum();
+    let mut expected: u64 = 0;
+    for name in ["", "nested", "nested/file", "nested/loop", "broken"] {
+        let metadata = std::fs::symlink_metadata(root.join(name)).map_err(|e| e.to_string())?;
+        expected += metadata.blocks() * 512;
+    }
     assert_eq!(whole.bytes, expected);
     assert!(!whole.incomplete);
     assert!(
@@ -137,20 +138,23 @@ fn symlinks_hardlinks_and_overlapping_roots_are_not_counted_twice() {
             .measure(&root.join("nested/loop/nested"), false)
             .incomplete
     );
+    Ok(())
 }
 #[cfg(unix)]
 #[test]
-fn permission_failure_is_reported_without_panicking() {
+fn permission_failure_is_reported_without_panicking() -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    let scratch = Scratch::new().unwrap();
-    let root = scratch.0.canonicalize().unwrap();
+    let scratch = Scratch::new().map_err(|e| e.to_string())?;
+    let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
     let unreadable = root.join("private");
-    std::fs::create_dir(&unreadable).unwrap();
-    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o0)).unwrap();
+    std::fs::create_dir(&unreadable).map_err(|e| e.to_string())?;
+    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o0))
+        .map_err(|e| e.to_string())?;
     let can_read = std::fs::read_dir(&unreadable).is_ok();
     let cancel = AtomicBool::new(false);
     let result = Scanner::new(&cancel).measure(&root, false);
-    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
     if !can_read {
         assert!(result.incomplete);
         assert!(result.issue.is_some());
@@ -159,18 +163,20 @@ fn permission_failure_is_reported_without_panicking() {
     let mut size = Size::default();
     size.fail(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
     assert!(size.incomplete);
+    Ok(())
 }
 #[test]
-fn cancelled_scans_return_partial_results_and_do_not_descend() {
-    let scratch = Scratch::new().unwrap();
-    let root = scratch.0.canonicalize().unwrap();
+fn cancelled_scans_return_partial_results_and_do_not_descend() -> Result<(), String> {
+    let scratch = Scratch::new().map_err(|e| e.to_string())?;
+    let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
     let cancel = AtomicBool::new(true);
     let result = Scanner::new(&cancel).measure(&root, false);
     assert!(result.incomplete);
     assert_eq!(result.bytes, 0);
+    Ok(())
 }
 #[test]
-fn cache_refresh_and_cancellation_keep_one_worker_and_reject_stale_results() {
+fn cache_refresh_and_cancellation_keep_one_worker_and_reject_stale_results() -> Result<(), String> {
     let revision = crate::app_center::storage_revision();
     let mut storage = Storage {
         completed: Some(Instant::now()),
@@ -194,7 +200,8 @@ fn cache_refresh_and_cancellation_keep_one_worker_and_reject_stale_results() {
     assert!(!storage.wanted);
     storage.close();
     assert!(cancel.load(Ordering::Relaxed));
-    send.send(Update::Report(Ok(Report::default()))).unwrap();
+    send.send(Update::Report(Ok(Report::default())))
+        .map_err(|e| e.to_string())?;
     drop(send);
     storage.poll(false);
     assert!(!storage.busy());
@@ -206,10 +213,11 @@ fn cache_refresh_and_cancellation_keep_one_worker_and_reject_stale_results() {
     storage.revision = revision.wrapping_sub(1);
     storage.enter();
     assert!(storage.wanted);
+    Ok(())
 }
 
 #[test]
-fn slow_worker_poll_is_nonblocking_and_old_generations_are_discarded() {
+fn slow_worker_poll_is_nonblocking_and_old_generations_are_discarded() -> Result<(), String> {
     let (send, updates) = mpsc::sync_channel(2);
     let revision = crate::app_center::storage_revision();
     let cancel = Arc::new(AtomicBool::new(false));
@@ -225,13 +233,19 @@ fn slow_worker_poll_is_nonblocking_and_old_generations_are_discarded() {
     let start = Instant::now();
     assert!(!storage.poll(false));
     assert!(start.elapsed() < Duration::from_millis(100));
-    storage.job.as_mut().unwrap().revision = revision.wrapping_sub(1);
-    send.send(Update::Report(Ok(Report::default()))).unwrap();
+    storage
+        .job
+        .as_mut()
+        .ok_or("the slow worker must stay tracked")?
+        .revision = revision.wrapping_sub(1);
+    send.send(Update::Report(Ok(Report::default())))
+        .map_err(|e| e.to_string())?;
     drop(send);
     storage.poll(false);
     assert!(cancel.load(Ordering::Relaxed));
     assert!(storage.report.is_none());
     assert!(!storage.busy());
+    Ok(())
 }
 #[test]
 fn worker_failure_is_explicit_and_does_not_trigger_a_retry_loop() {
@@ -255,13 +269,20 @@ fn worker_failure_is_explicit_and_does_not_trigger_a_retry_loop() {
     assert!(!storage.poll(true));
 }
 #[test]
-fn directory_disappearance_during_traversal_returns_a_partial_result() {
-    let scratch = Scratch::new().unwrap();
-    let root = scratch.0.canonicalize().unwrap().join("removed");
-    std::fs::create_dir(&root).unwrap();
+fn directory_disappearance_during_traversal_returns_a_partial_result() -> Result<(), String> {
+    let scratch = Scratch::new().map_err(|e| e.to_string())?;
+    let root = scratch
+        .0
+        .canonicalize()
+        .map_err(|e| e.to_string())?
+        .join("removed");
+    std::fs::create_dir(&root).map_err(|e| e.to_string())?;
     let cancel = AtomicBool::new(false);
+    let mut removed = false;
     let issue = Scanner::new(&cancel).walk(&root, false, &mut |path, _| {
-        std::fs::remove_dir(path).unwrap();
+        removed = std::fs::remove_dir(path).is_ok();
     });
+    assert!(removed, "the traversal must visit and remove the directory");
     assert!(issue.is_some());
+    Ok(())
 }

@@ -308,15 +308,17 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn comma_normalization_preserves_escaped_strings_and_rejects_other_invalid_json() {
+    fn comma_normalization_preserves_escaped_strings_and_rejects_other_invalid_json()
+    -> Result<(), Box<dyn std::error::Error>> {
         let value = r#"{"text":"a,] b\",} c", "items":[1,],}"#;
         let normalized = without_trailing_commas(value);
-        let result: Value = serde_json::from_str(&normalized).unwrap();
+        let result: Value = serde_json::from_str(&normalized)?;
         assert_eq!(result["text"], "a,] b\",} c");
         assert_eq!(result["items"][0], 1);
         for text in ["{}", "{bad}", "{\"pages\":false}", "{\"pages\":[,]}"] {
             assert!(parse_catalog(text, &paths()).is_err());
         }
+        Ok(())
     }
     #[test]
     fn device_menu_rejects_non_contract_fields() {

@@ -1,5 +1,6 @@
 //! Native, bounded plain-text editor.
 use sdl2::{keyboard::Keycode, rect::Rect};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use vitrallis_native::theme::{ACCENT, MUTED, TEXT};
 use vitrallis_native::{
@@ -122,15 +123,23 @@ impl Editor {
             .unwrap_or(1)
             .max(1)
     }
-    #[allow(
-        clippy::too_many_lines,
-        reason = "one linear render pass over the editor"
-    )]
     fn render(&mut self, ui: &mut Ui) -> Result<(), String> {
         self.reveal(ui);
         ui.clear();
-        // One-line header: name and path share the row so the editor keeps every
-        // other pixel. The path is trimmed from the left, keeping the file name.
+        self.header(ui)?;
+        let top = ui.header_height() + ui.line();
+        let rows = Self::rows(ui);
+        let columns = Self::columns(ui);
+        let selection = self.document.selection();
+        self.text_grid(ui, top, rows, columns, &selection)?;
+        let (row, column) = self.cursor(ui, top, rows, columns)?;
+        self.status(ui, row, column, &selection)?;
+        ui.buttons(&BUTTONS, self.footer)
+    }
+
+    /// One-line header: name and path share the row so the editor keeps every
+    /// other pixel. The path is trimmed from the left, keeping the file name.
+    fn header(&self, ui: &mut Ui) -> Result<(), String> {
         let path = self
             .document
             .path
@@ -146,11 +155,18 @@ impl Editor {
         ui.fill(
             Rect::new(0, ui.line(), ui.width.unsigned_abs(), 1),
             vitrallis_native::theme::BORDER,
-        )?;
-        let top = ui.header_height() + ui.line();
-        let rows = Self::rows(ui);
-        let columns = Self::columns(ui);
-        let selection = self.document.selection();
+        )
+    }
+
+    /// Draws the visible window of text, highlighting the current selection.
+    fn text_grid(
+        &self,
+        ui: &mut Ui,
+        top: i32,
+        rows: usize,
+        columns: usize,
+        selection: &Range<usize>,
+    ) -> Result<(), String> {
         for row in self.top..(self.top + rows).min(self.document.lines()) {
             let y = top + i32::try_from(row - self.top).unwrap_or(0) * ui.line();
             let line = self.document.line(row);
@@ -170,7 +186,17 @@ impl Editor {
                 ui.glyph(if ch == '\t' { '→' } else { ch }, x, y, TEXT)?;
             }
         }
-        // A filled block cursor is unmistakable in a dense text grid.
+        Ok(())
+    }
+
+    /// Draws the filled block cursor and reports its row and column.
+    fn cursor(
+        &self,
+        ui: &mut Ui,
+        top: i32,
+        rows: usize,
+        columns: usize,
+    ) -> Result<(usize, usize), String> {
         let row = self.document.row();
         let column = self.document.column();
         if row >= self.top
@@ -194,8 +220,18 @@ impl Editor {
                 ui.glyph(ch, x, y, vitrallis_native::theme::BACKGROUND)?;
             }
         }
-        // Status line: position and size on the left, save or error state on the
-        // right, so it never displaces a whole editor row.
+        Ok((row, column))
+    }
+
+    /// Status line: position and size on the left, save or error state on the
+    /// right, so it never displaces a whole editor row.
+    fn status(
+        &self,
+        ui: &mut Ui,
+        row: usize,
+        column: usize,
+        selection: &Range<usize>,
+    ) -> Result<(), String> {
         let status = format!(
             "Ln {}  Col {}   {} B",
             row + 1,
@@ -209,19 +245,9 @@ impl Editor {
             ui.width * 2 / 3,
             MUTED,
         )?;
-        let state: String = if let Some(notice) = self.notice {
-            notice.into()
-        } else if selection.is_empty() {
-            if self.document.dirty {
-                "Unsaved changes *".into()
-            } else {
-                "Saved".into()
-            }
-        } else {
-            "Selection".into()
-        };
+        let state = self.status_text(selection);
         ui.text(
-            &state,
+            state,
             ui.width / 2,
             ui.height - ui.footer_height() - ui.line(),
             ui.width / 2,
@@ -230,8 +256,23 @@ impl Editor {
             } else {
                 ACCENT
             },
-        )?;
-        ui.buttons(&BUTTONS, self.footer)
+        )
+    }
+
+    /// The save/selection state shown on the right of the status line. Notices
+    /// and states are static text, so the per-frame draw allocates nothing.
+    fn status_text(&self, selection: &Range<usize>) -> &'static str {
+        if let Some(notice) = self.notice {
+            return notice;
+        }
+        if !selection.is_empty() {
+            return "Selection";
+        }
+        if self.document.dirty {
+            "Unsaved changes *"
+        } else {
+            "Saved"
+        }
     }
     fn input(&mut self, ui: &mut Ui, input: Input) -> Result<bool, String> {
         if let Some(action) = self.action(ui, &input) {

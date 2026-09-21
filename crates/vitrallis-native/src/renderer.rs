@@ -283,7 +283,7 @@ pub fn initialize(
             let mut canvas = builder.build().map_err(|error| error.to_string())?;
             let info = canvas.info();
             verify(attempt.mode, &info)?;
-            let gl = graphics::current_gl(&mut canvas);
+            let gl = graphics::current_gl(&canvas);
             if attempt.mode == RendererMode::Hardware {
                 reject_software_gl(gl.as_ref())?;
                 if attempt.vsync && gl.is_some() {

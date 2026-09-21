@@ -13,8 +13,16 @@ use sdl2::{
     keyboard::{Keycode, Mod},
 };
 
+/// The PocketCHIP-sized layout every keyboard walk is exercised against. Its
+/// validity is covered by the layout tests, so a failure here is a regression.
+fn layout() -> Layout {
+    Layout::home(480, 272).unwrap_or_else(|error| {
+        unreachable!("the 480x272 PocketCHIP layout is validated by the layout tests: {error}")
+    })
+}
+
 fn key(settings: &mut Settings, keycode: Keycode) -> Option<Request> {
-    let layout = Layout::home(480, 272).unwrap();
+    let layout = layout();
     settings.event(
         &Event::KeyDown {
             timestamp: 0,
@@ -36,13 +44,14 @@ fn move_keys(settings: &mut Settings, keys: &[Keycode]) {
 
 /// Walk the home menu with arrow keys only and confirm every option opens.
 #[test]
-fn every_home_option_is_reachable_and_returns_with_escape() {
+fn every_home_option_is_reachable_and_returns_with_escape() -> Result<(), String> {
     let mut settings = Settings::default();
     settings.show();
     for index in 0..super::HOME_ROWS {
         settings.selected = index;
         move_keys(&mut settings, &[Keycode::Return]);
-        assert_eq!(settings.page, super::home_page(index).expect("option"));
+        let page = super::home_page(index).ok_or_else(|| format!("home option {index}"))?;
+        assert_eq!(settings.page, page);
         // One Escape always returns to the home menu, never out of Settings.
         move_keys(&mut settings, &[Keycode::Escape]);
         assert_eq!(settings.page, Page::Home);
@@ -55,6 +64,7 @@ fn every_home_option_is_reachable_and_returns_with_escape() {
     move_keys(&mut settings, &[Keycode::Escape]);
     move_keys(&mut settings, &[Keycode::Escape]);
     assert!(!settings.open);
+    Ok(())
 }
 
 #[test]

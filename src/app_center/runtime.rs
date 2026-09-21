@@ -384,7 +384,16 @@ mod completion_tests {
             );
             std::fs::remove_file(&marker).map_err(|e| e.to_string())?;
         }
-        let error = run_probe(Path::new("/usr/bin/python3"), "import sys; print('x'*100000); print('pip dependency failed: wheel unavailable',file=sys.stderr); sys.exit(7)", false, &[], Duration::from_secs(10)).expect_err("failed installer cannot succeed");
+        let probe = run_probe(
+            Path::new("/usr/bin/python3"),
+            "import sys; print('x'*100000); print('pip dependency failed: wheel unavailable',file=sys.stderr); sys.exit(7)",
+            false,
+            &[],
+            Duration::from_secs(10),
+        );
+        let error = probe
+            .err()
+            .ok_or("the failing installer probe must not succeed")?;
         assert!(error.contains("wheel unavailable") && error.contains('7'));
         assert!(error.len() < 17500);
         let compiler = "Collecting Pillow\nerror: [Errno 2] No such file or directory: arm-linux-gnueabihf-gcc\nERROR: Failed building wheel for Pillow";

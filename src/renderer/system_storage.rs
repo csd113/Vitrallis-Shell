@@ -342,24 +342,24 @@ pub(in crate::renderer) fn qa(
         used: 3_950_000_000,
         available: 40_000_000,
     }));
-    let apps: Vec<_> = (0..6)
-        .map(|index| {
-            let parts = std::array::from_fn(|part| Size {
-                bytes: (6 - index) * 1_000_000 * (u64::try_from(part).unwrap() + 1),
+    let apps: Vec<_> = (0..6_u64)
+        .zip([
+            "Python Reader",
+            "Rust Paint",
+            "Notes",
+            "Music",
+            "Weather",
+            "Unavailable app",
+        ])
+        .map(|(index, name)| {
+            let parts = [1_u64, 2, 3, 4, 5].map(|factor| Size {
+                bytes: (6 - index) * 1_000_000 * factor,
                 incomplete: index == 5,
                 issue: (index == 5).then(|| "Permission denied".into()),
             });
             AppUsage {
                 id: format!("io.test.app{index}"),
-                name: [
-                    "Python Reader",
-                    "Rust Paint",
-                    "Notes",
-                    "Music",
-                    "Weather",
-                    "Unavailable app",
-                ][usize::try_from(index).unwrap()]
-                .into(),
+                name: name.into(),
                 icon: None,
                 total: aggregate(parts.iter()),
                 parts,

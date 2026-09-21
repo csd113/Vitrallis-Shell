@@ -263,18 +263,23 @@ mod tests {
         assert_eq!(text("c", Mod::LCTRLMOD), None);
     }
     #[test]
-    fn ansi_cursor_colors_clear_and_wrap() {
+    fn ansi_cursor_colors_clear_and_wrap() -> Result<(), String> {
         let mut terminal = Terminal::new(3, 4);
         terminal.process(b"abcdE");
         assert_eq!(terminal.parser.screen().cursor_position(), (1, 1));
         assert_eq!(terminal.parser.screen().contents(), "abcdE");
         terminal.process(b"\x1b[2;3H\x1b[31;44mZ");
-        let cell = terminal.parser.screen().cell(1, 2).expect("in bounds");
+        let cell = terminal
+            .parser
+            .screen()
+            .cell(1, 2)
+            .ok_or("row 1 column 2 must exist in a 3x4 screen")?;
         assert_eq!(cell.contents(), "Z");
         assert_eq!(cell.fgcolor(), vt100::Color::Idx(1));
         assert_eq!(cell.bgcolor(), vt100::Color::Idx(4));
         terminal.process(b"\x1b[2J");
         assert_eq!(terminal.parser.screen().contents(), "");
+        Ok(())
     }
     #[test]
     fn large_output_scrollback_and_escape_strings_are_bounded() {

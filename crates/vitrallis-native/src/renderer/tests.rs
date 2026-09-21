@@ -90,14 +90,17 @@ fn auto_falls_back_after_all_hardware_attempts_and_retains_errors() -> Result<()
 }
 
 #[test]
-fn hardware_required_never_calls_software_and_reports_recovery() {
+fn hardware_required_never_calls_software_and_reports_recovery() -> Result<(), String> {
     let result = select::<()>(RendererMode::Hardware, &drivers(), |attempt| {
         assert_eq!(attempt.mode, RendererMode::Hardware);
         Err("no GPU".into())
     });
-    let error = result.unwrap_err();
+    let error = result
+        .err()
+        .ok_or("a hardware-only selection without a GPU must fail")?;
     assert!(error.contains("no GPU"));
     assert!(error.contains("--renderer software"));
+    Ok(())
 }
 
 #[test]
@@ -140,7 +143,8 @@ fn no_advertised_hardware_falls_back_and_total_failure_preserves_context() -> Re
     let error = select::<()>(RendererMode::Auto, &drivers(), |attempt| {
         Err(format!("{} failed", attempt.mode.as_str()))
     })
-    .unwrap_err();
+    .err()
+    .ok_or("a total renderer failure must be reported")?;
     assert!(error.contains("software failed"));
     assert!(error.contains("hardware failed"));
     assert!(select::<()>(RendererMode::Auto, &[], |_| unreachable!()).is_err());
@@ -197,7 +201,10 @@ fn software_mesa_rejects_hardware_and_auto_keeps_reason() -> Result<(), String> 
             Ok(((), info("software", SOFTWARE)))
         });
         if requested == RendererMode::Hardware {
-            assert!(result.unwrap_err().contains("llvmpipe"));
+            let error = result
+                .err()
+                .ok_or("hardware-only selection must reject llvmpipe")?;
+            assert!(error.contains("llvmpipe"));
         } else {
             let ((), actual, error) = result?;
             assert_eq!(actual.name, "software");

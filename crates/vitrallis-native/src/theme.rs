@@ -249,9 +249,18 @@ fn slider_opaque(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    fn pixel(pixels: &[u8], width: i32, x: i32, y: i32) -> [u8; 3] {
-        let offset = usize::try_from((y * width + x) * 3).unwrap();
-        [pixels[offset], pixels[offset + 1], pixels[offset + 2]]
+    /// Reads one RGB24 pixel, reporting the coordinates instead of panicking when
+    /// the sample cannot be addressed in the captured buffer.
+    fn pixel(pixels: &[u8], width: i32, x: i32, y: i32) -> Result<[u8; 3], String> {
+        let offset = usize::try_from((y * width + x) * 3)
+            .map_err(|_| format!("pixel {x},{y} cannot be negative in a {width}-wide buffer"))?;
+        let rgb = pixels
+            .get(offset..offset + 3)
+            .ok_or_else(|| format!("pixel {x},{y} is outside the {width}-wide buffer"))?;
+        let [red, green, blue] = rgb
+            .try_into()
+            .map_err(|_| format!("pixel {x},{y} is not exactly three channels"))?;
+        Ok([red, green, blue])
     }
     pub fn primitive_pixels(canvas: &mut Canvas<Window>) -> Result<(), String> {
         use sdl2::{pixels::PixelFormatEnum, render::BlendMode};
@@ -270,7 +279,7 @@ pub(crate) mod tests {
                 let track = [TRACK.r, TRACK.g, TRACK.b];
                 for y in 0..24 {
                     for x in 0..40 {
-                        let actual = pixel(&pixels, 40, x, y);
+                        let actual = pixel(&pixels, 40, x, y)?;
                         if !bounds.contains_point((x, y)) {
                             assert_eq!(actual, [BACKGROUND.r, BACKGROUND.g, BACKGROUND.b]);
                             continue;
@@ -315,7 +324,7 @@ pub(crate) mod tests {
                 for x in 0..40 {
                     if !bounds.contains_point((x, y)) {
                         assert_eq!(
-                            pixel(&pixels, 40, x, y),
+                            pixel(&pixels, 40, x, y)?,
                             [BACKGROUND.r, BACKGROUND.g, BACKGROUND.b]
                         );
                         continue;
@@ -325,7 +334,7 @@ pub(crate) mod tests {
                         || x == bounds.right() - 1
                         || y == bounds.bottom() - 1;
                     let expected = if border { edge } else { surface };
-                    assert_eq!(pixel(&pixels, 40, x, y), expected, "pixel {x},{y}");
+                    assert_eq!(pixel(&pixels, 40, x, y)?, expected, "pixel {x},{y}");
                 }
             }
         }
@@ -344,7 +353,7 @@ pub(crate) mod tests {
         progress(canvas, track, track.width(), false)?;
         let pixels = canvas.read_pixels(Rect::new(0, 0, 306, 20), PixelFormatEnum::RGB24)?;
         for x in track.x()..track.right() {
-            let value = pixel(&pixels, 306, x, track.y() + 1);
+            let value = pixel(&pixels, 306, x, track.y() + 1)?;
             if let Some(previous) = previous {
                 for channel in 0..3 {
                     let delta = i32::from(value[channel]) - i32::from(previous[channel]);
@@ -365,14 +374,14 @@ pub(crate) mod tests {
         for (index, expected) in sampled.iter().enumerate().take(150) {
             let x = track.x() + i32::try_from(index).unwrap_or(0);
             assert_eq!(
-                pixel(&partial, 306, x, track.y() + 1),
+                pixel(&partial, 306, x, track.y() + 1)?,
                 *expected,
                 "revealed ramp moved at {x}"
             );
         }
         for x in track.x() + 150..track.right() {
             assert_eq!(
-                pixel(&partial, 306, x, track.y() + 1),
+                pixel(&partial, 306, x, track.y() + 1)?,
                 [TRACK.r, TRACK.g, TRACK.b]
             );
         }
@@ -394,14 +403,14 @@ pub(crate) mod tests {
                 // Unavailable or unfilled track stays the inactive colour.
                 if fill == 0 {
                     assert_eq!(
-                        pixel(&pixels, 210, track.right() - 1, track.y() + 2),
+                        pixel(&pixels, 210, track.right() - 1, track.y() + 2)?,
                         [TRACK.r, TRACK.g, TRACK.b]
                     );
                 } else {
-                    let active = pixel(&pixels, 210, track.x(), track.y() + 2);
+                    let active = pixel(&pixels, 210, track.x(), track.y() + 2)?;
                     assert_ne!(active, [TRACK.r, TRACK.g, TRACK.b], "active track hidden");
                 }
-                let thumb = pixel(&pixels, 210, track.x() + fill - 1, track.y() + 2);
+                let thumb = pixel(&pixels, 210, track.x() + fill - 1, track.y() + 2)?;
                 let expected = if focused {
                     [ACCENT.r, ACCENT.g, ACCENT.b]
                 } else {
@@ -416,7 +425,7 @@ pub(crate) mod tests {
         let pixels = canvas.read_pixels(Rect::new(0, 0, 210, 20), PixelFormatEnum::RGB24)?;
         for x in track.x()..track.right() {
             assert_eq!(
-                pixel(&pixels, 210, x, track.y() + 2),
+                pixel(&pixels, 210, x, track.y() + 2)?,
                 [TRACK.r, TRACK.g, TRACK.b]
             );
         }

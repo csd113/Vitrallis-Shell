@@ -356,12 +356,14 @@ fn apply(io: &impl Hardware, control: Control) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
     #[test]
     fn kernel_battery_uses_sysfs_and_never_falls_back_to_i2c() -> Result<(), String> {
         struct Kernel {
             capacity: &'static str,
             present: &'static str,
             status: &'static str,
+            unexpected: RefCell<Vec<String>>,
         }
         impl Hardware for Kernel {
             fn kernel_battery(&self) -> bool {
@@ -378,17 +380,24 @@ mod tests {
                 };
                 Ok(value.into())
             }
-            fn write(&self, _: &str, _: &str) -> Result<(), String> {
-                panic!("battery reads must not write")
+            fn write(&self, path: &str, value: &str) -> Result<(), String> {
+                self.unexpected
+                    .borrow_mut()
+                    .push(format!("write {path}={value}"));
+                Err("the kernel battery is read-only".into())
             }
-            fn command(&self, _: &str, _: &[&str]) -> Result<String, String> {
-                panic!("kernel battery must never use forced I2C")
+            fn command(&self, name: &str, args: &[&str]) -> Result<String, String> {
+                self.unexpected
+                    .borrow_mut()
+                    .push(format!("command {name} {args:?}"));
+                Err("the kernel battery must never use forced I2C".into())
             }
         }
         let mut io = Kernel {
             capacity: "95\n",
             present: "1",
             status: "Charging\n",
+            unexpected: RefCell::default(),
         };
         assert_eq!(
             battery_status(&io),
@@ -403,9 +412,13 @@ mod tests {
         assert_eq!(battery_status(&io).1, None);
         io.status = "Full";
         assert_eq!(battery_status(&io).1, Some(false));
+        assert!(
+            io.unexpected.borrow().is_empty(),
+            "battery status must not write or shell out: {:?}",
+            io.unexpected.borrow()
+        );
         Ok(())
     }
-    use std::cell::RefCell;
     struct Fake {
         current: &'static str,
         max: &'static str,

@@ -42,21 +42,20 @@ fn software_renderer(renderer: &str) -> bool {
 
 /// Read only the GL context used by this canvas. Readback activates SDL's backend
 /// and drains its queue before the read-only GL query. No GL state is changed.
-pub(super) fn current_gl(canvas: &mut Canvas<Window>) -> Option<GlInfo> {
+pub(super) fn current_gl(canvas: &Canvas<Window>) -> Option<GlInfo> {
     if !matches!(canvas.info().name, "opengl" | "opengles" | "opengles2") {
         return None;
     }
     canvas
         .read_pixels(Rect::new(0, 0, 1, 1), PixelFormatEnum::RGBA32)
         .ok()?;
-    // SAFETY: SDL video and this canvas live on the calling thread. These borrowed
-    // handles are only compared, never adopted or freed. A foreign context is rejected.
-    unsafe {
-        if sdl2::sys::SDL_GL_GetCurrentContext().is_null()
-            || sdl2::sys::SDL_GL_GetCurrentWindow() != canvas.window().raw()
-        {
-            return None;
-        }
+    // SAFETY: SDL video and this canvas live on the calling thread. The current
+    // context is only compared, never adopted or freed; a foreign context is rejected.
+    let current = unsafe { sdl2::sys::SDL_GL_GetCurrentContext() };
+    // SAFETY: the same thread-owned SDL handles are compared for identity only.
+    if current.is_null() || unsafe { sdl2::sys::SDL_GL_GetCurrentWindow() } != canvas.window().raw()
+    {
+        return None;
     }
     let address = canvas
         .window()

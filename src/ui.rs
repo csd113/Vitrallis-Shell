@@ -5,12 +5,13 @@ use crate::{
     layout::Layout,
     platform::Platform,
     process::{self, ProcessSet, Processes},
-    renderer::{Screen, artwork, render, screenshot},
+    renderer::{Artwork, Screen, artwork, render, screenshot},
 };
 use sdl2::{
     event::{Event, WindowEvent},
     keyboard::Keycode,
-    render::Texture,
+    render::{Texture, TextureCreator},
+    video::WindowContext,
 };
 use std::time::{Duration, Instant};
 
@@ -126,9 +127,41 @@ fn window_layout(canvas: &Screen) -> Result<Layout, String> {
     )
 }
 
-// Keep input suppression, frame presentation and child-exit ordering together;
-// their operation-specific work lives in the helpers below.
-#[allow(clippy::too_many_lines)]
+/// Whether the launcher keeps running after one event-loop iteration.
+#[derive(PartialEq, Eq)]
+enum Flow {
+    Continue,
+    Exit,
+}
+
+/// Long-lived launcher loop state. Frame presentation, input suppression and
+/// child-exit ordering stay in [`Heartbeat::step`]; per-operation work lives in
+/// the helper functions below.
+struct Heartbeat<'c, 's, 't, P: Platform> {
+    sdl: &'c sdl2::Sdl,
+    canvas: &'c mut Screen<'s>,
+    layout: &'c mut Layout,
+    state: &'c mut Launcher,
+    creator: &'t TextureCreator<WindowContext>,
+    textures: &'c mut Artwork<'t>,
+    worker: &'c mut Option<crate::platform::system::Worker>,
+    events: &'c mut sdl2::EventPump,
+    keyboard: &'c mut vitrallis_native::keyboard::Keyboard,
+    child: &'c mut ProcessSet<crate::process::NativeProcess>,
+    broker: &'c vitrallis_native::ipc::Broker,
+    pointer: &'c mut PointerInput,
+    desktop_input: &'c mut crate::input::DesktopInput,
+    platform: &'c P,
+    config: &'c Config,
+    smoke: bool,
+    accept_after: Instant,
+    dirty: bool,
+    last_present: Instant,
+    last_wait_error: Option<String>,
+    next_poll: Instant,
+    deadline: Instant,
+}
+
 fn event_loop(
     sdl: &sdl2::Sdl,
     canvas: &mut Screen,
@@ -151,133 +184,214 @@ fn event_loop(
     let broker = crate::native::broker(&mut state)?;
     let mut pointer = PointerInput::default();
     let mut desktop_input = crate::input::DesktopInput::default();
-    let mut accept_after = Instant::now();
-    let mut dirty = false;
-    let mut last_present = Instant::now();
-    let mut last_wait_error = None;
-    let mut next_poll = Instant::now();
-    let deadline = Instant::now() + Duration::from_secs(10);
     if smoke {
         inject_activation(sdl, canvas)?;
     }
     present_initial(canvas, layout, &state, &textures)?;
+    let mut heartbeat = Heartbeat {
+        sdl,
+        canvas,
+        layout: &mut current_layout,
+        state: &mut state,
+        creator: &creator,
+        textures: &mut textures,
+        worker: &mut worker,
+        events: &mut events,
+        keyboard: &mut keyboard,
+        child: &mut child,
+        broker: &broker,
+        pointer: &mut pointer,
+        desktop_input: &mut desktop_input,
+        platform,
+        config,
+        smoke,
+        accept_after: Instant::now(),
+        dirty: false,
+        last_present: Instant::now(),
+        last_wait_error: None,
+        next_poll: Instant::now(),
+        deadline: Instant::now() + Duration::from_secs(10),
+    };
     loop {
-        if std::mem::take(&mut state.view_changed) {
-            textures.refresh(&creator, &state);
-            dirty = true;
+        match heartbeat.step()? {
+            Flow::Continue => {}
+            Flow::Exit => return Ok(()),
         }
-        let layout = &current_layout;
-        dirty |= refresh_system(&mut worker, &mut state.settings);
-        if refresh_app_center(sdl, config, &mut state, &mut dirty)? {
-            textures.refresh(&creator, &state);
-            dirty = true;
+    }
+}
+
+impl<P: Platform> Heartbeat<'_, '_, '_, P> {
+    /// One iteration: refresh derived state, present when the frame is due,
+    /// consume one event, then reap finished children.
+    fn step(&mut self) -> Result<Flow, String> {
+        if std::mem::take(&mut self.state.view_changed) {
+            self.textures.refresh(self.creator, self.state);
+            self.dirty = true;
         }
-        dirty |= refresh_shell(&mut state, &mut child);
-        dirty |= refresh_launch(&mut state, &mut child);
-        dirty |= launch_from_center(canvas, layout, &mut state, &textures, &mut child)?;
-        dirty |= open_native(&broker, canvas, layout, &mut state, &textures, &mut child)?;
+        self.refresh_derived()?;
         // Coalesce queued input before presenting. Rendering every key/text pair
         // makes rapid typing accumulate behind VSync on slow software backends.
-        let queued = events.poll_event();
-        if dirty && (queued.is_none() || last_present.elapsed() >= Duration::from_millis(16)) {
-            dirty = present_frame(canvas, layout, &mut state, &textures, &mut worker)?;
-            last_present = Instant::now();
+        let queued = self.events.poll_event();
+        if self.dirty
+            && (queued.is_none() || self.last_present.elapsed() >= Duration::from_millis(16))
+        {
+            self.dirty = present_frame(
+                self.canvas,
+                self.layout,
+                self.state,
+                self.textures,
+                self.worker,
+            )?;
+            self.last_present = Instant::now();
         }
-        let event = queued.or_else(|| wait_event(&mut events, state.phase, next_poll, dirty));
-        if let Some(mut event) = event {
-            keyboard.event(&mut event);
-            if closing(&event) && !state.app_center.busy {
-                return Ok(());
+        let event = queued
+            .or_else(|| wait_event(self.events, self.state.phase, self.next_poll, self.dirty));
+        if let Some(event) = event
+            && self.input(event)? == Flow::Exit
+        {
+            return Ok(Flow::Exit);
+        }
+        if self.reap_children()? == Flow::Exit {
+            return Ok(Flow::Exit);
+        }
+        if self.smoke && Instant::now() >= self.deadline {
+            return Err("smoke test timed out".into());
+        }
+        Ok(Flow::Continue)
+    }
+
+    /// Re-derives everything the catalogue, workers and shell state changed.
+    fn refresh_derived(&mut self) -> Result<(), String> {
+        self.dirty |= refresh_system(self.worker, &mut self.state.settings);
+        if refresh_app_center(self.sdl, self.config, self.state, &mut self.dirty)? {
+            self.textures.refresh(self.creator, self.state);
+            self.dirty = true;
+        }
+        self.dirty |= refresh_shell(self.state, self.child);
+        self.dirty |= refresh_launch(self.state, self.child);
+        self.dirty |= launch_from_center(
+            self.canvas,
+            self.layout,
+            self.state,
+            self.textures,
+            self.child,
+        )?;
+        self.dirty |= open_native(
+            self.broker,
+            self.canvas,
+            self.layout,
+            self.state,
+            self.textures,
+            self.child,
+        )?;
+        Ok(())
+    }
+
+    /// Applies one SDL event. Input suppression and the shared
+    /// pointer/keyboard/touch path stay in one place so a press can never be
+    /// delivered twice.
+    fn input(&mut self, mut event: Event) -> Result<Flow, String> {
+        self.keyboard.event(&mut event);
+        if closing(&event) && !self.state.app_center.busy {
+            return Ok(Flow::Exit);
+        }
+        if matches!(event, Event::RenderDeviceReset { .. }) {
+            self.canvas.reset()?;
+            self.textures.reset(self.creator, self.state);
+            self.dirty = true;
+        }
+        if matches!(
+            event,
+            Event::Window {
+                win_event: WindowEvent::SizeChanged(..) | WindowEvent::Resized(..),
+                ..
             }
-            if matches!(event, Event::RenderDeviceReset { .. }) {
-                canvas.reset()?;
-                textures.reset(&creator, &state);
-                dirty = true;
+        ) {
+            let (width, height) = self.canvas.window().size();
+            if width >= 320 && height >= 200 {
+                *self.layout = Layout::home(
+                    u16::try_from(width).map_err(|_| "window width")?,
+                    u16::try_from(height).map_err(|_| "window height")?,
+                )?;
+                self.pointer.clear();
+                self.desktop_input.clear();
+                self.state.settings.clear_pointer();
+                self.state.app_center.lost_focus();
             }
-            if matches!(
-                event,
-                Event::Window {
-                    win_event: WindowEvent::SizeChanged(..) | WindowEvent::Resized(..),
-                    ..
-                }
-            ) {
-                let (width, height) = canvas.window().size();
-                if width >= 320 && height >= 200 {
-                    current_layout = Layout::home(
-                        u16::try_from(width).map_err(|_| "window width")?,
-                        u16::try_from(height).map_err(|_| "window height")?,
-                    )?;
-                    pointer.clear();
-                    desktop_input.clear();
-                    state.settings.clear_pointer();
-                    state.app_center.lost_focus();
-                }
+        }
+        self.dirty |= exposed(&event);
+        if matches!(
+            event,
+            Event::Window {
+                win_event: WindowEvent::FocusLost,
+                ..
             }
-            let layout = &current_layout;
-            dirty |= exposed(&event);
-            if matches!(
-                event,
-                Event::Window {
-                    win_event: WindowEvent::FocusLost,
-                    ..
+        ) {
+            self.child.stop_focus_retry();
+        }
+        self.dirty |= window_focus(&event, self.state, self.pointer, &mut self.accept_after);
+        if Instant::now() >= self.accept_after {
+            let (consumed, changed) =
+                desktop_event(&event, self.layout, self.state, self.desktop_input);
+            if consumed {
+                self.pointer.clear();
+                if changed {
+                    self.textures.refresh(self.creator, self.state);
                 }
-            ) {
-                child.stop_focus_retry();
-            }
-            dirty |= window_focus(&event, &mut state, &mut pointer, &mut accept_after);
-            if Instant::now() >= accept_after {
-                let (consumed, changed) =
-                    desktop_event(&event, layout, &mut state, &mut desktop_input);
-                if consumed {
-                    pointer.clear();
-                    if changed {
-                        textures.refresh(&creator, &state);
-                    }
-                    dirty |= panel_input(&event);
-                } else {
-                    dirty |= terminate_selected(&event, &mut state, &mut child);
-                    let (action, system_changed) =
-                        translate_action(&event, layout, &mut state, &mut pointer, &mut worker);
-                    dirty |= system_changed;
-                    dirty |=
-                        handle_action(action, canvas, layout, &mut state, &textures, &mut child)?;
-                    dirty |= open_requested(&mut state, &mut child);
-                }
+                self.dirty |= panel_input(&event);
             } else {
-                pointer.clear();
-                desktop_input.clear();
+                self.dirty |= terminate_selected(&event, self.state, self.child);
+                let (action, system_changed) =
+                    translate_action(&event, self.layout, self.state, self.pointer, self.worker);
+                self.dirty |= system_changed;
+                self.dirty |= handle_action(
+                    action,
+                    self.canvas,
+                    self.layout,
+                    self.state,
+                    self.textures,
+                    self.child,
+                )?;
+                self.dirty |= open_requested(self.state, self.child);
             }
+        } else {
+            self.pointer.clear();
+            self.desktop_input.clear();
         }
-        let layout = &current_layout;
-        let result = poll_children(&mut child, &mut next_poll);
+        Ok(Flow::Continue)
+    }
+
+    /// Reaps finished children and mirrors each exit into the shell state.
+    fn reap_children(&mut self) -> Result<Flow, String> {
+        let result = poll_children(self.child, &mut self.next_poll);
         match result {
             Ok(Some(status)) => {
                 eprintln!("level=info event=app_exited status={status:?}");
-                state.sync_states(&child);
-                refresh_utility(&mut state, &mut worker, child.exited_active);
-                let raise = app_exited(&mut state, status, child.exited_active);
-                let catalog_changed = refresh_exit_catalog(sdl, config, &mut state, &mut pointer);
+                self.state.sync_states(self.child);
+                refresh_utility(self.state, self.worker, self.child.exited_active);
+                let raise = app_exited(self.state, status, self.child.exited_active);
+                let catalog_changed =
+                    refresh_exit_catalog(self.sdl, self.config, self.state, self.pointer);
                 if catalog_changed {
-                    textures.refresh(&creator, &state);
+                    self.textures.refresh(self.creator, self.state);
                 }
-                last_wait_error = None;
-                if child.exited_active {
-                    accept_after = Instant::now();
+                self.last_wait_error = None;
+                if self.child.exited_active {
+                    self.accept_after = Instant::now();
                 }
-                raise_after_exit(canvas, platform, raise);
-                dirty = true;
-                if smoke {
-                    return finish_smoke(canvas, layout, &state, &textures, status);
+                raise_after_exit(self.canvas, self.platform, raise);
+                self.dirty = true;
+                if self.smoke {
+                    finish_smoke(self.canvas, self.layout, self.state, self.textures, status)?;
+                    return Ok(Flow::Exit);
                 }
             }
             Ok(None) => {}
             Err(error) => {
-                dirty |= report_wait_error(error, &mut last_wait_error, &mut state);
+                self.dirty |= report_wait_error(error, &mut self.last_wait_error, self.state);
             }
         }
-        if smoke && Instant::now() >= deadline {
-            return Err("smoke test timed out".into());
-        }
+        Ok(Flow::Continue)
     }
 }
 

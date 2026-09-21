@@ -649,12 +649,12 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn home_menu_pages_are_all_reachable_and_back_returns_one_level() {
+    fn home_menu_pages_are_all_reachable_and_back_returns_one_level() -> Result<(), String> {
         for index in 0..HOME_ROWS {
             let mut settings = Settings::default();
             settings.show();
             assert_eq!(settings.input(Action::SelectAndActivate(index)), None);
-            let page = home_page(index).expect("home option");
+            let page = home_page(index).ok_or_else(|| format!("home option {index}"))?;
             assert_eq!(settings.page, page, "home option {index}");
             settings.input(Action::Back);
             assert_eq!(settings.page, parent(page));
@@ -668,9 +668,10 @@ mod tests {
         settings.show();
         settings.input(Action::Back);
         assert!(!settings.open);
+        Ok(())
     }
     #[test]
-    fn grid_navigation_stays_inside_the_home_menu() {
+    fn grid_navigation_stays_inside_the_home_menu() -> Result<(), String> {
         assert_eq!(grid_move(0, Direction::Left, HOME_ROWS, HOME_COLUMNS), 0);
         assert_eq!(grid_move(0, Direction::Up, HOME_ROWS, HOME_COLUMNS), 0);
         assert_eq!(grid_move(0, Direction::Right, HOME_ROWS, HOME_COLUMNS), 1);
@@ -679,11 +680,12 @@ mod tests {
         assert_eq!(grid_move(7, Direction::Down, HOME_ROWS, HOME_COLUMNS), 7);
         assert_eq!(grid_move(3, Direction::Up, HOME_ROWS, HOME_COLUMNS), 1);
         for index in 0..HOME_ROWS {
-            let page = home_page(index).expect("home option");
+            let page = home_page(index).ok_or_else(|| format!("home option {index}"))?;
             assert_ne!(page, Page::Home);
             assert_eq!(parent(page), Page::Home);
         }
         assert!(home_page(HOME_ROWS).is_none());
+        Ok(())
     }
     #[test]
     fn clock_format_toggles_and_persists_through_the_policy() {

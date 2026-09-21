@@ -180,7 +180,7 @@ pub fn text(
 }
 
 mod artwork;
-pub use artwork::artwork;
+pub use artwork::{Artwork, artwork};
 
 pub fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
     #[cfg(test)]
@@ -916,7 +916,6 @@ mod system_tests {
     }
 
     #[test]
-    #[allow(clippy::too_many_lines, reason = "one QA sweep over every size")]
     fn system_panels_render_at_device_and_scaled_sizes() -> Result<(), String> {
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
         let sdl = sdl2::init()?;
@@ -924,107 +923,134 @@ mod system_tests {
         let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
         let qa = std::env::var_os("VITRALLIS_QA_DIR").map(std::path::PathBuf::from);
         let output = qa.as_ref().unwrap_or(&scratch.0);
-        for (w, h) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
-            let window = video
-                .window("system QA", w, h)
-                .hidden()
-                .build()
-                .map_err(|e| e.to_string())?;
-            let canvas = window
-                .into_canvas()
-                .software()
-                .build()
-                .map_err(|e| e.to_string())?;
-            let layout = Layout::home(
-                u16::try_from(w).map_err(|e| e.to_string())?,
-                u16::try_from(h).map_err(|e| e.to_string())?,
-            )?;
-            let mut state = Launcher::new(Vec::new(), 3, 6)?;
-            state.settings.status = Status {
-                battery: Some(Percent::new(73)?),
-                charging: Some(true),
-                external_power: Some(true),
-                wifi: Some(Wifi::Connected),
-                brightness: Some(Percent::new(44)?),
-                volume: Some(Percent::new(90)?),
-                clock: Some("12:34".into()),
-                ip: Some(std::net::Ipv4Addr::new(10, 0, 0, 137)),
-                screen_timeout: Some(600),
-                timezone: Some("America/Vancouver".into()),
-                timezones: vec!["America/Vancouver".into(), "UTC".into()],
-                calibration: true,
-                power_controls: true,
-                ..Status::default()
-            };
-            let creator = canvas.texture_creator();
-            let mut canvas = Screen::new(canvas, &creator)?;
-            home_samples(&mut canvas, &layout, output)?;
-            if w == 480 {
-                cache_tests::lifecycle(&creator, &mut canvas)?;
-                crate::boot::lifecycle(&sdl, &mut canvas, &layout)?;
-            }
-            crate::boot::qa(&mut canvas, &layout, output)?;
-            power_samples(&mut canvas, &layout, &mut state, output)?;
-            state.settings.system_state = crate::settings::SystemState::Ready;
-            state.settings.network_available = true;
-            state.settings.input(Action::System);
-            let creator = canvas.texture_creator();
-            let textures = artwork(&creator, &state);
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("system-{w}x{h}.bmp")))?;
-            state.settings.page(crate::settings::Page::Device);
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("device-{w}x{h}.bmp")))?;
-            preferences_sample(&mut canvas, &layout, &mut state, &textures, output)?;
-            state.settings.page(crate::settings::Page::DateTime);
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("datetime-{w}x{h}.bmp")))?;
-            state.settings.page(crate::settings::Page::Wireless);
-            state.settings.status.wifi_enabled = Some(true);
-            state.settings.status.bluetooth = Some(false);
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("wireless-{w}x{h}.bmp")))?;
-            tor_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
-            state.settings.page(crate::settings::Page::Updates);
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("updates-{w}x{h}.bmp")))?;
-            update_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
-            state.settings.page(crate::settings::Page::About);
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("about-{w}x{h}.bmp")))?;
-            state.settings.page(crate::settings::Page::Timezones);
-            render(&mut canvas, &layout, &state, &textures)?;
-            screenshot(&canvas, &output.join(format!("zones-{w}x{h}.bmp")))?;
-            footer_focus_samples(&mut canvas, &layout, &mut state, &textures, output)?;
-            // The guarded power confirmation is reachable from Device.
-            state.settings.page(crate::settings::Page::Device);
-            state.settings.selected = 3;
-            state.settings.input(Action::Activate);
-            render(&mut canvas, &layout, &state, &[])?;
-            screenshot(&canvas, &output.join(format!("confirm-{w}x{h}.bmp")))?;
-            assert_eq!(state.settings.selected, 0);
-            state.settings.cancel();
-            state.settings.status = Status::default();
-            state.settings.system_state = crate::settings::SystemState::Unavailable;
-            state.settings.input(Action::System);
-            render(&mut canvas, &layout, &state, &[])?;
-            screenshot(&canvas, &output.join(format!("unavailable-{w}x{h}.bmp")))?;
-            state.settings.cancel();
-            // Launch feedback is a status line, not a modal loading screen.
-            state.opening = Some("Bitcoin CAD".into());
-            state.phase = crate::launcher::Phase::Launching;
-            state.status = "Bitcoin CAD is launching...".into();
-            state.status_notice = true;
-            render(&mut canvas, &layout, &state, &[])?;
-            screenshot(&canvas, &output.join(format!("launching-{w}x{h}.bmp")))?;
-            state.opening = None;
-            state.phase = crate::launcher::Phase::Ready;
-            app_center::qa(&mut canvas, &layout, output)?;
-            shortcuts::qa(&mut canvas, &layout, output)?;
-            state.settings.show();
-            system::storage_qa(&mut canvas, &layout, &mut state, &[], output)?;
+        for size in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+            system_panel_samples(&sdl, &video, output, size)?;
         }
         verify_references(output)
+    }
+
+    /// One QA sweep over the system panels at a single window size.
+    fn system_panel_samples(
+        sdl: &sdl2::Sdl,
+        video: &sdl2::VideoSubsystem,
+        output: &std::path::Path,
+        (w, h): (u32, u32),
+    ) -> Result<(), String> {
+        let window = video
+            .window("system QA", w, h)
+            .hidden()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let canvas = window
+            .into_canvas()
+            .software()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let layout = Layout::home(
+            u16::try_from(w).map_err(|e| e.to_string())?,
+            u16::try_from(h).map_err(|e| e.to_string())?,
+        )?;
+        let mut state = Launcher::new(Vec::new(), 3, 6)?;
+        state.settings.status = Status {
+            battery: Some(Percent::new(73)?),
+            charging: Some(true),
+            external_power: Some(true),
+            wifi: Some(Wifi::Connected),
+            brightness: Some(Percent::new(44)?),
+            volume: Some(Percent::new(90)?),
+            clock: Some("12:34".into()),
+            ip: Some(std::net::Ipv4Addr::new(10, 0, 0, 137)),
+            screen_timeout: Some(600),
+            timezone: Some("America/Vancouver".into()),
+            timezones: vec!["America/Vancouver".into(), "UTC".into()],
+            calibration: true,
+            power_controls: true,
+            ..Status::default()
+        };
+        let creator = canvas.texture_creator();
+        let mut canvas = Screen::new(canvas, &creator)?;
+        home_samples(&mut canvas, &layout, output)?;
+        if w == 480 {
+            cache_tests::lifecycle(&creator, &mut canvas)?;
+            crate::boot::lifecycle(sdl, &mut canvas, &layout)?;
+        }
+        crate::boot::qa(&mut canvas, &layout, output)?;
+        power_samples(&mut canvas, &layout, &mut state, output)?;
+        state.settings.system_state = crate::settings::SystemState::Ready;
+        state.settings.network_available = true;
+        state.settings.input(Action::System);
+        let creator = canvas.texture_creator();
+        let textures = artwork(&creator, &state);
+        capture(&mut canvas, &layout, &state, &textures, output, "system")?;
+        state.settings.page(crate::settings::Page::Device);
+        capture(&mut canvas, &layout, &state, &textures, output, "device")?;
+        preferences_sample(&mut canvas, &layout, &mut state, &textures, output)?;
+        state.settings.page(crate::settings::Page::DateTime);
+        capture(&mut canvas, &layout, &state, &textures, output, "datetime")?;
+        state.settings.page(crate::settings::Page::Wireless);
+        state.settings.status.wifi_enabled = Some(true);
+        state.settings.status.bluetooth = Some(false);
+        capture(&mut canvas, &layout, &state, &textures, output, "wireless")?;
+        tor_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
+        state.settings.page(crate::settings::Page::Updates);
+        capture(&mut canvas, &layout, &state, &textures, output, "updates")?;
+        update_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
+        state.settings.page(crate::settings::Page::About);
+        capture(&mut canvas, &layout, &state, &textures, output, "about")?;
+        state.settings.page(crate::settings::Page::Timezones);
+        capture(&mut canvas, &layout, &state, &textures, output, "zones")?;
+        footer_focus_samples(&mut canvas, &layout, &mut state, &textures, output)?;
+        system_overlay_samples(&mut canvas, &layout, &mut state, output)
+    }
+
+    /// The guarded confirmations, unavailable state and launch feedback that
+    /// complete one size sweep.
+    fn system_overlay_samples(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &mut Launcher,
+        output: &std::path::Path,
+    ) -> Result<(), String> {
+        // The guarded power confirmation is reachable from Device.
+        state.settings.page(crate::settings::Page::Device);
+        state.settings.selected = 3;
+        state.settings.input(Action::Activate);
+        capture(canvas, layout, state, &[], output, "confirm")?;
+        assert_eq!(state.settings.selected, 0);
+        state.settings.cancel();
+        state.settings.status = Status::default();
+        state.settings.system_state = crate::settings::SystemState::Unavailable;
+        state.settings.input(Action::System);
+        capture(canvas, layout, state, &[], output, "unavailable")?;
+        state.settings.cancel();
+        // Launch feedback is a status line, not a modal loading screen.
+        state.opening = Some("Bitcoin CAD".into());
+        state.phase = crate::launcher::Phase::Launching;
+        state.status = "Bitcoin CAD is launching...".into();
+        state.status_notice = true;
+        capture(canvas, layout, state, &[], output, "launching")?;
+        state.opening = None;
+        state.phase = crate::launcher::Phase::Ready;
+        app_center::qa(canvas, layout, output)?;
+        shortcuts::qa(canvas, layout, output)?;
+        state.settings.show();
+        system::storage_qa(canvas, layout, state, &[], output)
+    }
+
+    /// Renders and captures one named system panel at the current size.
+    fn capture(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &Launcher,
+        textures: &[Option<Texture<'_>>],
+        output: &std::path::Path,
+        name: &str,
+    ) -> Result<(), String> {
+        render(canvas, layout, state, textures)?;
+        screenshot(
+            canvas,
+            &output.join(format!("{name}-{}x{}.bmp", layout.width, layout.height)),
+        )
     }
 
     fn preferences_sample(
@@ -1104,6 +1130,7 @@ mod system_tests {
 
     fn verify_references(output: &std::path::Path) -> Result<(), String> {
         use sha2::{Digest, Sha256};
+        use std::fmt::Write;
         let references: std::collections::BTreeMap<
             String,
             std::collections::BTreeMap<String, String>,
@@ -1113,17 +1140,12 @@ mod system_tests {
         .map_err(|e| e.to_string())?;
         for (name, expected) in references.get(std::env::consts::OS).into_iter().flatten() {
             let bytes = std::fs::read(output.join(name)).map_err(|e| e.to_string())?;
-            assert_eq!(
-                Sha256::digest(bytes)
-                    .iter()
-                    .fold(String::new(), |mut out, byte| {
-                        use std::fmt::Write;
-                        write!(&mut out, "{byte:02x}").unwrap();
-                        out
-                    }),
-                *expected,
-                "Reference pixels changed: {name}"
-            );
+            let digest = Sha256::digest(bytes);
+            let mut actual = String::with_capacity(digest.len() * 2);
+            for byte in digest {
+                write!(&mut actual, "{byte:02x}").map_err(|e| e.to_string())?;
+            }
+            assert_eq!(actual, *expected, "Reference pixels changed: {name}");
         }
         Ok(())
     }
