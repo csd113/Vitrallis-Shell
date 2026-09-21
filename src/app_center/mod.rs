@@ -17,7 +17,7 @@ mod transaction;
 mod uninstall;
 pub use discovery::integrate;
 pub use discovery::refresh_apps;
-pub use screen::Center;
+pub use screen::{Center, Geometry, PageKind, RowState, Target};
 static STORAGE_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub fn storage_revision() -> u64 {
     STORAGE_REVISION.load(Ordering::Relaxed)

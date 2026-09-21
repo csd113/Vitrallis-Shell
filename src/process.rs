@@ -89,6 +89,46 @@ pub trait Processes {
     fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
         Ok(None)
     }
+    /// Completes a start requested by [`Processes::start`]. `None` means the
+    /// request is still in progress; the caller keeps rendering and polling.
+    fn poll_launch(&mut self) -> Option<Result<String, String>> {
+        None
+    }
+    /// Whether a start request is currently in flight.
+    fn launching(&self) -> Option<String> {
+        None
+    }
+    /// Authoritative lifecycle state, used for the Shell's running indicators.
+    fn state(&self, _id: &str) -> AppState {
+        AppState::Stopped
+    }
+    /// Stops one owned application. Returns whether it was owned.
+    fn terminate(&mut self, _id: &str) -> bool {
+        false
+    }
+}
+
+/// Explicit application lifecycle. The Shell derives every running indicator
+/// from this state instead of from loosely coupled booleans.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppState {
+    /// No process is owned by the Shell.
+    Stopped,
+    /// A start request is in flight; no process is owned yet.
+    Launching,
+    /// The application is the currently focused task.
+    RunningForeground,
+    /// The application is alive while the Shell owns the foreground.
+    RunningBackground,
+    /// The last start attempt failed and no process is owned.
+    Failed,
+}
+
+impl AppState {
+    #[must_use]
+    pub const fn is_running(self) -> bool {
+        matches!(self, Self::RunningForeground | Self::RunningBackground)
+    }
 }
 
 /// Each application keeps its own existing process owner. Window focus never
@@ -104,7 +144,23 @@ pub struct ProcessSet<P = NativeProcess> {
     active: Option<String>,
     pub exited_active: bool,
     resume: Option<Resume>,
+    pending: Option<PendingStart<P>>,
+    /// Outcome of a start that completed without a worker (resume/instant start).
+    completed: Option<Result<String, String>>,
+    failures: std::collections::BTreeMap<String, String>,
 }
+/// A start request being prepared on its own worker thread.
+#[derive(Debug)]
+struct PendingStart<P> {
+    app: AppEntry,
+    receiver: mpsc::Receiver<Result<P, String>>,
+    deadline: Instant,
+}
+/// Advisory auto-close is given this long to let the app save and exit before
+/// the Shell stops it. Default policy disables both steps entirely.
+const BACKGROUND_GRACE: Duration = Duration::from_secs(30);
+/// A start request that has not produced a child in this long is abandoned.
+const LAUNCH_DEADLINE: Duration = Duration::from_secs(30);
 #[derive(Debug)]
 struct Resume {
     app: AppEntry,
@@ -115,17 +171,20 @@ struct Resume {
 }
 impl<P> ProcessSet<P> {
     pub const fn has_children(&self) -> bool {
-        !self.members.is_empty() || self.tor_pending.is_some()
+        !self.members.is_empty() || self.tor_pending.is_some() || self.pending.is_some()
     }
     pub const fn waiting_for_tor(&self) -> bool {
         self.tor_pending.is_some()
     }
+    #[cfg(test)]
     pub fn running_ids(&self) -> Vec<String> {
         self.members.iter().map(|(id, _)| id.clone()).collect()
     }
 }
-impl ProcessSet<NativeProcess> {
-    pub(crate) fn terminate(&mut self, id: &str) -> bool {
+impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
+    /// Stops one owned application and forgets its background bookkeeping.
+    /// Dropping the owner kills its process group and reaps the direct child.
+    pub(crate) fn stop_owned(&mut self, id: &str) -> bool {
         let Some(index) = self.members.iter().position(|(member, _)| member == id) else {
             return false;
         };
@@ -139,12 +198,11 @@ impl ProcessSet<NativeProcess> {
         if self.active.as_deref() == Some(id) {
             self.active = None;
         }
-        // Dropping the owner kills its process group and reaps the direct child.
+        self.background_since.remove(id);
+        self.waiting_windows.remove(id);
         self.members.remove(index);
         true
     }
-}
-impl<P: Processes + Default> ProcessSet<P> {
     /// Leaving the launch view cancels focus retries, never process/window tracking.
     pub fn stop_focus_retry(&mut self) {
         self.resume = None;
@@ -156,25 +214,43 @@ impl<P: Processes + Default> ProcessSet<P> {
         self.stop_focus_retry();
         self.active = None;
     }
-    pub fn background_policy(&mut self, policy: &crate::preferences::Policy, now: Instant) {
+    #[cfg(test)]
+    fn background_requested(&self, id: &str) -> bool {
+        self.background_since
+            .get(id)
+            .is_some_and(|(_, requested)| *requested)
+    }
+    /// Background lifetime policy. Becoming the foreground Shell again never
+    /// stops an application by itself: only an opted-in timeout expires, and the
+    /// app is first asked to close safely before the Shell stops it. Returns the
+    /// IDs stopped by policy so the caller can refresh its indicators.
+    pub fn background_policy(
+        &mut self,
+        policy: &crate::preferences::Policy,
+        now: Instant,
+    ) -> Vec<String> {
         self.background_since
             .retain(|id, _| self.members.iter().any(|(member, _)| member == id));
         self.waiting_windows
             .retain(|id| self.members.iter().any(|(member, _)| member == id));
+        let mut expired: Vec<String> = Vec::new();
+        let mut stopped: Vec<String> = Vec::new();
         for (id, process) in &mut self.members {
-            if self.active.as_ref() == Some(id) || policy.timeout(id).is_none() {
+            if self.active.as_ref() == Some(id) {
                 self.background_since.remove(id);
                 continue;
             }
+            let Some(timeout) = policy.timeout(id) else {
+                // No configured lifetime: keep the app running indefinitely.
+                self.background_since.remove(id);
+                continue;
+            };
             let (since, requested) = self
                 .background_since
                 .entry(id.clone())
                 .or_insert((now, false));
-            if !*requested
-                && policy
-                    .timeout(id)
-                    .is_some_and(|timeout| now.saturating_duration_since(*since) >= timeout)
-            {
+            let elapsed = now.saturating_duration_since(*since);
+            if !*requested && elapsed >= timeout {
                 // Never drop/kill the process following this advisory request.
                 // Apps with unsaved work may veto; no response also means keep running.
                 if let Err(error) = process.close_if_safe() {
@@ -182,7 +258,40 @@ impl<P: Processes + Default> ProcessSet<P> {
                 }
                 *requested = true;
             }
+            if elapsed >= timeout.saturating_add(BACKGROUND_GRACE) {
+                expired.push(id.clone());
+            }
         }
+        for id in expired {
+            eprintln!("level=info event=background_lifetime_expired app={id:?}");
+            if self.stop_owned(&id) {
+                stopped.push(id);
+            }
+        }
+        stopped
+    }
+    /// Authoritative lifecycle state for one application.
+    pub fn state(&self, id: &str) -> AppState {
+        if self.launching().as_deref() == Some(id) {
+            return AppState::Launching;
+        }
+        if self.members.iter().any(|(member, _)| member == id) {
+            return if self.active.as_deref() == Some(id) {
+                AppState::RunningForeground
+            } else {
+                AppState::RunningBackground
+            };
+        }
+        if self.failures.contains_key(id) {
+            return AppState::Failed;
+        }
+        AppState::Stopped
+    }
+    fn record_failure(&mut self, id: &str, error: &str) {
+        if self.failures.len() >= 64 && !self.failures.contains_key(id) {
+            self.failures.clear();
+        }
+        self.failures.insert(id.into(), error.into());
     }
 
     fn poll_tor_launch(&mut self) -> Result<Option<FocusResult>, String> {
@@ -211,9 +320,11 @@ impl<P: Processes + Default> ProcessSet<P> {
             ));
         }
         crate::tor::configure_app(&mut app, &snapshot);
-        let result = self.start_ready(&app);
+        // The spawn itself still happens off the UI thread; `poll_launch`
+        // reports completion and `poll_focus` tracks the new window.
+        self.start_ready(&app)?;
         self.sync_tor_apps();
-        result.map(|()| self.resume.is_none().then_some(FocusResult::Focused))
+        Ok(None)
     }
     pub fn sync_tor_apps(&mut self) {
         let previous = self.tor_apps.len();
@@ -230,32 +341,8 @@ impl<P: Processes + Default> ProcessSet<P> {
                 .request(crate::tor::Control::Demand(self.tor_apps.len()));
         }
     }
-    fn start_ready(&mut self, app: &AppEntry) -> Result<(), String> {
-        if let Some(index) = self.members.iter().position(|(id, _)| id == &app.id) {
-            // A window can close before the next scheduled child poll. Reap it
-            // now so activation does not try to resume an already exited app.
-            if self.members[index].1.poll()?.is_none() {
-                self.members[index].1.deliver(app)?;
-                self.members[index].1.focus()?;
-                self.active = Some(app.id.clone());
-                self.resume = Some(Resume {
-                    app: app.clone(),
-                    deadline: Instant::now() + Duration::from_secs(30),
-                    next_attempt: Instant::now() + Duration::from_millis(250),
-                    relaunch_on_exit: true,
-                    last_error: None,
-                });
-                return Ok(());
-            }
-            self.members.remove(index);
-            // A stopped Tor app must re-enter the readiness gate before relaunch.
-            if app.manifest.tor != crate::tor::Requirement::None {
-                return self.start(app);
-            }
-        }
-        self.resume = None;
-        let mut process = P::default();
-        process.start(app)?;
+    /// Adopts a started process: records ownership and starts focus tracking.
+    fn adopt(&mut self, app: &AppEntry, mut process: P) -> Result<(), String> {
         if process.waits_for_window() {
             self.waiting_windows.insert(app.id.clone());
             process.focus()?;
@@ -271,9 +358,68 @@ impl<P: Processes + Default> ProcessSet<P> {
         self.active = Some(app.id.clone());
         Ok(())
     }
+    /// Hands process creation to a worker thread. `command` inspects the
+    /// filesystem and `spawn` copies the Shell's address space; neither may
+    /// stall rendering on the `PocketCHIP`.
+    fn request_start(app: &AppEntry) -> Result<PendingStart<P>, String> {
+        let request = app.clone();
+        let (send, receiver) = mpsc::sync_channel(1);
+        std::thread::Builder::new()
+            .name("app-launch".into())
+            .spawn(move || {
+                let mut process = P::default();
+                let result = process.start(&request).map(|()| process);
+                let _ = send.send(result);
+            })
+            .map_err(|error| format!("launch worker: {error}"))?;
+        Ok(PendingStart {
+            app: app.clone(),
+            receiver,
+            deadline: Instant::now() + LAUNCH_DEADLINE,
+        })
+    }
+    fn start_ready(&mut self, app: &AppEntry) -> Result<(), String> {
+        if let Some(index) = self.members.iter().position(|(id, _)| id == &app.id) {
+            // A window can close before the next scheduled child poll. Reap it
+            // now so activation does not try to resume an already exited app.
+            if self.members[index].1.poll()?.is_none() {
+                self.members[index].1.deliver(app)?;
+                self.members[index].1.focus()?;
+                self.active = Some(app.id.clone());
+                self.background_since.remove(&app.id);
+                self.resume = Some(Resume {
+                    app: app.clone(),
+                    deadline: Instant::now() + Duration::from_secs(30),
+                    next_attempt: Instant::now() + Duration::from_millis(250),
+                    relaunch_on_exit: true,
+                    last_error: None,
+                });
+                // A resume is complete as soon as it is requested; report it
+                // through the same path as a worker-completed start.
+                self.completed = Some(Ok(app.id.clone()));
+                return Ok(());
+            }
+            self.members.remove(index);
+            // A stopped Tor app must re-enter the readiness gate before relaunch.
+            if app.manifest.tor != crate::tor::Requirement::None {
+                return self.start(app);
+            }
+        }
+        self.resume = None;
+        self.pending = Some(Self::request_start(app)?);
+        Ok(())
+    }
 }
-impl<P: Processes + Default> Processes for ProcessSet<P> {
+impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
     fn start(&mut self, app: &AppEntry) -> Result<(), String> {
+        // A second request for the app already starting is not an error: the
+        // user asked for the same thing twice and one launch satisfies it.
+        if let Some(pending) = &self.pending {
+            if pending.app.id == app.id {
+                return Ok(());
+            }
+            return Err(format!("{} is still starting", pending.app.name));
+        }
         if app.manifest.tor == crate::tor::Requirement::None
             || self.members.iter().any(|(id, _)| id == &app.id)
         {
@@ -293,6 +439,60 @@ impl<P: Processes + Default> Processes for ProcessSet<P> {
         }
         self.tor_pending = Some((app.clone(), Instant::now() + Duration::from_secs(190)));
         Ok(())
+    }
+    fn poll_launch(&mut self) -> Option<Result<String, String>> {
+        if let Some(outcome) = self.completed.take() {
+            if let Ok(id) = &outcome {
+                self.failures.remove(id);
+            }
+            return Some(outcome);
+        }
+        let outcome = {
+            let pending = self.pending.as_ref()?;
+            match pending.receiver.try_recv() {
+                Ok(Ok(process)) => Ok(process),
+                Ok(Err(error)) => Err(error),
+                Err(mpsc::TryRecvError::Empty) if Instant::now() < pending.deadline => return None,
+                Err(mpsc::TryRecvError::Empty) => {
+                    Err(format!("{} did not start in time", pending.app.name))
+                }
+                Err(mpsc::TryRecvError::Disconnected) => Err("launch worker stopped".into()),
+            }
+        };
+        let pending = self.pending.take()?;
+        let app = pending.app;
+        match outcome {
+            Ok(process) => match self.adopt(&app, process) {
+                Ok(()) => {
+                    self.failures.remove(&app.id);
+                    eprintln!(
+                        "level=info event=launch_completed app={} running={}",
+                        app.id,
+                        self.members.len()
+                    );
+                    Some(Ok(app.id))
+                }
+                Err(error) => {
+                    self.record_failure(&app.id, &error);
+                    Some(Err(error))
+                }
+            },
+            Err(error) => {
+                let error = format!("{}: {error}", app.name);
+                eprintln!("level=error event=launch_failed message={error:?}");
+                self.record_failure(&app.id, &error);
+                Some(Err(error))
+            }
+        }
+    }
+    fn launching(&self) -> Option<String> {
+        self.pending.as_ref().map(|pending| pending.app.id.clone())
+    }
+    fn state(&self, id: &str) -> AppState {
+        Self::state(self, id)
+    }
+    fn terminate(&mut self, id: &str) -> bool {
+        self.stop_owned(id)
     }
     fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
         let mut failure = None;
@@ -649,6 +849,8 @@ pub fn cleanup_group(pid: u32) {
 }
 
 /// One place coordinates the process boundary with renderer-independent state.
+/// The start itself is asynchronous; the caller keeps the Shell responsive until
+/// `Processes::poll_launch` reports the outcome.
 pub fn activate(
     state: &mut crate::launcher::Launcher,
     processes: &mut impl Processes,
@@ -661,8 +863,9 @@ pub fn activate(
         state.failed("Invalid app index".into());
         return;
     };
+    let name = app.name.clone();
     match processes.start(app) {
-        Ok(()) => state.started(),
+        Ok(()) => state.launching(&name),
         Err(error) => {
             eprintln!("level=error event=launch_failed message={error:?}");
             state.failed(error);
@@ -677,6 +880,36 @@ mod tests {
         path::PathBuf,
         time::{Duration, Instant},
     };
+    /// Starts an app and waits for its worker-owned child, so tests exercise the
+    /// same ownership path as the Shell without racing the launch thread.
+    pub(super) fn start_blocking<P: Processes + Default + Send + 'static>(
+        processes: &mut ProcessSet<P>,
+        app: &AppEntry,
+    ) -> Result<(), String> {
+        // Discard outcomes from earlier requests so this call observes its own.
+        while processes.poll_launch().is_some() {}
+        processes.start(app)?;
+        settle(processes)
+    }
+    /// Waits for the in-flight start request, if there is one.
+    pub(super) fn settle<P: Processes + Default + Send + 'static>(
+        processes: &mut ProcessSet<P>,
+    ) -> Result<(), String> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if processes.launching().is_none() && processes.completed.is_none() {
+                return Ok(());
+            }
+            match processes.poll_launch() {
+                Some(Ok(_)) => return Ok(()),
+                Some(Err(error)) => return Err(error),
+                None if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                None => return Err("launch timed out".into()),
+            }
+        }
+    }
     fn app() -> AppEntry {
         AppEntry {
             source: crate::app::AppSource::Demo,
@@ -700,8 +933,8 @@ mod tests {
         let mut second = first.clone();
         second.id = "second".into();
         let mut processes = ProcessSet::<NativeProcess>::default();
-        processes.start(&first)?;
-        processes.start(&second)?;
+        start_blocking(&mut processes, &first)?;
+        start_blocking(&mut processes, &second)?;
         let pid = processes.members[0]
             .1
             .child
@@ -845,18 +1078,20 @@ mod tests {
         let mut processes = ProcessSet::<Fake>::default();
         state.input(crate::input::Action::Activate);
         activate(&mut state, &mut processes, 0);
+        settle(&mut processes)?;
         state.returned_home();
         state.input(crate::input::Action::SelectAndActivate(1));
         activate(&mut state, &mut processes, 1);
+        settle(&mut processes)?;
         assert_eq!(processes.running_ids(), ["test", "second"]);
-        processes.start(&state.apps[0])?;
+        start_blocking(&mut processes, &state.apps[0])?;
         assert_eq!(processes.members[0].1.starts, 1);
         assert_eq!(processes.members[0].1.focuses, 1);
         processes.poll_focus()?;
         processes.members[0].1.exited = true;
         // Activation arriving before the scheduled exit poll starts a fresh
         // process rather than dispatching focus to a dead window.
-        processes.start(&state.apps[0])?;
+        start_blocking(&mut processes, &state.apps[0])?;
         assert!(!processes.members[1].1.exited);
         assert_eq!(processes.members[1].1.starts, 1);
         assert_eq!(processes.members[1].1.focuses, 0);
@@ -938,7 +1173,7 @@ mod tests {
         }
         for navigated_away in [false, true] {
             let mut processes = ProcessSet::<Delayed>::default();
-            processes.start(&app())?;
+            start_blocking(&mut processes, &app())?;
             if navigated_away {
                 processes.returned_home();
             } else {
@@ -957,41 +1192,79 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn timeout_is_advisory_and_essential_apps_are_exempt_by_id() -> Result<(), String> {
+    fn background_lifetime_is_advisory_then_bounded_and_essential_apps_are_exempt()
+    -> Result<(), String> {
         let mut processes = ProcessSet::<ClosingWindow>::default();
-        processes.start(&app())?;
+        start_blocking(&mut processes, &app())?;
         processes.returned_home();
         let now = Instant::now();
         let mut policy = crate::preferences::Policy {
             background_seconds: 60,
             ..Default::default()
         };
-        processes.background_policy(&policy, now);
+        // Becoming the foreground Shell again never terminates anything.
+        assert!(processes.background_policy(&policy, now).is_empty());
+        assert_eq!(processes.members[0].1.close_requests, 0);
         processes.background_policy(&policy, now + Duration::from_secs(59));
-        assert!(!processes.background_since["test"].1);
+        assert!(!processes.background_requested("test"));
+        assert_eq!(processes.members[0].1.close_requests, 0);
+        // The configured lifetime expires: ask the app to close safely first.
         processes.background_policy(&policy, now + Duration::from_secs(60));
-        assert!(processes.background_since["test"].1);
-        processes.background_policy(&policy, now + Duration::from_secs(90));
+        assert!(processes.background_requested("test"));
         assert_eq!(processes.members[0].1.close_requests, 1);
-        assert_eq!(processes.members.len(), 1); // The app deferred its close request: keep running.
+        assert_eq!(processes.members.len(), 1);
+        // An app that ignores the request is stopped only after the grace period,
+        // so a save-to-disk has time to finish.
+        let stopped = processes.background_policy(&policy, now + Duration::from_secs(60 + 29));
+        assert!(stopped.is_empty());
+        assert_eq!(processes.members.len(), 1);
+        let stopped =
+            processes.background_policy(&policy, now + Duration::from_secs(60) + BACKGROUND_GRACE);
+        assert_eq!(stopped, ["test"]);
+        assert!(!processes.has_children());
+        // An essential app keeps its background bookkeeping cleared.
+        start_blocking(&mut processes, &app())?;
+        processes.returned_home();
         policy.essential.insert("test".into());
         processes.background_policy(&policy, now + Duration::from_secs(120));
         assert!(processes.background_since.is_empty());
-        assert_eq!(processes.members[0].1.close_requests, 1);
+        assert_eq!(processes.members[0].1.close_requests, 0);
         assert_eq!(processes.members.len(), 1);
+        Ok(())
+    }
+    #[test]
+    fn disabled_lifetime_and_foreground_returns_never_stop_an_app() -> Result<(), String> {
+        let mut processes = ProcessSet::<ClosingWindow>::default();
+        start_blocking(&mut processes, &app())?;
+        processes.returned_home();
+        let now = Instant::now();
+        let policy = crate::preferences::Policy::default();
+        for seconds in [0_u64, 600, 86_400] {
+            assert!(
+                processes
+                    .background_policy(&policy, now + Duration::from_secs(seconds))
+                    .is_empty()
+            );
+        }
+        assert_eq!(processes.members[0].1.close_requests, 0);
+        assert_eq!(processes.members.len(), 1);
+        // Explicit termination still works promptly.
+        assert!(processes.terminate("test"));
+        assert!(!processes.has_children());
         Ok(())
     }
     #[test]
     fn reopen_waits_for_closing_process_then_spawns_exactly_once() -> Result<(), String> {
         let mut processes = ProcessSet::<ClosingWindow>::default();
-        processes.start(&app())?;
-        processes.start(&app())?;
+        start_blocking(&mut processes, &app())?;
+        start_blocking(&mut processes, &app())?;
         assert_eq!(processes.poll_focus()?, None); // Window gone; process still exits asynchronously.
         assert_eq!(processes.members.len(), 1);
         assert_eq!(processes.members[0].1.starts, 1);
         processes.members[0].1.exited = true;
         assert_eq!(processes.poll()?, None); // Preserve the pending activation.
         assert_eq!(processes.poll_focus()?, Some(FocusResult::Focused));
+        settle(&mut processes)?; // The replacement child is created by the worker.
         assert_eq!(processes.members.len(), 1);
         assert!(!processes.members[0].1.exited);
         assert_eq!(processes.members[0].1.starts, 1);
@@ -1003,14 +1276,14 @@ mod tests {
     fn delayed_window_resumes_without_restarting_and_absent_window_is_bounded() -> Result<(), String>
     {
         let mut processes = ProcessSet::<ClosingWindow>::default();
-        processes.start(&app())?;
-        processes.start(&app())?;
+        start_blocking(&mut processes, &app())?;
+        start_blocking(&mut processes, &app())?;
         assert_eq!(processes.poll_focus()?, None);
         processes.members[0].1.window_ready = true;
         assert_eq!(processes.poll_focus()?, Some(FocusResult::Focused));
         assert_eq!(processes.members[0].1.starts, 1);
         processes.members[0].1.window_ready = false;
-        processes.start(&app())?;
+        start_blocking(&mut processes, &app())?;
         processes.resume.as_mut().ok_or("missing resume")?.deadline = Instant::now();
         assert_eq!(processes.poll_focus()?, Some(FocusResult::Missing));
         assert_eq!(processes.members.len(), 1);
@@ -1021,8 +1294,8 @@ mod tests {
     #[test]
     fn recovered_focus_helper_does_not_turn_a_missing_window_into_an_error() -> Result<(), String> {
         let mut processes = ProcessSet::<ClosingWindow>::default();
-        processes.start(&app())?;
-        processes.start(&app())?;
+        start_blocking(&mut processes, &app())?;
+        start_blocking(&mut processes, &app())?;
         processes.members[0].1.focus_error = Some("temporary transport failure".into());
         assert_eq!(processes.poll_focus()?, None);
         processes
@@ -1037,8 +1310,8 @@ mod tests {
     #[test]
     fn startup_exit_is_reaped_without_automatic_restart() -> Result<(), String> {
         let mut processes = ProcessSet::<ClosingWindow>::default();
-        processes.start(&app())?;
-        processes.start(&app())?;
+        start_blocking(&mut processes, &app())?;
+        start_blocking(&mut processes, &app())?;
         processes
             .resume
             .as_mut()
@@ -1062,8 +1335,10 @@ mod tests {
             .input(crate::input::Action::Activate)
             .ok_or("no activation")?;
         activate(&mut state, &mut process, index);
-        assert_eq!(state.phase, crate::launcher::Phase::Running);
+        assert_eq!(state.phase, crate::launcher::Phase::Launching);
         assert!(process.start(&state.apps[0]).is_err());
+        state.launched("Test");
+        assert_eq!(state.phase, crate::launcher::Phase::Running);
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if let Some(status) = process.poll()? {
@@ -1086,14 +1361,30 @@ mod tests {
         let mut app = app();
         app.manifest.entry = "/vitrallis-missing-test/application".into();
         let mut state = crate::launcher::Launcher::new(vec![app], 1, 1)?;
-        let mut process = NativeProcess::default();
+        let mut process = ProcessSet::<NativeProcess>::default();
         state.input(crate::input::Action::Activate);
         activate(&mut state, &mut process, 0);
+        // The spawn failure arrives from the launch worker, never inline.
+        assert_eq!(state.phase, crate::launcher::Phase::Launching);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let error = loop {
+            match process.poll_launch() {
+                Some(Ok(_)) => return Err("missing entry must not start".into()),
+                Some(Err(error)) => break error,
+                None if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+                None => return Err("launch failure timed out".into()),
+            }
+        };
+        state.failed(error);
         assert_eq!(state.phase, crate::launcher::Phase::Ready);
         assert!(state.status.contains("LAUNCH FAILED"));
-        assert!(process.child.is_none());
+        assert!(!process.has_children());
+        assert_eq!(process.state("test"), AppState::Failed);
         assert_eq!(state.input(crate::input::Action::Activate), None); // Dismiss the error.
         assert_eq!(state.input(crate::input::Action::Activate), Some(0));
+        assert_eq!(state.phase, crate::launcher::Phase::Launching);
         Ok(())
     }
     #[test]
@@ -1152,33 +1443,39 @@ mod lifecycle_tests {
             },
         }
     }
-    fn wait(process: &mut NativeProcess) -> Result<ExitStatus, String> {
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            if let Some(status) = process.poll()? {
-                return Ok(status);
-            }
-            if Instant::now() >= deadline {
-                return Err("process did not exit".into());
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-    }
     #[test]
     fn forty_launch_exit_cycles_reap_and_recover_without_accumulating_children()
     -> Result<(), String> {
         let mut state = Launcher::new(vec![fixture()], 1, 1)?;
-        let mut process = NativeProcess::default();
+        let mut processes = ProcessSet::<NativeProcess>::default();
         for _ in 0..40 {
             assert_eq!(state.input(Action::Activate), Some(0));
-            activate(&mut state, &mut process, 0);
-            assert_eq!(state.phase, Phase::Running);
+            activate(&mut state, &mut processes, 0);
+            assert_eq!(state.phase, Phase::Launching);
+            // A repeated activation while starting never spawns a second child.
             assert!(state.input(Action::Activate).is_none());
-            assert!(process.start(&state.apps[0]).is_err());
-            assert!(wait(&mut process)?.success());
-            assert!(process.child.is_none());
-            assert!(process.poll()?.is_none());
+            assert!(processes.start(&state.apps[0]).is_ok());
+            super::tests::start_blocking(&mut processes, &state.apps[0])?;
+            assert_eq!(processes.state("cycles"), AppState::RunningForeground);
+            assert_eq!(processes.running_ids(), ["cycles"]);
+            state.launched("Cycles");
+            assert_eq!(state.phase, Phase::Running);
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let status = loop {
+                if let Some(status) = processes.poll()? {
+                    break status;
+                }
+                if Instant::now() >= deadline {
+                    return Err("child did not exit".into());
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            };
+            assert!(status.success());
+            assert!(processes.poll()?.is_none());
+            assert_eq!(processes.state("cycles"), AppState::Stopped);
+            assert!(!processes.has_children());
             state.finished("closed".into());
+            assert_eq!(state.phase, Phase::Ready);
             assert_eq!(state.selected, 0);
         }
         Ok(())
@@ -1246,9 +1543,11 @@ mod lifecycle_tests {
         let mut process = WaitFailure;
         state.input(Action::Activate);
         activate(&mut state, &mut process, 0);
+        assert_eq!(state.phase, Phase::Launching);
         assert!(process.poll().is_err());
-        assert_eq!(state.phase, Phase::Running);
+        // The single in-flight start is never duplicated while it is pending.
         assert!(state.input(Action::Activate).is_none());
+        assert_eq!(state.input(Action::SelectAndActivate(0)), None);
         Ok(())
     }
 }

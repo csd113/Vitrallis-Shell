@@ -10,7 +10,7 @@ impl Settings {
                 self.selected = 0;
                 self.clear_pointer();
             } else {
-                self.page(Page::Device);
+                self.page(Page::Home);
             }
             return None;
         }
@@ -20,16 +20,18 @@ impl Settings {
             {
                 self.selected = BACK;
             }
-            Action::Move(direction) => {
-                self.selected =
-                    usize::from(matches!(direction, Direction::Right | Direction::Down));
+            Action::Move(Direction::Left | Direction::Right | Direction::Up) => {
+                self.selected = usize::from(matches!(
+                    action,
+                    Action::Move(Direction::Right | Direction::Up)
+                ));
             }
             Action::SelectAndActivate(index) if index < 2 => {
                 self.selected = index;
                 return self.update_input(Action::Activate);
             }
             Action::Activate if self.selected == 0 && self.update_confirmation.is_none() => {
-                self.page(Page::Device);
+                self.page(Page::Home);
             }
             Action::Activate if !self.updater.state.busy() => {
                 if let Some(time) = self.update_confirmation.take() {
@@ -81,18 +83,16 @@ mod tests {
         );
         assert!(settings.update_confirmation.is_none());
         assert_eq!(settings.input(Action::SelectAndActivate(0)), None);
-        assert_eq!(settings.page, Page::Device);
+        assert_eq!(settings.page, Page::Home);
     }
     #[test]
     fn check_is_explicit_and_navigation_does_not_start_a_worker() {
         let mut settings = Settings::default();
         settings.show();
-        settings.input(Action::SelectAndActivate(5));
-        settings.input(Action::SelectAndActivate(3));
-        assert_eq!(settings.page, Page::Updates);
+        settings.page(Page::Updates);
         assert!(matches!(settings.updater.state, State::Idle));
         assert_eq!(settings.input(Action::Activate), None);
-        assert_eq!(settings.page, Page::Device);
+        assert_eq!(settings.page, Page::Home);
         settings.page(Page::Updates);
         assert_eq!(
             settings.input(Action::SelectAndActivate(1)),
@@ -101,7 +101,7 @@ mod tests {
         settings.updater.state = State::Checking;
         assert_eq!(settings.input(Action::Activate), None);
         settings.input(Action::Back);
-        assert_eq!(settings.page, Page::Device);
+        assert_eq!(settings.page, Page::Home);
     }
     #[test]
     fn install_confirmation_defaults_to_cancel_and_expires() {

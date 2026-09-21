@@ -57,14 +57,13 @@ fn tor_actions_have_shared_keyboard_and_touch_targets() -> Result<(), String> {
     use crate::{
         input::Action,
         layout::Layout,
-        navigation::Direction,
         settings::{Page, PanelLayout, Settings},
     };
     let mut settings = Settings::default();
     settings.show();
     settings.page(Page::Wireless);
-    settings.selected = 6;
-    settings.input(Action::Move(Direction::Right));
+    // Tor is the fourth content row of Wireless Network.
+    settings.selected = 3;
     settings.input(Action::Activate);
     assert_eq!(settings.page, Page::Tor);
     for (index, control) in [
@@ -85,8 +84,15 @@ fn tor_actions_have_shared_keyboard_and_touch_targets() -> Result<(), String> {
     }
     settings.input(Action::SelectAndActivate(5));
     assert_eq!(settings.page, Page::TorDetails);
+    // Detail pages are read-only: Enter and Escape both step back one level.
     settings.input(Action::Activate);
     assert_eq!(settings.page, Page::Tor);
+    settings.input(Action::SelectAndActivate(5));
+    assert_eq!(settings.page, Page::TorDetails);
+    settings.input(Action::Back);
+    assert_eq!(settings.page, Page::Tor);
+    settings.input(Action::Back);
+    assert_eq!(settings.page, Page::Wireless);
     let geometry = PanelLayout::tor_controls(&Layout::home(480, 272)?);
     assert!(geometry.iter().all(|rect| rect.w >= 100 && rect.h >= 30));
     Ok(())
@@ -102,6 +108,33 @@ impl crate::process::Processes for FakeApp {
         Ok(None)
     }
 }
+/// Waits for a launch requested by the readiness gate, without waiting forever
+/// for an app that is still queued behind Tor.
+fn drain(
+    processes: &mut crate::process::ProcessSet<FakeApp>,
+) -> Result<Option<Result<String, String>>, String> {
+    use crate::process::Processes;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if let Some(outcome) = processes.poll_launch() {
+            return Ok(Some(outcome));
+        }
+        if processes.launching().is_none() {
+            return Ok(None);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("launch timed out".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+}
+
+fn launched(
+    processes: &mut crate::process::ProcessSet<FakeApp>,
+) -> Result<Result<String, String>, String> {
+    drain(processes)?.ok_or_else(|| "no launch was requested".to_owned())
+}
+
 #[test]
 fn required_launch_waits_for_readiness_and_fails_closed_while_preferred_can_continue()
 -> Result<(), String> {
@@ -127,10 +160,15 @@ fn required_launch_waits_for_readiness_and_fails_closed_while_preferred_can_cont
             };
             app.manifest.tor = requirement;
             processes.start(&app)?;
+            // A child is created by the launch worker, so the caller observes it
+            // through poll_launch instead of synchronously. Waiting for Tor is
+            // reported as "no child yet" rather than as a completed launch.
             if requirement == Requirement::None {
+                launched(&mut processes).expect("Tor-free app starts")?;
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
                 continue;
             }
+            assert!(drain(&mut processes)?.is_none());
             assert!(processes.running_ids().is_empty());
             let result = processes.poll_focus();
             if matches!(state, State::Disabled | State::Error)
@@ -146,9 +184,11 @@ fn required_launch_waits_for_readiness_and_fails_closed_while_preferred_can_cont
                     ..Snapshot::default()
                 };
                 processes.poll_focus()?;
+                launched(&mut processes).expect("ready Tor starts the app")?;
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
             } else {
                 result?;
+                launched(&mut processes).expect("connected Tor starts the app")?;
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
             }
         }
@@ -184,7 +224,6 @@ fn tor_buttons_use_matched_pointer_release_and_visible_keyboard_focus() -> Resul
     use crate::{
         input::Action,
         layout::Layout,
-        navigation::Direction,
         settings::{Page, PanelLayout, Settings},
     };
     use sdl2::{event::Event, mouse::MouseButton};
@@ -218,7 +257,7 @@ fn tor_buttons_use_matched_pointer_release_and_visible_keyboard_focus() -> Resul
         keyboard.show();
         keyboard.page(Page::Tor);
         for _ in 0..index {
-            keyboard.input(Action::Move(Direction::Right));
+            keyboard.input(Action::Move(crate::navigation::Direction::Right));
         }
         assert_eq!(keyboard.selected, index);
         keyboard.input(Action::Activate);

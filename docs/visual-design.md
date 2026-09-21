@@ -11,8 +11,13 @@ marks are added to the home header, Settings, App Manager, or bundled app icons.
 blue surfaces, thin blue borders, lavender text, muted light-blue labels, and
 cyan/blue/violet emphasis. Pink identifies warnings and destructive actions.
 The shared card primitive keeps keyboard focus visible even when an action is
-unavailable. Progress bars use three solid color segments, with warning capacity
-bars retaining one alert color. Neither primitive animates.
+unavailable: focus changes the fill and the one-pixel border colour only, with
+nothing drawn inside the rectangle, so no corner or edge mark can read as a stray
+line. Progress bars use one continuous cyan/blue/violet ramp that belongs to the
+track, so a pixel keeps its colour as the value changes. Sliders share that ramp
+at reduced intensity and add a solid thumb that brightens with keyboard focus,
+which keeps inactive track, active track and handle distinguishable. Neither
+primitive animates and neither allocates per frame.
 
 The Shell's existing renderer delegates to those primitives. Settings, wireless,
 storage, updates, App Manager, desktop dialogs and bundled native application
@@ -60,6 +65,28 @@ No window-surface drawing, single-buffered path or change to the device's VSync
 configuration is introduced. A desktop simulator cannot establish physical
 PocketCHIP scanout or ARM performance; physical follow-up results are recorded in [validation](visual-design-validation.md).
 
+## Interface structure
+
+Settings, the App Center and the desktop share one presentation vocabulary:
+
+- **Settings** uses the same large two-line option for every category. The home
+  menu lists eight entries (Display & Sound, Date & Time, Wireless Network,
+  Applications, Storage, Device, Software Updates, About); each category lists
+  its own settings. Nothing important is hidden behind a footer shortcut, and one
+  Escape always returns exactly one level, with the home menu as the only exit.
+- **App Center** rows show the app name, a state chip (RUNNING, UPDATE, INSTALLED,
+  AVAILABLE, UNAVAILABLE, FAILED), the short description and the current
+  operation. The details page leads with the name, state, description and the
+  metadata a user needs, and failures are summarised in one line while the full
+  backend error stays in the log. Long operations reuse the shared progress ramp.
+- **Running state** is one filled chip derived from the authoritative process
+  state, identical in the main menu, inside folders and in the App Center list.
+  Launching and exit notifications appear in the lower-left status area, never as
+  a modal screen.
+- **Bundled applications** reserve their vertical space for content: Terminal
+  keeps one ten-pixel status line at the bottom, and Notepad uses a single-line
+  header so the editor and its height-1 status row own the rest of the display.
+
 ## Reproduction and checks
 
 Artwork preparation and asset sizes are documented in
@@ -77,7 +104,11 @@ VITRALLIS_QA_DIR="$PWD/target/visual-qa" cargo test --lib system_panels_render_a
 ```
 
 The checked pixel hashes are reviewed snapshots, not generated automatically by
-normal tests. Boot lifecycle coverage exercises decoder rejection, renderer reset,
-Escape handoff, close requests and discovery failure. The full host gates are
-`sh scripts/validate.sh`; Linux interactive checks use the existing Docker
-simulator described in [its README](../tests/simulator/README.md).
+normal tests. The current `macos` block was regenerated for this interface pass.
+The `linux` block was removed with the same change, so Linux runs skip the
+comparison until the documented command above is run on the simulator and the
+new screenshots are reviewed; that re-baseline is still pending and must happen
+before the next release validation. Boot lifecycle coverage exercises decoder
+rejection, renderer reset, Escape handoff, close requests and discovery failure.
+The full host gates are `sh scripts/validate.sh`; Linux interactive checks use the
+existing Docker simulator described in [its README](../tests/simulator/README.md).

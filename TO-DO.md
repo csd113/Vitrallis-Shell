@@ -43,6 +43,16 @@
 - [ ] Validate the previous generation, require apps and mutations to be stopped, confirm the action, and switch atomically.
 - [ ] Preserve the current build and user data if validation or rollback fails.
 
+## Application lifecycle, launch feedback and interface pass
+
+- [x] Acknowledge a launch immediately and prepare the process on a worker so the main menu keeps rendering, processing input and staying visibly alive.
+- [x] Returning to the main menu moves an app into the background instead of terminating it; explicit close, self-exit and the configured background lifetime remain the only stops.
+- [x] Refuse duplicate launches while one is in flight and derive every running indicator from the authoritative process state.
+- [x] Show launching/exit notices in the lower-left status area, and an unmistakable RUNNING state chip, instead of a modal loading screen.
+- [x] Reorganise Settings into large home options with Storage as a first-class category and predictable one-level back navigation.
+- [x] Give the App Center a readable list, state chips, a prioritised details page and one-line failure summaries.
+- [x] Reserve Terminal and Notepad vertical space for their content, with a visible cursor and clear save state.
+
 ## Non-blocking visual polish
 
 - [x] Correct progress-bar colour blending.

@@ -102,13 +102,19 @@ impl vt100::Callbacks for Replies {
 }
 pub fn geometry(width: i32, height: i32, scale: i32) -> (u16, u16) {
     (
-        u16::try_from((height - 20 * scale) / (9 * scale))
+        u16::try_from((height - status_height(scale)) / (9 * scale))
             .unwrap_or(1)
             .clamp(1, 240),
         u16::try_from(width / (8 * scale))
             .unwrap_or(1)
             .clamp(1, 512),
     )
+}
+
+/// One compact status line at the bottom keeps the whole top of the display for
+/// terminal output while still showing the scrollback position and shortcuts.
+pub const fn status_height(scale: i32) -> i32 {
+    10 * scale
 }
 pub fn key(key: Keycode, mods: Mod, application: bool) -> Option<Vec<u8>> {
     let alt = mods.intersects(Mod::LALTMOD | Mod::RALTMOD);
@@ -289,7 +295,10 @@ mod tests {
     }
     #[test]
     fn geometry_resize_alternate_and_unicode() {
-        assert_eq!(geometry(480, 272, 1), (28, 60));
+        // One 10-pixel status line at the bottom leaves 29 text rows at 480x272.
+        assert_eq!(geometry(480, 272, 1), (29, 60));
+        assert_eq!(status_height(1), 10);
+        assert!(29 * 9 <= 272 - status_height(1));
         let mut terminal = Terminal::new(3, 10);
         terminal.process("é中🙂".as_bytes());
         assert_eq!(terminal.parser.screen().cursor_position(), (0, 5));

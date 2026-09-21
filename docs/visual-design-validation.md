@@ -116,6 +116,9 @@ and final screenshots are retained locally under `target/redesign/device/`.
 The pre-existing documentation edits were preserved and are excluded from this
 list.
 
+> This section records the earlier redesign pass. The later usability and
+> lifecycle pass is recorded below.
+
 - `crates/vitrallis-native/src/theme.rs`: shared colors, metrics, cards, progress
   treatment and contrast regression check.
 - `crates/vitrallis-native/src/lib.rs`, `crates/vitrallis-native/src/ui.rs`,
@@ -143,3 +146,47 @@ list.
   Shell readiness and assert current palette colors.
 - `docs/visual-design.md`, `docs/visual-design-validation.md`: design, operation,
   reproduction, results and limitations.
+
+# Usability and lifecycle pass
+
+A later pass fixed the shared drawing primitives, reorganised Settings, overhauled
+the App Center, polished Terminal and Notepad, and made application launching and
+background lifetime explicit. It is recorded separately because it changes
+behaviour, not only pixels.
+
+## Checks
+
+| Command or check | Result |
+| --- | --- |
+| `cargo fmt --all --check` | Passed |
+| `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -D clippy::nursery -D clippy::cargo` | Passed |
+| `cargo test --workspace --all-features` | Passed, including the desktop integration suite |
+| `VITRALLIS_QA_DIR=… cargo test --lib system_panels_render_at_device_and_scaled_sizes` | Passed against the regenerated `macos` reference block (262 frames per size sweep) |
+| Settings keyboard walk | Passed: every home option is reachable by arrows/Enter, every category has a visible Back control, and the home menu is the only exit |
+| Lifecycle state machine | Passed: launch → launching → running → background → foreground → explicit close, plus launch → failure → retry, and duplicate-launch refusal |
+
+## Findings and fixes
+
+- The focused-panel decoration drew a violet underline and a blue inset edge
+  inside every highlighted box. That is the reported bottom-right stray line. The
+  shared `card` primitive now draws exactly one border, and the running badge no
+  longer draws a separate rail along the bottom of a tile.
+- Progress bars and sliders used three fixed colour blocks. Both now use one
+  continuous cyan/blue/violet ramp that belongs to the track; sliders dim it and
+  add a solid thumb for the inactive/active/handle/focus distinction.
+- Launching ran on the UI thread, so the menu looked frozen. Process creation now
+  runs on a worker and reports back through `poll_launch`, with a status-line
+  message instead of a modal screen.
+- Returning to the main menu cleared the foreground owner only. The policy is now
+  explicit: returning home backgrounds the app, the configured timeout is the only
+  automatic stop, advisory close is followed by a bounded stop, and explicit
+  termination is unchanged.
+
+## Pending validation
+
+- The `linux` pixel-reference block was removed with this pass because every frame
+  changed. Run the documented QA command on the Linux simulator, review the new
+  screenshots and re-add the block before the next release validation.
+- Physical PocketCHIP checks remaining: Mali-400/Lima presentation of the new
+  primitives, real launch latency on device storage, background-lifetime policy
+  against an App Center-installed app, and Terminal/Notepad keyboard/touch feel.

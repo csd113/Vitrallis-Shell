@@ -1,10 +1,9 @@
 //! Keyboard and touch share storage selection and paging actions.
 use super::{
     Settings,
-    footer::{BACK, NEXT},
+    footer::{BACK, NEXT, REFRESH},
 };
 use crate::{input::Action, navigation::Direction};
-pub const REFRESH: usize = 8;
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum StorageView {
     #[default]
@@ -94,14 +93,14 @@ impl Settings {
                     self.selected + 1
                 } else {
                     BACK
-                }
+                };
             }
             Action::Move(Direction::Up) => {
                 self.selected = if self.selected >= rows {
                     rows.checked_sub(1).unwrap_or(BACK)
                 } else {
                     self.selected.saturating_sub(1)
-                }
+                };
             }
             Action::Move(direction @ (Direction::Left | Direction::Right)) => {
                 if self.selected < rows {

@@ -11,6 +11,7 @@ use crate::{
     app::AppEntry,
     launcher::Launcher,
     layout::{Layout, Rect},
+    process::AppState,
 };
 use sdl2::{
     pixels::{Color, PixelFormatEnum},
@@ -258,8 +259,10 @@ pub fn render(
 
 const fn settings_title(page: crate::settings::Page) -> &'static str {
     match page {
-        crate::settings::Page::General => "SETTINGS / QUICK CONTROLS",
-        crate::settings::Page::Preferences => "SETTINGS / PREFERENCES",
+        crate::settings::Page::Home => "SETTINGS",
+        crate::settings::Page::Display => "SETTINGS / DISPLAY & SOUND",
+        crate::settings::Page::DateTime => "SETTINGS / DATE & TIME",
+        crate::settings::Page::Applications => "SETTINGS / APPLICATIONS",
         crate::settings::Page::Device => "SETTINGS / DEVICE",
         crate::settings::Page::Timezones => "SETTINGS / TIME ZONE",
         crate::settings::Page::Updates => "SETTINGS / SOFTWARE UPDATES",
@@ -267,6 +270,7 @@ const fn settings_title(page: crate::settings::Page) -> &'static str {
         crate::settings::Page::Wireless => "Wireless Network Controls",
         crate::settings::Page::Tor => "SETTINGS / TOR",
         crate::settings::Page::TorDetails => "TOR / DETAILS",
+        crate::settings::Page::About => "SETTINGS / ABOUT",
     }
 }
 
@@ -359,14 +363,68 @@ fn render_launcher(
             app,
             *tile,
             index == state.selected && state.desktop.toolbar.is_none(),
-            state.running.contains(&app.id),
+            state.app_state(&app.id),
             icons.get(index).and_then(Option::as_ref),
         )?;
     }
-    loading_dialog(canvas, layout, state)?;
+    launcher_status(canvas, layout, state)?;
     error_dialog(canvas, layout, state)?;
     desktop_footer(canvas, layout, state)?;
     Ok(())
+}
+
+/// Lower-left status area: the launching/exit notifications the Shell already
+/// produced, shown without a modal so the menu stays visible and interactive.
+fn launcher_status(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
+    if !state.status_notice || state.status.is_empty() || state.error.is_some() {
+        return Ok(());
+    }
+    let right = if state.folder.is_some() {
+        layout.folder_back.x
+    } else {
+        layout.desktop_menu.x
+    };
+    let bounds = Rect {
+        x: layout.footer.x,
+        y: layout.footer.y + (layout.footer.h - 8 * layout.text_scale) / 2,
+        w: right - layout.footer.x - 8,
+        h: 8 * layout.text_scale,
+    };
+    if bounds.w <= 0 {
+        return Ok(());
+    }
+    clipped(
+        canvas,
+        &state.status,
+        bounds,
+        layout.text_scale,
+        theme::ACCENT,
+    )
+}
+
+/// Left-aligned text shortened with an ellipsis rather than clipped mid-glyph.
+fn clipped(
+    canvas: &mut Screen,
+    value: &str,
+    bounds: Rect,
+    scale: i32,
+    color: Color,
+) -> Result<(), String> {
+    let limit = usize::try_from(bounds.w / (8 * scale)).unwrap_or(0);
+    if limit == 0 {
+        return Ok(());
+    }
+    let shown: String = if value.chars().count() > limit {
+        if limit > 3 {
+            format!("{}...", value.chars().take(limit - 3).collect::<String>())
+        } else {
+            value.chars().take(limit).collect()
+        }
+    } else {
+        value.to_owned()
+    };
+    let width = i32::try_from(shown.chars().count()).unwrap_or(0) * 8 * scale;
+    text(canvas, &shown, Rect { w: width, ..bounds }, scale, color)
 }
 
 fn desktop_footer(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
@@ -395,89 +453,16 @@ fn desktop_footer(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Res
     Ok(())
 }
 
-fn loading_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
-    let Some(name) = &state.opening else {
-        return Ok(());
-    };
-    let bounds = Rect {
-        x: layout.title.x + 12,
-        y: i32::from(layout.height) / 2 - 40 * layout.text_scale,
-        w: layout.title.w - 24,
-        h: 80 * layout.text_scale,
-    };
-    card(canvas, bounds, true)?;
-    text(
-        canvas,
-        &format!("Opening {name}..."),
-        Rect {
-            h: bounds.h / 2,
-            ..bounds
-        },
-        layout.text_scale,
-        theme::TEXT,
-    )?;
-    text(
-        canvas,
-        "Please wait",
-        Rect {
-            y: bounds.y + bounds.h / 2,
-            h: bounds.h / 2,
-            ..bounds
-        },
-        layout.text_scale,
-        theme::ACCENT,
-    )
-}
-
 fn render_tile(
     canvas: &mut Screen,
     layout: &Layout,
     app: &AppEntry,
     tile: Rect,
     selected: bool,
-    running: bool,
+    state: AppState,
     texture: Option<&Texture<'_>>,
 ) -> Result<(), String> {
     card(canvas, tile, selected)?;
-    if running {
-        // Faceted activity badge: cyan play silhouette, violet edge and a short
-        // active rail. Static, legible, and independent of keyboard selection.
-        let badge = Rect {
-            x: tile.x + 5,
-            y: tile.y + 5,
-            w: 13,
-            h: 13,
-        };
-        fill(canvas, badge, theme::BACKGROUND)?;
-        canvas.set_draw_color(theme::ACCENT);
-        canvas.draw_rect(rect(badge)?)?;
-        for offset in 0..5 {
-            canvas.draw_line(
-                (badge.x + 4 + offset, badge.y + 3 + offset / 2),
-                (badge.x + 4 + offset, badge.y + 9 - offset / 2),
-            )?;
-        }
-        fill(
-            canvas,
-            Rect {
-                x: badge.x + 3,
-                y: badge.y + badge.h - 1,
-                w: 8,
-                h: 1,
-            },
-            theme::VIOLET,
-        )?;
-        fill(
-            canvas,
-            Rect {
-                x: tile.x + 5,
-                y: tile.y + tile.h - 3,
-                w: 16,
-                h: 1,
-            },
-            theme::ACCENT,
-        )?;
-    }
     let icon = Rect {
         x: tile.x + (tile.w - layout.icon_size) / 2,
         y: tile.y + tile.h / 12,
@@ -532,7 +517,59 @@ fn render_tile(
         layout.text_scale,
         theme::TEXT,
     )?;
-    Ok(())
+    // Unmistakable application state, drawn over the tile corner so the app name
+    // always stays readable. One filled chip per state, no animation.
+    let (label, ink, surface) = match state {
+        AppState::RunningForeground | AppState::RunningBackground => {
+            ("RUNNING", theme::BACKGROUND, theme::ACCENT)
+        }
+        AppState::Launching => ("STARTING", theme::BACKGROUND, theme::VIOLET),
+        AppState::Failed => ("FAILED", theme::BACKGROUND, theme::WARNING),
+        AppState::Stopped => return Ok(()),
+    };
+    let bounds = badge_bounds(tile, label, layout.text_scale);
+    chip(canvas, bounds, label, layout.text_scale, ink, surface)
+}
+
+/// Right-aligned status chip inside `tile`, sized to its label.
+fn badge_bounds(tile: Rect, label: &str, scale: i32) -> Rect {
+    let width = chip_width(label, scale);
+    Rect {
+        x: tile.x + tile.w - width - 3 * scale,
+        y: tile.y + 3 * scale,
+        w: width,
+        h: 10 * scale + 2,
+    }
+}
+
+/// Width of a compact state chip: one cell per character plus padding.
+pub fn chip_width(label: &str, scale: i32) -> i32 {
+    i32::try_from(label.chars().count()).unwrap_or(0) * 8 * scale + 6 * scale
+}
+
+/// Compact opaque state chip: one fill, one underline and one short label.
+/// Shared by the desktop tiles and the App Center list so a running app looks
+/// identical everywhere.
+pub fn chip(
+    canvas: &mut Screen,
+    bounds: Rect,
+    label: &str,
+    scale: i32,
+    ink: Color,
+    surface: Color,
+) -> Result<(), String> {
+    fill(canvas, bounds, surface)?;
+    fill(
+        canvas,
+        Rect {
+            x: bounds.x,
+            y: bounds.y + bounds.h - 1,
+            w: bounds.w,
+            h: 1,
+        },
+        ink,
+    )?;
+    text(canvas, label, bounds, scale, ink)
 }
 
 fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
@@ -750,14 +787,16 @@ mod system_tests {
         use crate::settings::Page;
         let original_page = state.settings.page;
         for page in [
-            Page::General,
-            Page::Device,
-            Page::Preferences,
+            Page::Display,
+            Page::DateTime,
             Page::Timezones,
-            Page::Updates,
             Page::Wireless,
             Page::Tor,
             Page::TorDetails,
+            Page::Applications,
+            Page::Device,
+            Page::Updates,
+            Page::About,
         ] {
             state.settings.page(page);
             for (index, _) in state.settings.footer_controls().into_iter().flatten() {
@@ -877,6 +916,7 @@ mod system_tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines, reason = "one QA sweep over every size")]
     fn system_panels_render_at_device_and_scaled_sizes() -> Result<(), String> {
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
         let sdl = sdl2::init()?;
@@ -932,29 +972,34 @@ mod system_tests {
             let textures = artwork(&creator, &state);
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("system-{w}x{h}.bmp")))?;
-            state.settings.input(Action::SelectAndActivate(5));
+            state.settings.page(crate::settings::Page::Device);
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("device-{w}x{h}.bmp")))?;
             preferences_sample(&mut canvas, &layout, &mut state, &textures, output)?;
+            state.settings.page(crate::settings::Page::DateTime);
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(&canvas, &output.join(format!("datetime-{w}x{h}.bmp")))?;
             state.settings.page(crate::settings::Page::Wireless);
             state.settings.status.wifi_enabled = Some(true);
             state.settings.status.bluetooth = Some(false);
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("wireless-{w}x{h}.bmp")))?;
             tor_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
-            state.settings.page(crate::settings::Page::Device);
-            state.settings.input(Action::SelectAndActivate(3));
+            state.settings.page(crate::settings::Page::Updates);
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("updates-{w}x{h}.bmp")))?;
             update_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
-            state.settings.input(Action::Back);
-            state.settings.input(Action::SelectAndActivate(1));
+            state.settings.page(crate::settings::Page::About);
+            render(&mut canvas, &layout, &state, &textures)?;
+            screenshot(&canvas, &output.join(format!("about-{w}x{h}.bmp")))?;
+            state.settings.page(crate::settings::Page::Timezones);
             render(&mut canvas, &layout, &state, &textures)?;
             screenshot(&canvas, &output.join(format!("zones-{w}x{h}.bmp")))?;
             footer_focus_samples(&mut canvas, &layout, &mut state, &textures, output)?;
-            state.settings.input(Action::Back);
-            state.settings.input(Action::Back);
-            state.settings.input(Action::SelectAndActivate(4));
+            // The guarded power confirmation is reachable from Device.
+            state.settings.page(crate::settings::Page::Device);
+            state.settings.selected = 3;
+            state.settings.input(Action::Activate);
             render(&mut canvas, &layout, &state, &[])?;
             screenshot(&canvas, &output.join(format!("confirm-{w}x{h}.bmp")))?;
             assert_eq!(state.settings.selected, 0);
@@ -965,12 +1010,17 @@ mod system_tests {
             render(&mut canvas, &layout, &state, &[])?;
             screenshot(&canvas, &output.join(format!("unavailable-{w}x{h}.bmp")))?;
             state.settings.cancel();
+            // Launch feedback is a status line, not a modal loading screen.
             state.opening = Some("Bitcoin CAD".into());
+            state.phase = crate::launcher::Phase::Launching;
+            state.status = "Bitcoin CAD is launching...".into();
+            state.status_notice = true;
             render(&mut canvas, &layout, &state, &[])?;
-            screenshot(&canvas, &output.join(format!("loading-{w}x{h}.bmp")))?;
+            screenshot(&canvas, &output.join(format!("launching-{w}x{h}.bmp")))?;
+            state.opening = None;
+            state.phase = crate::launcher::Phase::Ready;
             app_center::qa(&mut canvas, &layout, output)?;
             shortcuts::qa(&mut canvas, &layout, output)?;
-            state.opening = None;
             state.settings.show();
             system::storage_qa(&mut canvas, &layout, &mut state, &[], output)?;
         }
@@ -984,7 +1034,7 @@ mod system_tests {
         textures: &[Option<Texture<'_>>],
         output: &std::path::Path,
     ) -> Result<(), String> {
-        state.settings.page(crate::settings::Page::Preferences);
+        state.settings.page(crate::settings::Page::Applications);
         state.settings.policy_apps = vec![("io.vitrallis.notepad".into(), "Notepad".into())];
         state.settings.policy.background_seconds = 300;
         state.settings.policy.ampm = true;
@@ -1029,7 +1079,10 @@ mod system_tests {
         })
         .collect();
         let mut state = Launcher::new(apps, layout.columns, layout.tiles.len())?;
-        state.running.push("io.vitrallis.notepad".into());
+        state.app_states.insert(
+            "io.vitrallis.notepad".into(),
+            crate::process::AppState::RunningBackground,
+        );
         let creator = canvas.texture_creator();
         let textures = artwork(&creator, &state);
         for (name, toolbar) in [

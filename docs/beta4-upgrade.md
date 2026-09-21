@@ -16,7 +16,7 @@ no release or executable version is misrepresented.
 
 ## Updating an existing installation
 
-Use **Settings → Device → Updates** and the normal Check, Install and Relaunch
+Use **Settings → Software Updates** and the normal Check, Install and Relaunch
 controls. The installation confirmation still defaults to Cancel.
 
 - From beta3.9: install beta4's full v2 bundle and relaunch. Arti is included.

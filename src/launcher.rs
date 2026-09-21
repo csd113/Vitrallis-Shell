@@ -1,9 +1,11 @@
-use crate::{app::AppEntry, input::Action, navigation};
+use crate::{app::AppEntry, input::Action, navigation, process::AppState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
     Ready,
+    /// A start request is in flight; navigation stays live, activation does not.
     Launching,
+    /// An application owns the foreground; the Shell backgrounds it on return.
     Running,
 }
 
@@ -11,7 +13,8 @@ pub enum Phase {
 pub struct Launcher {
     /// Startup capabilities, separate from periodically refreshed device status.
     pub renderer_info: Option<crate::renderer::backend::RendererInfo>,
-    pub running: Vec<String>,
+    /// Authoritative lifecycle state per application ID.
+    pub app_states: std::collections::BTreeMap<String, AppState>,
     pub preferences: crate::preferences::Preferences,
     pub settings: crate::settings::Settings,
     pub app_center: crate::app_center::Center,
@@ -24,6 +27,8 @@ pub struct Launcher {
     pub selected: usize,
     pub phase: Phase,
     pub status: String,
+    /// Show `status` in the lower-left status area instead of the idle hint.
+    pub status_notice: bool,
     pub opening: Option<String>,
     pub error: Option<String>,
     columns: usize,
@@ -43,7 +48,7 @@ impl Launcher {
         }
         Ok(Self {
             renderer_info: None,
-            running: Vec::new(),
+            app_states: std::collections::BTreeMap::new(),
             preferences: crate::preferences::Preferences::default(),
             settings: crate::settings::Settings::default(),
             app_center: crate::app_center::Center::default(),
@@ -58,6 +63,7 @@ impl Launcher {
                 "ARROWS: SELECT   ENTER / TAP: OPEN"
             }
             .into(),
+            status_notice: true,
             all_apps: apps.clone(),
             folders: crate::folders::Folders::default(),
             folder: None,
@@ -67,11 +73,50 @@ impl Launcher {
             capacity,
         })
     }
+    /// Authoritative lifecycle state for one application.
+    #[must_use]
+    pub fn app_state(&self, id: &str) -> AppState {
+        self.app_states
+            .get(id)
+            .copied()
+            .unwrap_or(AppState::Stopped)
+    }
+    /// Mirror the process owner's lifecycle state for every known application.
+    /// Called only on real transitions, never once per rendered frame.
+    pub fn sync_states(&mut self, processes: &impl crate::process::Processes) {
+        self.app_states.clear();
+        self.app_center.running.clear();
+        for app in &self.all_apps {
+            let state = processes.state(&app.id);
+            if state.is_running() {
+                self.app_center.running.insert(app.id.clone());
+            }
+            if state != AppState::Stopped {
+                self.app_states.insert(app.id.clone(), state);
+            }
+        }
+    }
+    /// Show a lower-left status message without changing the current phase.
+    pub fn notify(&mut self, text: String) {
+        self.status = text;
+        self.status_notice = true;
+    }
+    /// The user asked to launch `name`: acknowledge before any process work so
+    /// the main menu never looks frozen while the worker prepares the child.
+    pub fn launching(&mut self, name: &str) {
+        self.opening = Some(name.into());
+        self.phase = Phase::Launching;
+        self.notify(format!("{name} is launching..."));
+        self.error = None;
+    }
+    /// An application owns the foreground now.
+    pub fn launched(&mut self, name: &str) {
+        self.opening = None;
+        self.phase = Phase::Running;
+        self.notify(format!("{name} is running - Enter / tap to switch back"));
+    }
     /// Returns an app index only once per launch transition.
     pub fn input(&mut self, action: Action) -> Option<usize> {
-        if self.phase != Phase::Ready {
-            return None;
-        }
         if self.error.is_some() {
             if matches!(
                 action,
@@ -79,6 +124,26 @@ impl Launcher {
             ) {
                 self.error = None;
                 self.status = "ARROWS: SELECT   ENTER / TAP: OPEN".into();
+                self.status_notice = false;
+            }
+            return None;
+        }
+        let returned_from_app = self.phase == Phase::Running;
+        if self.phase == Phase::Running {
+            // The main menu never terminates or hides a running app: returning
+            // home moves it into the background and leaves it running.
+            self.returned_home();
+        } else if self.phase == Phase::Launching {
+            // Navigation stays responsive while an app starts, and the launching
+            // message stays visible; a second launch waits for the one in flight.
+            match action {
+                Action::Move(direction) => {
+                    self.selected =
+                        navigation::moved(self.selected, direction, self.columns, self.apps.len());
+                }
+                Action::Page(forward) => self.page(forward),
+                Action::Back if self.folder.is_some() => self.leave_folder(),
+                _ => {}
             }
             return None;
         }
@@ -87,22 +152,24 @@ impl Launcher {
             Action::Move(direction) => {
                 self.selected =
                     navigation::moved(self.selected, direction, self.columns, self.apps.len());
+                if !returned_from_app {
+                    self.status_notice = false;
+                }
             }
             Action::Page(forward) => {
-                let page = self.page_start() / self.capacity;
-                let target = if forward {
-                    page.saturating_add(1).min(self.page_count() - 1)
-                } else {
-                    page.saturating_sub(1)
-                };
-                self.selected = (target * self.capacity + self.selected % self.capacity)
-                    .min(self.apps.len().saturating_sub(1));
+                self.page(forward);
+                if !returned_from_app {
+                    self.status_notice = false;
+                }
             }
             Action::Back => {
                 if self.folder.is_some() {
                     self.leave_folder();
                 }
-                self.status = "ARROWS: SELECT   ENTER / TAP: OPEN".into();
+                if !returned_from_app {
+                    self.status = "ARROWS: SELECT   ENTER / TAP: OPEN".into();
+                    self.status_notice = false;
+                }
             }
             Action::SelectAndActivate(index) if index < self.apps.len() => {
                 self.selected = index;
@@ -122,14 +189,23 @@ impl Launcher {
                     self.settings.show();
                     return None;
                 }
-                self.opening = Some(self.apps[self.selected].name.clone());
-                self.phase = Phase::Launching;
-                self.status = format!("OPENING {}", self.apps[self.selected].name);
+                let name = self.apps[self.selected].name.clone();
+                self.launching(&name);
                 return Some(self.selected);
             }
             Action::Activate | Action::SelectAndActivate(_) | Action::System => {}
         }
         None
+    }
+    fn page(&mut self, forward: bool) {
+        let page = self.page_start() / self.capacity;
+        let target = if forward {
+            page.saturating_add(1).min(self.page_count() - 1)
+        } else {
+            page.saturating_sub(1)
+        };
+        self.selected = (target * self.capacity + self.selected % self.capacity)
+            .min(self.apps.len().saturating_sub(1));
     }
     pub const fn page_start(&self) -> usize {
         self.selected / self.capacity * self.capacity
@@ -143,28 +219,25 @@ impl Launcher {
             .saturating_sub(self.page_start())
             .min(self.capacity)
     }
-    pub fn started(&mut self) {
-        self.phase = Phase::Running;
-        self.status = "APP RUNNING - ENTER: RESUME".into();
-    }
     pub fn returned_home(&mut self) {
         self.opening = None;
         if self.phase == Phase::Running {
             self.phase = Phase::Ready;
-            self.status = "SELECT AN APP - RUNNING APPS HAVE A BADGE".into();
+            self.notify("App continues in the background - Escape: close it".into());
         }
     }
     pub fn failed(&mut self, message: String) {
         self.opening = None;
         self.phase = Phase::Ready;
         self.status = "LAUNCH FAILED - ENTER / TAP: DISMISS".into();
+        self.status_notice = true;
         self.error = Some(message);
     }
     pub fn finished(&mut self, message: String) {
         self.opening = None;
         self.error = None;
         self.phase = Phase::Ready;
-        self.status = message;
+        self.notify(message);
     }
     /// Commit a validated replacement only while idle, retaining selection by ID.
     pub fn reload(&mut self, apps: Vec<AppEntry>) -> Result<bool, String> {
@@ -246,7 +319,8 @@ mod tests {
         invalid[0].name.clear();
         assert!(state.reload(invalid).is_err());
         assert_eq!(state.apps.len(), apps.len());
-        state.started();
+        state.launching("Test");
+        state.launched("Test");
         assert!(state.reload(vec![]).is_err());
         state.finished("closed".into());
         state.reload(vec![])?;
@@ -279,14 +353,25 @@ mod tests {
         assert!(!backend.fullscreen());
         let mut state = Launcher::new(apps, 3, 6)?;
         assert_eq!(state.input(Action::SelectAndActivate(1)), Some(1));
+        // The launch is acknowledged immediately; the menu stays interactive.
         assert_eq!(state.phase, Phase::Launching);
+        assert!(state.status_notice);
+        assert!(state.status.contains("launching"));
         assert_eq!(state.input(Action::Activate), None);
-        state.started();
-        state.input(Action::Back);
+        assert_eq!(
+            state.input(Action::Move(crate::navigation::Direction::Right)),
+            None
+        );
+        assert_eq!(state.selected, 2);
+        state.launching("Test");
+        state.launched("Test");
         assert_eq!(state.phase, Phase::Running);
+        // Returning home backgrounds the app instead of terminating it.
+        state.input(Action::Back);
+        assert_eq!(state.phase, Phase::Ready);
+        assert!(state.status.contains("background"));
         state.finished("done".into());
-        assert_eq!(state.selected, 1);
-        assert_eq!(state.input(Action::Activate), Some(1));
+        assert_eq!(state.input(Action::Activate), Some(2));
         state.finished("failed".into());
         assert_eq!(state.phase, Phase::Ready);
         Ok(())
@@ -363,7 +448,8 @@ mod pagination_tests {
                         let index = state.page_start() + hit;
                         assert_eq!(state.input(Action::SelectAndActivate(index)), Some(index));
                         assert!(state.input(Action::Activate).is_none());
-                        state.started();
+                        state.launching("Test");
+                        state.launched("Test");
                         state.finished("closed".into());
                         assert_eq!(state.selected, index);
                         assert_eq!(state.page_start(), page * 6);
@@ -430,7 +516,8 @@ mod folder_tests {
         assert_eq!(state.apps, apps[..1]);
         assert_eq!(state.input(Action::Activate), Some(0));
         assert_eq!(state.apps[0].manifest, apps[0].manifest);
-        state.started();
+        state.launching("Test");
+        state.launched("Test");
         state.returned_home();
         state.input(Action::Back);
         assert_eq!(state.apps[state.selected].id, id);

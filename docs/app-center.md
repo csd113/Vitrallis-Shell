@@ -60,9 +60,13 @@ and touchscreen text entry. Folder state is stored atomically in
 `$XDG_DATA_HOME/vitrallis/folders.json`, independently of shell generations and
 app installations. Malformed or unsafe state cannot be overwritten by an action.
 
-Running apps have a small outlined play badge in a fixed corner of the tile.
-This uses the launcher's semantic running IDs and no animation timer, preserving
-text positions and idle rendering behavior.
+Running apps show one filled **RUNNING** chip in a fixed corner of the tile, over
+the icon rather than the name. The launcher's authoritative process state decides
+it, the same chip appears in folders and the App Center list, and there is no
+animation timer, so text positions and idle rendering behavior are unchanged.
+Launching and exit notices appear in the lower-left status area instead of a
+modal screen, and a launch that is in flight refuses a duplicate activation
+while arrow keys keep working.
 
 ## Repositories and cached metadata
 

@@ -99,7 +99,7 @@ state. A crash does not change configuration or delete the Arti cache/state.
 
 ## Settings
 
-Open **Settings → Device → Wireless → Tor**. The 480×272 summary shows support,
+Open **Settings → Wireless Network → Tor**. The 480×272 summary shows support,
 connection/bootstrap, service, endpoint, application count and startup mode.
 Start, Stop, Restart, Enable/Disable, Startup and Details share keyboard/touch
 activation. Arrows move the visible selection; Enter activates; Escape returns.

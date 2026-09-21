@@ -1,10 +1,15 @@
-//! Radio switches use the same commands for keyboard and matched touch activation.
-use super::{Page, Request, Settings, footer::BACK};
+//! Wireless Network page: radio switches, the connection manager and Tor.
+//! Keyboard and matched touch activation share the same commands.
+use super::{Page, Request, Settings};
 use crate::{
     input::Action,
     navigation::Direction,
     platform::system::{Control, Radio},
 };
+
+/// Wi-Fi switch, Bluetooth switch, connection manager, Tor controls.
+pub const WIRELESS_ROWS: usize = 4;
+
 impl Settings {
     pub const fn radio_value(&self, index: usize) -> Option<bool> {
         match index {
@@ -35,35 +40,32 @@ impl Settings {
     }
     pub(super) fn wireless_input(&mut self, action: Action) -> Option<Request> {
         match action {
-            Action::Back | Action::System | Action::Page(_) => self.page(Page::General),
-            Action::Move(Direction::Up) => self.selected = self.selected.saturating_sub(1),
-            Action::Move(Direction::Down) => {
-                self.selected = if self.selected >= 2 {
-                    BACK
-                } else {
-                    self.selected + 1
-                }
-            }
+            Action::Back | Action::System | Action::Page(_) => self.page(Page::Home),
             Action::Move(Direction::Left | Direction::Right) if self.selected < 2 => {
                 return self.set_radio(self.selected, action == Action::Move(Direction::Right));
             }
-            Action::SelectAndActivate(index) if index < 3 => {
+            Action::SelectAndActivate(index) if index < WIRELESS_ROWS => {
                 self.selected = index;
                 return self.wireless_input(Action::Activate);
             }
-            Action::Activate if !self.pending => {
-                if self.selected < 2 {
+            Action::Move(direction) => self.move_rows(direction),
+            Action::Activate if !self.pending => match self.selected {
+                0 | 1 => {
                     return self.set_radio(
                         self.selected,
                         !self.radio_value(self.selected).unwrap_or(false),
                     );
                 }
-                if self.selected == 2 && self.network_available {
-                    return Some(Request::Network);
+                2 => {
+                    if self.network_available {
+                        return Some(Request::Network);
+                    }
+                    self.message = "Wi-Fi connection manager unavailable".into();
                 }
-                self.message = "Wi-Fi connection manager unavailable".into();
-            }
-            _ => (),
+                3 => self.page(Page::Tor),
+                _ => {}
+            },
+            Action::Activate | Action::SelectAndActivate(_) => {}
         }
         None
     }
@@ -75,12 +77,11 @@ mod tests {
     use crate::{layout::Layout, settings::PanelLayout};
     use sdl2::{event::Event, mouse::MouseButton};
     #[test]
-    fn toggles_and_connections_are_reachable_with_keyboard_and_touch() -> Result<(), String> {
+    fn toggles_connections_and_tor_are_reachable_with_keyboard_and_touch() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let mut settings = Settings::default();
         settings.show();
-        settings.input(Action::SelectAndActivate(2));
-        assert_eq!(settings.page, Page::Wireless);
+        settings.page(Page::Wireless);
         settings.status.wifi_enabled = Some(false);
         settings.status.bluetooth = Some(true);
         settings.network_available = true;
@@ -98,7 +99,8 @@ mod tests {
         assert_eq!(settings.input(Action::Activate), None);
         settings.pending = false;
         for (index, radio, enabled) in [(0, Radio::Wifi, true), (1, Radio::Bluetooth, false)] {
-            let bounds = PanelLayout::rows(&layout, 3)[index];
+            let bounds =
+                PanelLayout::rows(&layout, i32::try_from(WIRELESS_ROWS).unwrap_or(4))[index];
             let event = |down| {
                 if down {
                     Event::MouseButtonDown {
@@ -129,11 +131,16 @@ mod tests {
                 Some(Request::Control(Control::Radio(radio, enabled)))
             );
         }
-        settings.input(Action::Move(Direction::Down));
+        // The connection manager and Tor are content rows, not footer shortcuts.
+        settings.selected = 2;
         assert_eq!(settings.input(Action::Activate), Some(Request::Network));
-        settings.input(Action::Move(Direction::Down));
+        settings.selected = 3;
         settings.input(Action::Activate);
-        assert_eq!(settings.page, Page::General);
+        assert_eq!(settings.page, Page::Tor);
+        settings.input(Action::Back);
+        assert_eq!(settings.page, Page::Wireless);
+        settings.input(Action::Back);
+        assert_eq!(settings.page, Page::Home);
         Ok(())
     }
     #[test]

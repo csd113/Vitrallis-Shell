@@ -1,10 +1,16 @@
 //! Shared focus and activation targets for the visible keyboard/touch footer.
+//!
+//! Content entries always use indices below [`CONTENT_LIMIT`]; footer controls
+//! use the constants below it so a page can never confuse a row with a button.
 use super::{Page, Settings};
 use crate::{input::Action, navigation::Direction};
 
-pub(super) const NEXT: usize = 5;
-pub(super) const BACK: usize = 6;
-pub(super) const ZONE_BACK: usize = 7;
+/// Highest content index any Settings page uses (Tor has six controls).
+pub(super) const CONTENT_LIMIT: usize = 5;
+pub(super) const BACK: usize = 8;
+pub(super) const PREVIOUS: usize = 9;
+pub(super) const NEXT: usize = 10;
+pub(super) const REFRESH: usize = 11;
 
 impl Settings {
     pub const fn footer_controls(&self) -> [Option<(usize, &'static str)>; 3] {
@@ -12,42 +18,24 @@ impl Settings {
             return [None; 3];
         }
         match self.page {
-            Page::General => [
-                Some((BACK, "< Back")),
-                Some((super::storage::REFRESH, "Storage")),
-                Some((NEXT, "Device >")),
-            ],
-            Page::Device => [
-                Some((BACK, "< Back")),
-                Some((super::preferences::PREFERENCES, "Preferences")),
-                Some((NEXT, "Storage >")),
-            ],
-            Page::Preferences | Page::Tor | Page::TorDetails | Page::Updates => {
-                [Some((BACK, "< Back")), None, None]
-            }
-            Page::Wireless => [
-                Some((BACK, "< Back")),
-                Some((super::tor::TOR, "Tor >")),
-                None,
+            Page::Home | Page::About => [None; 3],
+            Page::Timezones => [
+                Some((PREVIOUS, "< Previous")),
+                Some((BACK, "Back")),
+                Some((NEXT, "Next >")),
             ],
             Page::Storage => match self.storage_view {
-                super::StorageView::Overview => [
-                    Some((BACK, "< Back")),
-                    Some((super::storage::REFRESH, "Refresh")),
-                    None,
-                ],
+                super::StorageView::Overview => {
+                    [Some((BACK, "< Back")), Some((REFRESH, "Refresh")), None]
+                }
                 super::StorageView::Apps => [
                     Some((BACK, "< Back")),
-                    Some((super::storage::REFRESH, "Previous")),
+                    Some((REFRESH, "Previous")),
                     Some((NEXT, "Next >")),
                 ],
                 _ => [Some((BACK, "< Back")), None, None],
             },
-            Page::Timezones => [
-                Some((BACK, "< Previous")),
-                Some((ZONE_BACK, "Back")),
-                Some((NEXT, "Next >")),
-            ],
+            _ => [Some((BACK, "< Back")), None, None],
         }
     }
 
@@ -76,47 +64,95 @@ impl Settings {
                 }
             }
             Action::Move(Direction::Up) => {
-                self.selected = match self.page {
-                    Page::General if index == NEXT => 4,
-                    Page::General | Page::Wireless => 2,
-                    Page::Device | Page::Tor | Page::Preferences => 3,
-                    Page::Storage | Page::Updates | Page::TorDetails => 0,
-                    Page::Timezones => self.visible_zones().saturating_sub(1),
-                };
+                self.selected = self.content_rows().saturating_sub(1);
             }
             Action::Move(Direction::Down) => {}
-            Action::Activate | Action::SelectAndActivate(_) => {
-                if self.page == Page::Wireless && index == super::tor::TOR {
-                    self.page(Page::Tor);
-                    return true;
+            Action::Activate | Action::SelectAndActivate(_) => match self.page {
+                Page::Timezones => match index {
+                    PREVIOUS => {
+                        self.input(Action::Page(false));
+                    }
+                    NEXT => {
+                        self.input(Action::Page(true));
+                    }
+                    _ => self.back(),
+                },
+                Page::Storage if index == REFRESH => {
+                    self.storage_input(Action::Activate);
                 }
-                if self.page == Page::Device && index == super::preferences::PREFERENCES {
-                    self.page(Page::Preferences);
-                    return true;
+                Page::Storage if index == NEXT => {
+                    self.storage_input(Action::Page(true));
                 }
-                if (self.page == Page::Device && index == NEXT)
-                    || (self.page == Page::General && index == super::storage::REFRESH)
-                {
-                    self.page(Page::Storage);
-                    return true;
+                Page::Storage if index == PREVIOUS => {
+                    self.storage_input(Action::Page(false));
                 }
-                let action = match (self.page, index) {
-                    (Page::General | Page::Timezones, NEXT) => Action::Page(true),
-                    (Page::Timezones, BACK) => Action::Page(false),
-                    _ => Action::Back,
-                };
-                self.input(action);
-            }
+                _ => self.back(),
+            },
             _ => return false,
         }
         true
     }
 
-    pub(super) fn visible_zones(&self) -> usize {
-        self.status
-            .timezones
-            .len()
-            .saturating_sub(self.zone_start)
-            .min(5)
+    /// One level of back navigation, exactly like Escape.
+    pub(super) fn back(&mut self) {
+        if self.confirmation.take().is_some() || self.update_confirmation.take().is_some() {
+            self.selected = 0;
+            self.message.clear();
+            return;
+        }
+        self.page(super::parent(self.page));
+    }
+
+    /// Content rows used by the shared vertical navigation of one page.
+    pub(super) const fn content_rows(&self) -> usize {
+        match self.page {
+            Page::Home => super::HOME_ROWS,
+            Page::Display | Page::DateTime => 2,
+            Page::Timezones | Page::About => 5,
+            Page::Wireless => super::wireless::WIRELESS_ROWS,
+            Page::Tor | Page::TorDetails => 6,
+            Page::Applications => super::preferences::APP_ROWS,
+            Page::Device => 4,
+            Page::Storage | Page::Updates => 0,
+        }
+    }
+
+    /// Shared vertical focus movement: past the last row focus reaches the
+    /// visible footer Back control, and up returns to the last row.
+    pub(super) fn move_rows(&mut self, direction: Direction) {
+        let rows = self.content_rows();
+        match direction {
+            Direction::Up => {
+                self.selected = if self.selected > CONTENT_LIMIT {
+                    rows.saturating_sub(1)
+                } else {
+                    self.selected.saturating_sub(1)
+                };
+            }
+            Direction::Down => {
+                self.selected = if self.selected + 1 < rows {
+                    self.selected + 1
+                } else {
+                    BACK
+                };
+            }
+            Direction::Left | Direction::Right => {
+                let controls = self.footer_controls();
+                let targets: Vec<_> = controls.into_iter().flatten().map(|(i, _)| i).collect();
+                if targets.is_empty() {
+                    return;
+                }
+                if let Some(position) = targets.iter().position(|&i| i == self.selected) {
+                    let next = if direction == Direction::Left {
+                        position.saturating_sub(1)
+                    } else {
+                        (position + 1).min(targets.len() - 1)
+                    };
+                    self.selected = targets[next];
+                } else {
+                    self.selected = targets[0];
+                }
+            }
+        }
     }
 }

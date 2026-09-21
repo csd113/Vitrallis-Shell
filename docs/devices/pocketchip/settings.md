@@ -7,17 +7,17 @@ Settings use the Linux handheld backend and the existing device utilities.
 - The launcher and settings header show the device's Wi-Fi IPv4 address, falling back to USB IPv4 when Wi-Fi has no address. Missing addresses display `IP --`. IPv6-only networks are not displayed by this backend.
 - Settings headers identify the current section. Software updates display the version compiled into the running binary.
 - Gear, Wi-Fi, brightness, volume, restart and power icons are transparent PNG assets embedded in the binary. They load once, use linear filtering at small sizes, and require no runtime files or network access. [Asset guidance](../../../assets/system/README.md) documents the artwork requirements.
-- **App Center** is the built-in native application manager. Its [package guide](../../app-center.md) covers catalogs, installation, updates and removal. Native shell updates live in **Device → Software updates**.
-- Brightness and volume retain their existing live 10% sliders. Choose **Device** at the bottom, move down to Device and press Enter, or press Page Down to reach the additional settings.
+- **App Center** is the built-in native application manager. Its [package guide](../../app-center.md) covers catalogs, installation, updates and removal. Native shell updates live in **Software Updates**.
+- Brightness and volume retain their existing live 10% sliders on the **Display & Sound** page. The home menu lists every category as a large two-line option: Display & Sound, Date & Time, Wireless Network, Applications, Storage, Device, Software Updates and About. Arrows move between options and Enter opens one.
 - **Screen timeout:** Never, 30 seconds, 1, 2, 5, 10 or 30 minutes. Left/right keypad changes the selected timeout; tap the left portion to decrease or the remainder to increase. Wait for Applying to finish before another change. Touching a timeout row does not drag the brightness slider.
 - **Time zone:** choose from the installed `zone.tab` database plus UTC. Up/down moves one zone; left/right or page keys moves five. Touch selects a visible row; Previous/Next moves a page. `*` marks the current zone. Choosing a zone applies through timedatectl; when authorization is needed, a supervised terminal requests the normal device password through sudo. Ctrl+C cancels; after completion Enter returns to settings. No password is stored or read by Vitrallis. The clock and zone display refresh from system readback, including an immediate refresh when the authorization terminal closes.
 - **Calibrate touchscreen:** launches the image's existing `/usr/local/bin/pocketchip-calibration` utility. Tap its crosshairs accurately; any key cancels. The existing utility saves completed calibration for future logins and restores the previous matrix when cancelled. A missing utility displays unavailable; the installer does not install or replace calibration tools.
 
-Back and Device remain visible while a setting reports Saved or an error. Escape returns from the zone list to additional settings, from additional settings to the first settings page, and from there to the launcher. F1 remains unbound.
+A visible Back control remains available on every category while a setting reports Saved or an error. Escape dismisses a pending confirmation first, then returns exactly one level: the zone list returns to Date & Time, Tor returns to Wireless Network, and only the home menu returns to the launcher. F1 remains unbound.
 
 ## Wireless switches
 
-Open **Device → Wireless** for Wi-Fi and Bluetooth on/off switches. Up/down selects
+Open **Wireless Network** for Wi-Fi and Bluetooth on/off switches, the connection manager and the Tor controls. Up/down selects
 a row; Enter or a matched touch release toggles it. Left requests Off and Right
 requests On. The Wi-Fi connections row opens the existing connection manager;
 the main Settings Wi-Fi button also retains that behavior.

@@ -249,7 +249,7 @@ The launcher consumes queued SDL input between presentations, presenting at most
 once per 16 ms while input remains queued. This prevents each key-down/text pair
 from waiting behind a separate VSync on a slow backend; an empty queue still
 presents changed state immediately. Idle screens remain event-driven. App running
-badges are static geometry at a fixed tile position, with no animation timer or
-text reflow. Folder navigation refreshes artwork only when the visible app view
+state chips are static geometry at a fixed tile position, with no animation timer
+or text reflow. Folder navigation refreshes artwork only when the visible app view
 changes. Rendering continues through the shared complete-frame SDL backbuffer and
 existing verified synchronization selection.

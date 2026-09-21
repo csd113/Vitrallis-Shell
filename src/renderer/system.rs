@@ -23,6 +23,7 @@ pub(super) const ASSETS: [&[u8]; 5] = [
 ];
 
 const INK: Color = theme::TEXT;
+const TEXT: Color = theme::TEXT;
 const MUTED: Color = theme::MUTED;
 const ACCENT: Color = theme::ACCENT;
 const AMBER: Color = theme::WARNING;
@@ -297,92 +298,181 @@ pub(super) fn panel(
 ) -> Result<(), String> {
     match settings.page {
         Page::Tor | Page::TorDetails => return tor::panel(canvas, layout, settings),
-        Page::Preferences => return preferences_panel(canvas, layout, settings),
+        Page::Applications => return preferences_panel(canvas, layout, settings),
         Page::Wireless => return wireless::panel(canvas, layout, settings),
         Page::Storage => return storage::panel(canvas, layout, settings),
         Page::Updates => return update_panel(canvas, layout, settings),
-        Page::Device | Page::Timezones => return device_panel(canvas, layout, settings),
-        Page::General => (),
+        Page::Display => return display_panel(canvas, layout, settings, textures),
+        Page::DateTime => return datetime_panel(canvas, layout, settings),
+        Page::Device => return device_panel(canvas, layout, settings, textures),
+        Page::About => return about_panel(canvas, layout, settings),
+        Page::Timezones => return zones_panel(canvas, layout, settings),
+        Page::Home => (),
     }
-    let geometry = PanelLayout::new(layout);
-    if settings.confirmation.is_some() {
-        return confirmation(canvas, layout, settings, &geometry);
-    }
-    for index in 0..2 {
-        slider(canvas, layout, settings, &geometry, index, textures)?;
-    }
-    let network = geometry.controls[2];
-    card(canvas, network, settings.selected == 2)?;
-    let size = network.h * 3 / 5;
-    icon(
-        canvas,
-        Rect {
-            x: network.x + 9,
-            y: network.y + (network.h - size) / 2,
-            w: size,
-            h: size,
-        },
-        Icon::Wifi,
-        if settings.available(2) { ACCENT } else { MUTED },
-        textures,
-    )?;
-    let x = network.x + network.h;
-    label(
-        canvas,
-        "Wireless",
-        Rect {
-            x,
-            y: network.y,
-            w: network.w - network.h,
-            h: network.h / 2,
-        },
-        layout.text_scale,
-        INK,
-    )?;
-    let wifi = wifi_label(settings.status.wifi);
-    label(
-        canvas,
-        wifi,
-        Rect {
-            x,
-            y: network.y + network.h / 2,
-            w: network.w - network.h - 4,
-            h: network.h / 2,
-        },
-        layout.text_scale,
-        MUTED,
-    )?;
-    for (index, kind, title) in [(3, Icon::Restart, "Restart"), (4, Icon::Power, "Off")] {
-        let r = geometry.controls[index];
-        card(canvas, r, settings.selected == index)?;
-        let size = r.h / 2;
-        icon(
+    home_panel(canvas, layout, settings)
+}
+
+/// Home menu: the same large-option style is reused by every category, so a
+/// user always sees one visual system. Two columns by four rows.
+fn home_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
+    for (index, (bounds, (title, detail))) in PanelLayout::home(layout)
+        .into_iter()
+        .zip(settings.home_rows())
+        .enumerate()
+    {
+        card(canvas, bounds, settings.selected == index)?;
+        text(
             canvas,
+            &title,
             Rect {
-                x: r.x + (r.w - size) / 2,
-                y: r.y + 3,
-                w: size,
-                h: size,
+                y: bounds.y + 4 * layout.text_scale,
+                h: bounds.h / 2,
+                ..bounds
             },
-            kind,
-            if settings.available(index) {
+            layout.text_scale,
+            if settings.selected == index {
                 INK
             } else {
-                MUTED
+                TEXT
             },
-            textures,
         )?;
         text(
             canvas,
-            title,
+            &detail,
             Rect {
-                y: r.y + r.h / 2,
-                h: r.h / 2,
-                ..r
+                y: bounds.y + bounds.h / 2,
+                h: bounds.h / 2,
+                ..bounds
             },
             layout.text_scale,
-            if settings.available(index) {
-                INK
+            MUTED,
+        )?;
+    }
+    panel_footer(canvas, layout, settings)
+}
+
+/// Shared two-line option row used by every Settings category.
+fn option_row(
+    canvas: &mut Screen,
+    layout: &Layout,
+    bounds: Rect,
+    title: &str,
+    detail: &str,
+    selected: bool,
+    detail_color: Color,
+) -> Result<(), String> {
+    card(canvas, bounds, selected)?;
+    let content = Rect {
+        x: bounds.x + 12,
+        w: bounds.w - 24,
+        ..bounds
+    };
+    label(
+        canvas,
+        title,
+        Rect {
+            h: bounds.h / 2,
+            ..content
+        },
+        layout.text_scale,
+        if selected { INK } else { TEXT },
+    )?;
+    label(
+        canvas,
+        detail,
+        Rect {
+            y: bounds.y + bounds.h / 2,
+            h: bounds.h / 2,
+            ..content
+        },
+        layout.text_scale,
+        detail_color,
+    )
+}
+
+/// Display & Sound: the two hardware sliders.
+fn display_panel(
+    canvas: &mut Screen,
+    layout: &Layout,
+    settings: &Settings,
+    textures: &[Option<Texture<'_>>],
+) -> Result<(), String> {
+    if settings.confirmation.is_some() {
+        return confirmation(canvas, layout, settings, &PanelLayout::new(layout));
+    }
+    let geometry = PanelLayout::new(layout);
+    for index in 0..2 {
+        slider(canvas, layout, settings, &geometry, index, textures)?;
+    }
+    panel_footer(canvas, layout, settings)
+}
+
+/// Date & Time: clock format and the time-zone listing.
+fn datetime_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
+    let rows = PanelLayout::rows(layout, 2);
+    let zone = settings
+        .status
+        .timezone
+        .clone()
+        .unwrap_or_else(|| "Unavailable".into());
+    for (index, bounds) in rows.into_iter().enumerate() {
+        let (title, detail, color) = if index == 0 {
+            (
+                "Clock format",
+                if settings.policy.ampm {
+                    "< 12 hour >".into()
+                } else {
+                    "< 24 hour >".into()
+                },
+                ACCENT,
+            )
+        } else {
+            (
+                "Time zone",
+                zone.clone(),
+                if zone.starts_with("Unavailable") {
+                    MUTED
+                } else {
+                    ACCENT
+                },
+            )
+        };
+        option_row(
+            canvas,
+            layout,
+            bounds,
+            title,
+            &detail,
+            settings.selected == index,
+            color,
+        )?;
+    }
+    panel_footer(canvas, layout, settings)
+}
+
+/// Applications: background lifetime policy and the keep-running list.
+fn preferences_panel(
+    canvas: &mut Screen,
+    layout: &Layout,
+    settings: &Settings,
+) -> Result<(), String> {
+    for (index, (bounds, (title, detail))) in PanelLayout::rows(
+        layout,
+        i32::try_from(crate::settings::preferences::APP_ROWS).unwrap_or(3),
+    )
+    .into_iter()
+    .zip(settings.preference_rows())
+    .enumerate()
+    {
+        option_row(
+            canvas,
+            layout,
+            bounds,
+            &title,
+            &detail,
+            settings.selected == index,
+            if settings.selected == index {
+                ACCENT
             } else {
                 MUTED
             },
@@ -390,18 +480,131 @@ pub(super) fn panel(
     }
     panel_footer(canvas, layout, settings)
 }
-fn preferences_panel(
-    canvas: &mut Screen,
-    layout: &Layout,
-    settings: &Settings,
-) -> Result<(), String> {
-    for (index, (bounds, value)) in PanelLayout::rows(layout, 4)
+
+/// About: read-only system information, no editable controls.
+fn about_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
+    for ((title, value), bounds) in about_rows(settings)
         .into_iter()
-        .zip(settings.preference_rows())
-        .enumerate()
+        .zip(PanelLayout::rows(layout, 5))
     {
+        card(canvas, bounds, false)?;
+        let content = Rect {
+            x: bounds.x + 12,
+            w: bounds.w - 24,
+            ..bounds
+        };
+        label(
+            canvas,
+            &title,
+            Rect {
+                h: bounds.h / 2,
+                ..content
+            },
+            layout.text_scale,
+            MUTED,
+        )?;
+        label(
+            canvas,
+            &value,
+            Rect {
+                y: bounds.y + bounds.h / 2,
+                h: bounds.h / 2,
+                ..content
+            },
+            layout.text_scale,
+            INK,
+        )?;
+    }
+    panel_footer(canvas, layout, settings)
+}
+
+/// About values reuse the refreshed device status; nothing is fabricated.
+fn about_rows(settings: &Settings) -> Vec<(String, String)> {
+    let status = &settings.status;
+    vec![
+        ("Vitrallis Shell".into(), display_version().to_owned()),
+        (
+            "Display".into(),
+            if settings.renderer.is_empty() {
+                "Unavailable".into()
+            } else {
+                settings.renderer.clone()
+            },
+        ),
+        (
+            "Network".into(),
+            status.ip.map_or_else(
+                || format!("Wi-Fi {}", wifi_label(status.wifi).to_lowercase()),
+                |ip| format!("{ip}  Wi-Fi {}", wifi_label(status.wifi).to_lowercase()),
+            ),
+        ),
+        (
+            "Battery".into(),
+            status.battery.map_or_else(
+                || "Unavailable".into(),
+                |percent| {
+                    format!(
+                        "{}{}",
+                        percent.value(),
+                        if status.charging == Some(true) {
+                            "% charging"
+                        } else {
+                            "%"
+                        }
+                    )
+                },
+            ),
+        ),
+        (
+            "Date & time".into(),
+            format!(
+                "{}  {}",
+                settings
+                    .status
+                    .timezone
+                    .clone()
+                    .unwrap_or_else(|| "Time zone unavailable".into()),
+                settings
+                    .status
+                    .clock
+                    .clone()
+                    .unwrap_or_else(|| "--:--".into())
+            ),
+        ),
+    ]
+}
+
+/// Time zones remain a bounded, paged selector under Date & Time.
+fn zones_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
+    for (index, bounds) in PanelLayout::rows(layout, 5).into_iter().enumerate() {
+        let Some(zone) = settings.status.timezones.get(settings.zone_start + index) else {
+            continue;
+        };
         card(canvas, bounds, settings.selected == index)?;
-        text(canvas, &value, bounds, layout.text_scale, INK)?;
+        label(
+            canvas,
+            zone,
+            Rect {
+                x: bounds.x + 12,
+                w: bounds.w - 36,
+                ..bounds
+            },
+            layout.text_scale,
+            INK,
+        )?;
+        if settings.status.timezone.as_ref() == Some(zone) {
+            text(
+                canvas,
+                "current",
+                Rect {
+                    x: bounds.x + bounds.w - 68,
+                    w: 60,
+                    ..bounds
+                },
+                layout.text_scale,
+                ACCENT,
+            )?;
+        }
     }
     panel_footer(canvas, layout, settings)
 }
@@ -409,18 +612,20 @@ fn preferences_panel(
 fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
     let storage_hint = storage::hint(settings);
     let hint = match settings.page {
-        Page::General => "Left/right: adjust   Esc: close",
-        Page::Storage => &storage_hint,
-        Page::Preferences | Page::Updates | Page::Tor | Page::TorDetails => {
-            "Esc: back   Enter: select"
-        }
+        Page::Home => "Enter: open   Esc: close",
+        Page::Display => "Left/right: adjust   Esc: back",
+        Page::DateTime => "Left/right: change   Enter: select",
         Page::Device => "Left/right: timeout   Enter: select",
         Page::Wireless => "Left: off   Right: on   Enter: toggle",
+        Page::Applications => "Enter: change   Esc: back",
+        Page::About => "Esc: back",
         Page::Timezones => "Arrows: select   Enter: apply",
+        Page::Storage => &storage_hint,
+        Page::Updates | Page::Tor | Page::TorDetails => "Esc: back   Enter: select",
     };
     let hint = if matches!(
         settings.page,
-        Page::General | Page::Device | Page::Timezones
+        Page::Display | Page::Device | Page::DateTime | Page::Wireless | Page::Applications
     ) {
         if settings.pending {
             "Applying setting..."
@@ -624,96 +829,108 @@ fn confirmation(
     )
 }
 
-fn device_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
-    let zones = settings.page == Page::Timezones;
-    let rows = PanelLayout::rows(layout, if zones { 5 } else { 4 });
+/// Device: hardware controls and the two guarded power actions.
+fn device_panel(
+    canvas: &mut Screen,
+    layout: &Layout,
+    settings: &Settings,
+    textures: &[Option<Texture<'_>>],
+) -> Result<(), String> {
+    if settings.confirmation.is_some() {
+        return confirmation(canvas, layout, settings, &PanelLayout::new(layout));
+    }
+    let rows = PanelLayout::rows(layout, 4);
     for (index, bounds) in rows.into_iter().enumerate() {
-        if zones {
-            let Some(zone) = settings.status.timezones.get(settings.zone_start + index) else {
-                continue;
-            };
-            card(canvas, bounds, settings.selected == index)?;
-            label(
-                canvas,
-                zone,
-                Rect {
-                    x: bounds.x + 12,
-                    w: bounds.w - 36,
-                    ..bounds
-                },
-                layout.text_scale,
-                INK,
-            )?;
-            if settings.status.timezone.as_ref() == Some(zone) {
-                text(
-                    canvas,
-                    "*",
-                    Rect {
-                        x: bounds.x + bounds.w - 24,
-                        w: 20,
-                        ..bounds
-                    },
-                    layout.text_scale,
-                    ACCENT,
-                )?;
-            }
-        } else {
-            card(canvas, bounds, settings.selected == index)?;
-            let (title, detail) = match index {
-                0 => (
-                    "Screen timeout",
-                    timeout_label(settings.status.screen_timeout),
-                ),
-                1 => (
-                    "Time zone",
-                    settings
-                        .status
-                        .timezone
-                        .clone()
-                        .unwrap_or_else(|| "Unavailable".into()),
-                ),
-                3 => (
-                    "Software updates",
-                    format!("Vitrallis Shell {}", display_version()),
-                ),
-                _ => (
-                    "Calibrate touchscreen",
-                    if settings.status.calibration {
-                        "Tap the targets; any key cancels".into()
-                    } else {
-                        "Unavailable on this device".into()
-                    },
-                ),
-            };
-            label(
-                canvas,
-                title,
-                Rect {
-                    x: bounds.x + 14,
-                    w: bounds.w - 28,
-                    h: bounds.h / 2,
-                    ..bounds
-                },
-                layout.text_scale,
-                INK,
-            )?;
-            label(
-                canvas,
-                &detail,
-                Rect {
-                    x: bounds.x + 14,
-                    y: bounds.y + bounds.h / 2,
-                    w: bounds.w - 28,
-                    h: bounds.h / 2,
-                },
-                layout.text_scale,
-                if detail.starts_with("Unavailable") {
-                    MUTED
+        let (title, detail, color, kind) = match index {
+            0 => (
+                "Screen timeout",
+                timeout_label(settings.status.screen_timeout),
+                ACCENT,
+                Icon::Sun,
+            ),
+            1 => (
+                "Calibrate touchscreen",
+                if settings.status.calibration {
+                    "Tap the targets; any key cancels".into()
                 } else {
-                    ACCENT
+                    "Unavailable on this device".into()
                 },
-            )?;
-        }
+                if settings.status.calibration {
+                    ACCENT
+                } else {
+                    MUTED
+                },
+                Icon::Bolt,
+            ),
+            2 => (
+                "Restart",
+                "Asks for confirmation".into(),
+                if settings.status.power_controls {
+                    AMBER
+                } else {
+                    MUTED
+                },
+                Icon::Restart,
+            ),
+            _ => (
+                "Power off",
+                "Asks for confirmation".into(),
+                if settings.status.power_controls {
+                    AMBER
+                } else {
+                    MUTED
+                },
+                Icon::Power,
+            ),
+        };
+        card(canvas, bounds, settings.selected == index)?;
+        let size = bounds.h * 3 / 5;
+        icon(
+            canvas,
+            Rect {
+                x: bounds.x + 10,
+                y: bounds.y + (bounds.h - size) / 2,
+                w: size,
+                h: size,
+            },
+            kind,
+            if index < 2 || settings.status.power_controls {
+                ACCENT
+            } else {
+                MUTED
+            },
+            textures,
+        )?;
+        let content = Rect {
+            x: bounds.x + size + 20,
+            w: bounds.w - size - 32,
+            ..bounds
+        };
+        label(
+            canvas,
+            title,
+            Rect {
+                h: bounds.h / 2,
+                ..content
+            },
+            layout.text_scale,
+            if settings.selected == index {
+                INK
+            } else {
+                TEXT
+            },
+        )?;
+        label(
+            canvas,
+            &detail,
+            Rect {
+                y: bounds.y + bounds.h / 2,
+                h: bounds.h / 2,
+                ..content
+            },
+            layout.text_scale,
+            color,
+        )?;
     }
     panel_footer(canvas, layout, settings)
 }
