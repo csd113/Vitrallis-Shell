@@ -18,7 +18,7 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 
 ## Installation
 
-**Beta.** Install the complete bundle containing the shell, Terminal, Notepad,
+**Vitrallis Shell 1.0.0 Beta.** Install the complete bundle containing the shell, Terminal, Notepad,
 Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
 OS/runtime requirements, the single copy-and-paste setup block and hardware

@@ -1,6 +1,10 @@
 # Release validation and assets
 
-## Unreleased
+## 1.0.0 Beta
+
+This is the first 1.0.0 beta release of Vitrallis Shell and represents the
+current release-candidate baseline ahead of the final 1.0.0 release. This beta
+is intended for testing; it is a pre-release and is not the final stable 1.0.0.
 
 A UI geometry and text-layout audit focused on 480×272 PocketCHIP correctness,
 with the same screens re-checked at 800×480, 1280×720 and other supported sizes.
