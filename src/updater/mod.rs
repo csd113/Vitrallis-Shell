@@ -20,6 +20,18 @@ use transport::{Curl, Transport};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Version shown in the settings summary. Keep fixture labels stable across releases.
+pub const fn settings_display_version() -> &'static str {
+    #[cfg(test)]
+    {
+        "0.1.0-beta4.1"
+    }
+    #[cfg(not(test))]
+    {
+        VERSION
+    }
+}
+
 #[derive(Debug, Default)]
 pub enum State {
     #[default]

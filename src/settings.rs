@@ -492,9 +492,13 @@ impl Settings {
             (
                 "About".into(),
                 if self.renderer.is_empty() {
-                    format!("Version {}", crate::updater::VERSION)
+                    format!("Version {}", crate::updater::settings_display_version())
                 } else {
-                    format!("Version {}   {}", crate::updater::VERSION, self.renderer)
+                    format!(
+                        "Version {}   {}",
+                        crate::updater::settings_display_version(),
+                        self.renderer
+                    )
                 },
             ),
         ]
@@ -514,7 +518,7 @@ impl Settings {
     fn update_summary(&self) -> String {
         use crate::updater::State;
         match &self.updater.state {
-            State::Idle => format!("Version {}", crate::updater::VERSION),
+            State::Idle => format!("Version {}", crate::updater::settings_display_version()),
             State::Checking => "Checking for updates...".into(),
             State::Current => "Up to date".into(),
             State::Available(release) => format!("Version {} available", release.version),
