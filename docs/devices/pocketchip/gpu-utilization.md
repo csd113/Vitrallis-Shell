@@ -41,8 +41,8 @@ System-owned files:
 - `/var/lib/vitrallis-pocketchip/`: account binding, status, backups and recovery.
 - `/run/vitrallis-gpu/trace_pipe`: one read-only bind mount, recreated at boot.
 
-The installer and Settings → Updates distinguish a shell relaunch from a required
-system reboot. The boot service refreshes status from the running tree; telemetry
+The installer and Settings → Software Updates distinguish a shell relaunch from a
+required system reboot. The boot service refreshes status from the running tree; telemetry
 failure remains nonfatal to desktop startup. Normal user uninstall retains this
 system support. `sudo systemctl disable --now vitrallis-gpu-trace.service` stops
 only Vitrallis tracing and removes its runtime mount; it preserves GPU OPP data.

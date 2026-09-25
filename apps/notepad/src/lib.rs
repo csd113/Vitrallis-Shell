@@ -1,11 +1,12 @@
 //! Native, bounded plain-text editor.
 use sdl2::{keyboard::Keycode, rect::Rect};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use vitrallis_native::theme::{ACCENT, MUTED, TEXT};
 use vitrallis_native::{
     browser,
     document::Document,
-    ui::{self, Input, Options, Ui},
+    ui::{self, Input, Options, Ui, tail},
 };
 const BUTTONS: [&str; 6] = ["New", "Open", "Save", "Save as", "Find", "Close"];
 
@@ -80,6 +81,8 @@ struct Editor {
     left: usize,
     footer: Option<usize>,
     find: String,
+    /// Transient, non-modal save confirmation cleared by the next edit.
+    notice: Option<&'static str>,
 }
 impl Editor {
     fn open_requested(&mut self, ui: &mut Ui, path: &Path) -> Result<(), String> {
@@ -88,20 +91,19 @@ impl Editor {
             self.document = document;
             self.top = 0;
             self.left = 0;
+            self.notice = Some("Opened");
         }
         Ok(())
     }
     fn reveal(&mut self, ui: &Ui) {
-        let rows = ui.rows(ui.header_height() + 4).saturating_sub(1).max(1);
+        let rows = Self::rows(ui);
         let row = self.document.row();
         if row < self.top {
             self.top = row;
         } else if row >= self.top + rows {
             self.top = row + 1 - rows;
         }
-        let columns = usize::try_from((ui.width - 16) / ui.cell())
-            .unwrap_or(1)
-            .max(1);
+        let columns = Self::columns(ui);
         let col = self.document.column();
         if col < self.left {
             self.left = col;
@@ -109,19 +111,62 @@ impl Editor {
             self.left = col + 1 - columns;
         }
     }
+    /// Editor rows that fit between the single-line header and the status/buttons.
+    fn rows(ui: &Ui) -> usize {
+        ui.rows(ui.header_height() + ui.line())
+            .saturating_sub(2)
+            .max(1)
+    }
+
+    fn columns(ui: &Ui) -> usize {
+        usize::try_from((ui.width - 8) / ui.cell())
+            .unwrap_or(1)
+            .max(1)
+    }
     fn render(&mut self, ui: &mut Ui) -> Result<(), String> {
         self.reveal(ui);
         ui.clear();
-        let title = format!("Notepad{}", if self.document.dirty { " *" } else { "" });
+        self.header(ui)?;
+        let top = ui.header_height() + ui.line();
+        let rows = Self::rows(ui);
+        let columns = Self::columns(ui);
+        let selection = self.document.selection();
+        self.text_grid(ui, top, rows, columns, &selection)?;
+        let (row, column) = self.cursor(ui, top, rows, columns)?;
+        self.status(ui, row, column, &selection)?;
+        ui.buttons(&BUTTONS, self.footer)
+    }
+
+    /// One-line header: name and path share the row so the editor keeps every
+    /// other pixel. The path is trimmed from the left, keeping the file name.
+    fn header(&self, ui: &mut Ui) -> Result<(), String> {
         let path = self
             .document
             .path
             .as_ref()
             .map_or_else(|| "Untitled".into(), |p| p.display().to_string());
-        ui.header(&title, &path)?;
-        let top = ui.header_height() + 4;
-        let rows = ui.rows(top).saturating_sub(1);
-        let selection = self.document.selection();
+        let state = if self.document.dirty { "*" } else { "" };
+        let head = format!("Notepad{state}");
+        let head_width = i32::try_from(head.chars().count()).unwrap_or(0) * ui.cell();
+        ui.text(&head, 0, 0, head_width, ACCENT)?;
+        let path_columns = Self::columns(ui).saturating_sub(head.chars().count() + 1);
+        let shown = tail(&path, path_columns);
+        ui.text(&shown, head_width, 0, ui.width - head_width, MUTED)?;
+        ui.fill(
+            Rect::new(0, ui.line(), ui.width.unsigned_abs(), 1),
+            vitrallis_native::theme::BORDER,
+        )
+    }
+
+    /// Draws the visible window of text, highlighting the current selection.
+    fn text_grid(
+        &self,
+        ui: &mut Ui,
+        top: i32,
+        rows: usize,
+        columns: usize,
+        selection: &Range<usize>,
+    ) -> Result<(), String> {
         for row in self.top..(self.top + rows).min(self.document.lines()) {
             let y = top + i32::try_from(row - self.top).unwrap_or(0) * ui.line();
             let line = self.document.line(row);
@@ -129,9 +174,9 @@ impl Editor {
                 .char_indices()
                 .enumerate()
                 .skip(self.left)
-                .take(usize::try_from((ui.width - 16) / ui.cell()).unwrap_or(0))
+                .take(columns)
             {
-                let x = 8 + i32::try_from(column - self.left).unwrap_or(0) * ui.cell();
+                let x = i32::try_from(column - self.left).unwrap_or(0) * ui.cell();
                 if selection.contains(&(self.document.line_start(row).unwrap_or(0) + byte)) {
                     ui.fill(
                         Rect::new(x, y, ui.cell().unsigned_abs(), ui.line().unsigned_abs()),
@@ -141,33 +186,95 @@ impl Editor {
                 ui.glyph(if ch == '\t' { '→' } else { ch }, x, y, TEXT)?;
             }
         }
-        // Selection endpoints remain indicated without materializing the selected text.
+        Ok(())
+    }
+
+    /// Draws the filled block cursor and reports its row and column.
+    fn cursor(
+        &self,
+        ui: &mut Ui,
+        top: i32,
+        rows: usize,
+        columns: usize,
+    ) -> Result<(usize, usize), String> {
         let row = self.document.row();
         let column = self.document.column();
-        if row >= self.top && row < self.top + rows && column >= self.left {
-            let x = 8 + i32::try_from(column - self.left).unwrap_or(0) * ui.cell();
+        if row >= self.top
+            && row < self.top + rows
+            && column >= self.left
+            && column < self.left + columns
+        {
+            let x = i32::try_from(column - self.left).unwrap_or(0) * ui.cell();
             let y = top + i32::try_from(row - self.top).unwrap_or(0) * ui.line();
-            ui.fill(Rect::new(x, y, 2, 8 * ui.scale.unsigned_abs()), ACCENT)?;
+            let ch = self
+                .document
+                .line(row)
+                .chars()
+                .nth(column)
+                .filter(|c| *c != '\t' && *c != '\n' && *c != '\r');
+            ui.fill(
+                Rect::new(x, y, ui.cell().unsigned_abs(), 8 * ui.scale.unsigned_abs()),
+                ACCENT,
+            )?;
+            if let Some(ch) = ch {
+                ui.glyph(ch, x, y, vitrallis_native::theme::BACKGROUND)?;
+            }
         }
+        Ok((row, column))
+    }
+
+    /// Status line: position and size on the left, save or error state on the
+    /// right, so it never displaces a whole editor row. Both halves keep one
+    /// cell of clearance, so a wide line/column/size readout can never print
+    /// into the state text beside it.
+    fn status(
+        &self,
+        ui: &mut Ui,
+        row: usize,
+        column: usize,
+        selection: &Range<usize>,
+    ) -> Result<(), String> {
         let status = format!(
-            "Ln {}  Col {}   {} B{}",
+            "Ln {}  Col {}   {} B",
             row + 1,
             column + 1,
             self.document.text().len(),
-            if selection.is_empty() {
-                ""
-            } else {
-                "  Selected"
-            }
         );
+        let state = self.status_text(selection);
         ui.text(
             &status,
-            8,
+            0,
             ui.height - ui.footer_height() - ui.line(),
-            ui.width - 16,
+            ui.width / 2 - ui.cell(),
             MUTED,
         )?;
-        ui.buttons(&BUTTONS, self.footer)
+        ui.text(
+            state,
+            ui.width / 2,
+            ui.height - ui.footer_height() - ui.line(),
+            ui.width / 2,
+            if self.document.dirty {
+                vitrallis_native::theme::WARNING
+            } else {
+                ACCENT
+            },
+        )
+    }
+
+    /// The save/selection state shown on the right of the status line. Notices
+    /// and states are static text, so the per-frame draw allocates nothing.
+    fn status_text(&self, selection: &Range<usize>) -> &'static str {
+        if let Some(notice) = self.notice {
+            return notice;
+        }
+        if !selection.is_empty() {
+            return "Selection";
+        }
+        if self.document.dirty {
+            "Unsaved changes *"
+        } else {
+            "Saved"
+        }
     }
     fn input(&mut self, ui: &mut Ui, input: Input) -> Result<bool, String> {
         if let Some(action) = self.action(ui, &input) {
@@ -179,11 +286,10 @@ impl Editor {
                 self.document.insert(&text).map_err(|e| e.to_string())
             }
             Input::Click(x, y) => {
-                if y >= ui.header_height() && y < ui.height - ui.footer_height() - ui.line() {
-                    let row = self.top
-                        + usize::try_from((y - ui.header_height() - 4).max(0) / ui.line())
-                            .unwrap_or(0);
-                    let col = self.left + usize::try_from((x - 8).max(0) / ui.cell()).unwrap_or(0);
+                let top = ui.header_height() + ui.line();
+                if y >= top && y < ui.height - ui.footer_height() - ui.line() {
+                    let row = self.top + usize::try_from((y - top).max(0) / ui.line()).unwrap_or(0);
+                    let col = self.left + usize::try_from(x.max(0) / ui.cell()).unwrap_or(0);
                     self.document.anchor = None;
                     self.document.place(row, col);
                     self.footer = None;
@@ -201,7 +307,10 @@ impl Editor {
         Ok(false)
     }
     fn key(&mut self, ui: &Ui, key: Keycode, mods: sdl2::keyboard::Mod) -> Result<(), String> {
-        let rows = isize::try_from(ui.rows(ui.header_height() + 4).saturating_sub(1)).unwrap_or(1);
+        if !matches!(key, Keycode::F6 | Keycode::Tab) || self.footer.is_some() {
+            self.notice = None;
+        }
+        let rows = isize::try_from(Self::rows(ui)).unwrap_or(1);
         let select = ui::shift(mods);
         let result = match key {
             Keycode::Tab if self.footer.is_some() => {
@@ -310,6 +419,7 @@ impl Editor {
                     self.document = Document::default();
                     self.top = 0;
                     self.left = 0;
+                    self.notice = None;
                 }
             }
             1 => {
@@ -320,6 +430,7 @@ impl Editor {
                         self.document = document;
                         self.top = 0;
                         self.left = 0;
+                        self.notice = Some("Opened");
                     }
                 }
             }
@@ -407,6 +518,7 @@ impl Editor {
         self.document
             .save(&path, replacing)
             .map_err(|e| e.to_string())?;
+        self.notice = Some("Saved");
         Ok(true)
     }
 }
@@ -415,6 +527,14 @@ impl Editor {
 mod tests {
     use super::*;
     use sdl2::{event::Event, keyboard::Mod};
+
+    /// SDL initializes once per process, so tests that own a session serialize.
+    fn sdl_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn keys(ui: &Ui, values: &[Keycode]) -> Result<(), String> {
         for &keycode in values {
             ui.sdl.event()?.push_event(Event::KeyDown {
@@ -428,9 +548,73 @@ mod tests {
         }
         Ok(())
     }
+
+    /// The editor grid, the status line and the button row must never occupy
+    /// the same pixels at any supported size.
+    #[test]
+    fn editor_rows_stop_before_the_status_line_and_buttons() -> Result<(), String> {
+        let _guard = sdl_lock();
+        for size in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+            let session = vitrallis_native::ui::Session::new(
+                "Notepad geometry",
+                &Options {
+                    size: Some(size),
+                    ..Options::default()
+                },
+            )?;
+            let creator = session.canvas.texture_creator();
+            let ui = Ui::new(session, &creator)?;
+            let top = ui.header_height() + ui.line();
+            let rows = i32::try_from(Editor::rows(&ui)).unwrap_or(0);
+            let status_y = ui.height - ui.footer_height() - ui.line();
+            assert!(top >= ui.header_height(), "{size:?}");
+            assert!(
+                top + rows * ui.line() <= status_y,
+                "{size:?}: text rows reach the status line"
+            );
+            assert!(
+                status_y + ui.line() <= ui.height - ui.footer_height(),
+                "{size:?}: the status line reaches the buttons"
+            );
+            // The two status halves keep one cell between them.
+            let half = ui.width / 2;
+            assert!(half > ui.cell(), "{size:?}");
+            assert!(half - ui.cell() + ui.cell() <= half, "{size:?}");
+        }
+        Ok(())
+    }
+
+    /// The visible path never exceeds the column budget it was given.
+    #[test]
+    fn trimmed_paths_stay_inside_their_column_budget() {
+        let path = "/home/alex/Very Long Documents/projects/notes.txt";
+        let count = path.chars().count();
+        for columns in 0..40 {
+            let shown = tail(path, columns);
+            assert!(
+                shown.chars().count() <= columns,
+                "columns={columns} shown={shown:?}"
+            );
+            if count <= columns {
+                assert_eq!(shown, path);
+            } else if columns <= 3 {
+                // No room for a marker: the last visible characters stay.
+                let keep: String = path.chars().skip(count - columns).collect();
+                assert_eq!(shown, keep, "columns={columns}");
+            } else {
+                let keep: String = path.chars().skip(count - (columns - 3)).collect();
+                assert_eq!(shown, format!("...{keep}"), "columns={columns}");
+            }
+        }
+        assert_eq!(tail("a.txt", 40), "a.txt");
+        assert_eq!(tail("a.txt", 0), "");
+    }
+
     #[test]
     fn unsaved_actions_default_to_cancel_and_save_before_discard()
     -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = sdl_lock();
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
         let session = vitrallis_native::ui::Session::new(
             "Notepad test",

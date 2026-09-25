@@ -140,10 +140,11 @@ python3 -I "$vitrallis_tmp/bootstrap.py"
 The block is maintained verbatim in
 [`bootstrap.sh`](../../integrations/pocketchip/bootstrap.sh). It installs only
 missing `curl`, `ca-certificates`, `python3`, `libsdl2-2.0-0`, `picom`,
-`device-tree-compiler`, `python3-tk`, `python3-venv` and `python3-packaging`, plus
-their required Debian dependencies. It prints the APT plan, rejects upgrades,
-removals and unrelated repairs, pins planned versions, and checks actual package
-archives again before dpkg runs. Existing sufficient packages are retained.
+`device-tree-compiler`, `python3-tk`, `python3-venv`, `python3-packaging` and
+`bubblewrap`, plus their required Debian dependencies. It prints the APT plan,
+rejects upgrades, removals and unrelated repairs, pins planned versions, and
+checks actual package archives again before dpkg runs. Existing sufficient
+packages are retained.
 Python app-specific dependencies are still provisioned by App Center when needed;
 this does not install every app, FFmpeg, development libraries or a compiler.
 
@@ -164,12 +165,12 @@ is reported separately from the successful installation, with the session log an
 retry command. Automatic startup at boot is not enabled. A GPU reboot notice
 still applies even if Vitrallis opens successfully.
 
-**Source and published releases:** beta3.1 already provides the complete ARM
-bundle and matching session/platform helpers. The prerequisite and checked-launch
+**Source and published releases:** the prerequisite and checked-launch
 entry-point changes in this checkout become public only when the updated source
 is published at the URL above. This work does not bump versions or publish a
-release. To validate a complete locally built ARM bundle with this checkout's
-helpers after preparing prerequisites:
+release. See the [release inventory](../releases.md) for currently published
+bundles and helpers. To validate a complete locally built ARM bundle with this
+checkout's helpers after preparing prerequisites:
 
 ```sh
 python3 integrations/pocketchip/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle
@@ -206,10 +207,8 @@ If GitHub supplies an asset digest it must agree. HTTPS GitHub publication is th
 trust root; these hashes are not independent signatures.
 
 The bootstrap on `main` creates downloaded files with mode `0600`, including
-when the desktop account uses umask `002`. The originally published beta2.6
-bootstrap asset predates this correction; use the command above for the current
-bootstrap. Its bundle and installation helpers still come from one published
-release.
+when the desktop account uses umask `002`; the bundle and installation helpers
+come from one published release.
 
 ## GPU platform provisioning
 
@@ -217,8 +216,9 @@ The installer automatically runs the [PocketCHIP GPU setup](pocketchip/gpu-utili
 after validating the native bundle. It patches only missing GPU OPP data in the
 selected boot DTB and kernel source DTB, preserves existing OPP configurations,
 and installs a boot oneshot to expose a single read-only utilization pipe.
-Reboot notices appear in the installer and System Settings → Updates until the
-running tree has the OPP. Already configured systems do not need a reboot.
+Reboot notices appear in the installer and System Settings → Software Updates
+until the running tree has the OPP. Already configured systems do not need a
+reboot.
 The root-owned GPU support is system configuration: normal user uninstall retains
 it along with system packages. Disable its trace service explicitly if no longer
 needed; the document above lists the exact installed paths.
@@ -279,12 +279,13 @@ version to the selected release tag.
     vitrallis-files
     arti
   current -> generations/<active-bundle-sha256>
-  previous -> generations/<previous-bundle-sha256>
+  previous -> generations/<previous-bundle-sha256>   (after an update or repeat install)
   launch
   install-session.py
   uninstall.py
   vitrallis-session.py
   platform-setup.py
+  media-setup.py
   installed.json
   .vitrallis-update/lock
 ```
@@ -311,19 +312,24 @@ An interrupted installation leaves `.installation-pending`; rerun the matching
 installer to repair it, or use the offline uninstaller. Do not remove markers to
 bypass validation. Edited files require review, not a forced overwrite.
 
+With a retained `previous` generation, Software Updates offers **Restore**
+(confirmation **Confirm Restore**): it validates the retained build, requires
+running apps and App Center operations to be stopped, asks for confirmation, and
+swaps `current` and `previous` with atomic per-pointer renames under the same
+`.vitrallis-update/lock`. Apps and user data are unchanged, and the restored
+build takes effect after **Relaunch Shell**. An interruption between the two
+renames leaves `previous == current` with the intended build active; restore is
+then unavailable until a later update, and **Check for Updates** offers the newer
+release again.
+
 No Awesome startup file, greetd/login configuration, calibration, system package,
 PocketHome binary or recovery service is replaced. Root-owned or obsolete
 unreceipted installations require manual reconciliation; the installer does not
 infer ownership or migrate a superseded layout.
 
-The beta2.5 updater expects a standalone shell executable. When it sees beta2.6,
-it can report that the version is available but no shell build exists for this
-platform. The ARM bundle is present; the old updater cannot consume its format.
-Replacing that obsolete installation requires a reviewed backup and fresh
-installation, including reconciliation of its old receipt and managed shortcuts.
-The current installer does not automatically migrate or erase old apps. The
-[beta2.6 hardware record](pocketchip/history/beta2.6-device-validation.md) describes the
-owner-authorized fresh installation used for validation.
+The pre-beta4 standalone and four-executable layouts are dated history recorded
+in the [release inventory](../releases.md); the current installer consumes only
+the complete v2 bundle and neither migrates nor erases an old installation.
 
 ## Launch and return home
 
@@ -451,8 +457,11 @@ Never substitute host SDL libraries or relabel a newer ABI as glibc 2.36.
 
 [Historical device evidence](pocketchip/history/device-validation.md) covers earlier shell
 integration. [Native validation](pocketchip/history/native-validation.md) and the current
-[host test suite](../validation.md) have separate scopes. The current installer,
-uninstaller and native bundle still need fresh physical PocketCHIP validation.
+[host test suite](../validation.md) have separate scopes. The current bootstrap
+entry point and this checkout's installer/uninstaller have host and fixture
+evidence only ([bootstrap validation](pocketchip/bootstrap-validation.md)); the
+2026-09-12 USB record covers the earlier beta2.6 bundle/helpers on Debian 13.6,
+kernel 6.12.94, 480×272.
 
 ## Tor networking
 

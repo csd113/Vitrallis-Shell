@@ -2,6 +2,16 @@ use super::*;
 use crate::test_support::Scratch;
 use std::io::{Seek, SeekFrom, Write};
 
+// Creates fixture directories with explicit modes. The installer and updater
+// safety checks reject group-writable installation directories, so fixtures
+// must not inherit the developer's umask (the test device commonly uses 002).
+fn secure_directory(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::DirBuilderExt;
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true).mode(0o755);
+    builder.create(path)
+}
+
 fn fixture() -> Result<(Scratch, PathBuf), Box<dyn std::error::Error>> {
     let scratch = Scratch::new()?;
     let generation = scratch
@@ -9,7 +19,7 @@ fn fixture() -> Result<(Scratch, PathBuf), Box<dyn std::error::Error>> {
         .canonicalize()?
         .join("generations")
         .join("a".repeat(64));
-    fs::create_dir_all(&generation)?;
+    secure_directory(&generation)?;
     for name in bundle::BINARIES {
         let path = generation.join(name);
         fs::write(&path, format!("working {name}"))?;
@@ -23,7 +33,7 @@ fn fixture() -> Result<(Scratch, PathBuf), Box<dyn std::error::Error>> {
 }
 fn prepare(installation: &mut Installation) -> io::Result<()> {
     let path = installation.stage.join("generation");
-    fs::create_dir(&path)?;
+    secure_directory(&path)?;
     for name in bundle::BINARIES {
         let file = path.join(name);
         fs::write(&file, format!("replacement {name}"))?;
@@ -309,5 +319,279 @@ fn release_bundle_upgrade_probe() -> Result<(), Box<dyn std::error::Error>> {
     drop(installation);
     let (_guard, command) = relaunch_command(&relaunch, [])?;
     assert_eq!(command.get_program(), relaunch.executable);
+    Ok(())
+}
+
+/// Two complete generations named by their own whole-bundle digest, with the
+/// active one published through `current` and the retained one through `previous`.
+struct RestoreFixture {
+    _scratch: Scratch,
+    root: PathBuf,
+    active: PathBuf,
+    previous: PathBuf,
+}
+impl RestoreFixture {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let scratch = Scratch::new()?;
+        let root = scratch.0.canonicalize()?;
+        secure_directory(&root.join("generations"))?;
+        let active = build_generation(&root, "active")?;
+        let previous = build_generation(&root, "previous")?;
+        symlink(&active, root.join("current"))?;
+        symlink(&previous, root.join("previous"))?;
+        Ok(Self {
+            _scratch: scratch,
+            root,
+            active,
+            previous,
+        })
+    }
+    fn target(&self) -> PathBuf {
+        self.root.join(&self.active).join("vitrallis")
+    }
+    fn previous_target(&self) -> PathBuf {
+        self.root.join(&self.previous).join("vitrallis")
+    }
+    fn uid(&self) -> Result<u32, std::io::Error> {
+        Ok(fs::symlink_metadata(self.target())?.uid())
+    }
+    fn current(&self) -> Result<PathBuf, std::io::Error> {
+        fs::read_link(self.root.join("current"))
+    }
+    fn previous_pointer(&self) -> Result<PathBuf, std::io::Error> {
+        fs::read_link(self.root.join("previous"))
+    }
+    fn retains_both(&self) -> bool {
+        [&self.active, &self.previous].iter().all(|generation| {
+            bundle::BINARIES
+                .iter()
+                .all(|name| hash_file(&self.root.join(generation).join(name)).is_ok())
+        })
+    }
+    fn previous_file(&self, name: &str) -> PathBuf {
+        self.root.join(&self.previous).join(name)
+    }
+}
+/// Writes a complete generation and names its directory by the whole-bundle
+/// digest the installer and updater use.
+fn build_generation(root: &Path, seed: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let staging = root
+        .join("generations")
+        .join(format!(".stage-{seed}-{}", std::process::id()));
+    secure_directory(&staging)?;
+    for name in bundle::BINARIES {
+        let path = staging.join(name);
+        fs::write(&path, format!("{seed} {name}"))?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755))?;
+    }
+    let (digest, _) = generation_digest(&staging, fs::symlink_metadata(&staging)?.uid())?;
+    let relative = PathBuf::from("generations").join(hex(&digest));
+    fs::rename(&staging, root.join(&relative))?;
+    Ok(relative)
+}
+
+#[test]
+fn restore_activates_the_validated_previous_generation() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = RestoreFixture::new()?;
+    let installation = Installation::open(&fixture.target())?;
+    let restored = installation.rollback()?;
+    assert!(restored.durable);
+    // The fixture files are not real executables, so the version probe is
+    // best-effort and the digest is the integrity guarantee.
+    assert_eq!(restored.version, None);
+    assert_eq!(fixture.current()?, fixture.previous);
+    assert_eq!(fixture.previous_pointer()?, fixture.active);
+    assert_eq!(restored.relaunch.executable, fixture.previous_target());
+    assert_eq!(
+        restored.relaunch.sha256,
+        hash_file(&restored.relaunch.executable)?
+    );
+    assert!(fixture.retains_both());
+    drop(installation);
+    // The restored generation is now the active, openable installation.
+    let reopened = Installation::open(&fixture.previous_target())?;
+    assert!(!reopened.needs_completion());
+    Ok(())
+}
+
+#[test]
+fn restore_without_a_previous_generation_is_refused() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = RestoreFixture::new()?;
+    fs::remove_file(fixture.root.join("previous"))?;
+    assert!(!previous_available_at(
+        &fixture.root,
+        &fixture.active,
+        fixture.uid()?
+    ));
+    let installation = Installation::open(&fixture.target())?;
+    assert!(installation.rollback().is_err());
+    assert_eq!(fixture.current()?, fixture.active);
+    assert!(fixture.retains_both());
+    Ok(())
+}
+
+#[test]
+fn restore_refuses_an_identical_or_escaping_previous_pointer()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = RestoreFixture::new()?;
+    for pointer in [
+        fixture.active.clone(),
+        PathBuf::from("../../outside"),
+        PathBuf::from("/absolute/generation"),
+        PathBuf::from("generations").join("A".repeat(64)),
+        PathBuf::from("generations").join("a".repeat(63)),
+    ] {
+        fs::remove_file(fixture.root.join("previous"))?;
+        symlink(&pointer, fixture.root.join("previous"))?;
+        assert!(!previous_available_at(
+            &fixture.root,
+            &fixture.active,
+            fixture.uid()?
+        ));
+        let installation = Installation::open(&fixture.target())?;
+        assert!(installation.rollback().is_err(), "{}", pointer.display());
+        assert_eq!(fixture.current()?, fixture.active);
+        assert_eq!(fixture.previous_pointer()?, pointer);
+    }
+    Ok(())
+}
+
+#[test]
+fn restore_refuses_an_incomplete_unsafe_or_modified_previous()
+-> Result<(), Box<dyn std::error::Error>> {
+    type Damage = Box<dyn Fn(&RestoreFixture) -> std::io::Result<()>>;
+    for (label, structural, damage) in [
+        (
+            "missing companion",
+            true,
+            Box::new(|fixture: &RestoreFixture| fs::remove_file(fixture.previous_file("arti")))
+                as Damage,
+        ),
+        (
+            "group-writable executable",
+            true,
+            Box::new(|fixture: &RestoreFixture| {
+                fs::set_permissions(
+                    fixture.previous_file("vitrallis"),
+                    fs::Permissions::from_mode(0o777),
+                )
+            }),
+        ),
+        (
+            "symlinked executable",
+            true,
+            Box::new(|fixture: &RestoreFixture| {
+                let path = fixture.previous_file("vitrallis-notepad");
+                fs::remove_file(&path)?;
+                symlink(fixture.root.join(&fixture.active).join("vitrallis"), path)
+            }),
+        ),
+        // Structurally safe, but the content no longer matches the digest that
+        // names the generation.
+        (
+            "modified executable",
+            false,
+            Box::new(|fixture: &RestoreFixture| {
+                fs::write(fixture.previous_file("vitrallis"), b"tampered")
+            }),
+        ),
+    ] {
+        let fixture = RestoreFixture::new()?;
+        damage(&fixture)?;
+        assert_eq!(
+            previous_available_at(&fixture.root, &fixture.active, fixture.uid()?),
+            !structural,
+            "{label}"
+        );
+        let installation = Installation::open(&fixture.target())?;
+        assert!(installation.rollback().is_err(), "{label}");
+        assert_eq!(fixture.current()?, fixture.active, "{label}");
+        assert_eq!(fixture.previous_pointer()?, fixture.previous, "{label}");
+        // The active generation is always untouched by a refused restore.
+        assert!(hash_file(fixture.target().as_path()).is_ok(), "{label}");
+    }
+    Ok(())
+}
+
+#[test]
+fn restore_refuses_when_the_active_build_changed_under_the_lock()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = RestoreFixture::new()?;
+    let installation = Installation::open(&fixture.target())?;
+    fs::write(
+        fixture.root.join(&fixture.active).join("vitrallis"),
+        b"changed",
+    )?;
+    let error = installation.rollback().expect_err("changed build");
+    assert!(error.contains("Active build changed"), "{error}");
+    assert_eq!(fixture.current()?, fixture.active);
+    assert_eq!(fixture.previous_pointer()?, fixture.previous);
+    Ok(())
+}
+
+#[test]
+fn restore_ping_pongs_between_the_two_retained_generations()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = RestoreFixture::new()?;
+    Installation::open(&fixture.target())?.rollback()?;
+    assert_eq!(fixture.current()?, fixture.previous);
+    // Relaunching the restored generation keeps the displaced build available.
+    Installation::open(&fixture.previous_target())?.rollback()?;
+    assert_eq!(fixture.current()?, fixture.active);
+    assert_eq!(fixture.previous_pointer()?, fixture.previous);
+    assert!(fixture.retains_both());
+    Ok(())
+}
+
+#[test]
+fn restore_keeps_the_active_build_when_the_previous_pointer_cannot_be_written()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = RestoreFixture::new()?;
+    let installation = Installation::open(&fixture.target())?;
+    // `Installation::open` cleans stale `.previous-next` staging names; create
+    // one afterwards so the second pointer rename cannot complete and the undo
+    // path runs.
+    let blocker = fixture.root.join(".previous-next");
+    fs::create_dir(&blocker)?;
+    let error = installation
+        .rollback()
+        .expect_err("pointer write must fail");
+    assert!(error.contains("active build was kept"), "{error}");
+    assert_eq!(fixture.current()?, fixture.active);
+    assert_eq!(fixture.previous_pointer()?, fixture.previous);
+    assert!(fixture.retains_both());
+    fs::remove_dir(&blocker)?;
+    Ok(())
+}
+
+#[test]
+fn restore_refuses_a_symlinked_generation_directory() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = RestoreFixture::new()?;
+    let directory = fixture.root.join(&fixture.previous);
+    let moved = fixture.root.join("generations").join("moved-previous");
+    fs::rename(&directory, &moved)?;
+    symlink(&moved, &directory)?;
+    assert!(!previous_available_at(
+        &fixture.root,
+        &fixture.active,
+        fixture.uid()?
+    ));
+    let installation = Installation::open(&fixture.target())?;
+    assert!(installation.rollback().is_err());
+    assert_eq!(fixture.current()?, fixture.active);
+    assert_eq!(fixture.previous_pointer()?, fixture.previous);
+    Ok(())
+}
+
+#[test]
+fn restore_runs_under_the_existing_update_lock() -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = RestoreFixture::new()?;
+    let installation = Installation::open(&fixture.target())?;
+    // Another installation cannot open while the lock is held.
+    assert!(Installation::open(&fixture.target()).is_err());
+    // The lock owner can still restore, and the lock releases with it.
+    installation.rollback()?;
+    drop(installation);
+    assert!(Installation::open(&fixture.previous_target()).is_ok());
     Ok(())
 }

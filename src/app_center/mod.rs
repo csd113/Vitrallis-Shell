@@ -17,7 +17,7 @@ mod transaction;
 mod uninstall;
 pub use discovery::integrate;
 pub use discovery::refresh_apps;
-pub use screen::Center;
+pub use screen::{Center, Geometry, PageKind, RowState, Target};
 static STORAGE_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub fn storage_revision() -> u64 {
     STORAGE_REVISION.load(Ordering::Relaxed)
@@ -108,7 +108,6 @@ fn service(
             _ => "Ready. Select an app to continue.",
         });
         let result = (|| {
-            let _lock = storage::Lock::take(&loc.state)?;
             match command {
                 Command::Check => {
                     let (sources, message) = refresh_catalog(loc, fetch, &mut rows, updates)?;
@@ -116,14 +115,17 @@ fn service(
                     success = message;
                 }
                 Command::Scan => {
+                    let _lock = storage::Lock::take(&loc.state)?;
                     scan_local(loc, &mut rows, updates)?;
                     changed = true;
                     success = "Installed apps checked".into();
                 }
                 Command::SelectInstalled(id) => {
+                    let _lock = storage::Lock::take(&loc.state)?;
                     selected_installed = Some(select_installed(loc, &id, &mut rows, updates)?);
                 }
                 Command::Save(sources) => {
+                    let _lock = storage::Lock::take(&loc.state)?;
                     if Some(Sources::load(&loc.sources)?) != expected_sources {
                         return Err("Source settings changed; Refresh before editing".into());
                     }
@@ -137,29 +139,13 @@ fn service(
                     let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
                 }
                 Command::Install(keys) => {
-                    let sources = Sources::load(&loc.sources)?;
-                    let mut errors = Vec::new();
-                    for key in keys {
-                        let Some(row) = rows.iter_mut().find(|r| r.package.key() == key) else {
-                            errors.push(
-                                "App selection is no longer available; Refresh the catalog".into(),
-                            );
-                            continue;
-                        };
-                        let result =
-                            install_one(loc, &sources, row, commands, updates, cancelled, fetch);
-                        changed = true;
-                        if let Err(e) = result {
-                            errors.push(format!("{}: {e}", row.package.name));
-                        }
-                        refresh_local(loc, &sources, row);
-                        let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
-                    }
-                    if !errors.is_empty() {
-                        return Err(errors.join("; "));
-                    }
+                    let (attempted, result) =
+                        install_keys(loc, keys, &mut rows, commands, updates, cancelled, fetch);
+                    changed = attempted;
+                    result?;
                 }
                 Command::Uninstall(key) => {
+                    let _lock = storage::Lock::take(&loc.state)?;
                     let row = rows
                         .iter_mut()
                         .find(|r| r.package.key() == key)
@@ -186,6 +172,45 @@ fn service(
         }
     }
 }
+fn install_keys(
+    loc: &Locations,
+    keys: Vec<String>,
+    rows: &mut [Checked],
+    commands: &Receiver<Command>,
+    updates: &Sender<Update>,
+    cancelled: &AtomicBool,
+    fetch: &impl network::Fetch,
+) -> (bool, Result<(), String>) {
+    let mut attempted = false;
+    let result = (|| {
+        {
+            // Fail fast on an active storage operation; download and prompt stay unlocked.
+            let _probe = storage::Lock::take(&loc.state)?;
+        }
+        let sources = Sources::load(&loc.sources)?;
+        let mut errors = Vec::new();
+        for key in keys {
+            let Some(row) = rows.iter_mut().find(|r| r.package.key() == key) else {
+                errors.push("App selection is no longer available; Refresh the catalog".into());
+                continue;
+            };
+            attempted = true;
+            let result = install_one(loc, &sources, row, commands, updates, cancelled, fetch);
+            if let Err(e) = result {
+                errors.push(format!("{}: {e}", row.package.name));
+            }
+            refresh_local(loc, &sources, row);
+            let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors.join("; "))
+        }
+    })();
+    (attempted, result)
+}
+
 fn finish_storage_operation(
     updates: &Sender<Update>,
     result: Result<String, String>,
@@ -265,11 +290,21 @@ fn refresh_catalog(
     rows: &mut Vec<Checked>,
     updates: &Sender<Update>,
 ) -> Result<(Sources, String), String> {
+    {
+        // Fail fast when another storage operation is active; the fetch itself
+        // is unlocked and this probe is released before it starts.
+        let _probe = storage::Lock::take(&loc.state)?;
+    }
     let sources = Sources::load(&loc.sources)?;
     let _ = updates.send(Update::Sources(sources.clone()));
-    *rows = cache::refresh(loc, &sources, fetch, rows, |s| {
+    let fetched = cache::fetch_documents(loc, &sources, fetch, |s| {
         let _ = updates.send(Update::Progress(s));
     });
+    let _lock = storage::Lock::take(&loc.state)?;
+    if Sources::load(&loc.sources)? != sources {
+        return Err("Source settings changed; Refresh again".into());
+    }
+    *rows = cache::store_documents(loc, &sources, fetched, rows);
     let success = if rows.is_empty() {
         "Refresh finished: repositories contain no apps".into()
     } else {
@@ -288,6 +323,7 @@ fn install_one(
     fetch: &impl network::Fetch,
 ) -> Result<(), String> {
     use running::Processes;
+    // Phase A: cheap snapshot checks against the caller's view, unlocked.
     cancellation(cancelled)?;
     if !sources.catalogs.contains(&row.package.origin)
         || !sources.trusted(&row.package.origin, &row.package.repository)
@@ -297,6 +333,7 @@ fn install_one(
     if !row.ready {
         return Err("No available update".into());
     }
+    // Phase B: interactive running-app handling, unlocked.
     let entry = uninstall::installed_entry(&loc.root(&row.package), &row.package)?;
     let processes = running::Native.list(&entry)?;
     if !processes.is_empty() {
@@ -334,10 +371,42 @@ fn install_one(
     if !running::Native.list(&entry)?.is_empty() {
         return Err("App started again; update skipped".into());
     }
-    let planned = acquire(loc, row, fetch, |s| {
+    // Phase C: bundle download, unlocked and cancellable.
+    let mut progress = |s: String| -> Result<(), String> {
         cancellation(cancelled)?;
         updates.send(Update::Progress(s)).map_err(|e| e.to_string())
+    };
+    let bundle = network::download(fetch, &row.package, &mut progress)?;
+    cancellation(cancelled)?;
+    progress(format!("Verifying {}", row.package.name))?;
+    progress(match row.package.runtime {
+        metadata::RuntimeKind::Python => format!(
+            "Checking/installing Python dependencies for {}",
+            row.package.name
+        ),
+        metadata::RuntimeKind::Rust(_) => format!(
+            "Checking native binary compatibility for {}",
+            row.package.name
+        ),
     })?;
+    // Phase D: reacquire and revalidate, then prepare and commit under the lock.
+    let _lock = storage::Lock::take(&loc.state)?;
+    let sources = Sources::load(&loc.sources)?;
+    if !sources.catalogs.contains(&row.package.origin)
+        || !sources.trusted(&row.package.origin, &row.package.repository)
+    {
+        return Err("Source removed or approval revoked; check again".into());
+    }
+    let checked = install::check(loc, row.package.clone())?;
+    if !checked.ready {
+        return Err("No available update".into());
+    }
+    let entry = uninstall::installed_entry(&loc.root(&row.package), &row.package)?;
+    if !running::Native.list(&entry)?.is_empty() {
+        return Err("App started again; update skipped".into());
+    }
+    let planned =
+        install::prepare_with_modes(loc, row.package.clone(), bundle.files, &bundle.modes)?;
     if !running::Native.list(&entry)?.is_empty() {
         return Err("App started again; update skipped".into());
     }
@@ -355,30 +424,6 @@ fn cancellation(cancelled: &AtomicBool) -> Result<(), String> {
     } else {
         Ok(())
     }
-}
-
-fn acquire(
-    loc: &Locations,
-    row: &Checked,
-    fetch: &impl network::Fetch,
-    mut progress: impl FnMut(String) -> Result<(), String>,
-) -> Result<install::Planned, String> {
-    if !row.ready {
-        return Err("No available update".into());
-    }
-    let bundle = network::download(fetch, &row.package, &mut progress)?;
-    progress(format!("Verifying {}", row.package.name))?;
-    progress(match row.package.runtime {
-        metadata::RuntimeKind::Python => format!(
-            "Checking/installing Python dependencies for {}",
-            row.package.name
-        ),
-        metadata::RuntimeKind::Rust(_) => format!(
-            "Checking native binary compatibility for {}",
-            row.package.name
-        ),
-    })?;
-    install::prepare_with_modes(loc, row.package.clone(), bundle.files, &bundle.modes)
 }
 
 #[cfg(test)]

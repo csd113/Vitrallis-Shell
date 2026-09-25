@@ -1,29 +1,26 @@
+//! Applications page: background lifetime policy and the keep-running app list.
 //! Persist local preferences before applying them to the running shell.
-use super::{Page, Settings, footer::BACK};
+use super::{Page, Settings};
 use crate::{input::Action, navigation::Direction};
-pub(super) const PREFERENCES: usize = 9;
+
+/// Settings rows shown for application behaviour.
+pub const APP_ROWS: usize = 3;
+
 impl Settings {
     pub(super) fn preferences_input(&mut self, action: Action) {
         match action {
-            Action::Back | Action::System | Action::Page(_) => self.page(Page::Device),
-            Action::Move(Direction::Up) => self.selected = self.selected.saturating_sub(1),
-            Action::Move(Direction::Down) => {
-                self.selected = if self.selected >= 3 {
-                    BACK
-                } else {
-                    self.selected + 1
-                }
-            }
-            Action::SelectAndActivate(index) if index < 4 => {
+            Action::Back | Action::System | Action::Page(_) => self.page(Page::Home),
+            Action::SelectAndActivate(index) if index < APP_ROWS => {
                 self.selected = index;
                 self.preferences_input(Action::Activate);
             }
-            Action::Activate | Action::Move(Direction::Left | Direction::Right) => {
+            Action::Activate | Action::Move(Direction::Left | Direction::Right)
+                if self.selected < APP_ROWS =>
+            {
                 let mut policy = self.policy.clone();
                 let forward = action != Action::Move(Direction::Left);
                 match self.selected {
-                    0 => policy.ampm = !policy.ampm,
-                    1 => {
+                    0 => {
                         let choices = [0, 60, 300, 900, 1800, 3600, 86400];
                         policy.background_seconds = if forward {
                             choices
@@ -38,7 +35,7 @@ impl Settings {
                                 .unwrap_or(86400)
                         };
                     }
-                    2 if !self.policy_apps.is_empty() => {
+                    1 if !self.policy_apps.is_empty() => {
                         self.policy_app = if forward {
                             (self.policy_app + 1) % self.policy_apps.len()
                         } else {
@@ -48,7 +45,7 @@ impl Settings {
                         };
                         return;
                     }
-                    3 => {
+                    2 => {
                         let Some((id, _)) = self.policy_apps.get(self.policy_app) else {
                             return;
                         };
@@ -66,34 +63,47 @@ impl Settings {
                     Err(error) => self.message = error,
                 }
             }
-            _ => (),
+            Action::SelectAndActivate(_) | Action::Activate => {}
+            Action::Move(direction) => self.move_rows(direction),
         }
     }
-    pub fn preference_rows(&self) -> [String; 4] {
+    /// Background lifetime rows, shared by the renderer and the tests. Each row
+    /// keeps the same two-line shape as every other Settings category.
+    pub fn preference_rows(&self) -> [(String, String); APP_ROWS] {
         let app = self.policy_apps.get(self.policy_app);
         [
-            format!(
-                "Clock: {}",
-                if self.policy.ampm {
-                    "12 hour"
+            (
+                "Close background apps".into(),
+                if self.policy.background_seconds == 0 {
+                    "< never >".into()
                 } else {
-                    "24 hour"
-                }
+                    format!("< after {} >", seconds(self.policy.background_seconds))
+                },
             ),
-            if self.policy.background_seconds == 0 {
-                "Background timeout: Disabled".into()
-            } else {
-                format!("Background timeout: {} sec", self.policy.background_seconds)
-            },
-            format!("App: {}", app.map_or("None", |(_, name)| name)),
-            if app.is_some_and(|(id, _)| self.policy.essential.contains(id)) {
-                "Essential / Keep Running: Yes".into()
-            } else if self.policy.background_seconds == 0 {
-                "Essential: No (timeout disabled)".into()
-            } else {
-                "Essential: No / safe close on timeout".into()
-            },
+            (
+                "App".into(),
+                app.map_or_else(|| "None".into(), |(_, name)| name.clone()),
+            ),
+            (
+                "Keep running".into(),
+                if app.is_some_and(|(id, _)| self.policy.essential.contains(id)) {
+                    "Yes - never closes it automatically".into()
+                } else if self.policy.background_seconds == 0 {
+                    "Not needed while closing is off".into()
+                } else {
+                    "No - asked to close first".into()
+                },
+            ),
         ]
+    }
+}
+
+fn seconds(value: u32) -> String {
+    match value {
+        0 => "never".into(),
+        value if value % 3600 == 0 => format!("{} hour", value / 3600),
+        value if value % 60 == 0 => format!("{} min", value / 60),
+        value => format!("{value} sec"),
     }
 }
 
@@ -101,34 +111,41 @@ impl Settings {
 mod tests {
     use super::*;
     #[test]
-    fn preference_navigation_and_effective_policy_use_selected_app_id() {
+    fn navigation_uses_the_selected_app_id_and_reaches_the_footer() {
         let mut settings = Settings::default();
         settings.show();
-        settings.page(Page::Device);
-        settings.input(Action::SelectAndActivate(PREFERENCES));
-        assert_eq!(settings.page, Page::Preferences);
+        settings.page(Page::Applications);
         settings.policy_apps = vec![
             ("first".into(), "Same name".into()),
             ("second".into(), "Same name".into()),
         ];
         settings.policy.essential.insert("second".into());
         settings.policy.background_seconds = 300;
-        settings.input(Action::SelectAndActivate(2));
+        settings.selected = 1;
+        settings.input(Action::Move(Direction::Right));
         assert_eq!(settings.policy_app, 1);
         assert_eq!(
-            settings.preference_rows()[3],
-            "Essential / Keep Running: Yes"
+            settings.preference_rows()[2].1,
+            "Yes - never closes it automatically"
         );
         settings.input(Action::Move(Direction::Left));
         assert_eq!(settings.policy_app, 0);
-        assert!(settings.preference_rows()[3].contains("safe close"));
+        assert!(settings.preference_rows()[2].1.contains("asked to close"));
         settings.input(Action::Move(Direction::Down));
-        assert_eq!(settings.selected, 3);
+        assert_eq!(settings.selected, 2);
         settings.input(Action::Move(Direction::Down));
-        assert_eq!(settings.selected, BACK);
+        assert_eq!(settings.selected, super::super::footer::BACK);
         settings.input(Action::Move(Direction::Up));
-        assert_eq!(settings.selected, 3);
+        assert_eq!(settings.selected, 2);
         settings.input(Action::Back);
-        assert_eq!(settings.page, Page::Device);
+        assert_eq!(settings.page, Page::Home);
+    }
+    #[test]
+    fn background_lifetime_labels_are_human_readable() {
+        assert_eq!(seconds(0), "never");
+        assert_eq!(seconds(60), "1 min");
+        assert_eq!(seconds(900), "15 min");
+        assert_eq!(seconds(3600), "1 hour");
+        assert_eq!(seconds(45), "45 sec");
     }
 }

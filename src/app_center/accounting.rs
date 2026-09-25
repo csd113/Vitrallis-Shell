@@ -281,8 +281,13 @@ mod tests {
             )?;
         }
         let receipt = serde_json::json!({ "id": id, "version": "1.0.0", "origin": "owner/apps", "repository": "owner/apps", "commit": "a".repeat(40), "files": { "app.toml": "b".repeat(64), if rust { "bin/app" } else { "main.py" }: "c".repeat(64) } });
-        fs::write(root.join(".vitrallis-receipt.json"), receipt.to_string())
-            .map_err(|e| e.to_string())?;
+        super::super::storage::atomic(
+            &root.join(".vitrallis-receipt.json"),
+            &super::super::storage::FileData {
+                bytes: receipt.to_string().into_bytes(),
+                mode: 0o600,
+            },
+        )?;
         let launcher = loc.state.join("launchers").join(id);
         super::super::storage::atomic(
             &launcher,

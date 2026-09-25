@@ -144,21 +144,17 @@ impl Browser {
     /// # Errors
     /// Reports rendering errors; only visible rows are visited, with no metadata I/O.
     pub fn render(&mut self, ui: &mut Ui, top: i32, focused: bool) -> Result<(), String> {
+        let height = Self::row_height(ui);
         self.reveal(Self::visible_rows(ui, top));
         for row in 0..Self::visible_rows(ui, top) {
             let index = self.offset + row;
             if index > self.entries.len() {
                 break;
             }
-            let y = top + i32::try_from(row).unwrap_or(0) * Self::row_height(ui);
+            let y = top + i32::try_from(row).unwrap_or(0) * height;
             if index == self.selected {
                 ui.fill(
-                    Rect::new(
-                        4,
-                        y - 2,
-                        (ui.width - 8).unsigned_abs(),
-                        Self::row_height(ui).unsigned_abs(),
-                    ),
+                    Rect::new(4, y, (ui.width - 8).unsigned_abs(), height.unsigned_abs()),
                     if focused {
                         SELECTED
                     } else {
@@ -166,8 +162,11 @@ impl Browser {
                     },
                 )?;
             }
+            // The label sits on the row's own vertical centre, so every row
+            // shares one baseline whether or not it is highlighted.
+            let text_y = y + (height - ui.cell()) / 2;
             if index == 0 {
-                ui.text("[..] Parent directory", 8, y, ui.width - 16, TEXT)?;
+                ui.text("[..] Parent directory", 8, text_y, ui.width - 16, TEXT)?;
             } else if let Some(entry) = self.entries.get(index - 1) {
                 ui.text(
                     if entry.directory {
@@ -178,14 +177,14 @@ impl Browser {
                         "[F]"
                     },
                     8,
-                    y,
+                    text_y,
                     32 * ui.scale,
                     TEXT,
                 )?;
                 ui.text(
                     &entry.label,
                     40 * ui.scale,
-                    y,
+                    text_y,
                     ui.width - 48 * ui.scale,
                     TEXT,
                 )?;
@@ -218,7 +217,7 @@ pub fn pick(ui: &mut Ui, start: &Path) -> Result<Option<PathBuf>, String> {
     let mut footer = None;
     loop {
         ui.clear();
-        ui.header("Open text file", &browser.path.to_string_lossy())?;
+        ui.header_path("Open text file", &browser.path.to_string_lossy())?;
         browser.render(ui, ui.header_height() + 4, footer.is_none())?;
         ui.buttons(&["Cancel", "Open", "Path", "Hidden"], footer)?;
         ui.present();

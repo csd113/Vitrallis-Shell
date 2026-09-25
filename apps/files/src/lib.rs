@@ -72,7 +72,7 @@ impl Manager {
             self.browser.entries.len(),
             if self.browser.hidden { "   Hidden" } else { "" }
         );
-        ui.header(&title, &self.browser.path.to_string_lossy())?;
+        ui.header_path(&title, &self.browser.path.to_string_lossy())?;
         self.browser
             .render(ui, ui.header_height() + 4, self.footer.is_none())?;
         ui.buttons(&BUTTONS, self.footer)
@@ -255,14 +255,21 @@ impl Manager {
                     ui.fill(
                         sdl2::rect::Rect::new(
                             4,
-                            y - 2,
+                            y,
                             (ui.width - 8).unsigned_abs(),
                             height.unsigned_abs(),
                         ),
                         vitrallis_native::theme::SELECTED,
                     )?;
                 }
-                ui.text(label, 12, y, ui.width - 24, vitrallis_native::theme::TEXT)?;
+                // The label shares the list rows' vertical centre.
+                ui.text(
+                    label,
+                    12,
+                    y + (height - ui.cell()) / 2,
+                    ui.width - 24,
+                    vitrallis_native::theme::TEXT,
+                )?;
             }
             ui.buttons(&["Back", "Choose"], selected.checked_sub(labels.len()))?;
             ui.present();
@@ -436,15 +443,60 @@ fn copy(ui: &mut Ui, source: PathBuf, destination: PathBuf) -> Result<(), String
 mod tests {
     use super::*;
     use sdl2::{event::Event, keyboard::Mod};
+
+    fn sdl_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     struct Scratch(PathBuf);
     impl Drop for Scratch {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
     }
+
+    /// Every visible row, its highlight and its text column stay inside the
+    /// listing area above the button row at every supported size.
+    #[test]
+    fn list_rows_keep_text_inside_the_highlight_and_above_the_buttons() -> Result<(), String> {
+        let _guard = sdl_lock();
+        for size in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+            let session = vitrallis_native::ui::Session::new(
+                "Files geometry",
+                &Options {
+                    size: Some(size),
+                    ..Options::default()
+                },
+            )?;
+            let creator = session.canvas.texture_creator();
+            let ui = Ui::new(session, &creator)?;
+            let top = ui.header_height() + 4;
+            let rows = Browser::visible_rows(&ui, top);
+            let height = Browser::row_height(&ui);
+            assert!(rows >= 1, "{size:?}");
+            // One row holds a glyph cell inside its 2px highlight lead-in.
+            assert!(height >= ui.cell() + 2, "{size:?}");
+            // The bottom row and its highlight stay above the buttons.
+            let highlight_bottom = top + i32::try_from(rows).unwrap_or(0) * height - 2;
+            assert!(
+                highlight_bottom <= ui.height - ui.footer_height(),
+                "{size:?}: rows reach the button row"
+            );
+            // The tag column never grows into the name column.
+            assert!(8 + 32 * ui.scale <= 40 * ui.scale, "{size:?}");
+            assert!(ui.width - 48 * ui.scale > 0, "{size:?}");
+            assert!(top >= ui.header_height(), "{size:?}");
+        }
+        Ok(())
+    }
+
     #[test]
     fn keyboard_controls_and_cancel_default_delete_preserve_selection()
     -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = sdl_lock();
         sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
         let session = vitrallis_native::ui::Session::new(
             "Files test",

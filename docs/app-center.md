@@ -14,11 +14,17 @@ reopening, and checking installed state never trigger a remote catalog refresh.
 
 Rows show an icon, name, description, and either the available version, installed
 version, update transition, operation progress, or failure. Select a row, then use
-its primary **Install**, **Update**, **Repair**, or **Open** action. **Details**
-shows the selected app's description, installed and available versions, status,
-repository, requirements, download size and last operation error. **What's New**
-is accessible directly from Details before updating. Destructive **Remove** is
-separate from the primary action and always opens a Cancel-default confirmation.
+its primary **Install** (new app), **Update** (newer catalog version), **Repair**
+(installed catalog app), or **Open** action. **Open** appears only when the app is
+installed but not currently installable from a catalog, such as a removed source;
+a normal installed app shows **Repair** instead. A publisher-disabled package
+appears as **Unavailable** with its compatibility note.
+**Details** shows the selected app's description, installed and available versions,
+status, repository, requirements, download size and last operation error.
+**What's New** is accessible directly from Details before updating. Destructive
+**Remove** is separate from the primary action and always opens a Cancel-default
+confirmation; the confirmation body and its confirm button currently read
+**Uninstall**.
 
 **Search apps** matches names and descriptions. The adjacent filter cycles through
 **All**, **Installed**, and **Updates** and shows the matching count. Search's
@@ -45,12 +51,12 @@ press/release target. Losing focus declines pending confirmations.
 
 ## Apps page actions and folders
 
-The Apps page bottom bar contains **Actions**. Add Shortcut is available in that
-menu (F2 also opens its editor); system controls remain accessible through the
-System Settings tile and Power key. Tab selects Actions; Enter or Space opens it.
-The action label is centralized for a future rename.
+The Apps page bottom bar contains **Manage [F10]**. Add shortcut is available in
+that menu (F2 also opens its editor); system controls remain accessible through the
+System Settings tile and Power key. Tab selects Manage [F10]; Enter or Space opens
+it.
 
-Actions includes Create folder, Rename folder, Delete folder and Move app to
+The menu includes Create folder, Rename folder, Delete folder and Move app to
 folder / Apps. Open a folder like an app. Inside a folder, the header shows its
 name, **Back to Apps** is reachable with Tab and touch, and Escape returns to the
 folder tile without closing its running app. Deletion defaults to Cancel and
@@ -60,9 +66,15 @@ and touchscreen text entry. Folder state is stored atomically in
 `$XDG_DATA_HOME/vitrallis/folders.json`, independently of shell generations and
 app installations. Malformed or unsafe state cannot be overwritten by an action.
 
-Running apps have a small outlined play badge in a fixed corner of the tile.
-This uses the launcher's semantic running IDs and no animation timer, preserving
-text positions and idle rendering behavior.
+Running apps show one filled **RUNNING** chip in a fixed corner of the tile, over
+the icon rather than the name. A launch in flight shows **STARTING** and a failed
+launch shows **FAILED** in the same corner. The launcher's authoritative process
+state decides it, the same chip appears in folders and the App Center list, and
+there is no animation timer, so text positions and idle rendering behavior are
+unchanged.
+Launching and exit notices appear in the lower-left status area instead of a
+modal screen, and a launch that is in flight refuses a duplicate activation
+while arrow keys keep working.
 
 ## Repositories and cached metadata
 
@@ -84,9 +96,11 @@ rows. Source removal drops only that source's displayed rows and approvals; it
 does not uninstall apps or delete user data.
 
 Entries are keyed by originating repository plus app ID. Duplicate IDs across
-sources require explicit publisher selection. Receipts bind installations to the
-app ID, catalog origin and package source; a different source cannot silently take
-over an installation. A separate package source requires **Details → Trust source**
+sources require explicit publisher selection. In Details, the **Publisher** field
+shows the catalog origin; when the package comes from a separate repository, that
+repository is shown as **Source**. Receipts bind installations to the app ID,
+catalog origin and package source; a different source cannot silently take over an
+installation. A separate package source requires **Details → Trust source**
 confirmation. Approvals apply to that originating catalog and are rechecked on
 installation. Cached availability is not proof that an offline download will work.
 
@@ -186,12 +200,14 @@ shortcuts remain user-owned. Unmanaged data and app-local virtual environments
 are retained; package code should keep user data outside its read-only installation.
 
 Updates remove old receipt-owned files absent from the new inventory. Managed
-Python module caches are removed transactionally. Launchers use a release-specific
-bytecode-cache namespace and disable bytecode writes, so interpreter-wide or
-same-size/same-second caches cannot silently execute a previous release. Python
-startup/home/path overrides are excluded consistently with runtime preflight.
-Same-version republishing, downgrades, source switches and modified managed source
-files are rejected before replacement.
+Python module caches are cleared before the commit; bytecode is regenerable
+derived data and is deleted directly rather than journaled, including the
+group-writable caches Python creates under the device's shared umask. Launchers
+use a release-specific bytecode-cache namespace and disable bytecode writes, so
+interpreter-wide or same-size/same-second caches cannot silently execute a
+previous release. Python startup/home/path overrides are excluded consistently
+with runtime preflight. Same-version republishing, downgrades, source switches
+and modified managed source files are rejected before replacement.
 
 Running-app detection reads the **installed manifest's runtime entry**, even when the
 available version changes entry paths. **Close and update** defaults to Cancel.
@@ -201,8 +217,11 @@ Updated apps remain closed until the user opens them.
 
 ## Transactions, discovery and recovery
 
-A cross-process lock covers source settings, refresh, install, remove and recovery.
-Writes are staged, synced and atomically renamed individually. A durable journal
+A cross-process lock serializes source settings and every durable write. Refresh
+metadata and bundle downloads run outside the lock so slow network work cannot
+block another Shell's storage operations; the commit phase reacquires the lock,
+revalidates the source snapshot, readiness and running state, and only then
+mutates. Writes are staged, synced and atomically renamed individually. A durable journal
 records before/after bytes and modes, including removals. Final readback verifies
 every planned output before marker cleanup and journal completion. A finalization
 failure participates in rollback. Successful rollback releases the incomplete
@@ -235,6 +254,7 @@ See [the validation report](app-center-validation.md) and
 
 ## Physical validation
 
-See the [PocketCHIP App Manager validation record](devices/pocketchip/app-manager-validation.md)
+See the [PocketCHIP App Center physical validation record](devices/pocketchip/app-manager-validation.md)
 for the isolated hardware deployment, dependency prerequisites, lifecycle results,
-resource measurements and physical display verification limits.
+resource measurements and physical display verification limits. That record is
+dated 2026-09-19 and applies to the described Debian 13 device and test build.

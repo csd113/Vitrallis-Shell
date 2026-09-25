@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 description = "A small portable graphical launcher for embedded Linux"
 repository = "https://github.com/csd113/Vitrallis-Shell"
-license = "LicenseRef-Proprietary"
+license = "MIT"
 keywords = ["launcher", "embedded", "sdl2"]
 categories = ["gui"]
 publish = false
@@ -20,14 +20,13 @@ default-members = ["."]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0-beta4.1"
+version = "1.0.0-beta"
 edition = "2024"
 rust-version = "1.91"
 
 [dependencies]
 vitrallis-native.workspace = true
 sdl2.workspace = true
-font8x8.workspace = true
 serde_json.workspace = true
 png.workspace = true
 semver.workspace = true
@@ -56,4 +55,8 @@ codegen-units = 1
 strip = true
 
 [lints.rust]
+# The shell binary contains no unsafe code. The shared native helper crate and
+# the Terminal PTY boundary contain a small number of audited unsafe blocks at
+# libc/GL boundaries and are outside this root-package prohibition by design;
+# each site documents its safety invariant next to the block.
 unsafe_code = "forbid"

@@ -273,31 +273,72 @@ fn obsolete(
     }
     // Python timestamp bytecode may remain valid across same-size, same-second
     // replacements. Remove only caches belonging to managed source modules.
+    // Bytecode is regenerable derived data, so it is removed directly instead
+    // of journaled; `__pycache__` is app-created and group-writable under the
+    // device's common shared umask 002, which the strict shared-storage guard
+    // would reject and thereby block every update of an app that has run.
     for (parent, stem) in modules {
-        let cache = parent.join("__pycache__");
-        storage::safe(&cache)?;
-        let entries = match std::fs::read_dir(&cache) {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e.to_string()),
-        };
-        let prefix = format!("{stem}.");
-        for (index, entry) in entries.enumerate() {
-            if index >= 1024 {
-                return Err("Python cache directory exceeds bounds".into());
-            }
-            let entry = entry.map_err(|e| e.to_string())?;
-            let name = entry.file_name();
-            if name.to_str().is_some_and(|n| {
-                n.starts_with(&prefix) && Path::new(n).extension().is_some_and(|ext| ext == "pyc")
-            }) {
-                writes.push(transaction::remove(entry.path())?);
-            }
-        }
+        remove_module_cache(root, &parent, &stem)?;
     }
     if writes.len() > 2048 {
         return Err("Installation transaction exceeds bounds".into());
     }
+    Ok(())
+}
+/// Removes bytecode for one managed module. The strict shared-storage guard is
+/// deliberately not used: Python creates `__pycache__` with the process umask,
+/// so the device's shared umask 002 makes it group-writable. The directory and
+/// every removed entry must still be owned by the app directory's owner, never
+/// be a symlink, and never be world-writable.
+#[cfg(unix)]
+fn remove_module_cache(root: &Path, parent: &Path, stem: &str) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
+    let cache = parent.join("__pycache__");
+    let owner = match std::fs::symlink_metadata(root) {
+        Ok(metadata) => metadata.uid(),
+        // A fresh installation has no app root and therefore no cache.
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let directory = match std::fs::symlink_metadata(&cache) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !directory.is_dir() || directory.uid() != owner || directory.mode() & 0o002 != 0 {
+        return Err(format!(
+            "Unsafe Python cache directory: {}",
+            cache.display()
+        ));
+    }
+    let prefix = format!("{stem}.");
+    let entries = std::fs::read_dir(&cache).map_err(|e| e.to_string())?;
+    for (index, entry) in entries.enumerate() {
+        if index >= 1024 {
+            return Err("Python cache directory exceeds bounds".into());
+        }
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name();
+        if !name.to_str().is_some_and(|n| {
+            n.starts_with(&prefix) && Path::new(n).extension().is_some_and(|ext| ext == "pyc")
+        }) {
+            continue;
+        }
+        let path = entry.path();
+        let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        if !metadata.is_file()
+            || metadata.uid() != owner
+            || metadata.mode() & 0o002 != 0
+            || metadata.nlink() != 1
+        {
+            return Err(format!("Unsafe Python cache entry: {}", path.display()));
+        }
+        std::fs::remove_file(&path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+#[cfg(not(unix))]
+const fn remove_module_cache(_root: &Path, _parent: &Path, _stem: &str) -> Result<(), String> {
     Ok(())
 }
 fn protect(p: &Package, root: &Path, files: &Files, receipt: Option<&Value>) -> Result<(), String> {

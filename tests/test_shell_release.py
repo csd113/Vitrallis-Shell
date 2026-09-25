@@ -60,8 +60,12 @@ class ShellRelease(unittest.TestCase):
         (apps / 'sentinel').write_text('untouched')
         self.package()
         name = 'vitrallis-x86_64-unknown-linux-gnu-glibc2.36-v2.vtrbundle'
-        self.assertEqual(sorted(p.name for p in self.output.iterdir()), [name, name + '.sha256'])
+        expected = [name, name + '.sha256', *RELEASE.NOTICES]
+        self.assertEqual(sorted(p.name for p in self.output.iterdir()), sorted(expected))
         self.contents(name)
+        for notice in RELEASE.NOTICES:
+            self.assertEqual((self.output / notice).read_bytes(), (ROOT / notice).read_bytes())
+            self.assertEqual((self.output / notice).stat().st_mode & 0o777, 0o644)
         self.assertEqual((apps / 'sentinel').read_text(), 'untouched')
         self.assertEqual(self.check.call_count, 6)
         for i, binary in enumerate(RELEASE.BINARIES, 1):
@@ -75,7 +79,64 @@ class ShellRelease(unittest.TestCase):
         full = old.replace('.vtrbundle', '-v2.vtrbundle')
         self.contents(old, RELEASE.BINARIES[:4])
         self.contents(full)
-        self.assertEqual(len(list(self.output.iterdir())), 4)
+        self.assertEqual(len(list(self.output.iterdir())), 4 + len(RELEASE.NOTICES))
+
+    def test_every_payload_validates_notices_but_only_the_canonical_one_stages_them(self):
+        self.data = bytearray(84)
+        self.data[:7] = b'\x7fELF\x01\x01\x01'
+        struct.pack_into('<HHIIIIIHHH', self.data, 16, 2, 40, 1, 0, 52, 0, 0x05000400, 52, 32, 1)
+        self.write_binaries()
+        arm = self.root / 'arm'
+        RELEASE.package(self.binaries, 'armv7-unknown-linux-gnueabihf', arm, 'v1.2.3')
+        self.assertEqual(sorted(p.name for p in arm.iterdir()),
+                         sorted([*RELEASE.SESSION_HELPERS, *[h + '.sha256' for h in RELEASE.SESSION_HELPERS],
+                                 'vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle',
+                                 'vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle.sha256']))
+        for notice in RELEASE.NOTICES:
+            self.assertFalse((arm / notice).exists())
+
+    def test_cross_architecture_asset_basenames_never_collide(self):
+        self.data = bytearray(84)
+        self.data[:7] = b'\x7fELF\x01\x01\x01'
+        struct.pack_into('<HHIIIIIHHH', self.data, 16, 2, 40, 1, 0, 52, 0, 0x05000400, 52, 32, 1)
+        self.write_binaries()
+
+        def check(command, **kwargs):
+            if command[0] == 'cargo':
+                return json.dumps({'packages': [{'name': 'vitrallis-shell', 'version': '1.2.3'}]}).encode()
+            binary = Path(command[-2]).name
+            return ('Arti 2.6.0' if binary == 'arti' else binary + ' 1.2.3') + '\n'
+
+        self.check.side_effect = check
+        arm = self.root / 'arm'
+        RELEASE.package(self.binaries, 'armv7-unknown-linux-gnueabihf', arm, 'v1.2.3')
+        self.data = bytearray(64)
+        self.data[:7] = b'\x7fELF\x02\x01\x01'
+        self.data[16:20] = b'\x03\x00\x3e\x00'
+        self.write_binaries()
+        self.package(target='x86_64-unknown-linux-gnu')
+        x86_names = {p.name for p in self.output.iterdir()}
+        arm_names = {p.name for p in arm.iterdir()}
+        self.assertEqual(x86_names & arm_names, set())
+
+    def test_release_refuses_missing_empty_or_symlinked_legal_notices(self):
+        notices = self.root / 'notices'
+        notices.mkdir()
+        with mock.patch.object(RELEASE, 'ROOT', notices):
+            with self.assertRaisesRegex(ValueError, 'LICENSE'):
+                self.package()
+            for name in RELEASE.NOTICES:
+                (notices / name).write_text('notice ' + name)
+            (notices / 'LICENSE').write_text('')
+            self.version('1.2.3')
+            with self.assertRaisesRegex(ValueError, 'LICENSE'):
+                self.package()
+            (notices / 'LICENSE').unlink()
+            (notices / 'LICENSE').symlink_to(notices / 'THIRD_PARTY_NOTICES.md')
+            self.version('1.2.3')
+            with self.assertRaisesRegex(ValueError, 'LICENSE'):
+                self.package()
+        self.assertFalse(self.output.exists())
 
     def test_transition_is_not_silently_reused_for_future_releases(self):
         with self.assertRaisesRegex(ValueError, 'only authorized'):

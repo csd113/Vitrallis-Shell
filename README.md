@@ -18,13 +18,15 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 
 ## Installation
 
-**Beta.** Install the complete bundle containing the shell, Terminal, Notepad and Files.
+**Vitrallis Shell 1.0.0 Beta.** Install the complete bundle containing the shell, Terminal, Notepad,
+Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
 OS/runtime requirements, the single copy-and-paste setup block and hardware
 validation limits. Setup prepares missing Debian packages and installs a verified
-complete bundle. Run it as your normal desktop user; sudo is used for package
-and platform preparation. The updated entry point must be published before
-these source changes are available through the public download URL.
+complete bundle with all five executables. Run it as your normal desktop user;
+sudo is used for package and platform preparation. The updated entry point must be
+published before these source changes are available through the public download
+URL.
 
 ## First launch and controls
 
@@ -40,11 +42,11 @@ Setup preserves the original boot default.
 | Change page | Page Up / Page Down or header arrows |
 | Return from an app | Home in a supervised session |
 | Return to the original home | Select **Exit Vitrallis** in a supervised session |
-| Update the native build | System Settings → More → Check for Updates |
+| Update the native build | System Settings → Software Updates → Check for Updates |
 
 Running apps remain open when you return Home. Save and close them before stopping or removing the session. Native utility menus and dialogs have visible keyboard focus; see [Terminal, Notepad and Files controls](docs/native-apps.md). App Center has [its own navigation and package guide](docs/app-center.md).
 
-Use **Actions → Add shortcut** (F2) to launch ordinary Linux programs or scripts without an
+Use **Manage [F10] → Add shortcut** (F2) to launch ordinary Linux programs or scripts without an
 App Center package. See [desktop shortcuts](docs/desktop-shortcuts.md) for command
 quoting, terminal mode, icons, editing, and removal rules.
 
@@ -58,7 +60,7 @@ for overrides and GPU validation limits. Hardware support requires a matching ad
 size alone is not support. See the [device guide](docs/devices/pocketchip.md) for
 recorded evidence and checks still requiring hardware.
 
-Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Catalog availability and runtime dependencies belong to each publisher. Some packages are disabled by their publisher. Fonts do not provide full Unicode shaping; Bluetooth controls, a public Python SDK, and signed publisher packages are future work. See the [trust model](docs/security.md) and [design roadmap](docs/design.md).
+Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Catalog availability and runtime dependencies belong to each publisher. Publisher-disabled packages appear as **Unavailable** with their compatibility note. Fonts do not provide full Unicode shaping; Bluetooth controls, a public Python SDK, and signed publisher packages are future work. See the [trust model](docs/security.md) and [design roadmap](docs/design.md).
 
 ## Documentation and development
 
@@ -74,7 +76,7 @@ sh scripts/validate.sh
 
 The workspace build includes all native utilities. [Contributor guidance](CONTRIBUTING.md) covers setup, focused changes, validation, and pull requests. Please use the [bug and feature forms](https://github.com/csd113/Vitrallis-Shell/issues/new/choose) for feedback and the [security reporting policy](SECURITY.md) for security concerns.
 
-**License:** the workspace is marked `LicenseRef-Proprietary` in [Cargo metadata](Cargo.toml). No open-source license grant is included in this repository. Ask the maintainer about reuse; dependency licenses remain their own.
+**License:** project-owned code and documentation use [MIT](LICENSE). Third-party terms and unresolved artwork rights are listed in [third-party notices](THIRD_PARTY_NOTICES.md); MIT does not relicense those items.
 
 ## Uninstall
 

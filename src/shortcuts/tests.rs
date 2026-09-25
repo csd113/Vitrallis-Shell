@@ -67,6 +67,7 @@ fn crud_restart_and_icon_copy_are_atomic_and_never_delete_target()
         &original,
         include_bytes!("../../assets/native/terminal.png"),
     )?;
+    fs::set_permissions(&original, fs::Permissions::from_mode(0o644))?;
     draft.choose_icon(&original)?;
     let id = store.save(None, &draft)?;
     fs::remove_file(original)?;

@@ -80,17 +80,32 @@ impl Document {
     pub const fn lines(&self) -> usize {
         self.starts.len()
     }
+    /// Clamp a publicly assignable offset to a UTF-8 boundary inside the text.
+    /// `cursor` and `anchor` are part of the component API, so a malformed
+    /// external write degrades to the nearest boundary instead of panicking.
+    fn boundary(&self, offset: usize) -> usize {
+        let mut offset = offset.min(self.text.len());
+        while !self.text.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        debug_assert!(self.text.is_char_boundary(offset));
+        offset
+    }
     #[must_use]
     pub fn row(&self) -> usize {
+        let cursor = self.boundary(self.cursor);
         self.starts
-            .partition_point(|&start| start <= self.cursor)
+            .partition_point(|&start| start <= cursor)
             .saturating_sub(1)
     }
     #[must_use]
     pub fn column(&self) -> usize {
-        self.text[self.starts[self.row()]..self.cursor]
-            .chars()
-            .count()
+        let cursor = self.boundary(self.cursor);
+        let row = self
+            .starts
+            .partition_point(|&start| start <= cursor)
+            .saturating_sub(1);
+        self.text[self.starts[row]..cursor].chars().count()
     }
     #[must_use]
     pub fn line(&self, row: usize) -> &str {
@@ -101,8 +116,9 @@ impl Document {
     }
     #[must_use]
     pub fn selection(&self) -> Range<usize> {
-        let anchor = self.anchor.unwrap_or(self.cursor);
-        anchor.min(self.cursor)..anchor.max(self.cursor)
+        let anchor = self.boundary(self.anchor.unwrap_or(self.cursor));
+        let cursor = self.boundary(self.cursor);
+        anchor.min(cursor)..anchor.max(cursor)
     }
     #[must_use]
     pub fn line_start(&self, row: usize) -> Option<usize> {
@@ -170,24 +186,22 @@ impl Document {
         self.replace(self.cursor..self.next(), "")
     }
     fn previous(&self) -> usize {
-        if self.text[..self.cursor].ends_with("\r\n") {
-            self.cursor - 2
+        let cursor = self.boundary(self.cursor);
+        if self.text[..cursor].ends_with("\r\n") {
+            cursor - 2
         } else {
-            self.text[..self.cursor]
+            self.text[..cursor]
                 .char_indices()
                 .next_back()
                 .map_or(0, |(i, _)| i)
         }
     }
     fn next(&self) -> usize {
-        if self.text[self.cursor..].starts_with("\r\n") {
-            self.cursor + 2
+        let cursor = self.boundary(self.cursor);
+        if self.text[cursor..].starts_with("\r\n") {
+            cursor + 2
         } else {
-            self.cursor
-                + self.text[self.cursor..]
-                    .chars()
-                    .next()
-                    .map_or(0, char::len_utf8)
+            cursor + self.text[cursor..].chars().next().map_or(0, char::len_utf8)
         }
     }
     pub fn horizontal(&mut self, right: bool, select: bool) {
@@ -331,4 +345,43 @@ fn digest_file(path: &Path) -> io::Result<[u8; 32]> {
         digest.update(&buffer[..count]);
     }
     Ok(digest.finalize().into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn external_offsets_off_the_utf8_boundary_degrade_instead_of_panicking()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut document = Document::default();
+        document.insert("aé\nb")?;
+        // "a" at 0, "é" at 1..3, "\n" at 3, "b" at 4. Both fields are public.
+        document.cursor = 2;
+        document.anchor = Some(3);
+        assert_eq!(document.column(), 1);
+        assert_eq!(document.row(), 0);
+        assert_eq!(document.selection(), 1..3);
+        document.horizontal(true, true);
+        document.horizontal(false, true);
+        document.vertical(1, false);
+        document.backspace()?;
+        document.delete()?;
+        document.edge(true, false);
+        assert!(document.cursor <= document.text().len());
+        assert!(document.text().is_char_boundary(document.cursor));
+        // Offsets past the end clamp to the final boundary as well.
+        document.cursor = usize::MAX;
+        document.anchor = Some(usize::MAX);
+        assert_eq!(document.row(), document.lines() - 1);
+        assert_eq!(
+            document.column(),
+            document.line(document.lines() - 1).chars().count()
+        );
+        assert_eq!(document.selection(), 4..4);
+        document.insert("!")?;
+        assert_eq!(document.text(), "aé\n!");
+        assert!(document.text().is_char_boundary(document.cursor));
+        Ok(())
+    }
 }

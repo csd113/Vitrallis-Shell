@@ -143,7 +143,16 @@ impl Session {
                 terminal_menu(ui, &mut self.process)?;
                 self.menu = false;
             }
-            Input::Click(_, y) if ui.row_at(y, 0, 20 * ui.scale, 1).is_some() => {
+            Input::Click(_, y)
+                if ui
+                    .row_at(
+                        y,
+                        ui.height - model::status_height(ui.scale),
+                        model::status_height(ui.scale),
+                        1,
+                    )
+                    .is_some() =>
+            {
                 terminal_menu(ui, &mut self.process)?;
             }
             Input::Key(key, mods) => {
@@ -184,29 +193,21 @@ fn terminal_menu(ui: &mut Ui, process: &mut pty::Pty) -> Result<(), String> {
     }
 }
 fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
+    let scale = ui.scale;
+    let status_h = model::status_height(scale);
+    let viewport = ui.height - status_h;
     ui.clear();
-    ui.fill(
-        Rect::new(0, 0, ui.width.unsigned_abs(), 20 * ui.scale.unsigned_abs()),
-        if menu {
-            vitrallis_native::theme::SELECTED
-        } else {
-            vitrallis_native::theme::PANEL
-        },
-    )?;
     let screen = terminal.parser.screen();
     let (rows, cols) = screen.size();
-    ui.text(
-        "Terminal   Menu: Shift+F10",
-        5,
-        6,
-        ui.width - 10,
-        vitrallis_native::theme::ACCENT,
-    )?;
+    // Output fills the screen top-down: no title bar, no decorative chrome.
     for row in 0..rows {
+        let y = i32::from(row) * 9 * scale;
+        if y + 8 * scale > viewport {
+            break;
+        }
         for col in 0..cols {
             if let Some(cell) = screen.cell(row, col) {
                 let x = i32::from(col) * ui.cell();
-                let y = 20 * ui.scale + i32::from(row) * 9 * ui.scale;
                 let mut fg = color(cell.fgcolor(), TEXT);
                 let mut bg = color(cell.bgcolor(), BACKGROUND);
                 if cell.inverse() {
@@ -214,7 +215,7 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
                 }
                 if bg != BACKGROUND {
                     ui.fill(
-                        Rect::new(x, y, ui.cell().unsigned_abs(), 9 * ui.scale.unsigned_abs()),
+                        Rect::new(x, y, ui.cell().unsigned_abs(), 9 * scale.unsigned_abs()),
                         bg,
                     )?;
                 }
@@ -224,29 +225,70 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
                     }
                 }
                 if cell.underline() {
-                    ui.fill(
-                        Rect::new(x, y + 8 * ui.scale, ui.cell().unsigned_abs(), 1),
-                        fg,
-                    )?;
+                    ui.fill(Rect::new(x, y + 8 * scale, ui.cell().unsigned_abs(), 1), fg)?;
                 }
             }
         }
     }
+    // The cursor stays unmistakable: a filled block while the prompt is live,
+    // drawn only when the viewport itself is at the current output.
     if !screen.hide_cursor() && screen.scrollback() == 0 {
         let (row, col) = screen.cursor_position();
-        if row < rows && col < cols {
+        let y = i32::from(row) * 9 * scale;
+        if row < rows && col < cols && y + 8 * scale <= viewport {
+            let x = i32::from(col) * ui.cell();
+            let cell = screen.cell(row, col);
+            // A filled block cursor stays visible over every cell colour, and the
+            // glyph beneath it is redrawn in the inverted ink.
             ui.fill(
-                Rect::new(
-                    i32::from(col) * ui.cell(),
-                    20 * ui.scale + i32::from(row) * 9 * ui.scale + 8 * ui.scale,
-                    ui.cell().unsigned_abs(),
-                    1,
-                ),
+                Rect::new(x, y, ui.cell().unsigned_abs(), 8 * scale.unsigned_abs()),
                 vitrallis_native::theme::ACCENT,
             )?;
+            if let Some(cell) = cell
+                && !cell.is_wide_continuation()
+            {
+                for ch in cell.contents().chars().filter(|c| *c != ' ') {
+                    ui.glyph(ch, x, y, vitrallis_native::theme::BACKGROUND)?;
+                }
+            }
         }
     }
-    Ok(())
+    status(ui, terminal, menu, status_h)
+}
+
+/// Lower status line: title, scrollback position and the two shortcuts that are
+/// not discoverable from the prompt.
+fn status(ui: &mut Ui, terminal: &Terminal, menu: bool, status_h: i32) -> Result<(), String> {
+    let y = ui.height - status_h;
+    let scale = ui.scale;
+    ui.fill(
+        Rect::new(0, y, ui.width.unsigned_abs(), status_h.unsigned_abs()),
+        if menu {
+            vitrallis_native::theme::SELECTED
+        } else {
+            vitrallis_native::theme::PANEL
+        },
+    )?;
+    let scrollback = terminal.parser.screen().scrollback();
+    let state = if scrollback > 0 {
+        format!("scrollback {scrollback} / Shift+PageDown")
+    } else {
+        "Shift+F10: menu   Ctrl+Shift+Q: close".into()
+    };
+    ui.text(
+        "Terminal",
+        5,
+        y + scale,
+        ui.width / 3,
+        vitrallis_native::theme::ACCENT,
+    )?;
+    ui.text(
+        &state,
+        5 + (ui.width / 3),
+        y + scale,
+        ui.width - 10 - (ui.width / 3),
+        vitrallis_native::theme::MUTED,
+    )
 }
 fn color(color: vt100::Color, default: Color) -> Color {
     const BASE: [(u8, u8, u8); 16] = [

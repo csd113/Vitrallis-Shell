@@ -33,9 +33,23 @@ def load(name, path):
 b = load('bootstrap', DEVICE / 'bootstrap.py')
 
 
+def setUpModule():
+    # See test_installer: fixtures must not inherit the caller's umask.
+    global _module_umask
+    _module_umask = os.umask(0o022)
+
+
+def tearDownModule():
+    os.umask(_module_umask)
+
+
 def release(tag='v1.2.3-beta.2', payload=b'fixture'):
     data = {b.BUNDLE: payload}
     data.update({name: (DEVICE / name).read_bytes() for name in b.HELPERS})
+    # Published releases also carry the project license and third-party
+    # notices; the installer must download only its own bundle and helpers.
+    for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_LICENSES.txt'):
+        data[name] = b'fixture notice ' + name.encode()
     for name, content in list(data.items()):
         data[name + '.sha256'] = (hashlib.sha256(content).hexdigest() + '  ' + name + '\n').encode()
     assets = [{'name': name, 'size': len(content), 'state': 'uploaded',
@@ -67,6 +81,8 @@ class Bootstrap(unittest.TestCase):
         self.assertEqual(result.read_bytes(), self.data[b.BUNDLE])
         for name in b.HELPERS:
             self.assertEqual((self.root / name).read_bytes(), (DEVICE / name).read_bytes())
+        for name in ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_LICENSES.txt'):
+            self.assertFalse((self.root / name).exists())
 
     def test_semver_beta_stable_drafts_and_obsolete_releases(self):
         values = [release(v)[0] for v in ('v1.2.3-beta.10', 'v1.2.3-beta.2', 'v1.2.3', 'v2.0.0-beta.1')]
@@ -89,7 +105,16 @@ class Bootstrap(unittest.TestCase):
 
     def test_missing_duplicate_foreign_and_oversized_assets_fail_before_download(self):
         original = copy.deepcopy(self.value)
-        cases = [lambda v: v['assets'].pop(),
+
+        def drop_bundle_sidecar(value):
+            value['assets'] = [asset for asset in value['assets']
+                               if asset['name'] != b.BUNDLE + '.sha256']
+
+        def drop_bundle_asset(value):
+            value['assets'] = [asset for asset in value['assets']
+                               if asset['name'] != b.BUNDLE]
+
+        cases = [drop_bundle_asset, drop_bundle_sidecar,
                  lambda v: v['assets'].append(v['assets'][0]),
                  lambda v: v['assets'][0].update(browser_download_url='https://example.com/evil'),
                  lambda v: v['assets'][0].update(size=b.MAX_BUNDLE + 1),

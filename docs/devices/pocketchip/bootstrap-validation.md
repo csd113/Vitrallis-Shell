@@ -38,6 +38,8 @@ adds user-manager validation, space checks and a checked first launch.
 
 ## Validation
 
+Host/fixture evidence, 2026-09; not a physical fresh-image test (see Remaining scope).
+
 `sh scripts/validate.sh` passed on the development host, including the required
 Rust formatting, strict Clippy and workspace test commands, Python tests, source
 archive rebuild, release builds, SDL smoke checks, script syntax and local links.

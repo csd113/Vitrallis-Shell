@@ -1,8 +1,12 @@
 # Settings and storage
 
-Open **Settings → Storage** with touch or the arrow keys and Enter. Storage is
-also available from Device settings. Escape returns to the previous screen.
-Power and software installation confirmations still start on Cancel.
+The home menu lists eight large options: **Display & Sound**, **Date & Time**,
+**Wireless Network**, **Applications**, **Storage**, **Device**, **Software
+Updates** and **About**. Each is one Enter press away, arrows move between them,
+and Escape only leaves Settings from the home menu. Open **Settings → Storage**
+with touch or the arrow keys and Enter. Escape returns one level, so it steps out
+of a category rather than out of Settings. Power and software installation
+confirmations still start on Cancel.
 
 The overview measures the filesystem mounted at `/`, displaying capacity, used
 bytes, space available to the user, percentage used, and a static usage bar.
@@ -15,7 +19,7 @@ shared extents can make filesystem totals differ from file allocation estimates.
 ## Ownership and classification
 
 Launcher discovery and accounting use the same validated installed-manifest
-inventory in App Manager. Python and Rust manifests use the same accounting
+inventory in App Center. Python and Rust manifests use the same accounting
 path, including Rust packages for another architecture that cannot run on the
 current host. No application code is executed to obtain storage information.
 
@@ -45,7 +49,7 @@ counted once. The first installed variant in stable ID order receives the shared
 allocation; both details pages identify it as shared.
 
 An app without a valid receipt still appears, but its classification is marked
-incomplete. Missing manifests are treated like App Manager discovery: leftover
+incomplete. Missing manifests are treated like App Center discovery: leftover
 files are retained data, not an installed application. Invalid manifests produce
 an explicit incomplete-list warning. Missing optional data directories mean zero
 bytes; failed reads and missing required roots mean an unavailable or partial
@@ -74,8 +78,8 @@ locations. Rendering and input only read snapshots and a nonblocking channel.
 There are no storage timers, animations, deletion controls or notifications.
 
 Snapshots persist across Settings visits. Opening Storage after two minutes, a
-manual Refresh, or an App Manager installation/update/removal attempt requests a
-new scan. A changed App Manager generation cancels and rejects any older in-flight
+manual Refresh, or an App Center installation/update/removal attempt requests a
+new scan. A changed App Center generation cancels and rejects any older in-flight
 result. A failed scan shows an error and retains the previous sizes with an
 explicit warning; it does not continuously retry. Changes made by external tools
 are picked up by Refresh or by reopening after the cache expires.
@@ -108,21 +112,27 @@ reopen while scanning, refresh after changing app data, navigate every action wi
 keys and touch, and confirm that unavailable media and low free space do not
 freeze input. The logic and layout changes use host-side tests; physical hardware is not a release gate for them.
 
-## Preferences and lifecycle
+## Applications and lifecycle
 
-**Settings → Device → Preferences** controls the persisted 12/24-hour clock,
-global background timeout, and each selected app's **Essential / Keep Running**
-flag. App choices use stable IDs. Timeout is disabled by default, matching this
-checkout's previous unlimited background lifetime. Essential apps are exempt.
-After a configured timeout the shell sends one advisory safe-close request per
-background period through the existing native inbox. Notepad vetoes while dirty,
-Files finishes modal/file operations first, and foreground apps veto. Terminal
-and applications without a safe-close implementation remain running. There is
-no forced termination or escalation after an unanswered request.
+**Settings → Applications** controls the global background timeout and each
+selected app's **Keep running** flag. Clock format moved to **Date & Time** and
+display/audio controls to **Display & Sound**, so each option lives with the
+behaviour it affects. App choices use stable IDs. Timeout is disabled by default,
+matching this checkout's previous unlimited background lifetime. Apps marked
+**Keep running** are exempt.
+
+Returning to the main menu never stops an application: it moves into the
+background and keeps running for as long as the user leaves it there. When a
+background timeout is configured, the shell sends one advisory safe-close
+request through the existing native inbox and gives the app thirty seconds to
+save and exit. If the request is unanswered by then, the shell stops that one app
+and reports the count in the lower-left status area. Essential apps and every app
+under a disabled (default) timeout are never touched, and explicit termination
+with Escape on the highlighted app still stops it immediately.
 
 The Wi-Fi entry opens **Wireless Network Controls**, containing the radio switches,
-connection manager and Tor controls. Actions offers **Move earlier / Move later**
-for apps and folders. Ordering is stored in the existing folder state by stable
+connection manager and Tor controls. The **Manage [F10]** menu offers
+**Move earlier / Move later** for apps and folders. Ordering is stored in the existing folder state by stable
 ID; absent IDs remain harmless and newly discovered IDs follow saved items.
 
 Late windows stay attached to the existing process owner. After returning home

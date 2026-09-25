@@ -102,13 +102,19 @@ impl vt100::Callbacks for Replies {
 }
 pub fn geometry(width: i32, height: i32, scale: i32) -> (u16, u16) {
     (
-        u16::try_from((height - 20 * scale) / (9 * scale))
+        u16::try_from((height - status_height(scale)) / (9 * scale))
             .unwrap_or(1)
             .clamp(1, 240),
         u16::try_from(width / (8 * scale))
             .unwrap_or(1)
             .clamp(1, 512),
     )
+}
+
+/// One compact status line at the bottom keeps the whole top of the display for
+/// terminal output while still showing the scrollback position and shortcuts.
+pub const fn status_height(scale: i32) -> i32 {
+    10 * scale
 }
 pub fn key(key: Keycode, mods: Mod, application: bool) -> Option<Vec<u8>> {
     let alt = mods.intersects(Mod::LALTMOD | Mod::RALTMOD);
@@ -226,6 +232,41 @@ pub fn text(text: &str, mods: Mod) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The character grid and the status bar must never overlap, and the grid
+    /// must fill its region exactly at every supported size and scale.
+    #[test]
+    fn grid_and_status_leave_room_for_every_cell() {
+        for scale in 1..=3 {
+            let status = status_height(scale);
+            let cell = 8 * scale;
+            // The status bar centers one glyph cell with a pixel above and below.
+            assert!(status >= cell + 2 * scale, "scale={scale}");
+            assert_eq!((status - cell) / 2, scale, "scale={scale}");
+            for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+                let (rows, cols) = geometry(width, height, scale);
+                assert!(rows >= 1 && cols >= 1, "{width}x{height}@{scale}");
+                assert!(
+                    i32::from(rows) * 9 * scale <= height - status,
+                    "{width}x{height}@{scale}: rows reach the status bar"
+                );
+                assert!(
+                    i32::from(cols) * 8 * scale <= width,
+                    "{width}x{height}@{scale}: columns exceed the window"
+                );
+                // One more row must not fit: the grid uses its whole region.
+                assert!(
+                    i32::from(rows) * 9 * scale + 9 * scale > height - status,
+                    "{width}x{height}@{scale}: a row was dropped"
+                );
+            }
+        }
+        // The fixed "Terminal" legend always fits the left third of the bar.
+        let legend = i32::try_from("Terminal".len()).unwrap_or(0) * 8;
+        for width in [320, 480, 800, 1280] {
+            assert!(width / 3 >= legend);
+        }
+    }
     #[test]
     fn function_keys_and_fn_punctuation_have_no_meta_prefix() {
         for (code, sequence) in [
@@ -257,18 +298,23 @@ mod tests {
         assert_eq!(text("c", Mod::LCTRLMOD), None);
     }
     #[test]
-    fn ansi_cursor_colors_clear_and_wrap() {
+    fn ansi_cursor_colors_clear_and_wrap() -> Result<(), String> {
         let mut terminal = Terminal::new(3, 4);
         terminal.process(b"abcdE");
         assert_eq!(terminal.parser.screen().cursor_position(), (1, 1));
         assert_eq!(terminal.parser.screen().contents(), "abcdE");
         terminal.process(b"\x1b[2;3H\x1b[31;44mZ");
-        let cell = terminal.parser.screen().cell(1, 2).expect("in bounds");
+        let cell = terminal
+            .parser
+            .screen()
+            .cell(1, 2)
+            .ok_or("row 1 column 2 must exist in a 3x4 screen")?;
         assert_eq!(cell.contents(), "Z");
         assert_eq!(cell.fgcolor(), vt100::Color::Idx(1));
         assert_eq!(cell.bgcolor(), vt100::Color::Idx(4));
         terminal.process(b"\x1b[2J");
         assert_eq!(terminal.parser.screen().contents(), "");
+        Ok(())
     }
     #[test]
     fn large_output_scrollback_and_escape_strings_are_bounded() {
@@ -289,7 +335,10 @@ mod tests {
     }
     #[test]
     fn geometry_resize_alternate_and_unicode() {
-        assert_eq!(geometry(480, 272, 1), (28, 60));
+        // One 10-pixel status line at the bottom leaves 29 text rows at 480x272.
+        assert_eq!(geometry(480, 272, 1), (29, 60));
+        assert_eq!(status_height(1), 10);
+        assert!(29 * 9 <= 272 - status_height(1));
         let mut terminal = Terminal::new(3, 10);
         terminal.process("é中🙂".as_bytes());
         assert_eq!(terminal.parser.screen().cursor_position(), (0, 5));

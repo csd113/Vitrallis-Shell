@@ -19,6 +19,16 @@ u = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(u)
 
 
+def setUpModule():
+    # See test_installer: fixtures must not inherit the caller's umask.
+    global _module_umask
+    _module_umask = os.umask(0o022)
+
+
+def tearDownModule():
+    os.umask(_module_umask)
+
+
 class Uninstaller(unittest.TestCase):
     install = fixture.Installer.install
     # Reuse fixture construction, without inheriting the installer test cases.

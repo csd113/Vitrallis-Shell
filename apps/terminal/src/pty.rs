@@ -335,21 +335,24 @@ fn spawn_child(
         .stderr(Stdio::from(slave));
     // SAFETY: the pre-exec closure invokes only async-signal-safe OS operations,
     // allocates nothing, and acquires no locks after fork. std has installed fd 0.
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            #[cfg(target_os = "macos")]
-            let request = u64::from(libc::TIOCSCTTY);
-            #[cfg(not(target_os = "macos"))]
-            let request = libc::TIOCSCTTY;
-            if libc::ioctl(libc::STDIN_FILENO, request, 0) < 0 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
+    let pre_exec = || -> io::Result<()> {
+        // SAFETY: setsid is async-signal-safe and only detaches the child.
+        if unsafe { libc::setsid() } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        #[cfg(target_os = "macos")]
+        let request = u64::from(libc::TIOCSCTTY);
+        #[cfg(not(target_os = "macos"))]
+        let request = libc::TIOCSCTTY;
+        // SAFETY: the child owns the slave PTY on stdin and is session leader here.
+        if unsafe { libc::ioctl(libc::STDIN_FILENO, request, 0) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(())
+    };
+    // SAFETY: the closure above runs post-fork and touches only the OS calls it
+    // documents; it captures nothing and never allocates.
+    unsafe { command.pre_exec(pre_exec) };
     Ok((master, command.spawn()?))
 }
 fn resize(master: &File, rows: u16, cols: u16) -> io::Result<()> {
@@ -386,17 +389,16 @@ pub fn shell(preferred: Option<&Path>) -> io::Result<PathBuf> {
 mod tests {
     use super::*;
     #[test]
-    fn shell_resolution_rejects_relative_directories_and_missing() {
-        assert_eq!(
-            shell(Some(Path::new("/bin/sh"))).expect("system sh"),
-            Path::new("/bin/sh")
-        );
+    fn shell_resolution_rejects_relative_directories_and_missing()
+    -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(shell(Some(Path::new("/bin/sh")))?, Path::new("/bin/sh"));
         for path in ["relative", "/", "/vitrallis-missing-shell"] {
             assert!(
                 shell(Some(Path::new(path)))
                     .is_ok_and(|p| p == Path::new("/bin/bash") || p == Path::new("/bin/sh"))
             );
         }
+        Ok(())
     }
     #[test]
     fn pty_command_resize_output_eof_and_reaping() -> io::Result<()> {

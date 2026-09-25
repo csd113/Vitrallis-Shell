@@ -1,4 +1,10 @@
-# beta4 release and upgrade paths
+# beta4 release and upgrade paths (published 2026-09; historical)
+
+This record describes the published beta3.9/beta4 artifacts and the bounded
+four-executable bridge the current source still keeps for those two releases.
+New installations use the current complete five-executable v2 bundle; this is
+history, not a migration contract for later builds. The bridge is version-gated
+and scheduled for removal once those builds age out.
 
 ## Why beta3.9 exists
 
@@ -16,7 +22,7 @@ no release or executable version is misrepresented.
 
 ## Updating an existing installation
 
-Use **Settings → Device → Updates** and the normal Check, Install and Relaunch
+Use **Settings → Software Updates** and the normal Check, Install and Relaunch
 controls. The installation confirmation still defaults to Cancel.
 
 - From beta3.9: install beta4's full v2 bundle and relaunch. Arti is included.

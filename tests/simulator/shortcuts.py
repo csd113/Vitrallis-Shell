@@ -133,15 +133,15 @@ def main():
         checks.append('Restart retains stable identity and command')
         shell.click(x, y)  # Immediate exit must leave the desktop usable.
         time.sleep(.4)
-        shell.key('F10', 'Down', 'Down', 'Down', 'Return')  # Edit selected custom shortcut.
+        shell.key('F10', 'Prior', 'Next', 'Down', 'Return')  # Edit selected custom shortcut.
         shell.key('Return', 'ctrl+a')
         shell.text('Edited script')
         shell.key('Return', 'shift+Tab', 'Return')
         shell.shot('shortcut-edit-result')
         wait_for(lambda: shell.custom()[0]['name'] == 'Edited script', 'edit saved')
-        shell.key('F10', 'Down', 'Down', 'Down', 'Down', 'Return', 'Return')  # Default Cancel.
+        shell.key('F10', 'Prior', 'Next', 'Down', 'Down', 'Return', 'Return')  # Default Cancel.
         assert len(shell.custom()) == 1
-        shell.key('Down', 'Down', 'Down', 'Down', 'Return')
+        shell.key('F10', 'Prior', 'Next', 'Down', 'Down', 'Return')  # Remove shortcut.
         shell.shot('shortcut-remove-confirmation')
         shell.touch(360, 253)
         wait_for(lambda: not shell.custom(), 'remove shortcut')
@@ -184,7 +184,9 @@ def main():
             assert index < 6
             shell.xdo('mousemove', '--window', shell.window, 80 + index % 3 * 155, 82 + index // 3 * 104, 'click', 3)
             time.sleep(.2)
-            shell.key('Down', 'Down', 'Down', 'Return')
+            # A managed tile's actions menu ends with "Uninstall app" on the page
+            # after the add/folder/move rows.
+            shell.key('Prior', 'Next', 'Down', 'Return')
             time.sleep(.5)
 
         uninstall_menu()

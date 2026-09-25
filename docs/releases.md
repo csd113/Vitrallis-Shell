@@ -1,5 +1,65 @@
 # Release validation and assets
 
+## 1.0.0 Beta
+
+This is the first 1.0.0 beta release of Vitrallis Shell and represents the
+current release-candidate baseline ahead of the final 1.0.0 release. This beta
+is intended for testing; it is a pre-release and is not the final stable 1.0.0.
+
+A UI geometry and text-layout audit focused on 480×272 PocketCHIP correctness,
+with the same screens re-checked at 800×480, 1280×720 and other supported sizes.
+Text that was clipped or drawn across a control's border now shortens with a
+visible ellipsis, so long application names, versions, status strings, storage
+values, network names and paths stay inside their own control. Centering, padding,
+row baselines, selection highlights and control spacing now come from one shared
+measurement, wrapping and centering path instead of per-screen arithmetic.
+
+The user-visible fixes: the App Center list no longer draws a row name over its
+border, and its details page keeps every line above the pinned buttons with the
+failure summary always visible; Files, the file pickers and Notepad keep the end
+of long paths visible; the Timezone page's `current` marker scales with the
+display; Notepad's position readout can no longer collide with its status text;
+Files rows center their label in the selection highlight; and the desktop
+Manage [F10]/Shortcuts screens and the boot fallback text now scale with the
+display like every other surface.
+
+The audit added deterministic geometry and layout regression tests and
+re-baselined the renderer reference images, expanded with folder, error-dialog and
+long-content samples at the checked sizes. It also removed two per-frame
+text-allocation paths from the App Center and the shortcut editor while making
+these corrections.
+
+This pass also adds **Restore Previous Build**: when a retained `previous`
+generation exists and validates in full (whole-bundle digest, file safety), the
+Software Updates page offers **Restore**, which asks for confirmation, requires
+owned apps and App Center operations to be stopped, swaps `current` and
+`previous` with atomic per-pointer renames under the existing update lock, keeps
+apps and user data, and takes effect after Relaunch Shell. Failure paths were
+hardened too: bounded Tor child reaping and IPC inbox shutdown, UTF-8 offset
+validation in the shared document model, safe handling of stale App Center
+indices, and bounded window-discovery/focus retries that no longer spawn
+window-manager queries indefinitely on a slow device.
+
+Release packaging now validates and stages `LICENSE`, `THIRD_PARTY_NOTICES.md`
+and `THIRD_PARTY_LICENSES.txt` once in each release payload, beside the
+architecture bundles, so released payloads carry the required legal
+companions. The per-file artwork record in
+[artwork provenance](../assets/PROVENANCE.md) separates project-owned icons
+from the artwork whose redistribution basis is still unresolved; those assets
+remain outside any claim that the whole binary is MIT-cleared.
+
+The App Center no longer holds its cross-process storage lock across catalog
+and bundle-download network work. Catalog refreshes fetch metadata and
+presentation bytes outside the lock and commit under it after revalidating the
+source snapshot; installs prompt for a running app and download the bundle
+outside the lock, then revalidate source approval, readiness and running state
+before the journaled commit. Slow or stalled downloads can no longer block
+another Shell instance's storage operations; Python venv/pip provisioning
+still runs inside the commit lock. This pass also fixed Python application
+updates under the device's shared umask `002`: bytecode caches created
+group-writable by the app are removed as regenerable derived data instead of
+being rejected by the strict shared-storage guard.
+
 ## 0.1.0-beta4.1
 
 Merges the polish run, including shell UI refinements, safe background application
@@ -111,7 +171,7 @@ regressions, scenario results and software/device boundaries.
 The [GitHub release](https://github.com/csd113/Vitrallis-Shell/releases/tag/v0.1.0-beta2.6)
 is a beta prerelease.
 
-## Current source asset inventory
+## beta4 source asset inventory (published 2026-09; historical)
 
 The complete beta4 bundle contains Shell, Terminal, Notepad, Files and Arti:
 
@@ -129,7 +189,8 @@ The matching beta4 bootstrap uses the complete v2 bundle directly.
 
 Native OTA updates switch the binary generation and preserve installed session
 helpers and user configuration. The narrowly scoped four-file transition exists
-for the explicitly supported beta3.9/beta4 upgrade; older standalone layouts
+only for the published beta3.9/beta4 upgrade and is scheduled for removal once
+those builds age out; older standalone layouts
 remain outside the managed updater contract. See [upgrade details](beta4-upgrade.md).
 
 ## Release gates
@@ -147,7 +208,8 @@ bundles require glibc 2.36+ and SDL2 2.26.5+.
 
 The workflow prepares a draft and refuses to alter an already published release.
 Before publication, review the complete asset inventory, verify uploaded bytes
-against checksums and bundle contents, and confirm successful release CI.
+against checksums and bundle contents, confirm the license and notice assets
+appear exactly once, and confirm successful release CI.
 The release description records those checks for the published artifacts.
 
 Published validation and its limits are recorded in the [hardware follow-up](devices/pocketchip/history/beta2.6-device-validation.md).

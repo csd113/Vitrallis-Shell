@@ -30,18 +30,30 @@
 
 ## Documentation and licensing
 
-- [ ] Update Apps `docs/runtime-integration.md` to describe automatic app-local Python dependency provisioning and remaining system prerequisites.
-- [ ] Replace the obsolete Flasher README installer path with the current Shell installation instructions under `integrations/pocketchip/`.
-- [ ] Reconcile App Center action names, installation instructions, runtime support, and compatibility statements across repositories.
-- [ ] Remove stale release-readiness statements; distinguish current implementation, published artifacts, and dated hardware evidence.
-- [ ] Choose and publish project licensing terms for Shell, Apps, and Flasher; align Cargo metadata, READMEs, and contribution guidance.
-- [ ] Review imported code, artwork, and bundled dependencies for redistribution requirements and required notices.
+- [ ] Update Apps `docs/runtime-integration.md` to describe automatic app-local Python dependency provisioning and remaining system prerequisites. **External (Vitrallis-Apps) — NOT modified.** Shell-side behavior is authoritative in [App Center](docs/app-center.md); the Apps document still lists five enabled apps and does not describe the installed-runtime-first path.
+- [ ] Replace the obsolete Flasher README installer path with the current Shell installation instructions under `integrations/pocketchip/`. **External (Vitrallis-Flasher) — NOT modified.** The Shell installation instructions are now complete and authoritative in [PocketCHIP installation](docs/devices/pocketchip.md).
+- [x] Reconcile App Center action names, installation instructions, runtime support, and compatibility statements within Shell: current docs use the visible **Manage [F10]**, **Remove**, **Unavailable** and **Refresh** terms and the implemented dependency-provisioning description. **External: matching Apps/Flasher wording remains — NOT modified.**
+- [x] Remove stale release-readiness statements; distinguish current implementation, published artifacts, and dated hardware evidence.
+- [x] Choose and publish project licensing terms for Shell, Apps, and Flasher; align Cargo metadata, READMEs, and contribution guidance. Shell is now [MIT](LICENSE) with [third-party notices](THIRD_PARTY_NOTICES.md) and an aligned [contribution guide](CONTRIBUTING.md). **External: Apps and Flasher licensing remain unchanged — NOT modified.**
+- [x] Review imported code, artwork, and bundled dependencies for redistribution requirements and required notices. See [third-party notices](THIRD_PARTY_NOTICES.md) and the [dependency license inventory](docs/dependency-licenses.md).
+- [ ] Supply a dated owner statement, written creator permission, or replacement artwork for the sets classified **unclear** in [artwork provenance](assets/PROVENANCE.md); they remain outside the project MIT grant. **Blocks a wholly MIT-cleared binary or source distribution.**
+- [x] Publish `LICENSE`, `THIRD_PARTY_NOTICES.md` and `THIRD_PARTY_LICENSES.txt` beside each release bundle so binary distributions carry the required notices. Packaging now validates and stages all three with every x86_64 payload, and release CI refuses a draft without them; the next published release carries them.
 
 ## Optional recovery improvement
 
-- [ ] Add **Restore Previous Build** using the existing retained generation and update lock; do not introduce a second updater/recovery subsystem.
-- [ ] Validate the previous generation, require apps and mutations to be stopped, confirm the action, and switch atomically.
-- [ ] Preserve the current build and user data if validation or rollback fails.
+- [x] Add **Restore Previous Build** using the existing retained generation and update lock; do not introduce a second updater/recovery subsystem.
+- [x] Validate the previous generation, require apps and mutations to be stopped, confirm the action, and switch atomically.
+- [x] Preserve the current build and user data if validation or rollback fails.
+
+## Application lifecycle, launch feedback and interface pass
+
+- [x] Acknowledge a launch immediately and prepare the process on a worker so the main menu keeps rendering, processing input and staying visibly alive.
+- [x] Returning to the main menu moves an app into the background instead of terminating it; explicit close, self-exit and the configured background lifetime remain the only stops.
+- [x] Refuse duplicate launches while one is in flight and derive every running indicator from the authoritative process state.
+- [x] Show launching/exit notices in the lower-left status area, and an unmistakable RUNNING state chip, instead of a modal loading screen.
+- [x] Reorganise Settings into large home options with Storage as a first-class category and predictable one-level back navigation.
+- [x] Give the App Center a readable list, state chips, a prioritised details page and one-line failure summaries.
+- [x] Reserve Terminal and Notepad vertical space for their content, with a visible cursor and clear save state.
 
 ## Non-blocking visual polish
 

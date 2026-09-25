@@ -3,6 +3,14 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+/// SDL initializes once per process and refuses a second thread. Tests that own
+/// an SDL context take this lock so the whole binary can run them in parallel.
+pub fn sdl_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub struct Scratch(pub PathBuf);
 impl Scratch {
     pub fn new() -> std::io::Result<Self> {

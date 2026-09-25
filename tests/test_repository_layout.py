@@ -1,6 +1,8 @@
 """Host-only regression checks for build paths and the shipped source archive."""
+import fnmatch
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tarfile
@@ -9,6 +11,12 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def setUpModule():
+    # The source-archive test rebuilds the workspace and needs the toolchain.
+    if shutil.which('cargo') is None:
+        raise unittest.SkipTest('requires the Rust toolchain')
 
 
 class BuildPaths(unittest.TestCase):
@@ -67,6 +75,22 @@ class BuildPaths(unittest.TestCase):
         self.assertEqual(result.stdout, '')
 
 
+class ArtworkProvenance(unittest.TestCase):
+    def test_every_asset_file_is_classified_in_the_provenance_record(self):
+        record = (ROOT / 'assets/PROVENANCE.md').read_text()
+        patterns = re.findall(r'`(assets/[^`]+)`', record)
+        self.assertTrue(patterns)
+        actual = {str(path.relative_to(ROOT)) for path in (ROOT / 'assets').rglob('*')
+                  if path.suffix in {'.png', '.svg'}}
+        self.assertTrue(actual)
+        unrecorded = {name for name in actual
+                      if not any(fnmatch.fnmatch(name, pattern) for pattern in patterns)}
+        self.assertEqual(unrecorded, set())
+        self.assertIn('unclear', record)
+        self.assertIn('THIRD_PARTY_NOTICES.md', record)
+        self.assertIn('assets/PROVENANCE.md', (ROOT / 'THIRD_PARTY_NOTICES.md').read_text())
+
+
 class SourcePackage(unittest.TestCase):
     def test_archive_contains_installation_helpers_and_embedded_assets(self):
         with tempfile.TemporaryDirectory(prefix='vitrallis source package ') as temp:
@@ -85,7 +109,7 @@ class SourcePackage(unittest.TestCase):
                 'integrations/pocketchip/bootstrap.py', 'integrations/pocketchip/bootstrap.sh',
                 'integrations/pocketchip/uninstall.py',
                 'CONTRIBUTING.md', 'SECURITY.md', 'docs/images/shell-480x272.png',
-                'scripts/check-doc-links.py',
+                'scripts/check-doc-links.py', 'assets/PROVENANCE.md',
                 'integrations/pocketchip/run-session.sh',
                 'docs/devices/pocketchip.md', 'docs/repository-layout.md',
                 'src/layout.rs', 'src/renderer.rs', 'src/renderer/system.rs',

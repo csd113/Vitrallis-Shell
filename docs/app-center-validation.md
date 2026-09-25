@@ -202,14 +202,15 @@ Carousel's test environment records Pillow 12.3.0 and packaging 26.3 in
 ## Remaining limits
 
 No known failing software checks remain in this pass. Docker validates Linux
-software paths, not physical the target device touch, ARMv7 responsiveness, battery/display
+software paths, not physical target-device touch, ARMv7 responsiveness, battery/display
 hardware, hardware media decoding or full Carousel media/server functionality.
 Published apps were opened and their actual script processes verified; this is not
 exhaustive testing of those apps. No ARM/device performance result is claimed.
 
-App Center still requires a working Python/Tk runtime and declared dependencies;
-it never installs those dependencies itself. Downloads may fail while cached entries
-remain browsable. Acquisition cancellation can wait for the current bounded curl
+App Center still requires a working Python/Tk runtime with venv/pip support and
+network access to provision declared dependencies itself; it never installs apt or
+other system packages. Downloads may fail while cached entries remain browsable.
+Acquisition cancellation can wait for the current bounded curl
 request; an already-started filesystem commit finishes or rolls back. Journals and
 content-addressed presentation files are retained and currently have no age-based
 pruning. Same-user hostile filesystem/process races are outside isolation guarantees.
@@ -218,3 +219,39 @@ No obsolete pre-release layout or launcher migration was added. A launcher from 
 superseded format may be treated as a local customization and block updating;
 current-format installs and their updates are the verified lifecycle. Existing
 obsolete installations are neither migrated nor silently deleted.
+
+## Storage-lock scoping — 2026-09-25
+
+A follow-up audit found the single App Center storage lock was held across all
+network work: catalog fetches, per-app CHANGELOG/icon downloads, the
+running-app confirmation wait and the full bundle download. A second Shell
+process therefore failed immediately with "Another Vitrallis storage operation
+is active" for the duration of the other instance's slowest request.
+
+The lock now covers durable mutation only. **Check** fetches catalog and
+presentation bytes without the lock, then takes it, verifies `Sources` is
+unchanged and writes the snapshot and rows. **Install** prompts for and closes a
+running app and downloads the bundle without the lock, then takes it,
+revalidates source approval, readiness, the installed entry and the running
+state, and only then runs `prepare_with_modes` and the journaled commit. `Save`,
+`Uninstall`, `Scan` and `SelectInstalled` keep their previous scoping;
+`storage.rs`, `transaction.rs`, `uninstall.rs` and `network.rs` are unchanged
+by the lock-scoping work (`install.rs` changed only for the bytecode fix
+recorded below).
+
+Regression tests run the production worker with a `Fetch` implementation that
+takes the same lock on every request:
+`check_never_holds_lock_while_fetching`,
+`install_downloads_unlocked_and_commits_locked`,
+`check_commit_fails_cleanly_if_lock_taken_mid_fetch`,
+`concurrent_install_between_download_and_commit_is_detected`,
+`cancelled_install_releases_lock_and_leaves_no_trace` and
+`commit_failure_releases_lock_and_retry_repairs`. Python venv/pip provisioning
+still runs under the lock (post-v1.0 per-app locking), and Check remains
+uncancellable.
+
+The same pass fixed Python application updates under the device's shared umask
+`002`, discovered by the ARMv7 Docker simulator: the app's own group-writable
+`__pycache__` is now treated as regenerable derived data and cleared directly,
+instead of being rejected by the strict shared-storage guard and blocking every
+update of an app that has run.

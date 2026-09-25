@@ -73,7 +73,8 @@ The initial device test caught discarded final bytes when a relay endpoint
 closed; the fix preserves half-close semantics and drains bounded buffers.
 A dedicated 512 KiB bidirectional regression protects the corrected behavior.
 
-Live X11 pointer input opened Settings → Device → Wireless → Tor and exercised
+Live X11 pointer input opened Settings → Device → Wireless → Tor (the section layout
+at the time; today it is Settings → Wireless Network → Tor) and exercised
 Start, real bootstrap, two Restarts, Details, Stop, Always on and Disabled.
 Each restart produced exactly one new Arti PID and removed the old PID. Screenshots show
 the 480×272 connected, stopped and disabled panels. A ten-second stopped-panel

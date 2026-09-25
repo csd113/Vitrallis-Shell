@@ -1,4 +1,6 @@
-//! One target model for visible buttons, keyboard focus, touch and mouse activation.
+/// One target model for visible buttons, keyboard focus, touch and mouse
+/// activation. The geometry below is shared by input routing and rendering, so
+/// a button can never be drawn where it cannot be pressed.
 use super::{Command, Row, Sources, Update, Worker};
 use crate::layout::{Layout, Rect};
 use sdl2::{
@@ -22,6 +24,145 @@ enum Filter {
     Installed,
     Updates,
 }
+/// Compact, human-readable state for one catalogue entry.
+/// Which body a page draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageKind {
+    List,
+    Details,
+    Text,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowState {
+    /// The Shell owns a running process for this app.
+    Running,
+    /// An install, update or removal is in progress.
+    Updating,
+    Failed,
+    Update,
+    Installed,
+    Available,
+    Unavailable,
+}
+
+/// Shared App Center geometry. Every rectangle is computed once per layout, so
+/// rendering and hit testing always agree.
+#[derive(Debug, Clone)]
+pub struct Geometry {
+    pub width: i32,
+    pub height: i32,
+    pub scale: i32,
+    pub title: Rect,
+    pub actions: Rect,
+    pub search: Rect,
+    pub filter: Rect,
+    pub list_top: i32,
+    pub row_height: i32,
+    pub row_gap: i32,
+    pub pinned: Rect,
+    pub details: Rect,
+    pub footer: Rect,
+}
+impl Geometry {
+    #[must_use]
+    pub fn new(layout: &Layout) -> Self {
+        let width = i32::from(layout.width);
+        let height = i32::from(layout.height);
+        let scale = layout.text_scale.max(1);
+        let inset = 8 * scale;
+        let title_height = 24 * scale;
+        let actions_height = 30 * scale;
+        let actions_y = title_height + 2 * scale;
+        let search_y = actions_y + actions_height + 2 * scale;
+        let search_height = 24 * scale;
+        let list_top = search_y + search_height + 4 * scale;
+        let footer_height = 14 * scale;
+        let pinned_height = 30 * scale;
+        let pinned_y = height - footer_height - pinned_height - 4 * scale;
+        let button_width = (12 * 8 * scale + 2 * inset).min(width - 2 * inset);
+        Self {
+            width,
+            height,
+            scale,
+            title: Rect {
+                x: inset,
+                y: 0,
+                w: width - 2 * inset,
+                h: title_height,
+            },
+            actions: Rect {
+                x: inset,
+                y: actions_y,
+                w: width - 2 * inset,
+                h: actions_height,
+            },
+            search: Rect {
+                x: inset,
+                y: search_y,
+                w: (width * 2 / 3) - 2 * inset,
+                h: search_height,
+            },
+            filter: Rect {
+                x: width * 2 / 3,
+                y: search_y,
+                w: width / 3 - inset,
+                h: search_height,
+            },
+            list_top,
+            row_height: 34 * scale,
+            row_gap: 3 * scale,
+            pinned: Rect {
+                x: inset,
+                y: pinned_y,
+                w: width - 2 * inset,
+                h: pinned_height,
+            },
+            details: Rect {
+                x: width / 2 - button_width / 2,
+                y: pinned_y,
+                w: button_width,
+                h: pinned_height,
+            },
+            footer: Rect {
+                x: inset,
+                y: height - footer_height,
+                w: width - 2 * inset,
+                h: footer_height,
+            },
+        }
+    }
+    /// Visible row capacity for the current size.
+    #[must_use]
+    pub fn rows(&self) -> usize {
+        let span = self.pinned.y - self.list_top;
+        usize::try_from(span / (self.row_height + self.row_gap))
+            .unwrap_or(0)
+            .max(1)
+    }
+    #[must_use]
+    pub fn row(&self, position: usize) -> Rect {
+        Rect {
+            x: 8 * self.scale,
+            y: self.list_top
+                + i32::try_from(position).unwrap_or(0) * (self.row_height + self.row_gap),
+            w: self.width - 16 * self.scale,
+            h: self.row_height,
+        }
+    }
+    /// Equal-width buttons inside a bar.
+    #[must_use]
+    pub fn button(&self, bar: Rect, index: usize, count: usize) -> Rect {
+        let count = i32::try_from(count).unwrap_or(1).max(1);
+        let width = bar.w / count;
+        Rect {
+            x: bar.x + i32::try_from(index).unwrap_or(0) * width,
+            y: bar.y,
+            w: width - 2 * self.scale,
+            h: bar.h,
+        }
+    }
+}
+/// One character key of the on-screen text entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Target {
     Check,
@@ -68,6 +209,8 @@ pub struct Center {
     pub message: String,
     pub busy: bool,
     pub launch: Option<String>,
+    /// Application IDs the Shell currently owns a process for.
+    pub running: std::collections::BTreeSet<String>,
     operation: Option<String>,
     errors: std::collections::BTreeMap<String, String>,
     search: String,
@@ -96,6 +239,7 @@ impl Default for Center {
             message: "Refresh to load available apps".into(),
             busy: false,
             launch: None,
+            running: std::collections::BTreeSet::new(),
             operation: None,
             errors: std::collections::BTreeMap::new(),
             search: String::new(),
@@ -311,7 +455,7 @@ impl Center {
             Confirmation::Uninstall(i)=>self.rows.get(*i).map_or_else(String::new, |r| format!("Uninstall {}? App files and launchers will be removed and backed up. Other files will be kept. Close the app first.", r.package.name)),
             Confirmation::Publisher(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Duplicate app ID: {}. Explicitly select publisher {}?",r.package.id,r.package.origin.as_str())),
             Confirmation::Trust(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Trust {} to supply executable app files for catalog {}? Apps are not sandboxed. ",r.package.repository.as_str(),r.package.origin.as_str())),
-            Confirmation::Remove(i)=>format!("Remove {}? Installed apps and saves remain.",self.sources.catalogs[*i].as_str()),
+            Confirmation::Remove(i)=>format!("Remove {}? Installed apps and saves remain.",self.sources.catalogs.get(*i).map_or("this repository", |repository| repository.as_str())),
         };
         }
         if self.readout == Readout::Status && matches!(self.page, Page::Apps | Page::Sources) {
@@ -405,6 +549,95 @@ impl Center {
                 detail
             },
         )
+    }
+    /// Compact state for the catalogue entry at `index`, with its short label.
+    pub fn row_state(&self, index: usize) -> Option<(RowState, String)> {
+        let row = self.rows.get(index)?;
+        if self.operation.as_ref() == Some(&row.package.key()) {
+            let label = self
+                .message
+                .split_whitespace()
+                .next()
+                .unwrap_or("Working")
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_ascii_uppercase();
+            return Some((RowState::Updating, label));
+        }
+        if let Some(error) = self.errors.get(&row.package.key()) {
+            let _ = error;
+            return Some((RowState::Failed, "FAILED".into()));
+        }
+        if self.running.contains(&row.package.id) {
+            return Some((RowState::Running, "RUNNING".into()));
+        }
+        if row.update_available() {
+            return Some((RowState::Update, format!("UPDATE {}", row.package.version)));
+        }
+        if row.can_uninstall() {
+            return Some((RowState::Installed, format!("INSTALLED {}", row.installed)));
+        }
+        if row.ready {
+            return Some((
+                RowState::Available,
+                format!("AVAILABLE {}", row.package.version),
+            ));
+        }
+        Some((RowState::Unavailable, "UNAVAILABLE".into()))
+    }
+    /// First line of the last failure for this entry, for the primary UI. The
+    /// full backend error stays in the log and in `detail_fields`.
+    pub fn failure_summary(&self, index: usize) -> Option<String> {
+        let row = self.rows.get(index)?;
+        let error = self.errors.get(&row.package.key())?;
+        let line = error.lines().next().unwrap_or(error).trim();
+        Some(line.chars().take(120).collect::<String>())
+    }
+    /// Structured, prioritized information for the selected entry.
+    pub fn detail_fields(&self) -> Vec<(String, String)> {
+        let Some(row) = self.chosen_row() else {
+            return Vec::new();
+        };
+        let mut fields = vec![(
+            "Version".into(),
+            format!("{}   Installed: {}", row.package.version, row.installed),
+        )];
+        fields.push(("Publisher".into(), row.package.origin.as_str().to_owned()));
+        if row.package.repository != row.package.origin {
+            fields.push(("Source".into(), row.package.repository.as_str().to_owned()));
+        }
+        fields.push((
+            "Trust".into(),
+            if self
+                .sources
+                .trusted(&row.package.origin, &row.package.repository)
+            {
+                "Approved source".into()
+            } else {
+                "Approval required before installing".into()
+            },
+        ));
+        fields.push((
+            "Requirements".into(),
+            if row.package.notes.trim().is_empty() {
+                "No declared services".into()
+            } else {
+                row.package.notes.clone()
+            },
+        ));
+        fields.push((
+            "Download".into(),
+            format!("{} KiB", row.download_size.div_ceil(1024)),
+        ));
+        fields.push(("App ID".into(), row.package.id.clone()));
+        if let Some(error) = self.failure_summary(self.row) {
+            fields.push(("Last operation failed".into(), error));
+        }
+        fields
+    }
+    /// The full description shown under the name on the details page.
+    pub fn detail_description(&self) -> String {
+        self.chosen_row()
+            .map_or_else(String::new, |row| row.package.description.clone())
     }
     fn primary(&self) -> (Target, &'static str) {
         if self.busy && self.download_cancel.is_some() {
@@ -539,17 +772,6 @@ impl Center {
             .as_deref()
             .map(Vec::as_slice)
     }
-    pub fn footer(&self) -> &str {
-        if self.confirmation.is_some() {
-            "Cancel is the safe default"
-        } else if self.busy {
-            &self.message
-        } else if self.editing() {
-            "Tab: next control | Enter: activate"
-        } else {
-            ""
-        }
-    }
     pub fn row_chosen(&self, target: &Target) -> bool {
         if self.page != Page::Apps {
             return false;
@@ -590,8 +812,67 @@ impl Center {
         lines
     }
     pub fn targets(&self, layout: &Layout) -> Vec<(Target, String, Rect)> {
-        let width = i32::from(layout.width);
-        let height = i32::from(layout.height);
+        self.targets_of(&Geometry::new(layout))
+    }
+    /// Which body the current page draws: a list, the details card or text.
+    #[must_use]
+    pub const fn page_kind(&self) -> PageKind {
+        match self.page {
+            Page::Apps | Page::Sources => PageKind::List,
+            Page::Details => PageKind::Details,
+            Page::Edit | Page::Search | Page::Changelog => PageKind::Text,
+        }
+    }
+    /// Catalogue entries currently listed, for the header count.
+    #[must_use]
+    pub fn targets_count(&self) -> usize {
+        if self.page == Page::Apps {
+            self.visible_rows().len()
+        } else {
+            self.rows.len()
+        }
+    }
+    /// One-line status for the lower-left area.
+    #[must_use]
+    pub fn status_line(&self) -> &str {
+        if self.confirmation.is_some() {
+            "Cancel is the safe default"
+        } else if self.editing() {
+            "Tab: next control   Enter: activate"
+        } else {
+            &self.message
+        }
+    }
+    #[must_use]
+    pub fn has_visible_error(&self) -> bool {
+        !self.errors.is_empty()
+    }
+    #[must_use]
+    pub fn chosen_row_name(&self) -> Option<String> {
+        self.chosen_row().map(|row| row.package.name.clone())
+    }
+    /// State of the entry open on the details page.
+    #[must_use]
+    pub fn chosen_state(&self) -> Option<(RowState, String)> {
+        let index = self
+            .rows
+            .iter()
+            .position(|row| self.chosen.as_ref() == Some(&row.package.key()))?;
+        self.row_state(index)
+    }
+    /// State of a listed row target. Repository rows are not apps, so they show
+    /// no state chip.
+    #[must_use]
+    pub fn row_state_for(&self, target: &Target) -> Option<(RowState, String)> {
+        if self.page != Page::Apps {
+            return None;
+        }
+        let Target::Row(index) = target else {
+            return None;
+        };
+        self.row_state(*index)
+    }
+    pub fn targets_of(&self, geometry: &Geometry) -> Vec<(Target, String, Rect)> {
         let mut out = Vec::new();
         if self.confirmation.is_some() {
             for (i, (target, label)) in [
@@ -610,16 +891,7 @@ impl Center {
             .into_iter()
             .enumerate()
             {
-                out.push((
-                    target,
-                    label.into(),
-                    Rect {
-                        x: 12 + i32::try_from(i).unwrap_or(0) * (width / 2),
-                        y: height - 48,
-                        w: width / 2 - 24,
-                        h: 36,
-                    },
-                ));
+                out.push((target, label.into(), geometry.button(geometry.pinned, i, 2)));
             }
             return out;
         }
@@ -660,78 +932,72 @@ impl Center {
                 (Target::Cancel, "Cancel"),
             ],
         };
-        let count = i32::try_from(menu.len()).unwrap_or(1);
+        let count = menu.len();
         for (i, (target, label)) in menu.into_iter().enumerate() {
-            out.push((
-                target,
-                label.into(),
-                Rect {
-                    x: 4 + i32::try_from(i).unwrap_or(0) * (width / count),
-                    y: 30,
-                    w: width / count - 8,
-                    h: 30,
-                },
-            ));
+            let bounds = geometry.button(geometry.actions, i, count);
+            out.push((target, label.into(), bounds));
         }
-        self.content_targets(layout, &mut out);
+        self.content_targets(geometry, &mut out);
         out
     }
-    fn content_targets(&self, layout: &Layout, out: &mut Vec<(Target, String, Rect)>) {
-        let width = i32::from(layout.width);
-        let height = i32::from(layout.height);
+    fn content_targets(&self, geometry: &Geometry, out: &mut Vec<(Target, String, Rect)>) {
+        let width = geometry.width;
         if matches!(self.page, Page::Edit | Page::Search) {
-            for (i, c) in (if self.page == Page::Search {
+            let character_width = (width - 16 * geometry.scale) / 10;
+            let keys = if self.page == Page::Search {
                 "abcdefghijklmnopqrstuvwxyz0123456789-_/. "
             } else {
                 "abcdefghijklmnopqrstuvwxyz0123456789-_/.:"
-            })
-            .chars()
-            .enumerate()
-            {
+            };
+            // The key grid sits below the two-line hint and always fits the
+            // screen: the pitch shrinks rather than overflowing the footer.
+            let grid_rows = i32::try_from(keys.len().div_ceil(10)).unwrap_or(4).max(1);
+            let top = geometry.list_top + 40 * geometry.scale;
+            let available = (geometry.footer.y - top).max(grid_rows * 16 * geometry.scale);
+            let pitch = (available / grid_rows).clamp(16 * geometry.scale, 28 * geometry.scale);
+            let key_height = (pitch - 4 * geometry.scale).max(12 * geometry.scale);
+            let key_width = character_width - 3 * geometry.scale;
+            for (i, c) in keys.chars().enumerate() {
                 out.push((
                     Target::Character(c),
                     if c == ' ' {
-                        "Space".into()
+                        crate::renderer::space_legend(key_width, geometry.scale).into()
                     } else {
                         c.to_string()
                     },
                     Rect {
-                        x: 8 + i32::try_from(i % 10).unwrap_or(0) * ((width - 16) / 10),
-                        y: 108 + i32::try_from(i / 10).unwrap_or(0) * 28,
-                        w: (width - 16) / 10 - 3,
-                        h: 25,
+                        x: 8 * geometry.scale
+                            + i32::try_from(i % 10).unwrap_or(0) * character_width,
+                        y: top + i32::try_from(i / 10).unwrap_or(0) * pitch,
+                        w: key_width,
+                        h: key_height,
                     },
                 ));
             }
             return;
         }
-        self.list_targets(layout, out);
-        for (target, label, x) in [
-            (Target::Previous, "Previous", 8),
-            (Target::Next, "Next", width - 96),
-        ] {
-            out.push((
-                target,
-                label.into(),
-                Rect {
-                    x,
-                    y: height - 58,
-                    w: 88,
-                    h: 30,
-                },
-            ));
-        }
-        if self.page == Page::Apps {
-            out.push((
-                Target::Details,
-                "Details".into(),
-                Rect {
-                    x: width / 2 - 44,
-                    y: height - 58,
-                    w: 88,
-                    h: 30,
-                },
-            ));
+        self.list_targets(geometry, out);
+        if matches!(self.page, Page::Apps | Page::Sources) {
+            let third = geometry.pinned.w / 3;
+            for (target, label, index) in [
+                (Target::Previous, "Previous", 0),
+                (Target::Details, "Details", 1),
+                (Target::Next, "Next", 2),
+            ] {
+                if target == Target::Details && self.page != Page::Apps {
+                    continue;
+                }
+                out.push((
+                    target,
+                    label.into(),
+                    Rect {
+                        x: geometry.pinned.x + index * third,
+                        y: geometry.pinned.y,
+                        w: third - 2 * geometry.scale,
+                        h: geometry.pinned.h,
+                    },
+                ));
+            }
         }
         if self.page == Page::Details {
             let (target, label) = if self.enabled(&Target::Approve) {
@@ -739,97 +1005,62 @@ impl Center {
             } else {
                 (Target::Uninstall, "Remove")
             };
-            out.push((
-                target,
-                label.into(),
-                Rect {
-                    x: width / 2 - 60,
-                    y: height - 58,
-                    w: 120,
-                    h: 30,
-                },
-            ));
+            out.push((target, label.into(), geometry.details));
         }
     }
-    fn list_targets(&self, layout: &Layout, out: &mut Vec<(Target, String, Rect)>) {
-        let width = i32::from(layout.width);
-        if matches!(self.page, Page::Apps | Page::Sources) {
-            let indices = if self.page == Page::Apps {
-                self.visible_rows()
-            } else {
-                (0..self.sources.catalogs.len()).collect()
-            };
-            if self.page == Page::Apps {
-                for (target, label, x, w) in [
-                    (
-                        Target::Search,
-                        if self.search.is_empty() {
-                            "Search apps...".into()
-                        } else {
-                            format!("Search: {}", self.search)
-                        },
-                        8,
-                        width * 2 / 3 - 12,
-                    ),
-                    (
-                        Target::Filter,
-                        format!("{:?} ({})", self.filter, indices.len()),
-                        width * 2 / 3,
-                        width / 3 - 8,
-                    ),
-                ] {
-                    out.push((target, label, Rect { x, y: 66, w, h: 26 }));
-                }
-            }
-            for (position, &i) in indices
-                .iter()
-                .enumerate()
-                .skip(self.start)
-                .take(Self::capacity(layout))
-            {
-                let label = if self.page == Page::Apps {
-                    let row = &self.rows[i];
-                    let selected = self.chosen.as_ref() == Some(&row.package.key());
-                    format!(
-                        "[{}] {}",
-                        if selected {
-                            "X"
-                        } else if self
-                            .rows
-                            .iter()
-                            .filter(|r| r.package.id == row.package.id)
-                            .count()
-                            > 1
-                        {
-                            "!"
-                        } else {
-                            " "
-                        },
-                        row.package.name,
-                    )
+    fn list_targets(&self, geometry: &Geometry, out: &mut Vec<(Target, String, Rect)>) {
+        if !matches!(self.page, Page::Apps | Page::Sources) {
+            return;
+        }
+        let indices = if self.page == Page::Apps {
+            self.visible_rows()
+        } else {
+            (0..self.sources.catalogs.len()).collect()
+        };
+        if self.page == Page::Apps {
+            out.push((
+                Target::Search,
+                if self.search.is_empty() {
+                    "Search apps...".into()
                 } else {
-                    format!(
-                        "{}{}",
-                        if i == 0 { "* " } else { "" },
-                        self.sources.catalogs[i].as_str()
-                    )
-                };
-                out.push((
-                    Target::Row(i),
-                    label,
-                    Rect {
-                        x: 8,
-                        y: if self.page == Page::Apps { 98 } else { 68 }
-                            + i32::try_from(position - self.start).unwrap_or(0) * 52,
-                        w: width - 16,
-                        h: 48,
+                    format!("Search: {}", self.search)
+                },
+                geometry.search,
+            ));
+            out.push((
+                Target::Filter,
+                format!(
+                    "{} ({} apps)",
+                    match self.filter {
+                        Filter::All => "All",
+                        Filter::Installed => "Installed",
+                        Filter::Updates => "Updates",
                     },
-                ));
-            }
+                    indices.len()
+                ),
+                geometry.filter,
+            ));
+        }
+        for (position, &i) in indices
+            .iter()
+            .enumerate()
+            .skip(self.start)
+            .take(geometry.rows())
+        {
+            let label = if self.page == Page::Apps {
+                self.rows[i].package.name.clone()
+            } else {
+                format!(
+                    "{}{}",
+                    if i == 0 { "* " } else { "" },
+                    self.sources.catalogs[i].as_str()
+                )
+            };
+            out.push((Target::Row(i), label, geometry.row(position - self.start)));
         }
     }
     fn capacity(layout: &Layout) -> usize {
-        usize::from(layout.height.saturating_sub(160) / 52).max(1)
+        Geometry::new(layout).rows()
     }
     pub fn enabled(&self, target: &Target) -> bool {
         if *target == Target::Home {
@@ -1226,9 +1457,14 @@ impl Center {
                 self.page(Page::Edit);
             }
             Target::Edit => {
-                self.edit = Some(self.row);
-                self.text = self.sources.catalogs[self.row].as_str().into();
-                self.page(Page::Edit);
+                if let Some(repository) = self.sources.catalogs.get(self.row) {
+                    self.edit = Some(self.row);
+                    self.text = repository.as_str().into();
+                    self.page(Page::Edit);
+                } else {
+                    self.message =
+                        "Repository selection is no longer available; refresh the list".into();
+                }
             }
             Target::Remove => {
                 self.confirmation = Some(Confirmation::Remove(self.row));
@@ -1367,9 +1603,6 @@ impl Center {
             0
         }
     }
-    pub const fn full_details(&self) -> bool {
-        self.confirmation.is_some() || matches!(self.page, Page::Details | Page::Changelog)
-    }
 }
 
 #[cfg(test)]
@@ -1422,6 +1655,37 @@ impl Center {
         center.rows[0].installed = "1.0.0".into();
         center.rows[0].package.name = "Bitcoin Dashboard".into();
         out.push(("update-badge", center));
+        // Long catalogue and failure content exercises the explicit widening
+        // policies: the row name, the state chip, the description and the
+        // eight-field details page.
+        let long = "A deliberately long catalogue description that has to wrap across more than one details line and still keep the field list readable on a 480x272 screen.";
+        let widest = |center: &mut Self| -> Result<(), String> {
+            center.rows[0].package.name = "Experimental Rust Application".into();
+            center.rows[0].package.description = long.into();
+            center.rows[0].package.origin =
+                super::sources::Repository::parse("example-org/a-long-publisher-name")?;
+            center.rows[0].package.repository = super::sources::Repository::parse(
+                "https://github.com/example-org/an-extremely-long-repository-name-for-testing",
+            )?;
+            center.rows[0].package.notes =
+                "network, audio, storage, camera, location, bluetooth, notifications".into();
+            center.rows[0].installed = "0.1.0-beta4.1".into();
+            Ok(())
+        };
+        let mut center = Self::fixture()?;
+        widest(&mut center)?;
+        center.page(Page::Apps);
+        out.push(("apps-long", center));
+        let mut center = Self::fixture()?;
+        widest(&mut center)?;
+        center.row = 0;
+        center.chosen = Some(center.rows[0].package.key());
+        center.errors.insert(
+            center.rows[0].package.key(),
+            "The staged payload failed signature verification before install".into(),
+        );
+        center.page(Page::Details);
+        out.push(("details-long", center));
         let mut center = Self::fixture()?;
         center.rows[0].installed = "1.0.0".into();
         center.chosen = Some(center.rows[0].package.key());
@@ -1747,12 +2011,9 @@ mod tests {
                     center.event(&key(Keycode::Space), &layout);
                 }
                 assert!(center.chosen.as_ref() == Some(&current));
-                assert!(
-                    center
-                        .targets(&layout)
-                        .iter()
-                        .any(|(t, label, _)| *t == Target::Row(0) && label.starts_with("[X]"))
-                );
+                // The chosen entry is marked by its own highlight, not a label prefix.
+                assert!(center.row_chosen(&Target::Row(0)));
+                assert_eq!(center.targets_count(), center.visible_rows().len());
                 assert!(!center.enabled(&Target::Install));
                 center.event(&key(Keycode::I), &layout);
                 assert!(commands.try_recv().is_err());
@@ -2047,12 +2308,13 @@ mod tests {
             ] {
                 center.page(page);
                 let targets = center.targets(&layout);
-                for (i, (_, _, r)) in targets.iter().enumerate() {
+                for (i, (t, _, r)) in targets.iter().enumerate() {
                     assert!(
                         r.x >= 0
                             && r.y >= 0
                             && r.x + r.w <= i32::from(w)
-                            && r.y + r.h <= i32::from(h)
+                            && r.y + r.h <= i32::from(h),
+                        "{page:?} target {t:?} {r:?} outside {w}x{h}"
                     );
                     assert_eq!(center.selected, i);
                     center.event(&key(Keycode::Tab), &layout);
@@ -2248,6 +2510,23 @@ mod browsing_tests {
             center.chosen_row().ok_or("preserved selection")?.installed,
             "1.0.0"
         );
+        Ok(())
+    }
+    #[test]
+    fn stale_repository_indices_degrade_instead_of_panicking() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut center = Center::fixture()?;
+        // A confirmation can outlive the repository list it was created from.
+        center.confirmation = Some(Confirmation::Remove(usize::MAX));
+        assert!(center.details().contains("this repository"));
+        center.confirmation = None;
+        // The editor is disabled for an index outside the list and never indexes it.
+        center.sources.catalogs.clear();
+        center.row = usize::MAX;
+        assert!(!center.enabled(&Target::Edit));
+        center.activate(Target::Edit, &layout);
+        assert!(center.edit.is_none());
+        assert_eq!(center.page, Page::Apps);
         Ok(())
     }
 }

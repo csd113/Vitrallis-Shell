@@ -86,10 +86,12 @@ fn contact(event: &Event, layout: &Layout) -> Option<(ContactId, Phase, f64, f64
     (x.is_finite() && y.is_finite()).then_some((id, phase, x, y))
 }
 impl Settings {
-    const fn row_count(&self) -> i32 {
+    fn row_count(&self) -> i32 {
         match self.page {
-            Page::Timezones => 5,
-            Page::Wireless => 3,
+            Page::Timezones | Page::About => 5,
+            Page::Wireless => i32::try_from(super::wireless::WIRELESS_ROWS).unwrap_or(4),
+            Page::Applications => i32::try_from(super::preferences::APP_ROWS).unwrap_or(3),
+            Page::DateTime => 2,
             _ => 4,
         }
     }
@@ -99,19 +101,22 @@ impl Settings {
         rows: &'a [crate::layout::Rect],
         storage: &'a [crate::layout::Rect],
         tor: &'a [crate::layout::Rect],
+        home: &'a [crate::layout::Rect; super::HOME_ROWS],
     ) -> &'a [crate::layout::Rect] {
+        if self.confirmation.is_some() {
+            return &geometry.confirmation;
+        }
         match self.page {
+            Page::Home => home,
+            Page::About | Page::TorDetails => &[],
             Page::Tor => tor,
-            Page::TorDetails => &[],
             Page::Storage => match self.storage_view {
                 super::StorageView::Overview => storage,
                 super::StorageView::Apps => &rows[..self.storage_rows()],
                 _ => &[],
             },
-            _ if self.confirmation.is_some() || self.page == Page::Updates => {
-                &geometry.confirmation
-            }
-            Page::General => &geometry.controls,
+            Page::Updates => &geometry.confirmation,
+            Page::Display => &geometry.controls[..2],
             _ => rows,
         }
     }
@@ -128,7 +133,9 @@ impl Settings {
         let rows = PanelLayout::rows(layout, self.row_count());
         let storage_actions = PanelLayout::storage_actions(layout);
         let tor_controls = PanelLayout::tor_controls(layout);
-        let targets = self.pointer_targets(&geometry, &rows, &storage_actions, &tor_controls);
+        let home = PanelLayout::home(layout);
+        let targets =
+            self.pointer_targets(&geometry, &rows, &storage_actions, &tor_controls, &home);
         let hit = targets.iter().position(|r| r.contains(x, y)).or_else(|| {
             PanelLayout::footer(layout)
                 .into_iter()
@@ -147,7 +154,7 @@ impl Settings {
                 }
                 self.contact = hit.map(|index| (id, index));
                 if let Some(index) = hit.filter(|&i| {
-                    self.page == Page::General
+                    self.page == Page::Display
                         && i < 2
                         && self.confirmation.is_none()
                         && self.available(i)
@@ -164,7 +171,7 @@ impl Settings {
                     self.clear_pointer();
                     return None;
                 }
-                if self.page == Page::General
+                if self.page == Page::Display
                     && index < 2
                     && self.confirmation.is_none()
                     && self.available(index)
@@ -295,14 +302,16 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn more_page_touch_timeout_zones_and_cancel_use_matching_releases() -> Result<(), String> {
+    fn home_options_and_time_zone_rows_use_matching_releases() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let mut settings = Settings::default();
         settings.show();
         settings.status.screen_timeout = Some(60);
         settings.status.timezones = vec!["America/Vancouver".into(), "UTC".into()];
+        // Home option 5 is Device.
+        let option = PanelLayout::home(&layout)[5];
         for down in [true, false] {
-            settings.event(&mouse(down, 420, 255), &layout);
+            settings.event(&mouse(down, option.x + 10, option.y + 10), &layout);
         }
         assert_eq!(settings.page, Page::Device);
         assert_eq!(settings.event(&mouse(false, 40, 80), &layout), None);
@@ -311,17 +320,26 @@ mod tests {
             settings.event(&mouse(false, 40, 80), &layout),
             Some(Request::Control(Control::ScreenTimeout(30)))
         );
+        settings.input(Action::Back);
+        // Home option 1 is Date & Time, which lists the time zone.
+        let option = PanelLayout::home(&layout)[1];
         for down in [true, false] {
-            settings.event(&mouse(down, 200, 130), &layout);
+            settings.event(&mouse(down, option.x + 10, option.y + 10), &layout);
+        }
+        assert_eq!(settings.page, Page::DateTime);
+        // The Time zone row opens the bounded zone list, and a zone applies.
+        let row = PanelLayout::rows(&layout, 2)[1];
+        for down in [true, false] {
+            settings.event(&mouse(down, 200, row.y + 5), &layout);
         }
         assert_eq!(settings.page, Page::Timezones);
-        let row = PanelLayout::rows(&layout, 5)[1];
-        settings.event(&mouse(true, 200, row.y + 5), &layout);
+        let zone = PanelLayout::rows(&layout, 5)[0];
+        settings.event(&mouse(true, 200, zone.y + 5), &layout);
         assert_eq!(
-            settings.event(&mouse(false, 200, row.y + 5), &layout),
-            Some(Request::Control(Control::Timezone(1)))
+            settings.event(&mouse(false, 200, zone.y + 5), &layout),
+            Some(Request::Control(Control::Timezone(0)))
         );
-        assert_eq!(settings.page, Page::Device);
+        assert_eq!(settings.page, Page::DateTime);
         Ok(())
     }
     #[test]
@@ -341,10 +359,68 @@ mod tests {
             settings.event(&mouse(false, x, y), &layout),
             Some(Request::CheckUpdates)
         );
-        settings.update_confirmation = Some(std::time::Instant::now());
+        settings.update_confirmation = Some((
+            crate::settings::UpdateConfirmation::Install,
+            std::time::Instant::now(),
+        ));
         settings.event(&mouse(true, x, y), &layout);
         settings.input(Action::Back);
         assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
+        Ok(())
+    }
+    #[test]
+    fn restore_footer_opens_confirmation_from_mouse_and_touch() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let footer = PanelLayout::footer(&layout)[1];
+        let (x, y) = (footer.x + 5, footer.y + footer.h - 5);
+        let mut settings = Settings::default();
+        settings.updater.restore_available = true;
+        settings.show();
+        settings.page(Page::Updates);
+        // A matched mouse press and release opens the confirmation with Cancel
+        // selected; the action itself is never taken from the footer tap.
+        assert_eq!(settings.event(&mouse(true, x, y), &layout), None);
+        assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
+        assert!(settings.update_confirmation.is_some());
+        assert_eq!(settings.selected, 0);
+        settings.input(Action::Activate);
+        assert!(settings.update_confirmation.is_none());
+        // The same control releases for a finger.
+        let nx = f32::from(u16::try_from(x).map_err(|e| e.to_string())?) / f32::from(layout.width);
+        let ny = f32::from(u16::try_from(y).map_err(|e| e.to_string())?) / f32::from(layout.height);
+        for up in [true, false, true] {
+            let event = if up {
+                Event::FingerUp {
+                    timestamp: 0,
+                    touch_id: 1,
+                    finger_id: 9,
+                    x: nx,
+                    y: ny,
+                    dx: 0.,
+                    dy: 0.,
+                    pressure: 0.,
+                }
+            } else {
+                Event::FingerDown {
+                    timestamp: 0,
+                    touch_id: 1,
+                    finger_id: 9,
+                    x: nx,
+                    y: ny,
+                    dx: 0.,
+                    dy: 0.,
+                    pressure: 1.,
+                }
+            };
+            assert_eq!(settings.event(&event, &layout), None);
+        }
+        assert!(settings.update_confirmation.is_some());
+        // Only a second activation of the confirm button completes the action.
+        settings.input(Action::Move(crate::navigation::Direction::Right));
+        assert_eq!(
+            settings.input(Action::Activate),
+            Some(Request::RestorePrevious)
+        );
         Ok(())
     }
     #[test]
@@ -364,6 +440,7 @@ mod tests {
             ..Settings::default()
         };
         settings.show();
+        settings.page(Page::Display);
         assert_eq!(
             settings.event(&mouse(true, track.x, track.y), &layout),
             Some(Request::Control(Control::Brightness(Percent::new(10)?)))
@@ -408,6 +485,7 @@ mod tests {
             ..Settings::default()
         };
         settings.show();
+        settings.page(Page::Display);
         let down = Event::FingerDown {
             timestamp: 0,
             touch_id: 1,
@@ -461,6 +539,7 @@ mod tests {
                 ..Settings::default()
             };
             settings.show();
+            settings.page(Page::Display);
             assert_eq!(
                 settings.event(&mouse(false, track.x, track.y), &layout),
                 None

@@ -91,13 +91,15 @@ mod tests {
         apply: bool,
         denied: bool,
         calls: RefCell<Vec<String>>,
+        writes: RefCell<Vec<String>>,
     }
     impl Hardware for Fake {
         fn read(&self, _: &str) -> Result<String, String> {
             Err("missing".into())
         }
-        fn write(&self, _: &str, _: &str) -> Result<(), String> {
-            panic!("No sysfs writes")
+        fn write(&self, path: &str, value: &str) -> Result<(), String> {
+            self.writes.borrow_mut().push(format!("{path}={value}"));
+            Err("radio controls must use fixed commands, never sysfs writes".into())
         }
         fn command(&self, name: &str, args: &[&str]) -> Result<String, String> {
             self.calls
@@ -138,6 +140,7 @@ mod tests {
             apply: true,
             denied: false,
             calls: RefCell::default(),
+            writes: RefCell::default(),
         }
     }
     #[test]
@@ -162,6 +165,10 @@ mod tests {
                 "bluetoothctl --timeout 1 power on"
             };
             assert!(io.calls.borrow().iter().any(|call| call == command));
+            assert!(
+                io.writes.borrow().is_empty(),
+                "radio controls are command-only"
+            );
         }
         Ok(())
     }
@@ -186,6 +193,10 @@ mod tests {
                     status.bluetooth
                 },
                 Some(false)
+            );
+            assert!(
+                io.writes.borrow().is_empty(),
+                "radio controls are command-only"
             );
         }
         for value in [

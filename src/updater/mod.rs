@@ -20,6 +20,18 @@ use transport::{Curl, Transport};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Version shown in the settings summary. Keep fixture labels stable across releases.
+pub const fn settings_display_version() -> &'static str {
+    #[cfg(test)]
+    {
+        "0.1.0-beta4.1"
+    }
+    #[cfg(not(test))]
+    {
+        VERSION
+    }
+}
+
 #[derive(Debug, Default)]
 pub enum State {
     #[default]
@@ -37,13 +49,19 @@ pub enum State {
         durable: bool,
         relaunch: Relaunch,
     },
+    Restoring,
+    Restored {
+        version: Option<Version>,
+        durable: bool,
+        relaunch: Relaunch,
+    },
     Failed(String),
 }
 impl State {
     pub const fn busy(&self) -> bool {
         matches!(
             self,
-            Self::Checking | Self::Downloading { .. } | Self::Installing
+            Self::Checking | Self::Downloading { .. } | Self::Installing | Self::Restoring
         )
     }
     pub fn detail(&self) -> String {
@@ -80,6 +98,20 @@ impl State {
             Self::Installed { durable: false, .. } => {
                 "Shell replaced; disk sync failed. Backup retained.".into()
             }
+            Self::Restoring => "Verifying and restoring the previous shell build...".into(),
+            Self::Restored {
+                version: Some(version),
+                durable: true,
+                ..
+            } => format!("Restored Vitrallis Shell {version}. Relaunch required."),
+            Self::Restored {
+                version: None,
+                durable: true,
+                ..
+            } => "Previous shell build restored. Relaunch required.".into(),
+            Self::Restored { durable: false, .. } => {
+                "Previous shell build restored; disk sync failed. Relaunch required.".into()
+            }
             Self::Failed(error) => error.clone(),
         }
     }
@@ -88,16 +120,26 @@ impl State {
 #[derive(Debug, Default)]
 pub struct Updater {
     pub state: State,
+    /// Set by the UI when the running installation retains a usable previous
+    /// generation; gates the visible Restore control only.
+    pub restore_available: bool,
     result: Option<Receiver<State>>,
     relaunch_requested: bool,
     relaunch_error: Option<String>,
+    restore_requested: bool,
+    restore_error: Option<String>,
     progress: Arc<Mutex<Option<State>>>,
 }
 impl Updater {
     pub fn detail(&self) -> String {
+        // A busy update state carries the live diagnostic; a blocked-action
+        // message stands in whenever no worker is running (including after a
+        // failed update, where the Restore control is still offered).
+        let transient = !self.state.busy();
         let mut detail = self
             .relaunch_error
             .clone()
+            .or_else(|| self.restore_error.clone().filter(|_| transient))
             .unwrap_or_else(|| self.state.detail());
         if let Some(notice) = crate::platform::linux_handheld::gpu_setup_notice() {
             detail.push('\n');
@@ -106,7 +148,7 @@ impl Updater {
         detail
     }
     pub const fn request_relaunch(&mut self) {
-        if matches!(self.state, State::Installed { .. }) {
+        if matches!(self.state, State::Installed { .. } | State::Restored { .. }) {
             self.relaunch_requested = true;
         }
     }
@@ -121,7 +163,8 @@ impl Updater {
         if !std::mem::take(&mut self.relaunch_requested) {
             return false;
         }
-        let State::Installed { relaunch, .. } = &self.state else {
+        let (State::Installed { relaunch, .. } | State::Restored { relaunch, .. }) = &self.state
+        else {
             return false;
         };
         let result = if blocked {
@@ -132,8 +175,54 @@ impl Updater {
         self.relaunch_error = result.err();
         true
     }
+    /// Ask for the retained previous generation to be activated. The main loop
+    /// decides whether running apps or operations block the switch.
+    pub fn request_restore(&mut self) {
+        if matches!(
+            self.state,
+            State::Idle | State::Current | State::Available(_) | State::Failed(_)
+        ) {
+            self.restore_error = None;
+            self.restore_requested = true;
+        }
+    }
+    pub fn restore_if_requested(&mut self, blocked: bool) -> bool {
+        if !std::mem::take(&mut self.restore_requested) {
+            return false;
+        }
+        if blocked {
+            self.restore_error = Some(
+                "Close running apps and finish App Center operations, then select Restore again"
+                    .into(),
+            );
+        } else {
+            self.restore();
+        }
+        true
+    }
+    fn restore(&mut self) {
+        self.begin_restore(|_| restore());
+    }
+    #[cfg(test)]
+    fn restore_with(&mut self, work: impl FnOnce() -> State + Send + 'static) {
+        self.begin_restore(|_| work());
+    }
+    fn begin_restore(
+        &mut self,
+        work: impl FnOnce(&Mutex<Option<State>>) -> State + Send + 'static,
+    ) {
+        if self.state.busy()
+            || matches!(self.state, State::Installed { .. } | State::Restored { .. })
+        {
+            return;
+        }
+        self.restore_error = None;
+        self.start(State::Restoring, work);
+    }
     pub fn check(&mut self) {
-        if self.state.busy() || matches!(self.state, State::Installed { .. }) {
+        if self.state.busy()
+            || matches!(self.state, State::Installed { .. } | State::Restored { .. })
+        {
             return;
         }
         self.start(State::Checking, |_| {
@@ -179,6 +268,8 @@ impl Updater {
         state: State,
         work: impl FnOnce(&Mutex<Option<State>>) -> State + Send + 'static,
     ) {
+        // Any new worker action supersedes a blocked-restore diagnostic.
+        self.restore_error = None;
         let (send, receive) = mpsc::sync_channel(1);
         self.progress = Arc::default();
         let progress = Arc::clone(&self.progress);
@@ -275,6 +366,24 @@ fn check_inventory(
 }
 
 #[cfg(unix)]
+fn restore() -> State {
+    crate::platform::update::Installation::current()
+        .and_then(|installation| installation.rollback())
+        .map_or_else(
+            |error| State::Failed(format!("Restore failed: {error}")),
+            |restored| State::Restored {
+                version: restored.version,
+                durable: restored.durable,
+                relaunch: restored.relaunch,
+            },
+        )
+}
+#[cfg(not(unix))]
+fn restore() -> State {
+    State::Failed("Restore failed: unsupported on this operating system".into())
+}
+
+#[cfg(unix)]
 fn install(
     transport: &impl Transport,
     release: &Release,
@@ -284,7 +393,8 @@ fn install(
     if target.artifact() != release.name {
         return Err("Update platform changed; check again".into());
     }
-    let mut installation = crate::platform::update::Installation::current()?;
+    let mut installation = crate::platform::update::Installation::current()
+        .map_err(|error| format!("Cannot stage Vitrallis update: {error}"))?;
     let mut file = installation.payload()?;
     let sha256 = download(transport, release, &mut file, progress)?;
     file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;

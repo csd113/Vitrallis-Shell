@@ -67,7 +67,7 @@ Python tests isolate filesystem writes in temporary HOME directories, including
 paths with spaces. They mock release downloads, runtime preflight and session
 commands where host execution cannot represent the ARM device. They exercise:
 
-- Complete bundle install, repeat install, removal and reinstall; all four binaries.
+- Complete bundle install, repeat install, removal and reinstall; all five bundled executables.
 - Failed/truncated/corrupt downloads, absent or duplicate helpers/checksums,
   wrong ABI and version disagreement before publication.
 - Edited menu fields, shortcuts, helpers, generation content and retained data.
@@ -81,6 +81,39 @@ A staged command test proves command sequencing, cleanup and local installation
 behavior. It does **not** prove that a compatible release exists at a live URL.
 [Release validation](releases.md) records the separate release asset checks.
 
+## ARMv7 Docker simulator
+
+`sh tests/simulator/armv7/run.sh` builds a reproducible ARMv7 software
+environment and executes the real binaries and test suites under Docker's ARM
+emulation:
+
+- cross-builds the workspace for `armv7-unknown-linux-gnueabihf` against the
+  release ABI (Debian glibc 2.36 / SDL2 2.26.5) with the same cross toolchain as
+  the release workflow;
+- executes every ARMv7 binary and cross-built Rust test executable in a
+  Debian 13 armhf container as an unprivileged `chip` user (uid 1000),
+  including the generation, update, restore and App Center storage/lock tests
+  under umask `002` and `022`;
+- builds the real five-executable release bundle with
+  `scripts/package-shell-release.py` and drives it through the production
+  unpack, verification and generation-commit path in the ARM container;
+- runs headless SDL frames at 480×272 and 800×480 and the ARM Python
+  installer/uninstaller suite.
+
+Results land in `target/armv7-audit/results/`. This validates Linux software
+behavior under ARMv7 emulation; it does **not** validate Mali-400/Lima
+rendering, VSync, the display controller, NAND/UBIFS, power behavior or
+performance. The x86-64 App Center/GUI simulator remains in `tests/simulator/`.
+
+## Real-hardware-only acceptance
+
+[PocketCHIP v1.0 hardware acceptance](devices/pocketchip/v1.0-hardware-acceptance.md)
+lists the checks that still require the physical device: real Mali-400/Lima
+rendering and VSync, the physical display and input hardware, NAND/UBIFS
+generation durability, the live session/system services and the published
+release over the live network. Keep the checklist updated as hardware evidence
+is recorded.
+
 ## Visual and device scope
 
 The README image is a genuine current desktop-build SDL render at 480×272,
@@ -91,6 +124,8 @@ The [USB hardware follow-up](devices/pocketchip/validation-usb-session.md) recor
 fresh ARM installation, native app, session, control and removal tests on the device.
 Its scope distinguishes injected X11 input from physical switch/touch testing,
 and bounded checks from power-loss durability and endurance.
+[v1.0 hardware acceptance](devices/pocketchip/v1.0-hardware-acceptance.md) lists
+the remaining physical-device checks for this release.
 [Native validation](devices/pocketchip/history/native-validation.md) retains host/container measurements.
 [Historical hardware evidence](devices/pocketchip/history/device-validation.md) retains earlier
 original desktop integration observations. The scopes must remain distinct.

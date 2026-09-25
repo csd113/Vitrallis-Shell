@@ -6,11 +6,11 @@ sandbox**. See [SECURITY.md](../SECURITY.md) for the verified contact route.
 
 ## Distribution and packages
 
-The the target device bootstrap executes a successfully downloaded official HTTPS script,
+The target device bootstrap executes a successfully downloaded official HTTPS script,
 then verifies a complete native bundle and matching helper checksums from one
 published release. GitHub and the publishing account are trust roots. Checksums
 catch corruption and mismatched assets; they are not independent signatures or
-protection against a compromised publisher. Bundle contents have four fixed
+protection against a compromised publisher. Bundle contents have five fixed
 executable names, bounded sizes, ARM ELF checks and matching version probes.
 
 App Center fetches bounded catalog/manifest metadata and commit-pinned payloads,
@@ -38,12 +38,14 @@ do not put secrets in them. Per-child environments intentionally inherit the
 existing GUI session. Logs omit environment values and session logs rotate with
 bounded sizes.
 
-The supervised the target device session owns its systemd cgroup. Stopping validates the
+The supervised target device session owns its systemd cgroup. Stopping validates the
 transient user unit and exact supervisor process identity before acting, then
 restores temporary Awesome bindings. A window title never grants permission to
 kill an unrelated process. The original desktop startup, original configuration and serial
-recovery remain available. Power/time-zone actions use existing OS authorization;
-Vitrallis installs no privilege rules.
+recovery remain available. Power/time-zone actions use existing OS authorization.
+PocketCHIP platform preparation separately installs the documented root-owned GPU
+trace unit and device-tree provisioning, plus the account-specific Carousel media
+sudoers rule; see [device installation](devices/pocketchip.md#gpu-platform-provisioning).
 
 ## Limits
 

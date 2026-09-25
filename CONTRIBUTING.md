@@ -71,5 +71,11 @@ handoff. For formatting failures, format only the affected Rust code and rerun
 in [validation](docs/validation.md). Never connect to hardware, publish a release,
 or change a user's system as part of an ordinary host test.
 
-The project has no published open-source license grant; this contribution guide
-does not change its [license status](README.md#documentation-and-development).
+## Licensing contributions
+
+Project-owned contributions are accepted under [MIT](LICENSE). Submit only work
+that you can license on those terms. Preserve third-party copyright, license and
+NOTICE files; record imported code/assets, exact source revisions and terms in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Public availability or a supplied
+image is not permission to redistribute it. Unresolved items listed there are
+excluded from the project MIT grant until their rights are established.

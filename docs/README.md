@@ -6,9 +6,11 @@
 | Terminal, Notepad and Files | [Native utilities](native-apps.md) |
 | Find and manage third-party apps | [App Center](app-center.md) |
 | Device controls | [Settings](devices/pocketchip/settings.md) and [system status](devices/pocketchip/system-status.md) |
+| Settings persistence and storage | [Settings and storage](settings-storage.md) |
 | Native build updates | [Shell updates](shell-updates.md) |
-| Current public installation gap | [Release readiness](releases.md) |
+| Published artifacts and validation | [Releases](releases.md) |
 | Trust and reporting | [Trust model](security.md) and [security policy](../SECURITY.md) |
+| Licensing and third-party notices | [License](../LICENSE) and [third-party notices](../THIRD_PARTY_NOTICES.md) |
 | Develop an application | [App development](app-development.md) |
 | Work on the shell | [Contributing](../CONTRIBUTING.md), [shell behavior](shell.md), [repository layout](repository-layout.md), [dependencies](dependencies.md) |
 | Graphics setup and physical GPU status | [Hardware acceleration](hardware-acceleration.md) |

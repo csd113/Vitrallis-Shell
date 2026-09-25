@@ -4,7 +4,10 @@ use crate::{
     app_center::storage::{self, FileData},
 };
 use serde_json::json;
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::PathBuf,
+};
 
 pub const PREFIX: &str = "vitrallis-folder-";
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -182,13 +185,16 @@ impl Folders {
                 .cloned(),
         );
         if !self.order.is_empty() {
+            // One pass builds the rank lookup. The previous closure rescanned
+            // the order list for every comparison, which is quadratic for a
+            // full menu; first occurrence still wins, as `position` did.
+            let mut ranks: HashMap<&str, usize> = HashMap::new();
+            for (rank, id) in self.order.iter().enumerate() {
+                ranks.entry(id.as_str()).or_insert(rank);
+            }
             visible.sort_by(|a, b| {
-                let rank = |app: &AppEntry| {
-                    self.order
-                        .iter()
-                        .position(|id| id == &app.id)
-                        .unwrap_or(usize::MAX)
-                };
+                let rank =
+                    |app: &AppEntry| ranks.get(app.id.as_str()).copied().unwrap_or(usize::MAX);
                 rank(a).cmp(&rank(b)).then_with(|| a.id.cmp(&b.id))
             });
         }

@@ -5,12 +5,13 @@ use crate::{
     layout::Layout,
     platform::Platform,
     process::{self, ProcessSet, Processes},
-    renderer::{Screen, artwork, render, screenshot},
+    renderer::{Artwork, Screen, artwork, render, screenshot},
 };
 use sdl2::{
     event::{Event, WindowEvent},
     keyboard::Keycode,
-    render::Texture,
+    render::{Texture, TextureCreator},
+    video::WindowContext,
 };
 use std::time::{Duration, Instant};
 
@@ -79,6 +80,12 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         }
     }
     state.renderer_info = Some(info);
+    state.settings.renderer = state
+        .renderer_info
+        .as_ref()
+        .map_or_else(String::new, |info| {
+            format!("{} {}", info.sdl.name, info.actual.as_str())
+        });
     sdl.mouse().show_cursor(state.preferences.show_cursor);
     if let Some(path) = &config.screenshot {
         let creator = canvas.texture_creator();
@@ -120,9 +127,41 @@ fn window_layout(canvas: &Screen) -> Result<Layout, String> {
     )
 }
 
-// Keep input suppression, frame presentation and child-exit ordering together;
-// their operation-specific work lives in the helpers below.
-#[allow(clippy::too_many_lines)]
+/// Whether the launcher keeps running after one event-loop iteration.
+#[derive(PartialEq, Eq)]
+enum Flow {
+    Continue,
+    Exit,
+}
+
+/// Long-lived launcher loop state. Frame presentation, input suppression and
+/// child-exit ordering stay in [`Heartbeat::step`]; per-operation work lives in
+/// the helper functions below.
+struct Heartbeat<'c, 's, 't, P: Platform> {
+    sdl: &'c sdl2::Sdl,
+    canvas: &'c mut Screen<'s>,
+    layout: &'c mut Layout,
+    state: &'c mut Launcher,
+    creator: &'t TextureCreator<WindowContext>,
+    textures: &'c mut Artwork<'t>,
+    worker: &'c mut Option<crate::platform::system::Worker>,
+    events: &'c mut sdl2::EventPump,
+    keyboard: &'c mut vitrallis_native::keyboard::Keyboard,
+    child: &'c mut ProcessSet<crate::process::NativeProcess>,
+    broker: &'c vitrallis_native::ipc::Broker,
+    pointer: &'c mut PointerInput,
+    desktop_input: &'c mut crate::input::DesktopInput,
+    platform: &'c P,
+    config: &'c Config,
+    smoke: bool,
+    accept_after: Instant,
+    dirty: bool,
+    last_present: Instant,
+    last_wait_error: Option<String>,
+    next_poll: Instant,
+    deadline: Instant,
+}
+
 fn event_loop(
     sdl: &sdl2::Sdl,
     canvas: &mut Screen,
@@ -145,141 +184,214 @@ fn event_loop(
     let broker = crate::native::broker(&mut state)?;
     let mut pointer = PointerInput::default();
     let mut desktop_input = crate::input::DesktopInput::default();
-    let mut accept_after = Instant::now();
-    let mut dirty = false;
-    let mut last_present = Instant::now();
-    let mut last_wait_error = None;
-    let mut next_poll = Instant::now();
-    let deadline = Instant::now() + Duration::from_secs(10);
     if smoke {
         inject_activation(sdl, canvas)?;
     }
     present_initial(canvas, layout, &state, &textures)?;
+    let mut heartbeat = Heartbeat {
+        sdl,
+        canvas,
+        layout: &mut current_layout,
+        state: &mut state,
+        creator: &creator,
+        textures: &mut textures,
+        worker: &mut worker,
+        events: &mut events,
+        keyboard: &mut keyboard,
+        child: &mut child,
+        broker: &broker,
+        pointer: &mut pointer,
+        desktop_input: &mut desktop_input,
+        platform,
+        config,
+        smoke,
+        accept_after: Instant::now(),
+        dirty: false,
+        last_present: Instant::now(),
+        last_wait_error: None,
+        next_poll: Instant::now(),
+        deadline: Instant::now() + Duration::from_secs(10),
+    };
     loop {
-        if std::mem::take(&mut state.view_changed) {
-            textures.refresh(&creator, &state);
-            dirty = true;
+        match heartbeat.step()? {
+            Flow::Continue => {}
+            Flow::Exit => return Ok(()),
         }
-        let layout = &current_layout;
-        dirty |= refresh_system(&mut worker, &mut state.settings);
-        if refresh_app_center(sdl, config, &mut state, &mut dirty)? {
-            textures.refresh(&creator, &state);
-            dirty = true;
+    }
+}
+
+impl<P: Platform> Heartbeat<'_, '_, '_, P> {
+    /// One iteration: refresh derived state, present when the frame is due,
+    /// consume one event, then reap finished children.
+    fn step(&mut self) -> Result<Flow, String> {
+        if std::mem::take(&mut self.state.view_changed) {
+            self.textures.refresh(self.creator, self.state);
+            self.dirty = true;
         }
-        dirty |= refresh_shell(&mut state, &mut child);
-        dirty |= launch_from_center(canvas, layout, &mut state, &textures, &mut child)?;
-        dirty |= open_native(&broker, canvas, layout, &mut state, &textures, &mut child)?;
+        self.refresh_derived()?;
         // Coalesce queued input before presenting. Rendering every key/text pair
         // makes rapid typing accumulate behind VSync on slow software backends.
-        let queued = events.poll_event();
-        if dirty && (queued.is_none() || last_present.elapsed() >= Duration::from_millis(16)) {
-            state.running = child.running_ids();
-            dirty = present_frame(canvas, layout, &mut state, &textures, &mut worker)?;
-            last_present = Instant::now();
+        let queued = self.events.poll_event();
+        if self.dirty
+            && (queued.is_none() || self.last_present.elapsed() >= Duration::from_millis(16))
+        {
+            self.dirty = present_frame(
+                self.canvas,
+                self.layout,
+                self.state,
+                self.textures,
+                self.worker,
+            )?;
+            self.last_present = Instant::now();
         }
-        let event = queued.or_else(|| wait_event(&mut events, state.phase, next_poll, dirty));
-        if let Some(mut event) = event {
-            keyboard.event(&mut event);
-            if closing(&event) && !state.app_center.busy {
-                return Ok(());
+        let event = queued
+            .or_else(|| wait_event(self.events, self.state.phase, self.next_poll, self.dirty));
+        if let Some(event) = event
+            && self.input(event)? == Flow::Exit
+        {
+            return Ok(Flow::Exit);
+        }
+        if self.reap_children()? == Flow::Exit {
+            return Ok(Flow::Exit);
+        }
+        if self.smoke && Instant::now() >= self.deadline {
+            return Err("smoke test timed out".into());
+        }
+        Ok(Flow::Continue)
+    }
+
+    /// Re-derives everything the catalogue, workers and shell state changed.
+    fn refresh_derived(&mut self) -> Result<(), String> {
+        self.dirty |= refresh_system(self.worker, &mut self.state.settings);
+        if refresh_app_center(self.sdl, self.config, self.state, &mut self.dirty)? {
+            self.textures.refresh(self.creator, self.state);
+            self.dirty = true;
+        }
+        self.dirty |= refresh_shell(self.state, self.child);
+        self.dirty |= refresh_launch(self.state, self.child);
+        self.dirty |= launch_from_center(
+            self.canvas,
+            self.layout,
+            self.state,
+            self.textures,
+            self.child,
+        )?;
+        self.dirty |= open_native(
+            self.broker,
+            self.canvas,
+            self.layout,
+            self.state,
+            self.textures,
+            self.child,
+        )?;
+        Ok(())
+    }
+
+    /// Applies one SDL event. Input suppression and the shared
+    /// pointer/keyboard/touch path stay in one place so a press can never be
+    /// delivered twice.
+    fn input(&mut self, mut event: Event) -> Result<Flow, String> {
+        self.keyboard.event(&mut event);
+        if closing(&event) && !self.state.app_center.busy {
+            return Ok(Flow::Exit);
+        }
+        if matches!(event, Event::RenderDeviceReset { .. }) {
+            self.canvas.reset()?;
+            self.textures.reset(self.creator, self.state);
+            self.dirty = true;
+        }
+        if matches!(
+            event,
+            Event::Window {
+                win_event: WindowEvent::SizeChanged(..) | WindowEvent::Resized(..),
+                ..
             }
-            if matches!(event, Event::RenderDeviceReset { .. }) {
-                canvas.reset()?;
-                textures.reset(&creator, &state);
-                dirty = true;
+        ) {
+            let (width, height) = self.canvas.window().size();
+            if width >= 320 && height >= 200 {
+                *self.layout = Layout::home(
+                    u16::try_from(width).map_err(|_| "window width")?,
+                    u16::try_from(height).map_err(|_| "window height")?,
+                )?;
+                self.pointer.clear();
+                self.desktop_input.clear();
+                self.state.settings.clear_pointer();
+                self.state.app_center.lost_focus();
             }
-            if matches!(
-                event,
-                Event::Window {
-                    win_event: WindowEvent::SizeChanged(..) | WindowEvent::Resized(..),
-                    ..
-                }
-            ) {
-                let (width, height) = canvas.window().size();
-                if width >= 320 && height >= 200 {
-                    current_layout = Layout::home(
-                        u16::try_from(width).map_err(|_| "window width")?,
-                        u16::try_from(height).map_err(|_| "window height")?,
-                    )?;
-                    pointer.clear();
-                    desktop_input.clear();
-                    state.settings.clear_pointer();
-                    state.app_center.lost_focus();
-                }
+        }
+        self.dirty |= exposed(&event);
+        if matches!(
+            event,
+            Event::Window {
+                win_event: WindowEvent::FocusLost,
+                ..
             }
-            let layout = &current_layout;
-            dirty |= exposed(&event);
-            if matches!(
-                event,
-                Event::Window {
-                    win_event: WindowEvent::FocusLost,
-                    ..
+        ) {
+            self.child.stop_focus_retry();
+        }
+        self.dirty |= window_focus(&event, self.state, self.pointer, &mut self.accept_after);
+        if Instant::now() >= self.accept_after {
+            let (consumed, changed) =
+                desktop_event(&event, self.layout, self.state, self.desktop_input);
+            if consumed {
+                self.pointer.clear();
+                if changed {
+                    self.textures.refresh(self.creator, self.state);
                 }
-            ) {
-                child.stop_focus_retry();
-            }
-            dirty |= window_focus(&event, &mut state, &mut pointer, &mut accept_after);
-            if Instant::now() >= accept_after {
-                let (consumed, changed) =
-                    desktop_event(&event, layout, &mut state, &mut desktop_input);
-                if consumed {
-                    pointer.clear();
-                    if changed {
-                        textures.refresh(&creator, &state);
-                    }
-                    dirty |= panel_input(&event);
-                } else {
-                    dirty |= terminate_selected(&event, &mut state, &mut child);
-                    let (action, system_changed) =
-                        translate_action(&event, layout, &mut state, &mut pointer, &mut worker);
-                    dirty |= system_changed;
-                    let activating = state.phase == Phase::Ready
-                        && matches!(
-                            action,
-                            Some(Action::Activate | Action::SelectAndActivate(_))
-                        );
-                    dirty |=
-                        handle_action(action, canvas, layout, &mut state, &textures, &mut child)?;
-                    dirty |= open_requested(&mut state, &mut child);
-                    if activating && state.phase == Phase::Running {
-                        pointer.clear();
-                        accept_after = Instant::now() + Duration::from_millis(400);
-                    }
-                }
+                self.dirty |= panel_input(&event);
             } else {
-                pointer.clear();
-                desktop_input.clear();
+                self.dirty |= terminate_selected(&event, self.state, self.child);
+                let (action, system_changed) =
+                    translate_action(&event, self.layout, self.state, self.pointer, self.worker);
+                self.dirty |= system_changed;
+                self.dirty |= handle_action(
+                    action,
+                    self.canvas,
+                    self.layout,
+                    self.state,
+                    self.textures,
+                    self.child,
+                )?;
+                self.dirty |= open_requested(self.state, self.child);
             }
+        } else {
+            self.pointer.clear();
+            self.desktop_input.clear();
         }
-        let layout = &current_layout;
-        let result = poll_children(&mut child, &mut next_poll);
+        Ok(Flow::Continue)
+    }
+
+    /// Reaps finished children and mirrors each exit into the shell state.
+    fn reap_children(&mut self) -> Result<Flow, String> {
+        let result = poll_children(self.child, &mut self.next_poll);
         match result {
             Ok(Some(status)) => {
                 eprintln!("level=info event=app_exited status={status:?}");
-                refresh_utility(&mut state, &mut worker, child.exited_active);
-                let raise = app_exited(&mut state, status, child.exited_active);
-                let catalog_changed = refresh_exit_catalog(sdl, config, &mut state, &mut pointer);
+                self.state.sync_states(self.child);
+                refresh_utility(self.state, self.worker, self.child.exited_active);
+                let raise = app_exited(self.state, status, self.child.exited_active);
+                let catalog_changed =
+                    refresh_exit_catalog(self.sdl, self.config, self.state, self.pointer);
                 if catalog_changed {
-                    textures.refresh(&creator, &state);
+                    self.textures.refresh(self.creator, self.state);
                 }
-                last_wait_error = None;
-                if child.exited_active {
-                    accept_after = Instant::now();
+                self.last_wait_error = None;
+                if self.child.exited_active {
+                    self.accept_after = Instant::now();
                 }
-                raise_after_exit(canvas, platform, raise);
-                dirty = true;
-                if smoke {
-                    return finish_smoke(canvas, layout, &state, &textures, status);
+                raise_after_exit(self.canvas, self.platform, raise);
+                self.dirty = true;
+                if self.smoke {
+                    finish_smoke(self.canvas, self.layout, self.state, self.textures, status)?;
+                    return Ok(Flow::Exit);
                 }
             }
             Ok(None) => {}
             Err(error) => {
-                dirty |= report_wait_error(error, &mut last_wait_error, &mut state);
+                self.dirty |= report_wait_error(error, &mut self.last_wait_error, self.state);
             }
         }
-        if smoke && Instant::now() >= deadline {
-            return Err("smoke test timed out".into());
-        }
+        Ok(Flow::Continue)
     }
 }
 
@@ -466,6 +578,9 @@ fn open_native(
     icons: &[Option<Texture<'_>>],
     child: &mut ProcessSet,
 ) -> Result<bool, String> {
+    if state.phase != Phase::Ready {
+        return Ok(false);
+    }
     match crate::native::requested(broker, state) {
         Ok(Some(index)) => {
             render(
@@ -503,7 +618,22 @@ fn refresh_shell(state: &mut Launcher, child: &mut ProcessSet) -> bool {
     if state.phase == Phase::Ready {
         child.returned_home();
     }
-    child.background_policy(&state.settings.policy, Instant::now());
+    let stopped = child.background_policy(&state.settings.policy, Instant::now());
+    for id in &stopped {
+        state.app_states.remove(id);
+    }
+    if !stopped.is_empty() {
+        let message = format!(
+            "{} app(s) closed after their background timeout",
+            stopped.len()
+        );
+        if state.phase == Phase::Running {
+            // The foreground app is untouched; only the notice changes.
+            state.notify(message);
+        } else {
+            state.finished(message);
+        }
+    }
     child.sync_tor_apps();
     if let Some(control) = state.settings.tor_control.take()
         && let Err(error) = child.tor.request(control)
@@ -519,9 +649,13 @@ fn refresh_shell(state: &mut Launcher, child: &mut ProcessSet) -> bool {
     let dirty = (tor_changed && (state.settings.open || child.waiting_for_tor()))
         | refresh_timezone(state, child)
         | refresh_focus(child, state);
-    state.settings.updater.relaunch_if_requested(
-        state.app_center.busy || child.has_children() || state.settings.pending,
-    ) || dirty
+    // Restore deliberately waits for a quiescent session: no owned apps, App
+    // Center mutation or pending system operation. Both actions take effect on
+    // relaunch, so they share the same gate.
+    let blocked = state.app_center.busy || child.has_children() || state.settings.pending;
+    state.settings.updater.relaunch_if_requested(blocked)
+        | state.settings.updater.restore_if_requested(blocked)
+        | dirty
 }
 
 fn refresh_timezone(state: &mut Launcher, child: &mut ProcessSet) -> bool {
@@ -544,6 +678,11 @@ fn launch_from_center(
     let Some(id) = state.app_center.launch.take() else {
         return Ok(false);
     };
+    if state.phase != Phase::Ready {
+        // One start request at a time; the App Center stays open with the reason.
+        state.app_center.message = "An application is already starting; try again".into();
+        return Ok(true);
+    }
     state.reveal(&id);
     if let Some(index) = state.apps.iter().position(|app| app.id == id) {
         state.app_center.open = false;
@@ -605,7 +744,7 @@ fn refresh_app_center(
     Ok(artwork_changed)
 }
 
-fn terminate_selected(event: &Event, state: &mut Launcher, child: &mut ProcessSet) -> bool {
+fn terminate_selected(event: &Event, state: &mut Launcher, child: &mut impl Processes) -> bool {
     if state.folder.is_some()
         || state.phase != Phase::Ready
         || state.settings.open
@@ -629,9 +768,35 @@ fn terminate_selected(event: &Event, state: &mut Launcher, child: &mut ProcessSe
     if !child.terminate(&app.id) {
         return false;
     }
-    state.running = child.running_ids();
+    state.sync_states(child);
     state.finished("APP CLOSED - READY".into());
     true
+}
+
+fn refresh_launch(state: &mut Launcher, child: &mut impl Processes) -> bool {
+    match child.poll_launch() {
+        Some(Ok(id)) => {
+            state.sync_states(child);
+            // System helpers (time zone, calibration, network manager) are not
+            // catalogue entries: keep the name captured when they were started.
+            let name = state
+                .all_apps
+                .iter()
+                .find(|app| app.id == id)
+                .map_or_else(|| state.opening.clone(), |app| Some(app.name.clone()))
+                .unwrap_or_else(|| "APP".into());
+            state.launched(&name);
+            true
+        }
+        Some(Err(error)) => {
+            // The failure is recorded by the process owner, so indicators stay
+            // accurate while the dialog explains what happened.
+            state.sync_states(child);
+            state.failed(error);
+            true
+        }
+        None => false,
+    }
 }
 
 fn refresh_utility(
@@ -911,6 +1076,14 @@ fn refresh_system(
             }
         }
     }
+    if settings.open && settings.page == crate::settings::Page::Updates {
+        // Read-only pointer and file-shape checks; the restore itself
+        // revalidates every file under the update lock. Only a change needs a
+        // redraw so the footer control appears or disappears.
+        let available = crate::platform::update::restore_available();
+        dirty |= settings.updater.restore_available != available;
+        settings.updater.restore_available = available;
+    }
     dirty
 }
 fn submit_setting(
@@ -932,6 +1105,7 @@ fn submit_setting(
         Some(crate::settings::Request::CheckUpdates) => settings.updater.check(),
         Some(crate::settings::Request::InstallUpdate) => settings.updater.install(),
         Some(crate::settings::Request::RelaunchUpdate) => settings.updater.request_relaunch(),
+        Some(crate::settings::Request::RestorePrevious) => settings.updater.request_restore(),
         Some(crate::settings::Request::Calibration) => {
             settings.network = crate::settings::NetworkState::CalibrationRequested;
         }
@@ -1026,8 +1200,7 @@ fn open_timezone(state: &mut Launcher, child: &mut impl Processes, index: usize)
         Ok(()) => {
             state.settings.cancel();
             state.settings.network = crate::settings::NetworkState::TimezoneOpen;
-            state.opening = Some("Time zone authentication".into());
-            state.started();
+            state.launching("Time zone authentication");
         }
         Err(error) => state.settings.message = error,
     }
@@ -1049,8 +1222,7 @@ fn open_calibration(state: &mut Launcher, child: &mut impl Processes) {
         Ok(()) => {
             state.settings.cancel();
             state.settings.network = crate::settings::NetworkState::CalibrationOpen;
-            state.opening = Some(app.name);
-            state.started();
+            state.launching(&app.name);
         }
         Err(error) => state.settings.message = error,
     }
@@ -1072,8 +1244,7 @@ fn open_network(state: &mut Launcher, child: &mut impl Processes) {
         Ok(()) => {
             state.settings.cancel();
             state.settings.network = crate::settings::NetworkState::Open;
-            state.opening = Some(app.name.clone());
-            state.started();
+            state.launching(&app.name);
         }
         Err(error) => state.settings.message = error,
     }
@@ -1093,15 +1264,6 @@ fn handle_action(
     if let Action::SelectAndActivate(index) = action {
         action = Action::SelectAndActivate(state.page_start() + index);
     }
-    if state.phase == Phase::Running
-        && state.opening.is_none()
-        && (matches!(action, Action::Activate)
-            || matches!(action, Action::SelectAndActivate(index) if index == state.selected))
-    {
-        // Route both activation paths through ProcessSet::start, which checks
-        // for an exit before deciding whether to resume or launch again.
-        state.returned_home();
-    }
     let before = (
         state.selected,
         state.phase,
@@ -1109,9 +1271,11 @@ fn handle_action(
         state.settings.open,
         state.desktop.toolbar,
     );
-    let was_ready = state.phase == Phase::Ready;
+    // The acknowledgement frame goes out before any process request, so the
+    // selection and the "is launching..." message are visible immediately.
+    let activating = state.phase == Phase::Ready
+        && matches!(action, Action::Activate | Action::SelectAndActivate(_));
     if let Some(index) = state.input(action) {
-        // Present transition feedback before process creation.
         render(
             canvas,
             layout,
@@ -1130,11 +1294,7 @@ fn handle_action(
             state.settings.open,
             state.desktop.toolbar,
         )
-        || was_ready
-            && matches!(
-                action,
-                Action::Back | Action::Activate | Action::SelectAndActivate(_)
-            ))
+        || activating)
 }
 
 fn inject_activation(sdl: &sdl2::Sdl, canvas: &Screen) -> Result<(), String> {
@@ -1177,7 +1337,9 @@ fn wait_event(
     next_poll: Instant,
     dirty: bool,
 ) -> Option<Event> {
-    if dirty {
+    if dirty || phase == Phase::Launching {
+        // A start in flight is completed by a worker; poll it promptly so the
+        // launching message becomes "running" without a visible pause.
         return events.wait_event_timeout(16);
     }
     if phase == Phase::Running {
@@ -1307,6 +1469,148 @@ mod tests {
         Ok(())
     }
 
+    /// Start on the launch worker and wait for the owned child to exist.
+    fn started(child: &mut ProcessSet, app: &crate::app::AppEntry) -> Result<(), String> {
+        child.start(app)?;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match child.poll_launch() {
+                Some(Ok(_)) => return Ok(()),
+                Some(Err(error)) => return Err(error),
+                None if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(2)),
+                None => return Err("launch timed out".into()),
+            }
+        }
+    }
+
+    /// Poll the launch result the way the event loop does, with a bound.
+    fn wait_launch(state: &mut Launcher, child: &mut impl Processes) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if refresh_launch(state, child) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// One launch, one foreground/background transition, one explicit close.
+    #[test]
+    fn launch_background_and_explicit_close_follow_one_state_machine() -> Result<(), String> {
+        use crate::{
+            app::AppEntry,
+            process::{AppState, Processes},
+        };
+        // Only this test uses the counter, and it resets it before starting.
+        static STARTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        #[derive(Default)]
+        struct Fake;
+        impl Processes for Fake {
+            fn start(&mut self, _: &AppEntry) -> Result<(), String> {
+                STARTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            }
+            fn poll(&mut self) -> Result<Option<std::process::ExitStatus>, String> {
+                Ok(None)
+            }
+            fn focus(&mut self) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let id = apps[0].id.clone();
+        let mut state = Launcher::new(apps, 3, 6)?;
+        STARTS.store(0, std::sync::atomic::Ordering::SeqCst);
+        let mut child = ProcessSet::<Fake>::default();
+        let starts = || STARTS.load(std::sync::atomic::Ordering::SeqCst);
+        // Launch: acknowledged immediately, completed by the worker.
+        assert_eq!(state.input(Action::Activate), Some(0));
+        assert_eq!(state.phase, Phase::Launching);
+        assert!(state.status.contains("launching"));
+        // While the start is in flight activation is refused, but the menu stays
+        // responsive: arrows still move the selection.
+        assert_eq!(state.input(Action::Activate), None);
+        assert_eq!(state.input(Action::SelectAndActivate(0)), None);
+        assert_eq!(
+            state.input(Action::Move(crate::navigation::Direction::Right)),
+            None
+        );
+        assert_eq!(state.selected, 1);
+        process::activate(&mut state, &mut child, 0);
+        assert!(wait_launch(&mut state, &mut child));
+        assert_eq!(state.phase, Phase::Running);
+        assert_eq!(state.app_state(&id), AppState::RunningForeground);
+        assert_eq!(starts(), 1);
+        // Returning to the main menu backgrounds the app: never terminates it.
+        state.input(Action::Back);
+        child.returned_home();
+        state.sync_states(&child);
+        assert_eq!(state.phase, Phase::Ready);
+        assert_eq!(state.app_state(&id), AppState::RunningBackground);
+        assert!(
+            child
+                .background_policy(&crate::preferences::Policy::default(), Instant::now())
+                .is_empty()
+        );
+        assert_eq!(child.state(&id), AppState::RunningBackground);
+        // Resuming focuses the existing process instead of starting another.
+        assert_eq!(state.input(Action::SelectAndActivate(0)), Some(0));
+        process::activate(&mut state, &mut child, 0);
+        assert!(wait_launch(&mut state, &mut child));
+        assert_eq!(state.phase, Phase::Running);
+        assert_eq!(starts(), 1);
+        // An explicit close still terminates promptly.
+        let escape = Event::KeyDown {
+            timestamp: 0,
+            window_id: 1,
+            keycode: Some(Keycode::Escape),
+            scancode: None,
+            keymod: sdl2::keyboard::Mod::NOMOD,
+            repeat: false,
+        };
+        state.returned_home();
+        assert!(terminate_selected(&escape, &mut state, &mut child));
+        assert_eq!(state.phase, Phase::Ready);
+        assert_eq!(state.app_state(&id), AppState::Stopped);
+        assert!(!child.has_children());
+        Ok(())
+    }
+
+    #[test]
+    fn failed_launch_returns_to_a_valid_retryable_state() -> Result<(), String> {
+        use crate::{app::AppEntry, process::AppState, process::Processes};
+        #[derive(Default)]
+        struct Broken;
+        impl Processes for Broken {
+            fn start(&mut self, _: &AppEntry) -> Result<(), String> {
+                Err("no runtime for this app".into())
+            }
+            fn poll(&mut self) -> Result<Option<std::process::ExitStatus>, String> {
+                Ok(None)
+            }
+        }
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let id = apps[0].id.clone();
+        let mut state = Launcher::new(apps, 3, 6)?;
+        let mut child = ProcessSet::<Broken>::default();
+        assert_eq!(state.input(Action::Activate), Some(0));
+        process::activate(&mut state, &mut child, 0);
+        // The worker reports the failure; the Shell shows a dismissible dialog.
+        assert!(wait_launch(&mut state, &mut child));
+        assert_eq!(state.phase, Phase::Ready);
+        assert_eq!(state.app_state(&id), AppState::Failed);
+        assert!(state.error.is_some());
+        assert!(!child.has_children());
+        // Dismissing restores normal interaction and a retry is allowed.
+        assert_eq!(state.input(Action::Activate), None);
+        assert_eq!(state.input(Action::Activate), Some(0));
+        assert_eq!(state.phase, Phase::Launching);
+        Ok(())
+    }
+
     #[test]
     fn escape_terminates_only_the_highlighted_background_app() -> Result<(), String> {
         let mut apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
@@ -1319,9 +1623,9 @@ mod tests {
         }
         let mut state = Launcher::new(apps, 3, 6)?;
         let mut child = ProcessSet::default();
-        child.start(&state.apps[0])?;
-        child.start(&state.apps[1])?;
-        state.running = child.running_ids();
+        started(&mut child, &state.apps[0])?;
+        started(&mut child, &state.apps[1])?;
+        state.sync_states(&child);
         let mut event = Event::KeyDown {
             timestamp: 0,
             window_id: 1,
@@ -1348,7 +1652,8 @@ mod tests {
         state.error = Some("dismiss first".into());
         assert!(!terminate_selected(&event, &mut state, &mut child));
         state.error = None;
-        state.started();
+        state.launching("Test");
+        state.launched("Test");
         assert!(!terminate_selected(&event, &mut state, &mut child));
         state.returned_home();
         state.selected = 2;
@@ -1357,8 +1662,12 @@ mod tests {
         assert_eq!(child.running_ids().len(), 2);
 
         assert!(terminate_selected(&event, &mut state, &mut child));
-        assert_eq!(state.running, [state.apps[1].id.clone()]);
-        assert_eq!(child.running_ids(), state.running);
+        assert_eq!(
+            state.app_state(&state.apps[1].id),
+            crate::process::AppState::RunningForeground
+        );
+        assert_eq!(child.running_ids(), [state.apps[1].id.clone()]);
+        assert!(!state.app_state(&state.apps[0].id).is_running());
         assert_eq!(state.selected, 0);
         assert_eq!(state.phase, Phase::Ready);
         assert!(!terminate_selected(&event, &mut state, &mut child));
@@ -1432,8 +1741,10 @@ mod tests {
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
         let mut state = Launcher::new(apps, 3, 6)?;
         state.input(Action::Activate);
-        state.started();
+        assert_eq!(state.phase, Phase::Launching);
         assert!(state.opening.is_some());
+        // A window that never appears leaves the launch tracked but reports the
+        // outcome without breaking the Shell.
         refresh_focus(&mut Missing, &mut state);
         assert!(state.error.is_none());
         assert!(state.opening.is_none());
@@ -1446,7 +1757,8 @@ mod tests {
         use std::os::unix::process::ExitStatusExt;
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
         let mut state = Launcher::new(apps, 3, 6)?;
-        state.started();
+        state.launching("Test");
+        state.launched("Test");
         state.settings.network = crate::settings::NetworkState::Open;
         app_exited(&mut state, std::process::ExitStatus::from_raw(0), true);
         let mut pointer = PointerInput::default();
@@ -1460,7 +1772,8 @@ mod tests {
         assert!(state.settings.open);
         assert_eq!(state.settings.network, crate::settings::NetworkState::Idle);
         state.settings.status.power_controls = true;
-        state.settings.input(Action::SelectAndActivate(4));
+        state.settings.page(crate::settings::Page::Device);
+        state.settings.input(Action::SelectAndActivate(3));
         assert!(state.settings.confirmation.is_some());
         window_focus(&event, &mut state, &mut pointer, &mut accept_after);
         assert!(state.settings.open);
@@ -1473,7 +1786,8 @@ mod tests {
         let layout = Layout::home(480, 272)?;
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
         let mut state = Launcher::new(apps, 3, 6)?;
-        state.started();
+        state.launching("Test");
+        state.launched("Test");
         let mut pointer = PointerInput::default();
         let mut accept_after = Instant::now() + Duration::from_millis(400);
         let focus = Event::Window {

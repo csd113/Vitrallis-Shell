@@ -90,10 +90,11 @@ Mesa Lima. Its installed packages were verified with `dpkg-query`:
 | GLES2 dispatcher | `libgles2` |
 | DRM userspace library | `libdrm2` |
 
-The installer does not run apt. Its PocketCHIP GPU provisioning step uses sudo
-for the root-owned platform helper; the desktop remains unprivileged. It retains SDL's required
-runtime check and gives nonfatal advice for missing EGL/GLES/DRM libraries or
-`/dev/dri`. Package provisioning stays with the device owner/distro image. Missing
+The bundle installer does not run apt; the copy-and-paste bootstrap prepares
+missing Debian prerequisites before downloading the bundle. Its PocketCHIP GPU
+provisioning step uses sudo for the root-owned platform helper; the desktop
+remains unprivileged. It retains SDL's required runtime check and gives nonfatal
+advice for missing EGL/GLES/DRM libraries or `/dev/dri`. Package provisioning stays with the device owner/distro image. Missing
 DRM nodes must not block a software-capable installation. No proprietary Mali
 blob is needed. See [PocketCHIP setup](devices/pocketchip.md).
 
@@ -122,7 +123,7 @@ expire rather than being held indefinitely. See [GPU setup and verification](dev
 
 | Target | GPU | Mesa driver | Physical GPU validation |
 | --- | --- | --- | --- |
-| PocketCHIP | Mali-400 | Lima | TESTED / PASS during this phase — see the physical record |
+| PocketCHIP | Mali-400 | Lima | PASS 2026-09-14 — Debian 13.7, kernel 6.12.107+deb13-chip, SDL 2.32.4, Mesa 25.0.7 on the owner's device only; see the physical record |
 | Raspberry Pi 1 | VideoCore IV | vc4 | PHYSICAL GPU VALIDATION PENDING / UNTESTED |
 | Raspberry Pi 4 | VideoCore VI | V3D | PHYSICAL GPU VALIDATION PENDING / UNTESTED |
 

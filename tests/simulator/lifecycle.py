@@ -121,15 +121,18 @@ class Shell:
         time.sleep(.5)
 
     def select(self, name):
-        title = self.shot("search-list-title").crop((0, 0, 480, 30)).tobytes()
+        self.shot("search-list-title")
         self.click(170, 78)
+        # The activated search field opens the Find-an-app page; applying a
+        # search returns to the Apps page, whose title/count header differs.
+        search_page = self.shot("search-page-title").crop((0, 0, 480, 30)).tobytes()
         self.click(180, 45)  # Clear search text
         self.xdo('type', '--window', self.window, '--clearmodifiers', name)
         self.key("Left", "Return")  # Clear retains focus; Search is previous.
-        wait_for(lambda: self.shot("search-applied").crop((0, 0, 480, 30)).tobytes() == title, "search applied to list")
+        wait_for(lambda: self.shot("search-applied").crop((0, 0, 480, 30)).tobytes() != search_page, "search applied to list")
         image = self.shot('selection')
         if image.getpixel((9, 106)) != (112, 215, 255):
-            self.click(220, 120)
+            self.click(220, 106)
 
     def root(self, slug):
         return self.home / '.local/share/vitrallis/apps' / ('io.vitrallis.' + slug)
@@ -149,7 +152,7 @@ class Shell:
         wait_for(lambda: self.version(slug) == version, name + ' installation')
         time.sleep(.25)
         after = self.shot('installed-' + slug)
-        assert after.getpixel((20, 120)) != (9, 13, 27), 'Catalog disappeared'
+        assert after.getpixel((20, 106)) != (9, 13, 27), 'Catalog disappeared'
         assert header == after.crop((8, 66, 310, 92)).tobytes(), 'Search changed'
         assert remote_checks() == before, 'Mutation fetched remote catalog'
 
@@ -218,7 +221,7 @@ def main():
         shell.shot('update-available')
         shell.click(400, 78)
         shell.click(400, 78)
-        update_filter = shell.shot('updates-filter').crop((350, 68, 408, 90)).tobytes()
+        update_filter = shell.shot('updates-filter').crop((333, 70, 398, 84)).tobytes()
         shell.click(240, 230)
         shell.shot('details-update')
         before = len(requests())
@@ -260,10 +263,10 @@ def main():
                 held.terminate()
                 held.wait(timeout=10)
         passed('Running old entry: Cancel keeps process; Close and update stops it and commits new version')
-        wait_for(lambda: shell.shot('updated-filter-preserved').getpixel((20, 120)) == (9, 13, 27), 'updated UI filter')
+        wait_for(lambda: shell.shot('updated-filter-preserved').getpixel((20, 106)) == (9, 13, 27), 'updated UI filter')
         filtered = shell.shot('updated-filter-preserved')
-        assert filtered.crop((350, 68, 408, 90)).tobytes() == update_filter
-        assert filtered.getpixel((20, 120)) == (9, 13, 27)
+        assert filtered.crop((333, 70, 398, 84)).tobytes() == update_filter
+        assert filtered.getpixel((20, 106)) == (9, 13, 27)
         assert (226, 227, 255) not in set(filtered.crop((126, 34, 233, 56)).getdata()), 'hidden selection must not expose an active app action'
         passed('Active Updates filter survives mutation and explains zero matches')
         assert not (shell.root('debug') / 'obsolete.py').exists()
@@ -317,7 +320,7 @@ def main():
         time.sleep(.5)
         shell.shot('offline-catalog')
         shell.select('Debug')
-        assert shell.shot('offline-debug').getpixel((20, 120)) != (9, 13, 27)
+        assert shell.shot('offline-debug').getpixel((20, 106)) != (9, 13, 27)
         passed('Failed repository refresh retains known-good entries')
         before = len(requests())
         shell.key('Home')
@@ -334,7 +337,7 @@ def main():
         shell.refresh()
         shell.select('Debug')
         shell.shot('one-bad-app')
-        assert shell.shot('good-app-retained').getpixel((20, 120)) != (9, 13, 27)
+        assert shell.shot('good-app-retained').getpixel((20, 106)) != (9, 13, 27)
         passed('One malformed app does not disable valid repository apps')
         shell.click(300, 45)  # Repositories
         shell.click(60, 45)  # Add
@@ -344,7 +347,7 @@ def main():
         shell.click(420, 45)  # Back
         shell.refresh()
         shell.select('Debug')
-        assert shell.shot('multiple-repositories').getpixel((20, 120)) != (9, 13, 27)
+        assert shell.shot('multiple-repositories').getpixel((20, 106)) != (9, 13, 27)
         shell.click(300, 45)
         shell.shot('repositories-with-error')
         shell.click(420, 45)

@@ -165,12 +165,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn atlas_pixels_cover_every_supported_glyph_and_fallback() {
+    fn atlas_pixels_cover_every_supported_glyph_and_fallback() -> Result<(), String> {
         let pixels = pixels();
         assert_eq!(pixels.len(), 88 * 1024);
         for (first, last) in [(0, 127), (160, 255), (0x2500, 0x257f)] {
             for code in first..=last {
-                let ch = char::from_u32(code).unwrap();
+                let ch = char::from_u32(code)
+                    .ok_or_else(|| format!("U+{code:04X} is not a scalar value"))?;
                 let slot = index(ch);
                 let expected = bitmap(slot);
                 for (row, bits) in expected.into_iter().enumerate() {
@@ -198,5 +199,6 @@ pub(crate) mod tests {
         assert_eq!(index('\u{ff}'), 223);
         assert_eq!(index('\u{2500}'), 224);
         assert_eq!(index('\u{257f}'), GLYPHS - 1);
+        Ok(())
     }
 }

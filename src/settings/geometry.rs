@@ -14,6 +14,25 @@ impl PanelLayout {
         })
     }
 
+    /// Large home-menu options: two columns by four rows.
+    pub fn home(layout: &Layout) -> [Rect; 8] {
+        let gap = (i32::from(layout.height) / 40).max(5);
+        let top = layout.title.h + gap;
+        let available = layout.footer.y - top - gap;
+        let height = (available - 3 * gap) / 4;
+        let width = (layout.title.w - gap) / 2;
+        std::array::from_fn(|index| {
+            let column = i32::try_from(index % 2).unwrap_or(0);
+            let row = i32::try_from(index / 2).unwrap_or(0);
+            Rect {
+                x: layout.title.x + column * (width + gap),
+                y: top + row * (height + gap),
+                w: width,
+                h: height,
+            }
+        })
+    }
+
     pub fn tor_controls(layout: &Layout) -> [Rect; 6] {
         let rows = Self::rows(layout, 4);
         std::array::from_fn(|index| {
@@ -95,5 +114,36 @@ impl PanelLayout {
                 },
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn home_options_fit_the_screen_without_overlapping_the_chrome() -> Result<(), String> {
+        for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+            let layout = Layout::home(width, height)?;
+            let home = PanelLayout::home(&layout);
+            for (index, bounds) in home.iter().enumerate() {
+                assert!(bounds.w > 0 && bounds.h > 0, "option {index}");
+                assert!(bounds.x >= 0 && bounds.x + bounds.w <= i32::from(width));
+                assert!(bounds.y >= layout.title.h);
+                assert!(bounds.y + bounds.h <= layout.footer.y);
+            }
+            // Options never overlap each other.
+            for (index, first) in home.iter().enumerate() {
+                for second in home.iter().skip(index + 1) {
+                    assert!(
+                        first.x + first.w <= second.x
+                            || second.x + second.w <= first.x
+                            || first.y + first.h <= second.y
+                            || second.y + second.h <= first.y,
+                        "options overlap at {width}x{height}"
+                    );
+                }
+            }
+        }
+        Ok(())
     }
 }

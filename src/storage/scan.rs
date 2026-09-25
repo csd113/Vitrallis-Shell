@@ -219,21 +219,24 @@ fn allocated(m: &Metadata) -> u64 {
 mod tests {
     use super::*;
     #[test]
-    fn work_depth_and_time_limits_are_explicit_partial_results() {
-        let scratch = crate::test_support::Scratch::new().unwrap();
-        let root = scratch.0.canonicalize().unwrap();
+    fn work_depth_and_time_limits_are_explicit_partial_results() -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
         let cancel = AtomicBool::new(false);
         let mut scanner = Scanner::new(&cancel);
         scanner.entries = MAX_ENTRIES;
         assert!(scanner.measure(&root, false).incomplete);
         scanner.entries = 0;
-        scanner.started = Instant::now().checked_sub(MAX_TIME).unwrap();
+        scanner.started = Instant::now()
+            .checked_sub(MAX_TIME)
+            .ok_or("the monotonic clock must be older than the scan time limit")?;
         assert!(scanner.measure(&root, false).incomplete);
         let mut path = root.clone();
         for _ in 0..MAX_DEPTH {
             path.push("nested");
-            std::fs::create_dir(&path).unwrap();
+            std::fs::create_dir(&path).map_err(|e| e.to_string())?;
         }
         assert!(Scanner::new(&cancel).measure(&root, false).incomplete);
+        Ok(())
     }
 }
