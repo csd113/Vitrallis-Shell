@@ -5,23 +5,26 @@ Hardware support, display dimensions/scaling, and input handling have separate
 responsibilities. A matching screen size does not establish device support.
 
 ```text
+LICENSE                       Project MIT terms (see THIRD_PARTY_NOTICES.md)
+THIRD_PARTY_NOTICES.md        Third-party terms, unresolved provenance and limits
+THIRD_PARTY_LICENSES.txt      Verbatim deduplicated dependency notice texts
 integrations/pocketchip/
   bootstrap.sh                Copy-and-paste prerequisite preparation
   bootstrap.py                Verified release download and checked first launch
-  install-session.py                  Canonical user installer
+  install-session.py          Canonical user installer
   uninstall.py                Offline receipt-based removal and recovery
-  vitrallis-session.py         Awesome/systemd session and recovery
-  platform-setup.py            Privileged GPU OPP/tracefs provisioning
-  media-setup.py               Fixed privileged FFmpeg installation action
-  run-session.sh            Launch the installed user session
+  vitrallis-session.py        Awesome/systemd session and recovery
+  platform-setup.py           Privileged GPU OPP/tracefs provisioning
+  media-setup.py              Fixed privileged FFmpeg installation action
+  run-session.sh              Launch the installed user session
 apps/{terminal,notepad,files}/  First-party Rust binary/library workspace packages
 crates/vitrallis-native/       Small SDL UI, document, browser, filesystem and IPC helpers
 assets/native/                Original SVG sources and embedded 128px PNG icons
 scripts/
-  package-shell-release.py    Four-binary bundle, ARMv7 session helpers and checksums
+  package-shell-release.py    Five-executable bundle (Shell, Terminal, Notepad, Files, Arti), ARMv7 session helpers and checksums
   package-source.py           Complete Cargo workspace source archive
   validate.sh                 Shared host validation
-  build-armhf.sh         Host cross-build tooling for the target ABI
+  build-armhf.sh              Host cross-build tooling for the target ABI
 src/
   native.rs                   Built-in registry integration and supervised open requests
   config.rs                   CLI selection and filesystem conventions
@@ -30,8 +33,7 @@ src/
     executable.rs             Executable lookup in cwd/PATH order
     pockethome.rs              Stock PocketHome read-only format integration
   preferences.rs              Normalized display preferences and clock formatting
-  renderer.rs                 SDL Canvas/Texture drawing and pre-present screenshot readback
-  renderer/backend.rs         Capability selection, fallback and typed startup diagnostics
+  renderer.rs                 SDL Canvas/Texture drawing, pre-present screenshot readback and the vitrallis_native::renderer backend re-export; capability selection, fallback and typed startup diagnostics live in crates/vitrallis-native/src/renderer.rs
   launcher.rs                 Application selection and lifecycle state
   process.rs                  Child launching, tracking, and cleanup
   layout.rs                   Reusable dimensions and proportional layout
@@ -44,7 +46,7 @@ src/
 assets/system/                Shared embedded artwork and asset guidance
 docs/devices/
   pocketchip.md               Installation, selection, and recovery
-  pocketchip/                 Settings, Store, and device validation notes
+  pocketchip/                 Settings, App Center notes, and device validation records
 tests/                        Desktop, installer, session, and package tests
 ```
 

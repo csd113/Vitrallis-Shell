@@ -418,7 +418,6 @@ dependencies = [
 name = "vitrallis-shell"
 version = "0.1.0-beta4.1"
 dependencies = [
- "font8x8",
  "png",
  "sdl2",
  "semver",

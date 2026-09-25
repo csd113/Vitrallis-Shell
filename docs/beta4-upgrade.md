@@ -1,4 +1,10 @@
-# beta4 release and upgrade paths
+# beta4 release and upgrade paths (published 2026-09; historical)
+
+This record describes the published beta3.9/beta4 artifacts and the bounded
+four-executable bridge the current source still keeps for those two releases.
+New installations use the current complete five-executable v2 bundle; this is
+history, not a migration contract for later builds. The bridge is version-gated
+and scheduled for removal once those builds age out.
 
 ## Why beta3.9 exists
 

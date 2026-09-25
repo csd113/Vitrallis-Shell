@@ -13,7 +13,7 @@ commits, releases or physical-device installations were changed by this work.
 | `cargo test --workspace --all-features` | Passed; opt-in hardware/performance checks remain explicitly ignored by the normal suite |
 | `python3 -m unittest discover -s tests -p 'test_*.py'` | Passed, 102 tests; optional renderer cases separately exercised after building binaries |
 | `sh scripts/validate.sh` | Passed: formatting, locked checks, Clippy, Rust/Python tests, release build, native renderer checks, smoke tests, shell syntax, Python compilation, documentation links and diff whitespace |
-| Docker `tests/simulator/run.sh` | Passed: Linux Rust/Python suites, real Awesome session integration, App Manager lifecycle and keyboard/mouse/touch shortcut flows |
+| Docker `tests/simulator/run.sh` | Passed: Linux Rust/Python suites, real Awesome session integration, App Center lifecycle and keyboard/mouse/touch shortcut flows |
 | `cargo test --test desktop accelerated_readback_and_presentation -- --ignored --nocapture` | Passed: process-based host software/hardware/auto readback and presentation |
 | `VITRALLIS_RENDERER_BIN_DIR="$PWD/target/release" VITRALLIS_TEST_ACCELERATED=1 python3 -m unittest discover -s tests -p 'test_native_renderer.py'` | Passed: native app GPU/software equivalence at 480×272, 800×480 and 1280×720 |
 | `cargo test --lib rendering_workloads -- --ignored --nocapture` | Passed: all steady rendering workloads recorded zero image decodes and zero texture uploads |
@@ -21,9 +21,9 @@ commits, releases or physical-device installations were changed by this work.
 | Contrast and visual references | Passed: body/secondary/disabled/focus text contrast; 227 reviewed frame hashes on both macOS and Linux |
 
 Native 480×272 images were visually inspected for text, clipping, selected and
-unavailable controls, storage errors, installation/update controls, App Manager
+unavailable controls, storage errors, installation/update controls, App Center
 lists/details, the home running badge and the startup stages. The render fixture
-also covers 320×200, 800×480 and 1280×720. Existing Settings and App Manager
+also covers 320×200, 800×480 and 1280×720. Existing Settings and App Center
 keyboard regression tests ran unchanged. The interactive simulator verified
 install/update/remove, failure preservation, safe confirmation defaults,
 selection/filter preservation, native launch/Home/resume and keyboard/touch flows.
@@ -77,7 +77,7 @@ Owner feedback during the preview resulted in two focused corrections:
   scale throughout the cave reveal. The cave background has no second crystal;
   it fades in underneath the existing sprite. Every frame still needs at most
   two cached texture copies. The supplied lettering remains in the background.
-- The home Actions button now shares the rightmost tile's horizontal bounds.
+- The home Manage [F10] button now shares the rightmost tile's horizontal bounds.
   The added separator strokes above and below the grid were removed. Existing
   keyboard and pointer activation continue to use the same layout bounds.
 

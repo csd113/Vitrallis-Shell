@@ -7,3 +7,5 @@ silhouettes are intended for the dark system panels at small sizes.
 The renderer loads each icon once and uses linear filtering. These files require
 no runtime downloads. Preserve alpha, dimensions and legibility when replacing
 artwork; check the actual 480×272 and 800×480 screens with visible keyboard focus.
+
+See [licensing and unresolved provenance](../../THIRD_PARTY_NOTICES.md) before redistribution.

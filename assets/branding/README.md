@@ -46,3 +46,5 @@ reference. The runtime does not call that tool. The prompts requested:
 
 The final packing uses nearest-neighbor sampling. Small exports apply a hard
 alpha cutoff; no runtime resampling or glow is used at tiny sizes.
+
+See [licensing and unresolved provenance](../../THIRD_PARTY_NOTICES.md) before redistribution.

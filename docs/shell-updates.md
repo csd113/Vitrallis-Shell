@@ -1,13 +1,15 @@
 # Vitrallis Shell self-updates
 
-Open **System Settings → More → Check for Updates**. The Updates page displays
+Open **System Settings → Software Updates → Check for Updates**. The Updates page displays
 `CARGO_PKG_VERSION` from the running build. Select **Check for Updates** to contact
 only the official `csd113/Vitrallis-Shell` GitHub releases API. Beta and other
 prerelease builds receive newer published prereleases as well as stable releases.
 Stable builds receive stable releases. Drafts are always excluded. The highest
 eligible semantic version wins regardless of publication order: beta.10 is newer
 than beta.2, and a stable 0.1.0 is newer than 0.1.0-beta.10. Equal versions,
-downgrades, and changes only to build metadata are not installed.
+downgrades, and changes only to build metadata are not installed, except for the
+bounded beta3.9/beta4 four-executable completion bridge described under
+[Bundle format](#bundle-format).
 No eligible published release, inaccessible/private releases, malformed metadata,
 missing builds, and network errors produce a useful failure instead of claiming
 that the shell is current. No GitHub token is read or sent.
@@ -25,7 +27,7 @@ installation run on a worker thread; leaving settings does not cancel an active
 installation. The original shell keeps running until **Relaunch Shell** is selected
 by keyboard, mouse, or touch. Relaunch executes the verified installed replacement
 at its saved installation path, preserving the process ID, launch arguments, and
-session environment so the the target device supervisor remains attached. The installed
+session environment so the target device supervisor remains attached. The installed
 SHA-256 and filesystem safety checks run again before execution. Failed attempts
 show a diagnostic and retain the relaunch button for retry. Close running apps and
 wait for App Center/system operations to finish before relaunching; the action
@@ -66,6 +68,9 @@ An install requires a managed layout owned by the current user:
   .vitrallis-update/lock
 ```
 
+`previous` exists only after an update or repeat install; a fresh installation has
+no rollback generation and no Restore control.
+
 The running executable must resolve physically inside the active generation.
 All five files must be regular, single-link executables with matching ownership
 and safe modes; installation directories and pointers are validated. Read-only
@@ -88,10 +93,18 @@ Running apps keep their old physical generation and locate companions there;
 relaunch starts the verified new generation. Previous generations are retained,
 not pruned while processes may still use them.
 
-For manual rollback, stop Vitrallis and its native apps, verify all five binaries
-under `previous`, and replace `current` atomically with that relative generation
-link. Do not copy individual binaries between generations. Retain the installation
-backups and markers until any interrupted helper/config transaction is repaired.
+With a retained `previous` generation, the normal rollback path is the Updates
+page's **Restore** control (confirmation **Confirm Restore**): it validates the
+retained build, requires running apps and App Center operations to be stopped,
+and swaps `current` and `previous` with atomic per-pointer renames under the same
+update lock. Apps and user data are kept, and the restored build takes effect
+after **Relaunch Shell**. An interruption between the two renames leaves
+`previous == current` with the intended build active. The manual procedure
+remains the offline fallback: stop Vitrallis and its native apps, verify all five
+binaries under `previous`, and replace `current` atomically with that relative
+generation link. Do not copy individual binaries between generations. Retain the
+installation backups and markers until any interrupted helper/config transaction
+is repaired.
 Use the installed [offline uninstaller](devices/pocketchip.md#offline-removal-and-recovery)
 for receipt-based removal. It preserves apps, saves, backups and later edits,
 shares the update lock, and can recover a pending helper/removal transaction.
@@ -154,7 +167,10 @@ are never inferred from device names.
 Metadata fixtures and mock transports cover release/version/error policy without
 live GitHub. Filesystem tests cover staging, failed installation, recovery,
 permissions, backup retention, concurrency and unchanged application sentinels.
-Settings tests cover explicit confirmation, cancellation and navigation.
+Restore tests cover a missing, identical, incomplete, unsafe or modified retained
+generation, a changed active build, lock contention, the atomic swap, repeated
+restores and preservation of both generations. Settings tests cover explicit
+confirmation, cancellation and navigation.
 
 Protocol references: [GitHub releases API](https://docs.github.com/en/rest/releases/releases)
 and [curl options](https://curl.se/docs/manpage.html).
@@ -166,12 +182,15 @@ format: the 16 bytes `VITRALLIS-BUNDLE`, then five records in the order shell,
 Terminal, Notepad, Files, Arti. Each record contains an unsigned 64-bit little-endian
 size, 32 raw SHA-256 bytes, then that executable's bytes. Each executable is
 64 bytes–64 MiB; truncation, bad hashes, wrong target and trailing bytes fail.
-The maximum total is 256 MiB plus 176 header bytes. Names never come from input.
-There are no legacy raw-executable readers or migration paths. Install the current
-complete bundle with the current installer when replacing an obsolete pre-release
-layout; equal versions do not become self-updates.
+The maximum total is 320 MiB plus 216 header bytes. Names never come from input.
+Every incoming update requires all five files; there is no raw-executable reader
+or general migration path. A version-gated bridge lets only the two published
+prereleases 0.1.0-beta3.9 and 0.1.0-beta4 complete a four-executable update, and
+it is scheduled for removal once those builds age out. Install the current complete
+bundle with the current installer when replacing an obsolete pre-release layout;
+equal versions do not become self-updates.
 
 PocketCHIP GPU provisioning is performed by the full session installer. Binary-only
 self-update does not execute privileged platform changes. On a device not yet
-provisioned, Settings → Updates directs the owner to rerun the matching installer;
+provisioned, Settings → Software Updates directs the owner to rerun the matching installer;
 a pending device-tree reboot remains visible even after a shell relaunch.

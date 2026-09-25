@@ -1,9 +1,9 @@
 # Vitrallis visual design
 
 Everyday screens retain their existing icons, controls, routes, keyboard actions,
-and layout, with Actions aligned to the rightmost tile and no grid separator
+and layout, with **Manage [F10]** aligned to the rightmost tile and no grid separator
 lines. The crystal logo and environment are reserved for startup. No crystal
-marks are added to the home header, Settings, App Manager, or bundled app icons.
+marks are added to the home header, Settings, App Center, or bundled app icons.
 
 ## Shared interface theme
 
@@ -20,7 +20,7 @@ which keeps inactive track, active track and handle distinguishable. Neither
 primitive animates and neither allocates per frame.
 
 The Shell's existing renderer delegates to those primitives. Settings, wireless,
-storage, updates, App Manager, desktop dialogs and bundled native application
+storage, updates, App Center, desktop dialogs and bundled native application
 controls use the same palette. Body text, secondary labels, disabled text and
 focus colors are checked for a minimum 4.5:1 contrast ratio against the interface
 surfaces.
@@ -126,7 +126,7 @@ packaged; building or starting the Shell needs no image tool, Python dependency,
 network access or external assets.
 
 The existing multi-size renderer fixture now captures startup stages and its
-fallback alongside the Settings/App Manager scenes. It checks 320×200, 480×272,
+fallback alongside the Settings/App Center scenes. It checks 320×200, 480×272,
 800×480 and 1280×720. Run with a new empty output directory:
 
 ```sh

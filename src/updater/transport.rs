@@ -77,7 +77,7 @@ impl Transport for Curl {
 }
 
 fn copy_bounded(input: impl Read, output: &mut dyn Write, limit: u64) -> Result<(), String> {
-    let mut input = input.take(limit + 1);
+    let mut input = input.take(limit.saturating_add(1));
     // Do not write even the extra sentinel byte into staging.
     let copied = io::copy(&mut input.by_ref().take(limit), output)
         .map_err(|e| format!("Download read/write failed: {e}"))?;
@@ -97,5 +97,11 @@ mod tests {
         assert!(copy_bounded(&b"12345"[..], &mut output, 4).is_err());
         assert_eq!(output, b"1234");
         assert!(copy_bounded(&b"12"[..], &mut &mut [0_u8; 1][..], 4).is_err());
+    }
+    #[test]
+    fn maximum_limit_does_not_overflow_the_extra_byte_probe() {
+        let mut output = Vec::new();
+        assert!(copy_bounded(&b"abc"[..], &mut output, u64::MAX).is_ok());
+        assert_eq!(output, b"abc");
     }
 }

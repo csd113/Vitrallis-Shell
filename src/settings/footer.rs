@@ -2,7 +2,7 @@
 //!
 //! Content entries always use indices below [`CONTENT_LIMIT`]; footer controls
 //! use the constants below it so a page can never confuse a row with a button.
-use super::{Page, Settings};
+use super::{Page, Settings, UpdateConfirmation};
 use crate::{input::Action, navigation::Direction};
 
 /// Highest content index any Settings page uses (Tor has six controls).
@@ -11,6 +11,7 @@ pub(super) const BACK: usize = 8;
 pub(super) const PREVIOUS: usize = 9;
 pub(super) const NEXT: usize = 10;
 pub(super) const REFRESH: usize = 11;
+pub(super) const RESTORE: usize = 12;
 
 impl Settings {
     pub const fn footer_controls(&self) -> [Option<(usize, &'static str)>; 3] {
@@ -35,6 +36,21 @@ impl Settings {
                 ],
                 _ => [Some((BACK, "< Back")), None, None],
             },
+            // The restore control is offered only while a validated previous
+            // generation exists and no update action is already pending.
+            Page::Updates
+                if self.updater.restore_available
+                    && self.update_confirmation.is_none()
+                    && matches!(
+                        self.updater.state,
+                        crate::updater::State::Idle
+                            | crate::updater::State::Current
+                            | crate::updater::State::Available(_)
+                            | crate::updater::State::Failed(_)
+                    ) =>
+            {
+                [Some((BACK, "< Back")), Some((RESTORE, "Restore")), None]
+            }
             _ => [Some((BACK, "< Back")), None, None],
         }
     }
@@ -85,6 +101,12 @@ impl Settings {
                 }
                 Page::Storage if index == PREVIOUS => {
                     self.storage_input(Action::Page(false));
+                }
+                Page::Updates if index == RESTORE => {
+                    self.update_confirmation =
+                        Some((UpdateConfirmation::Restore, std::time::Instant::now()));
+                    self.selected = 0; // Cancel is always the default.
+                    self.clear_pointer();
                 }
                 _ => self.back(),
             },

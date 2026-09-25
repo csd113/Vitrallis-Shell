@@ -47,8 +47,13 @@ Time-zone changes use the existing device authorization policy and system zone d
 
 The normal worker continues polling status independently of controls. Timestamped readback prevents an older snapshot from reverting newly applied brightness, volume, timeout, time-zone or radio fields. Bounded, noninteractive helper commands retain the two-second deadline. The deliberate interactive password/calibration applications use the existing supervised app lifecycle instead.
 
-No PocketHome binary, Awesome configuration, X startup file, calibration implementation, default boot setting, system package, or authorization policy is changed by the Vitrallis installer.
+Opening Settings changes no PocketHome binary, Awesome configuration, X startup
+file, calibration implementation, default boot setting, system package or
+authorization policy. Separately, the bootstrap installs missing Debian
+prerequisites, and the platform helpers install the documented GPU trace unit and
+the account-specific Carousel media sudoers rule; see [installation and
+recovery](../pocketchip.md).
 
 ## Validation scope
 
-The [historical settings qualification](history/device-validation.md#settings-qualification--september-10-2026) records the beta.1 device observations. Current native utilities and installation/removal changes require fresh physical validation.
+The [historical settings qualification](history/device-validation.md#settings-qualification--september-10-2026) records the beta.1 device observations. Native utilities and installer/removal were physically exercised on Debian 13 at 480×272 on 2026-09-12 ([USB record](validation-usb-session.md)); this checkout's later changes have host and fixture evidence only.

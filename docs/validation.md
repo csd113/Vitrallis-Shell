@@ -67,7 +67,7 @@ Python tests isolate filesystem writes in temporary HOME directories, including
 paths with spaces. They mock release downloads, runtime preflight and session
 commands where host execution cannot represent the ARM device. They exercise:
 
-- Complete bundle install, repeat install, removal and reinstall; all four binaries.
+- Complete bundle install, repeat install, removal and reinstall; all five bundled executables.
 - Failed/truncated/corrupt downloads, absent or duplicate helpers/checksums,
   wrong ABI and version disagreement before publication.
 - Edited menu fields, shortcuts, helpers, generation content and retained data.

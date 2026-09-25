@@ -508,10 +508,12 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
             return Err(format!("size/SHA-256 mismatch: {}", row.path));
         }
     }
-    for name in ["app.toml", "icon.png", "README.md"] {
-        if !files.contains_key(name) {
-            return Err(format!("missing {name}"));
-        }
+    // Bind the required files before any parsing so a package missing one
+    // reports the exact file instead of reaching a later read.
+    let manifest_bytes = files.get("app.toml").ok_or("missing app.toml")?;
+    let icon_bytes = files.get("icon.png").ok_or("missing icon.png")?;
+    if !files.contains_key("README.md") {
+        return Err("missing README.md".into());
     }
     if p.runtime == RuntimeKind::Python {
         for name in ["main.py", "requirements.txt"] {
@@ -535,7 +537,7 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
     if !files.keys().any(|p| p.starts_with("assets/")) {
         return Err("missing populated assets/".into());
     }
-    let v = manifest(&files["app.toml"])?;
+    let v = manifest(manifest_bytes)?;
     if v["id"] != p.id
         || v["name"] != p.name
         || v["version"] != p.version.to_string()
@@ -545,7 +547,7 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
     {
         return Err("catalog/manifest disagreement".into());
     }
-    validate_icon(&files["icon.png"])
+    validate_icon(icon_bytes)
 }
 pub(super) fn validate_icon(bytes: &[u8]) -> Result<(), String> {
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
@@ -565,4 +567,54 @@ pub(super) fn validate_icon(bytes: &[u8]) -> Result<(), String> {
     reader.finish().map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn package() -> Result<Package, String> {
+        Ok(Package {
+            runtime: RuntimeKind::Python,
+            origin: Repository::parse("owner/catalog")?,
+            id: "org.example.app".into(),
+            name: "Example".into(),
+            description: "Example".into(),
+            changelog: None,
+            icon: None,
+            version: Version::zero(),
+            entry: "main.py".into(),
+            permissions: Value::Null,
+            installable: true,
+            notes: String::new(),
+            repository: Repository::parse("owner/catalog")?,
+            commit: "a".repeat(40),
+            directory: "apps/example-app".into(),
+            files: Vec::new(),
+        })
+    }
+
+    #[test]
+    fn missing_required_bundle_files_report_their_exact_names() -> Result<(), String> {
+        // An empty inventory reports the first required file.
+        assert_eq!(
+            validate_bundle(&package()?, &Files::new()),
+            Err("missing app.toml".into())
+        );
+        // A matching inventory without an icon reports the icon itself.
+        let manifest = b"manifest_version = 1".to_vec();
+        let mut package = package()?;
+        package.files = vec![FileRow {
+            path: "app.toml".into(),
+            size: manifest.len(),
+            sha256: crate::app_center::storage::sha(&manifest),
+        }];
+        let mut files = Files::new();
+        files.insert("app.toml".into(), manifest);
+        assert_eq!(
+            validate_bundle(&package, &files),
+            Err("missing icon.png".into())
+        );
+        Ok(())
+    }
 }

@@ -29,6 +29,14 @@ pub enum Request {
     CheckUpdates,
     InstallUpdate,
     RelaunchUpdate,
+    RestorePrevious,
+}
+
+/// Which destructive update action a confirmation dialog is guarding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateConfirmation {
+    Install,
+    Restore,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -148,7 +156,7 @@ pub struct Settings {
     pub storage_parent: Page,
     pub power_transition: Option<PowerTransition>,
     pub updater: crate::updater::Updater,
-    pub update_confirmation: Option<Instant>,
+    pub update_confirmation: Option<(UpdateConfirmation, Instant)>,
     pub timezone: TimezoneState,
     pub page: Page,
     pub zone_start: usize,
@@ -201,7 +209,7 @@ impl Settings {
     pub fn expire(&mut self) -> bool {
         if self
             .update_confirmation
-            .is_some_and(|time| time.elapsed() >= Duration::from_secs(15))
+            .is_some_and(|(_, time)| time.elapsed() >= Duration::from_secs(15))
         {
             self.update_confirmation = None;
             self.selected = 0;
@@ -519,6 +527,14 @@ impl Settings {
             ),
             State::Installing => "Installing update...".into(),
             State::Installed { version, .. } => format!("Version {version} installed"),
+            State::Restoring => "Restoring previous build...".into(),
+            State::Restored {
+                version: Some(version),
+                ..
+            } => {
+                format!("Restored version {version}")
+            }
+            State::Restored { version: None, .. } => "Previous build restored".into(),
             State::Failed(_) => "Last update failed - open for details".into(),
         }
     }

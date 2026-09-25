@@ -966,20 +966,23 @@ fn timeout_label(timeout: Option<u16>) -> String {
 }
 
 fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
-    use crate::updater::State;
+    use crate::{settings::UpdateConfirmation, updater::State};
     let geometry = PanelLayout::new(layout);
-    let confirming = settings.update_confirmation.is_some();
-    let detail = if confirming {
-        match &settings.updater.state {
-            State::Available(release) => format!(
-                "Install Vitrallis Shell {}?\nDownload size: {} MB\nOnly the shell executable will be replaced.\nRelaunch after installation.",
-                release.version,
-                release.download_size_mb()
-            ),
-            _ => "Update no longer available. Cancel and check again.".into(),
+    let confirming = settings
+        .update_confirmation
+        .as_ref()
+        .map(|(confirmation, _)| *confirmation);
+    let detail = match (confirming, &settings.updater.state) {
+        (Some(UpdateConfirmation::Install), State::Available(release)) => format!(
+            "Install Vitrallis Shell {}?\nDownload size: {} MB\nShell, Terminal, Notepad, Files and Arti are replaced together.\nRelaunch after installation.",
+            release.version,
+            release.download_size_mb()
+        ),
+        (Some(UpdateConfirmation::Install), _) => {
+            "Update no longer available. Cancel and check again.".into()
         }
-    } else {
-        settings.updater.detail()
+        (Some(UpdateConfirmation::Restore), _) => "Restore the retained previous build?\nThe active build is kept as the new previous build.\nApps and user data are not changed.\nRelaunch Shell to start the restored build.".into(),
+        (None, _) => settings.updater.detail(),
     };
     let message = format!("Running Vitrallis Shell {}\n{detail}", display_version());
     let top = layout.title.h + 8;
@@ -1026,28 +1029,34 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
             false,
         )?;
     }
-    let action = if confirming {
-        "Confirm Install"
-    } else {
-        match settings.updater.state {
+    let action = match confirming {
+        Some(UpdateConfirmation::Install) => "Confirm Install",
+        Some(UpdateConfirmation::Restore) => "Confirm Restore",
+        None => match settings.updater.state {
             State::Available(_) => "Install Update",
-            State::Checking | State::Downloading { .. } | State::Installing => "Please wait...",
-            State::Installed { .. } => "Relaunch Shell",
+            State::Checking | State::Downloading { .. } | State::Installing | State::Restoring => {
+                "Please wait..."
+            }
+            State::Installed { .. } | State::Restored { .. } => "Relaunch Shell",
             _ => "Check for Updates",
-        }
+        },
     };
     for (index, bounds) in geometry.confirmation.iter().copied().enumerate() {
         card(canvas, bounds, settings.selected == index)?;
         text(
             canvas,
             if index == 0 {
-                if confirming { "Cancel" } else { "Back" }
+                if confirming.is_some() {
+                    "Cancel"
+                } else {
+                    "Back"
+                }
             } else {
                 action
             },
             bounds,
             layout.text_scale,
-            if index == 1 && confirming {
+            if index == 1 && confirming.is_some() {
                 AMBER
             } else {
                 ACCENT

@@ -9,3 +9,5 @@ cave and original lettering fade in behind it.
 See [branding preparation](../branding/README.md) and
 [playback and memory limits](../../docs/visual-design.md). Artwork never becomes
 the default background of normal application or system screens.
+
+See [licensing and unresolved provenance](../../THIRD_PARTY_NOTICES.md) before redistribution.

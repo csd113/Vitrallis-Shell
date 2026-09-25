@@ -27,6 +27,9 @@ pub struct Screen<'a> {
     font: vitrallis_native::font::Atlas<'a>,
     creator: &'a TextureCreator<WindowContext>,
     center_icons: Vec<(Box<[u8]>, Texture<'a>)>,
+    /// Single-entry cache for the shortcut editor's icon preview. `None` keeps
+    /// a failed decode cached for the same bytes.
+    preview: Option<(Vec<u8>, Option<Texture<'a>>)>,
 }
 impl<'a> Screen<'a> {
     pub fn new(
@@ -40,6 +43,7 @@ impl<'a> Screen<'a> {
             font: vitrallis_native::font::Atlas::new(creator)?,
             creator,
             center_icons: Vec::new(),
+            preview: None,
         })
     }
     pub fn present(&mut self) {
@@ -48,6 +52,7 @@ impl<'a> Screen<'a> {
     pub fn reset(&mut self) -> Result<(), String> {
         self.font = vitrallis_native::font::Atlas::new(self.creator)?;
         self.center_icons.clear();
+        self.preview = None;
         Ok(())
     }
     fn center_icon(&mut self, pixels: &[u8], bounds: Rect) -> Result<(), String> {
@@ -81,6 +86,35 @@ impl<'a> Screen<'a> {
         };
         self.canvas
             .copy(&self.center_icons[index].1, None, rect(bounds)?)
+    }
+    /// Draws the shortcut editor's chosen icon, decoding and uploading it only
+    /// when the encoded bytes change. A PNG/BMP decode plus texture upload on
+    /// every rendered frame costs tens of milliseconds on `PocketCHIP`-class
+    /// hardware; the editor keeps the same bytes while the page is open, so a
+    /// single cached entry is enough. Returns `Ok(false)` when the bytes cannot
+    /// be decoded, so the caller can draw its placeholder instead; the failed
+    /// decode is cached too, and is not retried for unchanged bytes.
+    fn icon_preview(&mut self, bytes: &[u8], bounds: Rect) -> Result<bool, String> {
+        let changed = self
+            .preview
+            .as_ref()
+            .is_none_or(|(key, _)| key.as_slice() != bytes);
+        if changed {
+            let texture = match decode_icon(bytes) {
+                Ok(surface) => Some(
+                    self.creator
+                        .create_texture_from_surface(&surface)
+                        .map_err(|e| e.to_string())?,
+                ),
+                Err(_) => None,
+            };
+            self.preview = Some((bytes.to_vec(), texture));
+        }
+        let Some((_, Some(texture))) = &self.preview else {
+            return Ok(false);
+        };
+        self.canvas.copy(texture, None, rect(bounds)?)?;
+        Ok(true)
     }
 }
 impl std::ops::Deref for Screen<'_> {
@@ -1025,6 +1059,65 @@ mod tests {
                 assert!(10 * scale + 2 >= advance(scale));
             }
         }
+    }
+
+    /// The shortcut editor preview must decode and upload once per icon, not
+    /// once per rendered frame, and a renderer reset must drop the cache.
+    #[test]
+    fn shortcut_preview_decodes_once_per_icon_and_clears_on_reset() -> Result<(), String> {
+        let _guard = crate::test_support::sdl_lock();
+        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        let sdl = sdl2::init()?;
+        let video = sdl.video()?;
+        let window = video
+            .window("preview cache", 320, 200)
+            .hidden()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let canvas = window
+            .into_canvas()
+            .software()
+            .build()
+            .map_err(|e| e.to_string())?;
+        let creator = canvas.texture_creator();
+        let mut canvas = Screen::new(canvas, &creator)?;
+        let icon = include_bytes!("../assets/system/apps.png").as_slice();
+        let other = include_bytes!("../assets/system/wifi.png").as_slice();
+        let bounds = Rect {
+            x: 0,
+            y: 0,
+            w: 28,
+            h: 28,
+        };
+        performance::reset();
+        assert!(canvas.icon_preview(icon, bounds)?);
+        assert!(canvas.icon_preview(icon, bounds)?);
+        assert_eq!(
+            performance::snapshot().decodes,
+            1,
+            "an unchanged icon must not decode again"
+        );
+        assert!(canvas.icon_preview(other, bounds)?);
+        assert_eq!(performance::snapshot().decodes, 2);
+        assert!(
+            !canvas.icon_preview(b"not an icon", bounds)?,
+            "invalid bytes must keep the placeholder"
+        );
+        assert_eq!(performance::snapshot().decodes, 3);
+        assert!(!canvas.icon_preview(b"not an icon", bounds)?);
+        assert_eq!(
+            performance::snapshot().decodes,
+            3,
+            "an unchanged failed decode must not be retried"
+        );
+        canvas.reset()?;
+        assert!(canvas.icon_preview(icon, bounds)?);
+        assert_eq!(
+            performance::snapshot().decodes,
+            4,
+            "a reset must clear the cached preview"
+        );
+        Ok(())
     }
 
     /// Reads the canvas and asserts that everything that is not the background

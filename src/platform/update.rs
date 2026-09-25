@@ -4,6 +4,21 @@ mod unix;
 #[cfg(unix)]
 pub use unix::Installation;
 
+/// Whether the running installation retains a structurally valid previous
+/// generation that differs from the active one. The restore action is offered
+/// only when this is true; the restore itself revalidates under the update lock.
+#[must_use]
+pub fn restore_available() -> bool {
+    #[cfg(unix)]
+    {
+        unix::Installation::previous_available()
+    }
+    #[cfg(not(unix))]
+    {
+        false
+    }
+}
+
 /// The validated installation path survives Linux's `/proc/self/exe` deletion suffix.
 #[derive(Debug)]
 pub struct Relaunch {

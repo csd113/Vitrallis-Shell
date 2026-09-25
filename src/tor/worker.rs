@@ -103,7 +103,10 @@ impl Worker {
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }
-            let _ = child.wait();
+            // A failed kill must not turn into an unbounded `Child::wait`.
+            if !reap(&mut child) {
+                eprintln!("level=error event=tor_child_stuck message=reaping timed out");
+            }
         }
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
@@ -222,6 +225,20 @@ impl Worker {
         if let Ok(mut value) = output.lock() {
             value.clone_from(&self.snapshot);
         }
+    }
+}
+/// Reap an already stopped or killed child without risking an unbounded
+/// `Child::wait`. Returns false when the child is still alive after the grace period.
+fn reap(child: &mut Child) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(1);
+    loop {
+        if child.try_wait().is_ok_and(|status| status.is_some()) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(25));
     }
 }
 pub(super) fn run(
@@ -394,6 +411,20 @@ mod tests {
         worker.tick(&tx);
         assert!(worker.retry.is_none());
         assert!(worker.child.is_none());
+        Ok(())
+    }
+    #[test]
+    fn reaping_is_bounded_when_a_kill_does_not_take_effect() -> Result<(), String> {
+        let mut child = Command::new("/bin/sleep")
+            .arg("30")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        // A live child cannot be reaped; the helper must time out instead of blocking.
+        assert!(!reap(&mut child));
+        child.kill().map_err(|e| e.to_string())?;
+        assert!(reap(&mut child));
         Ok(())
     }
 }

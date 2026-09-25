@@ -19,7 +19,7 @@ shared extents can make filesystem totals differ from file allocation estimates.
 ## Ownership and classification
 
 Launcher discovery and accounting use the same validated installed-manifest
-inventory in App Manager. Python and Rust manifests use the same accounting
+inventory in App Center. Python and Rust manifests use the same accounting
 path, including Rust packages for another architecture that cannot run on the
 current host. No application code is executed to obtain storage information.
 
@@ -49,7 +49,7 @@ counted once. The first installed variant in stable ID order receives the shared
 allocation; both details pages identify it as shared.
 
 An app without a valid receipt still appears, but its classification is marked
-incomplete. Missing manifests are treated like App Manager discovery: leftover
+incomplete. Missing manifests are treated like App Center discovery: leftover
 files are retained data, not an installed application. Invalid manifests produce
 an explicit incomplete-list warning. Missing optional data directories mean zero
 bytes; failed reads and missing required roots mean an unavailable or partial
@@ -78,8 +78,8 @@ locations. Rendering and input only read snapshots and a nonblocking channel.
 There are no storage timers, animations, deletion controls or notifications.
 
 Snapshots persist across Settings visits. Opening Storage after two minutes, a
-manual Refresh, or an App Manager installation/update/removal attempt requests a
-new scan. A changed App Manager generation cancels and rejects any older in-flight
+manual Refresh, or an App Center installation/update/removal attempt requests a
+new scan. A changed App Center generation cancels and rejects any older in-flight
 result. A failed scan shows an error and retains the previous sizes with an
 explicit warning; it does not continuously retry. Changes made by external tools
 are picked up by Refresh or by reopening after the cache expires.
@@ -131,8 +131,8 @@ under a disabled (default) timeout are never touched, and explicit termination
 with Escape on the highlighted app still stops it immediately.
 
 The Wi-Fi entry opens **Wireless Network Controls**, containing the radio switches,
-connection manager and Tor controls. Actions offers **Move earlier / Move later**
-for apps and folders. Ordering is stored in the existing folder state by stable
+connection manager and Tor controls. The **Manage [F10]** menu offers
+**Move earlier / Move later** for apps and folders. Ordering is stored in the existing folder state by stable
 ID; absent IDs remain harmless and newly discovered IDs follow saved items.
 
 Late windows stay attached to the existing process owner. After returning home

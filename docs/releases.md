@@ -16,14 +16,25 @@ failure summary always visible; Files, the file pickers and Notepad keep the end
 of long paths visible; the Timezone page's `current` marker scales with the
 display; Notepad's position readout can no longer collide with its status text;
 Files rows center their label in the selection highlight; and the desktop
-Actions/Shortcuts screens and the boot fallback text now scale with the display
-like every other surface.
+Manage [F10]/Shortcuts screens and the boot fallback text now scale with the
+display like every other surface.
 
 The audit added deterministic geometry and layout regression tests and
 re-baselined the renderer reference images, expanded with folder, error-dialog and
 long-content samples at the checked sizes. It also removed two per-frame
 text-allocation paths from the App Center and the shortcut editor while making
 these corrections.
+
+This pass also adds **Restore Previous Build**: when a retained `previous`
+generation exists and validates in full (whole-bundle digest, file safety), the
+Software Updates page offers **Restore**, which asks for confirmation, requires
+owned apps and App Center operations to be stopped, swaps `current` and
+`previous` with atomic per-pointer renames under the existing update lock, keeps
+apps and user data, and takes effect after Relaunch Shell. Failure paths were
+hardened too: bounded Tor child reaping and IPC inbox shutdown, UTF-8 offset
+validation in the shared document model, safe handling of stale App Center
+indices, and bounded window-discovery/focus retries that no longer spawn
+window-manager queries indefinitely on a slow device.
 
 ## 0.1.0-beta4.1
 
@@ -136,7 +147,7 @@ regressions, scenario results and software/device boundaries.
 The [GitHub release](https://github.com/csd113/Vitrallis-Shell/releases/tag/v0.1.0-beta2.6)
 is a beta prerelease.
 
-## Current source asset inventory
+## beta4 source asset inventory (published 2026-09; historical)
 
 The complete beta4 bundle contains Shell, Terminal, Notepad, Files and Arti:
 
@@ -154,7 +165,8 @@ The matching beta4 bootstrap uses the complete v2 bundle directly.
 
 Native OTA updates switch the binary generation and preserve installed session
 helpers and user configuration. The narrowly scoped four-file transition exists
-for the explicitly supported beta3.9/beta4 upgrade; older standalone layouts
+only for the published beta3.9/beta4 upgrade and is scheduled for removal once
+those builds age out; older standalone layouts
 remain outside the managed updater contract. See [upgrade details](beta4-upgrade.md).
 
 ## Release gates

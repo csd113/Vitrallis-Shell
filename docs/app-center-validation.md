@@ -202,14 +202,15 @@ Carousel's test environment records Pillow 12.3.0 and packaging 26.3 in
 ## Remaining limits
 
 No known failing software checks remain in this pass. Docker validates Linux
-software paths, not physical the target device touch, ARMv7 responsiveness, battery/display
+software paths, not physical target-device touch, ARMv7 responsiveness, battery/display
 hardware, hardware media decoding or full Carousel media/server functionality.
 Published apps were opened and their actual script processes verified; this is not
 exhaustive testing of those apps. No ARM/device performance result is claimed.
 
-App Center still requires a working Python/Tk runtime and declared dependencies;
-it never installs those dependencies itself. Downloads may fail while cached entries
-remain browsable. Acquisition cancellation can wait for the current bounded curl
+App Center still requires a working Python/Tk runtime with venv/pip support and
+network access to provision declared dependencies itself; it never installs apt or
+other system packages. Downloads may fail while cached entries remain browsable.
+Acquisition cancellation can wait for the current bounded curl
 request; an already-started filesystem commit finishes or rolls back. Journals and
 content-addressed presentation files are retained and currently have no age-based
 pruning. Same-user hostile filesystem/process races are outside isolation guarantees.

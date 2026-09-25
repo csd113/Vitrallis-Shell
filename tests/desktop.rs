@@ -1,4 +1,12 @@
-use std::{path::PathBuf, process::Command};
+use std::{os::unix::fs::PermissionsExt, path::PathBuf, process::Command};
+
+// Fixture directories use explicit modes: the discovery/storage checks reject
+// group-writable paths, and developer umasks vary (the handheld test image uses
+// 002).
+fn secure_directory(path: &std::path::Path, mode: u32) -> std::io::Result<()> {
+    std::fs::create_dir_all(path)?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+}
 
 #[test]
 fn sdl_event_loop_launches_reaps_and_renders_recovery() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,7 +56,7 @@ impl Scratch {
     fn new() -> std::io::Result<Self> {
         let path =
             std::env::temp_dir().join(format!("vitrallis render test {}", std::process::id()));
-        std::fs::create_dir(&path)?;
+        secure_directory(&path, 0o700)?;
         Ok(Self(path))
     }
 }
@@ -110,7 +118,7 @@ fn renderer_outputs_native_size_bmp_and_refuses_overwrite() -> Result<(), Box<dy
 fn imported_catalog_is_read_only_and_missing_icons_render_safely()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::temp_dir().join(format!("vitrallis-import-test-{}", std::process::id()));
-    std::fs::create_dir(&root)?;
+    secure_directory(&root, 0o700)?;
     let scratch = Scratch(root);
     let config = scratch.0.join("config.json");
     let data = br#"{"pages":[{"name":"Apps","items":[{"name":"Real Label","shell":"/bin/sh","icon":"missing.png"},{"name":"Broken","shell":"/missing/vitrallis","icon":""},]}]}"#;
@@ -150,12 +158,13 @@ fn imported_catalog_is_read_only_and_missing_icons_render_safely()
 fn catalog_paths_and_device_session_entries_survive_import_boundaries()
 -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::temp_dir().join(format!("vitrallis catalog paths {}", std::process::id()));
-    std::fs::create_dir(&root)?;
+    secure_directory(&root, 0o700)?;
     let scratch = Scratch(root.canonicalize()?);
     let home = scratch.0.join("user home");
     let assets = scratch.0.join("exported assets");
-    std::fs::create_dir_all(home.join(".pocket-home"))?;
-    std::fs::create_dir(&assets)?;
+    secure_directory(&home.join(".pocket-home"), 0o755)?;
+    secure_directory(&home, 0o755)?;
+    secure_directory(&assets, 0o755)?;
     let user_config = home.join(".pocket-home/config.json");
     let default_config = assets.join("config.json");
     let default =
@@ -250,7 +259,7 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
 fn fifo_catalog_is_rejected_without_blocking() -> Result<(), Box<dyn std::error::Error>> {
     use std::time::{Duration, Instant};
     let root = std::env::temp_dir().join(format!("vitrallis-fifo-test-{}", std::process::id()));
-    std::fs::create_dir(&root)?;
+    secure_directory(&root, 0o700)?;
     let scratch = Scratch(root);
     let fifo = scratch.0.join("config.json");
     assert!(Command::new("mkfifo").arg(&fifo).status()?.success());
@@ -287,7 +296,7 @@ fn fifo_catalog_is_rejected_without_blocking() -> Result<(), Box<dyn std::error:
 #[ignore = "requires an SDL accelerated backend and a graphical session"]
 fn accelerated_readback_and_presentation() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::temp_dir().join(format!("vitrallis-accelerated-{}", std::process::id()));
-    std::fs::create_dir(&root)?;
+    secure_directory(&root, 0o700)?;
     let scratch = Scratch(root);
     let mut command = Command::new(env!("CARGO_BIN_EXE_vitrallis"));
     command
@@ -369,7 +378,7 @@ fn accelerated_readback_and_presentation() -> Result<(), Box<dyn std::error::Err
 #[ignore = "requires an SDL accelerated backend and a graphical session"]
 fn accelerated_fullscreen_dimensions_match_readback() -> Result<(), Box<dyn std::error::Error>> {
     let root = std::env::temp_dir().join(format!("vitrallis-fullscreen-{}", std::process::id()));
-    std::fs::create_dir(&root)?;
+    secure_directory(&root, 0o700)?;
     let scratch = Scratch(root);
     for mode in ["software", "hardware"] {
         let file = scratch.0.join(format!("{mode}.bmp"));

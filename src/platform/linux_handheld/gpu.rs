@@ -1,11 +1,22 @@
 //! Read-only installer notices. Privileged GPU setup lives in the platform helper.
-use std::{fs, io::Read, path::Path};
+use std::{fs, io::Read, path::Path, sync::OnceLock};
 
 const STATUS: &str = "/var/lib/vitrallis-pocketchip/gpu-status.json";
 const INVALID: &str = "GPU setup status invalid; rerun PocketCHIP installer.";
 const SETUP: &str = "GPU setup required; rerun PocketCHIP installer.";
 
+/// The Settings surface asks for this notice once per rendered frame; reading
+/// and parsing the status file there cost multiple syscalls per frame on slow
+/// NAND. The installer refuses to run while a Vitrallis session is active, so
+/// the file cannot change underneath a running Shell; a reboot or a relaunch
+/// starts a new process with a fresh cache.
+static NOTICE: OnceLock<Option<&'static str>> = OnceLock::new();
+
 pub fn setup_notice() -> Option<&'static str> {
+    *NOTICE.get_or_init(probe_notice)
+}
+
+fn probe_notice() -> Option<&'static str> {
     let path = Path::new(STATUS);
     let Ok(metadata) = fs::symlink_metadata(path) else {
         let compatible = read_regular(Path::new("/sys/firmware/devicetree/base/compatible"))?;

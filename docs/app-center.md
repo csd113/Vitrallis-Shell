@@ -14,11 +14,17 @@ reopening, and checking installed state never trigger a remote catalog refresh.
 
 Rows show an icon, name, description, and either the available version, installed
 version, update transition, operation progress, or failure. Select a row, then use
-its primary **Install**, **Update**, **Repair**, or **Open** action. **Details**
-shows the selected app's description, installed and available versions, status,
-repository, requirements, download size and last operation error. **What's New**
-is accessible directly from Details before updating. Destructive **Remove** is
-separate from the primary action and always opens a Cancel-default confirmation.
+its primary **Install** (new app), **Update** (newer catalog version), **Repair**
+(installed catalog app), or **Open** action. **Open** appears only when the app is
+installed but not currently installable from a catalog, such as a removed source;
+a normal installed app shows **Repair** instead. A publisher-disabled package
+appears as **Unavailable** with its compatibility note.
+**Details** shows the selected app's description, installed and available versions,
+status, repository, requirements, download size and last operation error.
+**What's New** is accessible directly from Details before updating. Destructive
+**Remove** is separate from the primary action and always opens a Cancel-default
+confirmation; the confirmation body and its confirm button currently read
+**Uninstall**.
 
 **Search apps** matches names and descriptions. The adjacent filter cycles through
 **All**, **Installed**, and **Updates** and shows the matching count. Search's
@@ -45,12 +51,12 @@ press/release target. Losing focus declines pending confirmations.
 
 ## Apps page actions and folders
 
-The Apps page bottom bar contains **Actions**. Add Shortcut is available in that
-menu (F2 also opens its editor); system controls remain accessible through the
-System Settings tile and Power key. Tab selects Actions; Enter or Space opens it.
-The action label is centralized for a future rename.
+The Apps page bottom bar contains **Manage [F10]**. Add shortcut is available in
+that menu (F2 also opens its editor); system controls remain accessible through the
+System Settings tile and Power key. Tab selects Manage [F10]; Enter or Space opens
+it.
 
-Actions includes Create folder, Rename folder, Delete folder and Move app to
+The menu includes Create folder, Rename folder, Delete folder and Move app to
 folder / Apps. Open a folder like an app. Inside a folder, the header shows its
 name, **Back to Apps** is reachable with Tab and touch, and Escape returns to the
 folder tile without closing its running app. Deletion defaults to Cancel and
@@ -61,9 +67,11 @@ and touchscreen text entry. Folder state is stored atomically in
 app installations. Malformed or unsafe state cannot be overwritten by an action.
 
 Running apps show one filled **RUNNING** chip in a fixed corner of the tile, over
-the icon rather than the name. The launcher's authoritative process state decides
-it, the same chip appears in folders and the App Center list, and there is no
-animation timer, so text positions and idle rendering behavior are unchanged.
+the icon rather than the name. A launch in flight shows **STARTING** and a failed
+launch shows **FAILED** in the same corner. The launcher's authoritative process
+state decides it, the same chip appears in folders and the App Center list, and
+there is no animation timer, so text positions and idle rendering behavior are
+unchanged.
 Launching and exit notices appear in the lower-left status area instead of a
 modal screen, and a launch that is in flight refuses a duplicate activation
 while arrow keys keep working.
@@ -88,9 +96,11 @@ rows. Source removal drops only that source's displayed rows and approvals; it
 does not uninstall apps or delete user data.
 
 Entries are keyed by originating repository plus app ID. Duplicate IDs across
-sources require explicit publisher selection. Receipts bind installations to the
-app ID, catalog origin and package source; a different source cannot silently take
-over an installation. A separate package source requires **Details → Trust source**
+sources require explicit publisher selection. In Details, the **Publisher** field
+shows the catalog origin; when the package comes from a separate repository, that
+repository is shown as **Source**. Receipts bind installations to the app ID,
+catalog origin and package source; a different source cannot silently take over an
+installation. A separate package source requires **Details → Trust source**
 confirmation. Approvals apply to that originating catalog and are rechecked on
 installation. Cached availability is not proof that an offline download will work.
 
@@ -239,6 +249,7 @@ See [the validation report](app-center-validation.md) and
 
 ## Physical validation
 
-See the [PocketCHIP App Manager validation record](devices/pocketchip/app-manager-validation.md)
+See the [PocketCHIP App Center physical validation record](devices/pocketchip/app-manager-validation.md)
 for the isolated hardware deployment, dependency prerequisites, lifecycle results,
-resource measurements and physical display verification limits.
+resource measurements and physical display verification limits. That record is
+dated 2026-09-19 and applies to the described Debian 13 device and test build.

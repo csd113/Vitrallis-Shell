@@ -536,6 +536,11 @@ impl<'a> Ui<'a> {
     /// # Errors
     /// Reports SDL/render errors.
     pub fn choose(&mut self, title: &str, body: &str, labels: &[&str]) -> Result<usize, String> {
+        // The contract names index zero as the safe default; with no labels there
+        // is nothing to select, and the navigation arithmetic would divide by zero.
+        if labels.is_empty() {
+            return Ok(0);
+        }
         let mut selected = 0;
         let mut offset = 0;
         let lines = wrap(
@@ -835,6 +840,10 @@ mod tests {
             assert!(!ui.idle_for_auto_close(&Input::Text("pending edit".into())));
             key(&ui, Keycode::A)?;
             assert!(!ui.idle_for_auto_close(&Input::Wake));
+            while ui.events.poll_event().is_some() {}
+            key(&ui, Keycode::Tab)?;
+            // An empty label list must return the safe default instead of dividing by zero.
+            assert_eq!(ui.choose("Empty", "No labels", &[])?, 0);
             while ui.events.poll_event().is_some() {}
         }
         assert!(wrap(&"x".repeat(100_000), 10).len() <= 256);

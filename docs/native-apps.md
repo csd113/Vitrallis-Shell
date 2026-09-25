@@ -159,8 +159,10 @@ prove physical GPU use: Mesa software rasterizers can also expose these drivers.
 The existing Canvas drawing calls, layout, colors, input, and dirty-frame loops
 are unchanged. Font lookup and glyph point/rectangle generation remain CPU-side;
 SDL executes drawing and presentation through the selected backend. There is no
-new framebuffer upload, shader, raw GL/EGL code, or GPU API requirement beyond
-SDL's GLES2-capable architecture. Software rendering remains complete. Screenshots
+new framebuffer upload, shader or raw GL/EGL *rendering* code, and no new GPU API
+requirement beyond SDL's GLES2-capable architecture; the EGL/GL entry-point
+queries used for renderer identity are diagnostic-only and never load a display,
+create a context or draw. Software rendering remains complete. Screenshots
 read the completed backbuffer before presentation invalidates it. SDL device/reset
 events request one redraw rather than starting a continuous rendering loop.
 

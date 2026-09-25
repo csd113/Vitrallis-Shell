@@ -13,6 +13,7 @@ use std::{
         mpsc,
     },
     thread,
+    time::Duration,
 };
 const LIMIT: usize = 8192;
 pub const ENV: &str = "VITRALLIS_NATIVE_BROKER";
@@ -172,6 +173,10 @@ impl Inbox {
         valid_name(name)?;
         let path = directory(broker)?.join(name);
         let socket = UnixDatagram::bind(&path)?;
+        // A datagram wakes this blocking recv immediately; the bounded wait only
+        // guarantees that a failed wake (for example a stale inbox removed by the
+        // launcher) cannot hang Inbox::drop's join forever.
+        socket.set_read_timeout(Some(Duration::from_secs(1)))?;
         let (send, receiver) = mpsc::sync_channel(8);
         let stopped = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&stopped);
@@ -184,30 +189,45 @@ impl Inbox {
             .stack_size(128 * 1024)
             .spawn(move || {
                 let mut bytes = [0; LIMIT + 1];
-                while let Ok(count) = socket.recv(&mut bytes) {
-                    if stop.load(Ordering::Acquire) {
-                        break;
-                    }
-                    if &bytes[..count] == b"close-if-safe" {
-                        close.store(true, Ordering::Release);
-                        let _ = crate::ui::wake(&sender);
-                        continue;
-                    }
-                    if count == 0 {
-                        if !focus.swap(true, Ordering::AcqRel) {
-                            let _ = crate::ui::wake(&sender);
+                loop {
+                    match socket.recv(&mut bytes) {
+                        Ok(count) => {
+                            if stop.load(Ordering::Acquire) {
+                                break;
+                            }
+                            if &bytes[..count] == b"close-if-safe" {
+                                close.store(true, Ordering::Release);
+                                let _ = crate::ui::wake(&sender);
+                                continue;
+                            }
+                            if count == 0 {
+                                if !focus.swap(true, Ordering::AcqRel) {
+                                    let _ = crate::ui::wake(&sender);
+                                }
+                                continue;
+                            }
+                            if count > LIMIT {
+                                continue;
+                            }
+                            if let Ok(path) = decode(&bytes[..count]) {
+                                let notify = send.try_send(path).is_ok()
+                                    || !dropped.swap(true, Ordering::AcqRel);
+                                if notify && let Err(e) = crate::ui::wake(&sender) {
+                                    eprintln!("Notepad wake: {e}");
+                                }
+                            }
                         }
-                        continue;
-                    }
-                    if count > LIMIT {
-                        continue;
-                    }
-                    if let Ok(path) = decode(&bytes[..count]) {
-                        let notify =
-                            send.try_send(path).is_ok() || !dropped.swap(true, Ordering::AcqRel);
-                        if notify && let Err(e) = crate::ui::wake(&sender) {
-                            eprintln!("Notepad wake: {e}");
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                            ) =>
+                        {
+                            if stop.load(Ordering::Acquire) {
+                                break;
+                            }
                         }
+                        Err(_) => break,
                     }
                 }
             });
@@ -340,5 +360,29 @@ pub(crate) fn test_private_inbox(sdl: &sdl2::Sdl) -> Result<(), String> {
         assert!(!directory.exists());
         Ok(())
     }
-    check(sdl).map_err(|e| e.to_string())
+    // A dropped inbox must stop even when its wake datagram cannot be delivered
+    // (the launcher can remove a stale inbox path before the old instance exits).
+    fn stale_inbox_drop(sdl: &sdl2::Sdl) -> Result<(), Box<dyn std::error::Error>> {
+        let broker = Broker::new()?;
+        let inbox = Inbox::bind(
+            &broker.path,
+            "notepad",
+            sdl.event()?.event_sender(),
+            Arc::new(AtomicBool::new(false)),
+        )?;
+        fs::remove_file(&inbox.path)?;
+        let (send, receive) = mpsc::channel();
+        thread::Builder::new()
+            .name("inbox-drop-test".into())
+            .spawn(move || {
+                drop(inbox);
+                let _ = send.send(());
+            })?;
+        receive
+            .recv_timeout(Duration::from_secs(3))
+            .map_err(|_| io::Error::other("Inbox drop hung after the wake datagram failed"))?;
+        Ok(())
+    }
+    check(sdl).map_err(|e| e.to_string())?;
+    stale_inbox_drop(sdl).map_err(|e| e.to_string())
 }

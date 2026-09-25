@@ -138,6 +138,7 @@ pub struct ProcessSet<P = NativeProcess> {
     members: Vec<(String, P)>,
     waiting_windows: std::collections::BTreeSet<String>,
     background_since: std::collections::BTreeMap<String, (Instant, bool)>,
+    discovery: std::collections::BTreeMap<String, DiscoveryBudget>,
     pub tor: crate::tor::Service,
     tor_apps: std::collections::BTreeSet<String>,
     tor_pending: Option<(AppEntry, Instant)>,
@@ -161,12 +162,45 @@ struct PendingStart<P> {
 const BACKGROUND_GRACE: Duration = Duration::from_secs(30);
 /// A start request that has not produced a child in this long is abandoned.
 const LAUNCH_DEADLINE: Duration = Duration::from_secs(30);
+/// Window discovery is a bounded best-effort probe. A member whose window
+/// never appears must not keep spawning the window-manager query tool for the
+/// life of the process, so probes slow down and then stop.
+const DISCOVERY_BACKOFF: [Duration; 4] = [
+    Duration::from_millis(250),
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(1),
+];
+/// How long after launch focus retries may run.
+const DISCOVERY_WINDOW: Duration = Duration::from_secs(30);
+/// Bounded tracking after the focus window ends, so a window that appears late
+/// is noticed once without leaving a dead gap or probing forever.
+const DISCOVERY_GRACE: Duration = Duration::from_secs(5);
+/// Delay before the next retry: 250 ms, 500 ms, then 1 s for the rest.
+fn retry_interval(attempts: u32) -> Duration {
+    let index = usize::try_from(attempts).unwrap_or(usize::MAX);
+    DISCOVERY_BACKOFF[index.min(DISCOVERY_BACKOFF.len() - 1)]
+}
 #[derive(Debug)]
 struct Resume {
     app: AppEntry,
     deadline: Instant,
     next_attempt: Instant,
+    /// Completed focus attempts; selects the escalating retry interval.
+    attempts: u32,
     relaunch_on_exit: bool,
+    last_error: Option<String>,
+}
+/// Per-member window-discovery budget; dropped with the member or when the
+/// user leaves the launch view.
+#[derive(Debug)]
+struct DiscoveryBudget {
+    /// Earliest time the next probe may run.
+    next: Instant,
+    /// Probes stop entirely after this instant.
+    deadline: Instant,
+    attempts: u32,
+    given_up: bool,
     last_error: Option<String>,
 }
 impl<P> ProcessSet<P> {
@@ -200,6 +234,7 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
         }
         self.background_since.remove(id);
         self.waiting_windows.remove(id);
+        self.discovery.remove(id);
         self.members.remove(index);
         true
     }
@@ -213,6 +248,12 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
     pub fn returned_home(&mut self) {
         self.stop_focus_retry();
         self.active = None;
+        // Leaving the launch view also ends best-effort window discovery:
+        // process ownership continues, but a window that has not appeared yet
+        // is no longer probed, so a missing window cannot keep spawning the
+        // window-manager query tool while the user is elsewhere in the Shell.
+        self.waiting_windows.clear();
+        self.discovery.clear();
     }
     #[cfg(test)]
     fn background_requested(&self, id: &str) -> bool {
@@ -233,6 +274,8 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
             .retain(|id, _| self.members.iter().any(|(member, _)| member == id));
         self.waiting_windows
             .retain(|id| self.members.iter().any(|(member, _)| member == id));
+        self.discovery
+            .retain(|id, _| self.members.iter().any(|(member, _)| member == id));
         let mut expired: Vec<String> = Vec::new();
         let mut stopped: Vec<String> = Vec::new();
         for (id, process) in &mut self.members {
@@ -251,8 +294,9 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
                 .or_insert((now, false));
             let elapsed = now.saturating_duration_since(*since);
             if !*requested && elapsed >= timeout {
-                // Never drop/kill the process following this advisory request.
-                // Apps with unsaved work may veto; no response also means keep running.
+                // Advisory close first; a member that ignores it is stopped
+                // after the grace period, which bounds how long an unanswered
+                // request can keep an opted-in background app's resources.
                 if let Err(error) = process.close_if_safe() {
                     eprintln!("level=warn event=auto_close_deferred app={id:?} error={error:?}");
                 }
@@ -344,12 +388,14 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
     /// Adopts a started process: records ownership and starts focus tracking.
     fn adopt(&mut self, app: &AppEntry, mut process: P) -> Result<(), String> {
         if process.waits_for_window() {
-            self.waiting_windows.insert(app.id.clone());
+            let now = Instant::now();
+            self.track_window(&app.id, now);
             process.focus()?;
             self.resume = Some(Resume {
                 app: app.clone(),
-                deadline: Instant::now() + Duration::from_secs(30),
-                next_attempt: Instant::now() + Duration::from_millis(250),
+                deadline: now + DISCOVERY_WINDOW,
+                next_attempt: now + DISCOVERY_BACKOFF[0],
+                attempts: 0,
                 relaunch_on_exit: false,
                 last_error: None,
             });
@@ -357,6 +403,20 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
         self.members.push((app.id.clone(), process));
         self.active = Some(app.id.clone());
         Ok(())
+    }
+    /// Records or refreshes bounded window tracking for one member.
+    fn track_window(&mut self, id: &str, now: Instant) {
+        self.waiting_windows.insert(id.into());
+        self.discovery.insert(
+            id.into(),
+            DiscoveryBudget {
+                next: now + DISCOVERY_BACKOFF[0],
+                deadline: now + DISCOVERY_WINDOW + DISCOVERY_GRACE,
+                attempts: 0,
+                given_up: false,
+                last_error: None,
+            },
+        );
     }
     /// Hands process creation to a worker thread. `command` inspects the
     /// filesystem and `spawn` copies the Shell's address space; neither may
@@ -389,11 +449,17 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
                 self.background_since.remove(&app.id);
                 self.resume = Some(Resume {
                     app: app.clone(),
-                    deadline: Instant::now() + Duration::from_secs(30),
-                    next_attempt: Instant::now() + Duration::from_millis(250),
+                    deadline: Instant::now() + DISCOVERY_WINDOW,
+                    next_attempt: Instant::now() + DISCOVERY_BACKOFF[0],
+                    attempts: 0,
                     relaunch_on_exit: true,
                     last_error: None,
                 });
+                // Re-activation gives a still-missing window a fresh bounded
+                // tracking window instead of an already-expired budget.
+                if self.waiting_windows.contains(&app.id) {
+                    self.track_window(&app.id, Instant::now());
+                }
                 // A resume is complete as soon as it is requested; report it
                 // through the same path as a worker-completed start.
                 self.completed = Some(Ok(app.id.clone()));
@@ -496,12 +562,49 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
     }
     fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
         let mut failure = None;
+        let now = Instant::now();
         for (id, process) in &mut self.members {
-            if self.waiting_windows.contains(id)
-                && self.resume.as_ref().is_none_or(|r| &r.app.id != id)
-                && process.discover_window().unwrap_or(false)
+            if !self.waiting_windows.contains(id)
+                || self.resume.as_ref().is_some_and(|r| &r.app.id == id)
             {
-                self.waiting_windows.remove(id);
+                continue;
+            }
+            let Some(budget) = self.discovery.get_mut(id) else {
+                continue;
+            };
+            if now >= budget.deadline {
+                if !budget.given_up {
+                    budget.given_up = true;
+                    eprintln!(
+                        "level=warn event=window_discovery_given_up app={id:?} attempts={} window_secs={} last_error={:?}",
+                        budget.attempts,
+                        (DISCOVERY_WINDOW + DISCOVERY_GRACE).as_secs(),
+                        budget.last_error
+                    );
+                }
+                continue;
+            }
+            if now < budget.next {
+                continue;
+            }
+            let interval = retry_interval(budget.attempts);
+            budget.attempts = budget.attempts.saturating_add(1);
+            budget.next = now + interval;
+            match process.discover_window() {
+                Ok(true) => {
+                    self.waiting_windows.remove(id);
+                    self.discovery.remove(id);
+                }
+                Ok(false) => {
+                    if let Some(budget) = self.discovery.get_mut(id) {
+                        budget.last_error = None;
+                    }
+                }
+                Err(error) => {
+                    if let Some(budget) = self.discovery.get_mut(id) {
+                        budget.last_error = Some(error);
+                    }
+                }
             }
         }
         for index in 0..self.members.len() {
@@ -585,7 +688,10 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
                 if Instant::now() >= resume.next_attempt {
                     self.members[index].1.focus()?;
                     if let Some(resume) = &mut self.resume {
-                        resume.next_attempt = Instant::now() + Duration::from_millis(250);
+                        // Escalating retries keep a slow window from spawning a
+                        // focus worker every 250 ms until the deadline.
+                        resume.attempts = resume.attempts.saturating_add(1);
+                        resume.next_attempt = Instant::now() + retry_interval(resume.attempts);
                     }
                 }
                 Ok(None)
@@ -945,6 +1051,7 @@ mod tests {
             app: first.clone(),
             deadline: Instant::now(),
             next_attempt: Instant::now(),
+            attempts: 0,
             relaunch_on_exit: true,
             last_error: None,
         });
@@ -1114,6 +1221,7 @@ mod tests {
         window_ready: bool,
         starts: usize,
         focuses: usize,
+        discoveries: usize,
     }
     impl Processes for ClosingWindow {
         fn close_if_safe(&mut self) -> Result<(), String> {
@@ -1121,6 +1229,7 @@ mod tests {
             Ok(())
         }
         fn discover_window(&mut self) -> Result<bool, String> {
+            self.discoveries += 1;
             Ok(self.window_ready)
         }
         fn start(&mut self, _: &AppEntry) -> Result<(), String> {
@@ -1180,15 +1289,135 @@ mod tests {
                 processes.resume.as_mut().ok_or("missing launch")?.deadline = Instant::now();
                 assert_eq!(processes.poll_focus()?, Some(FocusResult::Missing));
             }
-            assert_eq!(processes.poll()?, None);
-            assert!(processes.waiting_windows.contains("test"));
             processes.members[0].1.0.window_ready = true;
-            assert_eq!(processes.poll()?, None);
-            assert!(processes.waiting_windows.is_empty());
+            if navigated_away {
+                // Leaving the launch view ends discovery: ownership continues,
+                // but a window that appears later is no longer probed for, so
+                // no window-manager query can be spawned while the user is
+                // elsewhere in the Shell.
+                assert!(processes.discovery.is_empty());
+                assert!(processes.waiting_windows.is_empty());
+                assert_eq!(processes.poll()?, None);
+                assert_eq!(processes.members[0].1.0.discoveries, 0);
+            } else {
+                // The expired resume no longer owns discovery; the scheduled
+                // probe still notices the window without relaunching or
+                // focusing it.
+                let budget = processes
+                    .discovery
+                    .get_mut("test")
+                    .ok_or("missing discovery")?;
+                budget.next = Instant::now();
+                assert_eq!(processes.poll()?, None);
+                assert!(processes.waiting_windows.is_empty());
+                assert!(!processes.discovery.contains_key("test"));
+                assert_eq!(processes.members[0].1.0.discoveries, 1);
+            }
             assert_eq!(processes.members[0].1.0.starts, 1);
             assert_eq!(processes.members[0].1.0.focuses, 1); // Only the original launch request.
             assert_eq!(processes.poll_focus()?, None);
         }
+        Ok(())
+    }
+    #[test]
+    fn window_discovery_backs_off_gives_up_and_stops_after_returning_home() -> Result<(), String> {
+        #[derive(Default)]
+        struct Counting {
+            discoveries: usize,
+        }
+        impl Processes for Counting {
+            fn start(&mut self, _: &AppEntry) -> Result<(), String> {
+                Ok(())
+            }
+            fn focus(&mut self) -> Result<(), String> {
+                Ok(())
+            }
+            fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
+                Ok(None)
+            }
+            fn waits_for_window(&self) -> bool {
+                true
+            }
+            fn discover_window(&mut self) -> Result<bool, String> {
+                self.discoveries += 1;
+                Ok(false)
+            }
+        }
+        let mut processes = ProcessSet::<Counting>::default();
+        start_blocking(&mut processes, &app())?;
+        // Simulate the focus deadline expiring; the member stays owned.
+        processes.resume = None;
+        // The first probe is scheduled after the launch delay, not immediately.
+        assert_eq!(processes.poll()?, None);
+        assert_eq!(processes.members[0].1.discoveries, 0);
+        let budget = processes
+            .discovery
+            .get_mut("test")
+            .ok_or("missing discovery")?;
+        assert!(budget.next > Instant::now());
+        budget.next = Instant::now();
+        assert_eq!(processes.poll()?, None);
+        assert_eq!(processes.members[0].1.discoveries, 1);
+        let budget = processes.discovery.get("test").ok_or("missing discovery")?;
+        assert_eq!(budget.attempts, 1);
+        assert!(
+            budget.next > Instant::now(),
+            "the next probe must be delayed"
+        );
+        // The bounded window expiring stops probing for good.
+        processes
+            .discovery
+            .get_mut("test")
+            .ok_or("missing discovery")?
+            .deadline = Instant::now();
+        assert_eq!(processes.poll()?, None);
+        assert_eq!(processes.members[0].1.discoveries, 1);
+        let budget = processes.discovery.get("test").ok_or("missing discovery")?;
+        assert!(budget.given_up);
+        assert_eq!(budget.attempts, 1);
+        // Leaving the launch view drops the budget and the pending window mark.
+        processes.returned_home();
+        assert!(processes.discovery.is_empty());
+        assert!(processes.waiting_windows.is_empty());
+        assert_eq!(processes.poll()?, None);
+        assert_eq!(processes.members[0].1.discoveries, 1);
+        Ok(())
+    }
+    #[test]
+    fn re_activation_refreshes_the_window_tracking_budget() -> Result<(), String> {
+        #[derive(Default)]
+        struct Quiet;
+        impl Processes for Quiet {
+            fn start(&mut self, _: &AppEntry) -> Result<(), String> {
+                Ok(())
+            }
+            fn focus(&mut self) -> Result<(), String> {
+                Ok(())
+            }
+            fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
+                Ok(None)
+            }
+            fn waits_for_window(&self) -> bool {
+                true
+            }
+        }
+        let mut processes = ProcessSet::<Quiet>::default();
+        start_blocking(&mut processes, &app())?;
+        // Simulate a tracking budget that already gave up.
+        let budget = processes
+            .discovery
+            .get_mut("test")
+            .ok_or("missing discovery")?;
+        budget.deadline = Instant::now();
+        budget.given_up = true;
+        assert!(processes.waiting_windows.contains("test"));
+        // Re-activating a still-waiting member starts a fresh bounded window.
+        processes.start_ready(&app())?;
+        let budget = processes.discovery.get("test").ok_or("missing discovery")?;
+        assert!(!budget.given_up);
+        assert_eq!(budget.attempts, 0);
+        assert!(budget.deadline > Instant::now());
+        assert!(budget.next > Instant::now());
         Ok(())
     }
     #[test]

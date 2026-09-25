@@ -98,16 +98,13 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, desktop: &Desktop) -> Result<
         w: 28 * scale,
         h: 28 * scale,
     };
-    if let Some(surface) = desktop
-        .preview()
-        .and_then(|bytes| super::decode_icon(bytes).ok())
-    {
-        let creator = canvas.texture_creator();
-        let texture = creator
-            .create_texture_from_surface(surface)
-            .map_err(|e| e.to_string())?;
-        canvas.copy(&texture, None, super::rect(preview)?)?;
-    } else {
+    // The preview texture is cached inside Screen; only a changed icon is
+    // decoded and uploaded again. Undecodable bytes keep the placeholder.
+    let drawn = match desktop.preview() {
+        Some(bytes) => canvas.icon_preview(bytes, preview)?,
+        None => false,
+    };
+    if !drawn {
         fill(canvas, preview, theme::BORDER)?;
         text(canvas, "+", preview, scale, theme::TEXT)?;
     }

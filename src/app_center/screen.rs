@@ -455,7 +455,7 @@ impl Center {
             Confirmation::Uninstall(i)=>self.rows.get(*i).map_or_else(String::new, |r| format!("Uninstall {}? App files and launchers will be removed and backed up. Other files will be kept. Close the app first.", r.package.name)),
             Confirmation::Publisher(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Duplicate app ID: {}. Explicitly select publisher {}?",r.package.id,r.package.origin.as_str())),
             Confirmation::Trust(i)=>self.rows.get(*i).map_or_else(String::new,|r|format!("Trust {} to supply executable app files for catalog {}? Apps are not sandboxed. ",r.package.repository.as_str(),r.package.origin.as_str())),
-            Confirmation::Remove(i)=>format!("Remove {}? Installed apps and saves remain.",self.sources.catalogs[*i].as_str()),
+            Confirmation::Remove(i)=>format!("Remove {}? Installed apps and saves remain.",self.sources.catalogs.get(*i).map_or("this repository", |repository| repository.as_str())),
         };
         }
         if self.readout == Readout::Status && matches!(self.page, Page::Apps | Page::Sources) {
@@ -1457,9 +1457,14 @@ impl Center {
                 self.page(Page::Edit);
             }
             Target::Edit => {
-                self.edit = Some(self.row);
-                self.text = self.sources.catalogs[self.row].as_str().into();
-                self.page(Page::Edit);
+                if let Some(repository) = self.sources.catalogs.get(self.row) {
+                    self.edit = Some(self.row);
+                    self.text = repository.as_str().into();
+                    self.page(Page::Edit);
+                } else {
+                    self.message =
+                        "Repository selection is no longer available; refresh the list".into();
+                }
             }
             Target::Remove => {
                 self.confirmation = Some(Confirmation::Remove(self.row));
@@ -2505,6 +2510,23 @@ mod browsing_tests {
             center.chosen_row().ok_or("preserved selection")?.installed,
             "1.0.0"
         );
+        Ok(())
+    }
+    #[test]
+    fn stale_repository_indices_degrade_instead_of_panicking() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut center = Center::fixture()?;
+        // A confirmation can outlive the repository list it was created from.
+        center.confirmation = Some(Confirmation::Remove(usize::MAX));
+        assert!(center.details().contains("this repository"));
+        center.confirmation = None;
+        // The editor is disabled for an index outside the list and never indexes it.
+        center.sources.catalogs.clear();
+        center.row = usize::MAX;
+        assert!(!center.enabled(&Target::Edit));
+        center.activate(Target::Edit, &layout);
+        assert!(center.edit.is_none());
+        assert_eq!(center.page, Page::Apps);
         Ok(())
     }
 }

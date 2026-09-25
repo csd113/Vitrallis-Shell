@@ -1,5 +1,10 @@
 use super::*;
-use std::{cell::RefCell, collections::BTreeMap, io::Write};
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    io::Write,
+    time::{Duration, Instant},
+};
 
 struct Mock {
     responses: BTreeMap<String, Result<Vec<u8>, String>>,
@@ -506,6 +511,127 @@ fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
     updater.request_relaunch();
     assert!(updater.relaunch_with(false, |_| Ok(())));
     assert!(updater.relaunch_error.is_none());
+}
+
+#[test]
+fn restore_requires_an_explicit_retryable_request() {
+    let mut updater = Updater::default();
+    assert!(!updater.restore_if_requested(false));
+    // A blocked request reports the blocking reason and leaves the state alone.
+    updater.request_restore();
+    assert!(updater.restore_if_requested(true));
+    assert!(updater.detail().contains("Close running apps"));
+    assert!(matches!(updater.state, State::Idle));
+    // Once work is in flight the live state owns the panel text instead of the
+    // stale block message.
+    updater.state = State::Checking;
+    assert!(!updater.detail().contains("Close running apps"));
+    assert!(updater.detail().contains("Checking GitHub"));
+    // A failed state is not busy, so a new blocked request is still reported.
+    updater.state = State::Failed("Update failed: earlier".into());
+    updater.request_restore();
+    assert!(updater.restore_if_requested(true));
+    assert!(updater.detail().contains("Close running apps"));
+    // Starting another worker clears the transient message entirely.
+    updater.state = State::Current;
+    updater.restore_with(|| State::Failed("Restore failed: test".into()));
+    wait_for_restore(&mut updater);
+    assert!(matches!(updater.state, State::Failed(_)));
+    assert_eq!(updater.detail(), "Restore failed: test");
+    // Terminal update states refuse the request until the shell is relaunched.
+    updater.state = State::Installed {
+        version: Version::new(1, 2, 3),
+        durable: true,
+        relaunch: Relaunch {
+            executable: "/installed/vitrallis".into(),
+            sha256: [0; 32],
+        },
+    };
+    updater.request_restore();
+    assert!(!updater.restore_if_requested(false));
+    assert!(matches!(updater.state, State::Installed { .. }));
+}
+
+fn wait_for_restore(updater: &mut Updater) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while matches!(updater.state, State::Restoring) && Instant::now() < deadline {
+        updater.poll();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn restored_state_offers_the_same_guarded_relaunch_as_an_update() {
+    let mut updater = Updater::default();
+    updater.restore_with(|| State::Restored {
+        version: None,
+        durable: true,
+        relaunch: Relaunch {
+            executable: "/restored/vitrallis".into(),
+            sha256: [7; 32],
+        },
+    });
+    assert!(matches!(updater.state, State::Restoring));
+    assert!(updater.state.busy());
+    wait_for_restore(&mut updater);
+    assert!(matches!(
+        updater.state,
+        State::Restored {
+            version: None,
+            durable: true,
+            ..
+        }
+    ));
+    assert!(updater.detail().contains("Relaunch required"));
+    assert!(updater.detail().contains("Previous shell build restored"));
+    updater.request_relaunch();
+    assert!(updater.relaunch_with(false, |target| {
+        assert_eq!(
+            target.executable,
+            std::path::Path::new("/restored/vitrallis")
+        );
+        assert_eq!(target.sha256, [7; 32]);
+        Ok(())
+    }));
+    assert!(updater.relaunch_error.is_none());
+    // Checking for updates waits until the restored build is running.
+    updater.check();
+    assert!(matches!(updater.state, State::Restored { .. }));
+}
+
+#[test]
+fn failed_restore_is_visible_and_retryable() {
+    let mut updater = Updater::default();
+    updater.restore_with(|| State::Failed("Restore failed: integrity".into()));
+    wait_for_restore(&mut updater);
+    assert!(matches!(updater.state, State::Failed(_)));
+    assert!(!updater.state.busy());
+    assert!(updater.detail().contains("Restore failed"));
+    updater.restore_with(|| State::Restored {
+        version: Some(Version::new(1, 2, 3)),
+        durable: true,
+        relaunch: Relaunch {
+            executable: "/restored/vitrallis".into(),
+            sha256: [0; 32],
+        },
+    });
+    wait_for_restore(&mut updater);
+    assert!(matches!(
+        updater.state,
+        State::Restored {
+            version: Some(_),
+            ..
+        }
+    ));
+    assert_eq!(
+        updater.detail(),
+        "Restored Vitrallis Shell 1.2.3. Relaunch required."
+    );
+    // The worker seam refuses a second restore after a terminal restore state.
+    updater.restore_with(|| {
+        unreachable!("a restore must not start from a restored, un-relaunched state")
+    });
+    assert!(matches!(updater.state, State::Restored { .. }));
 }
 
 #[test]

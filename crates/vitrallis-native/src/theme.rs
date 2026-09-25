@@ -19,8 +19,6 @@ pub const ERROR_SURFACE: Color = Color::RGB(39, 25, 49);
 pub const CELL: i32 = 8;
 pub const LINE: i32 = 12;
 pub const SPACE: i32 = 4;
-pub const INSET: i32 = 8;
-pub const BORDER_WIDTH: i32 = 1;
 
 /// Integer font scaling for the Shell at its supported display heights.
 #[must_use]

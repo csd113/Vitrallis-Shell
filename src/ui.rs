@@ -649,9 +649,13 @@ fn refresh_shell(state: &mut Launcher, child: &mut ProcessSet) -> bool {
     let dirty = (tor_changed && (state.settings.open || child.waiting_for_tor()))
         | refresh_timezone(state, child)
         | refresh_focus(child, state);
-    state.settings.updater.relaunch_if_requested(
-        state.app_center.busy || child.has_children() || state.settings.pending,
-    ) || dirty
+    // Restore deliberately waits for a quiescent session: no owned apps, App
+    // Center mutation or pending system operation. Both actions take effect on
+    // relaunch, so they share the same gate.
+    let blocked = state.app_center.busy || child.has_children() || state.settings.pending;
+    state.settings.updater.relaunch_if_requested(blocked)
+        | state.settings.updater.restore_if_requested(blocked)
+        | dirty
 }
 
 fn refresh_timezone(state: &mut Launcher, child: &mut ProcessSet) -> bool {
@@ -1072,6 +1076,14 @@ fn refresh_system(
             }
         }
     }
+    if settings.open && settings.page == crate::settings::Page::Updates {
+        // Read-only pointer and file-shape checks; the restore itself
+        // revalidates every file under the update lock. Only a change needs a
+        // redraw so the footer control appears or disappears.
+        let available = crate::platform::update::restore_available();
+        dirty |= settings.updater.restore_available != available;
+        settings.updater.restore_available = available;
+    }
     dirty
 }
 fn submit_setting(
@@ -1093,6 +1105,7 @@ fn submit_setting(
         Some(crate::settings::Request::CheckUpdates) => settings.updater.check(),
         Some(crate::settings::Request::InstallUpdate) => settings.updater.install(),
         Some(crate::settings::Request::RelaunchUpdate) => settings.updater.request_relaunch(),
+        Some(crate::settings::Request::RestorePrevious) => settings.updater.request_restore(),
         Some(crate::settings::Request::Calibration) => {
             settings.network = crate::settings::NetworkState::CalibrationRequested;
         }

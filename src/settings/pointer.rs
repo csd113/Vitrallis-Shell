@@ -359,10 +359,68 @@ mod tests {
             settings.event(&mouse(false, x, y), &layout),
             Some(Request::CheckUpdates)
         );
-        settings.update_confirmation = Some(std::time::Instant::now());
+        settings.update_confirmation = Some((
+            crate::settings::UpdateConfirmation::Install,
+            std::time::Instant::now(),
+        ));
         settings.event(&mouse(true, x, y), &layout);
         settings.input(Action::Back);
         assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
+        Ok(())
+    }
+    #[test]
+    fn restore_footer_opens_confirmation_from_mouse_and_touch() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let footer = PanelLayout::footer(&layout)[1];
+        let (x, y) = (footer.x + 5, footer.y + footer.h - 5);
+        let mut settings = Settings::default();
+        settings.updater.restore_available = true;
+        settings.show();
+        settings.page(Page::Updates);
+        // A matched mouse press and release opens the confirmation with Cancel
+        // selected; the action itself is never taken from the footer tap.
+        assert_eq!(settings.event(&mouse(true, x, y), &layout), None);
+        assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
+        assert!(settings.update_confirmation.is_some());
+        assert_eq!(settings.selected, 0);
+        settings.input(Action::Activate);
+        assert!(settings.update_confirmation.is_none());
+        // The same control releases for a finger.
+        let nx = f32::from(u16::try_from(x).map_err(|e| e.to_string())?) / f32::from(layout.width);
+        let ny = f32::from(u16::try_from(y).map_err(|e| e.to_string())?) / f32::from(layout.height);
+        for up in [true, false, true] {
+            let event = if up {
+                Event::FingerUp {
+                    timestamp: 0,
+                    touch_id: 1,
+                    finger_id: 9,
+                    x: nx,
+                    y: ny,
+                    dx: 0.,
+                    dy: 0.,
+                    pressure: 0.,
+                }
+            } else {
+                Event::FingerDown {
+                    timestamp: 0,
+                    touch_id: 1,
+                    finger_id: 9,
+                    x: nx,
+                    y: ny,
+                    dx: 0.,
+                    dy: 0.,
+                    pressure: 1.,
+                }
+            };
+            assert_eq!(settings.event(&event, &layout), None);
+        }
+        assert!(settings.update_confirmation.is_some());
+        // Only a second activation of the confirm button completes the action.
+        settings.input(Action::Move(crate::navigation::Direction::Right));
+        assert_eq!(
+            settings.input(Action::Activate),
+            Some(Request::RestorePrevious)
+        );
         Ok(())
     }
     #[test]

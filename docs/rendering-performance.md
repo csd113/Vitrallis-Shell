@@ -243,7 +243,7 @@ own renderers; this contract does not force their swaps to synchronize. SDL's
 underlying behavior. Actual presentation is still subject to the active display
 driver, compositor and administrator driver overrides.
 
-## App Manager input and running state
+## App Center input and running state
 
 The launcher consumes queued SDL input between presentations, presenting at most
 once per 16 ms while input remains queued. This prevents each key-down/text pair
