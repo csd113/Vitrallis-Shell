@@ -36,6 +36,26 @@ validation in the shared document model, safe handling of stale App Center
 indices, and bounded window-discovery/focus retries that no longer spawn
 window-manager queries indefinitely on a slow device.
 
+Release packaging now validates and stages `LICENSE`, `THIRD_PARTY_NOTICES.md`
+and `THIRD_PARTY_LICENSES.txt` once in each release payload, beside the
+architecture bundles, so released payloads carry the required legal
+companions. The per-file artwork record in
+[artwork provenance](../assets/PROVENANCE.md) separates project-owned icons
+from the artwork whose redistribution basis is still unresolved; those assets
+remain outside any claim that the whole binary is MIT-cleared.
+
+The App Center no longer holds its cross-process storage lock across catalog
+and bundle-download network work. Catalog refreshes fetch metadata and
+presentation bytes outside the lock and commit under it after revalidating the
+source snapshot; installs prompt for a running app and download the bundle
+outside the lock, then revalidate source approval, readiness and running state
+before the journaled commit. Slow or stalled downloads can no longer block
+another Shell instance's storage operations; Python venv/pip provisioning
+still runs inside the commit lock. This pass also fixed Python application
+updates under the device's shared umask `002`: bytecode caches created
+group-writable by the app are removed as regenerable derived data instead of
+being rejected by the strict shared-storage guard.
+
 ## 0.1.0-beta4.1
 
 Merges the polish run, including shell UI refinements, safe background application
@@ -184,7 +204,8 @@ bundles require glibc 2.36+ and SDL2 2.26.5+.
 
 The workflow prepares a draft and refuses to alter an already published release.
 Before publication, review the complete asset inventory, verify uploaded bytes
-against checksums and bundle contents, and confirm successful release CI.
+against checksums and bundle contents, confirm the license and notice assets
+appear exactly once, and confirm successful release CI.
 The release description records those checks for the published artifacts.
 
 Published validation and its limits are recorded in the [hardware follow-up](devices/pocketchip/history/beta2.6-device-validation.md).

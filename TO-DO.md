@@ -36,8 +36,8 @@
 - [x] Remove stale release-readiness statements; distinguish current implementation, published artifacts, and dated hardware evidence.
 - [x] Choose and publish project licensing terms for Shell, Apps, and Flasher; align Cargo metadata, READMEs, and contribution guidance. Shell is now [MIT](LICENSE) with [third-party notices](THIRD_PARTY_NOTICES.md) and an aligned [contribution guide](CONTRIBUTING.md). **External: Apps and Flasher licensing remain unchanged — NOT modified.**
 - [x] Review imported code, artwork, and bundled dependencies for redistribution requirements and required notices. See [third-party notices](THIRD_PARTY_NOTICES.md) and the [dependency license inventory](docs/dependency-licenses.md).
-- [ ] Resolve or replace the artwork whose provenance is unverified (`assets/system/*.png`, `assets/branding/*`, `assets/boot/*`); see the unresolved items in [third-party notices](THIRD_PARTY_NOTICES.md).
-- [ ] Publish `LICENSE`, `THIRD_PARTY_NOTICES.md` and `THIRD_PARTY_LICENSES.txt` beside each release bundle so binary distributions carry the required notices.
+- [ ] Supply a dated owner statement, written creator permission, or replacement artwork for the sets classified **unclear** in [artwork provenance](assets/PROVENANCE.md); they remain outside the project MIT grant. **Blocks a wholly MIT-cleared binary or source distribution.**
+- [x] Publish `LICENSE`, `THIRD_PARTY_NOTICES.md` and `THIRD_PARTY_LICENSES.txt` beside each release bundle so binary distributions carry the required notices. Packaging now validates and stages all three with every x86_64 payload, and release CI refuses a draft without them; the next published release carries them.
 
 ## Optional recovery improvement
 

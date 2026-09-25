@@ -139,6 +139,13 @@ fetches the matching helpers from the same release as the bundle. Native OTA
 updates do not replace these helpers; rerun the reviewed bootstrap with the
 session closed when updating installation tooling.
 
+Every release also publishes `LICENSE`, `THIRD_PARTY_NOTICES.md` and
+`THIRD_PARTY_LICENSES.txt` once, staged with the canonical x86_64 payload so no
+release asset basename is duplicated. Packaging validates all three on every
+run and the release workflow refuses a draft whose canonical payload lacks
+them. The installer and updater select only their exact bundle/helper names and
+ignore unrelated release assets.
+
 Artifacts are complete, uncompressed Vitrallis bundles:
 
 ```

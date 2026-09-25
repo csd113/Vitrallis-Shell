@@ -44,10 +44,12 @@ src/
       display.rs              X timeout and time-zone settings
       recovery.rs             Exit Vitrallis catalog entry
 assets/system/                Shared embedded artwork and asset guidance
+assets/PROVENANCE.md          Per-file artwork provenance and clearance status
 docs/devices/
   pocketchip.md               Installation, selection, and recovery
   pocketchip/                 Settings, App Center notes, and device validation records
 tests/                        Desktop, installer, session, and package tests
+tests/simulator/              x86-64 App Center/GUI and ARMv7 PocketCHIP-like Docker simulators
 ```
 
 For a new **device adapter**, extend the existing `Platform` and

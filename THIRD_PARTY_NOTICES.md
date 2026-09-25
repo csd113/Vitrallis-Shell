@@ -1,6 +1,6 @@
 # Licensing and third-party notices
 
-Audit date: **2026-09-24**. Project-owned code, documentation and original artwork
+Audit date: **2026-09-25**. Project-owned code, documentation and original artwork
 are offered under the root [MIT License](LICENSE), at the owner's direction.
 This grants no rights to third-party material or the unresolved items below.
 Copyright remains with the respective contributors; no assignment is implied.
@@ -50,23 +50,38 @@ text or a documented source offer before that binary is cleared.
   its package copyrights and satisfy any GPL/LGPL source/relinking obligations.
 - `assets/native/` documents original geometric SVG/PNG utility icons, covered
   by project MIT. Screenshots are dated evidence, not a license for depicted
-  third-party programs, trademarks or content.
+  third-party programs, trademarks or content. The per-file record for every
+  bundled image is [artwork provenance](assets/PROVENANCE.md).
 
 ## Unresolved provenance and distribution limits
 
-- `assets/branding/` and `assets/boot/` derive from supplied logo/cave references.
-  The preparation record documents image-tool transformations, but not the
-  original reference creator, license or redistribution permission. MIT does
-  not cover those references or establish rights to their derivatives.
-- `assets/system/*.png` has no recorded creator/source/license in its README.
-  Redistribution rights remain unverified.
-- These artwork files are embedded in Shell. Therefore the current complete
-  binary cannot be represented as wholly cleared for redistribution until their
-  rights are documented or the assets are replaced with verified material.
-- Existing release inventories list bundles/helpers and checksums, not these new
-  license companions. The package format is unchanged by this documentation task.
-  Distributors must supply the applicable texts beside binaries and resolve Arti
-  gaps; this source change does not repair already published artifacts.
+The authoritative per-file record is [artwork provenance](assets/PROVENANCE.md).
+In summary:
+
+- `assets/system/*.png` were generated with an AI image tool at the project
+  owner's request on 2026-09-10 and 2026-09-11. The method, dates and complete
+  prompts are recorded in the introducing commits `7895a1c` (`gear`, `wifi`,
+  `sun`, `speaker`, `power`, `restart`) and `718f4e6` (`apps`). The tool's
+  output and redistribution terms are not recorded, so redistribution rights
+  remain unverified.
+- `assets/branding/` and `assets/boot/` derive from supplied logo, boot
+  storyboard and cave references. The preparation record documents image-tool
+  transformations, but the reference creator, supplier, license and
+  redistribution permission are not recorded. MIT does not cover those
+  references or establish rights to their derivatives; `assets/boot/scene.png`
+  is a direct derivative of the supplied cave artwork.
+- `assets/{boot,system,native}/**` are embedded in the Shell executables and
+  both binary and source distributions include them. `assets/branding/**` is
+  not embedded in released executables (its only code reference is test-only)
+  but still ships in source archives. The complete binary therefore cannot be
+  represented as wholly cleared for redistribution until the rights are
+  documented or the assets are replaced with verified material.
+- Existing release inventories list bundles/helpers and checksums. The package
+  format is unchanged by this documentation task, but packaging now stages the
+  project `LICENSE`, this file and the collected license texts beside the
+  x86_64 bundles so published releases carry the required legal companions.
+  That does not clear the unresolved artwork above and does not repair already
+  published artifacts.
 
 No separate GPL-linked component was identified in the Shell workspace graph or
 in Arti's pinned build graph. This does not settle licensing of OS images,

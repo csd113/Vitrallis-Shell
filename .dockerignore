@@ -1,0 +1,10 @@
+# Keep Docker build contexts small and deterministic. The simulators bind-mount
+# the checkout at run time, so no build copies repository artifacts.
+target/
+.git/
+__pycache__/
+*.py[cod]
+*.bmp
+*.pem
+*.key
+.DS_Store

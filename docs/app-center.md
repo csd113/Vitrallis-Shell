@@ -200,12 +200,14 @@ shortcuts remain user-owned. Unmanaged data and app-local virtual environments
 are retained; package code should keep user data outside its read-only installation.
 
 Updates remove old receipt-owned files absent from the new inventory. Managed
-Python module caches are removed transactionally. Launchers use a release-specific
-bytecode-cache namespace and disable bytecode writes, so interpreter-wide or
-same-size/same-second caches cannot silently execute a previous release. Python
-startup/home/path overrides are excluded consistently with runtime preflight.
-Same-version republishing, downgrades, source switches and modified managed source
-files are rejected before replacement.
+Python module caches are cleared before the commit; bytecode is regenerable
+derived data and is deleted directly rather than journaled, including the
+group-writable caches Python creates under the device's shared umask. Launchers
+use a release-specific bytecode-cache namespace and disable bytecode writes, so
+interpreter-wide or same-size/same-second caches cannot silently execute a
+previous release. Python startup/home/path overrides are excluded consistently
+with runtime preflight. Same-version republishing, downgrades, source switches
+and modified managed source files are rejected before replacement.
 
 Running-app detection reads the **installed manifest's runtime entry**, even when the
 available version changes entry paths. **Close and update** defaults to Cancel.
@@ -215,8 +217,11 @@ Updated apps remain closed until the user opens them.
 
 ## Transactions, discovery and recovery
 
-A cross-process lock covers source settings, refresh, install, remove and recovery.
-Writes are staged, synced and atomically renamed individually. A durable journal
+A cross-process lock serializes source settings and every durable write. Refresh
+metadata and bundle downloads run outside the lock so slow network work cannot
+block another Shell's storage operations; the commit phase reacquires the lock,
+revalidates the source snapshot, readiness and running state, and only then
+mutates. Writes are staged, synced and atomically renamed individually. A durable journal
 records before/after bytes and modes, including removals. Final readback verifies
 every planned output before marker cleanup and journal completion. A finalization
 failure participates in rollback. Successful rollback releases the incomplete

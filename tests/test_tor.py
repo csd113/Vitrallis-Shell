@@ -174,7 +174,7 @@ print('isolated Tor proxy verified')
                 '/usr/bin/python3', '-I', '-c', sandbox, str(self.root / 'service/proxy.sock'), guardian,
                 '/usr/bin/python3', '-I', '-c', program]
         result = subprocess.run(args, capture_output=True, text=True, timeout=10)
-        if 'Operation not permitted' in result.stderr:
+        if 'Operation not permitted' in result.stderr or 'create new namespace' in result.stderr:
             self.skipTest('Container kernel denies user/network namespaces; test on supported device')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('isolated Tor', result.stdout)

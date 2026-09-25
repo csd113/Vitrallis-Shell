@@ -47,4 +47,12 @@ reference. The runtime does not call that tool. The prompts requested:
 The final packing uses nearest-neighbor sampling. Small exports apply a hard
 alpha cutoff; no runtime resampling or glow is used at tiny sizes.
 
-See [licensing and unresolved provenance](../../THIRD_PARTY_NOTICES.md) before redistribution.
+The supplied logo sheet, boot storyboard and cave scene were provided without a
+recorded creator, supplier or license; the originals are not in this repository.
+`source/*.png` and `../boot/scene.png` are image-tool derivatives of that
+material, and the `crystal-*` and `../boot/{clean,subtle,cyan,full}.png` files
+are regenerated from it. None of these files is covered by the project's MIT
+grant until a dated permission statement or a replacement is recorded.
+
+See [artwork provenance](../PROVENANCE.md) and
+[licensing and third-party notices](../../THIRD_PARTY_NOTICES.md) before redistribution.

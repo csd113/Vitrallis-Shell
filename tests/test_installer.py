@@ -19,6 +19,18 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+def setUpModule():
+    # Fixtures must not inherit the caller's umask. The production guards
+    # correctly reject group-writable directories, so a shared umask 002 would
+    # make every fixture look unsafe. Dedicated tests set their own umask.
+    global _module_umask
+    _module_umask = os.umask(0o022)
+
+
+def tearDownModule():
+    os.umask(_module_umask)
+
+
 class Installer(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

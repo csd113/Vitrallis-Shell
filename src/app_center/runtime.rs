@@ -108,10 +108,14 @@ pub fn ensure(root: &Path, files: &Files) -> Result<Runtime, String> {
     let base = find(root, files, false)?;
     validate(&base, files)?;
     let target = managed(root, files);
-    super::storage::safe(&target)?;
-    if target.exists() {
+    // An existing managed environment is either healthy (handled by `detect`
+    // above) or damaged. Report that clearly instead of running the strict
+    // shared-storage permission check, which would reject the group-writable
+    // directories Python's venv creates under the device's shared umask 002.
+    if target.symlink_metadata().is_ok() {
         return Err("App dependency environment is damaged; remove it before retrying".into());
     }
+    super::storage::safe(&target)?;
     super::storage::directory(target.parent().ok_or("Missing runtime parent")?)?;
     let requirements = files
         .get("requirements.txt")
@@ -412,5 +416,25 @@ mod completion_tests {
         );
         assert!(result.is_err());
         assert!(start.elapsed() < Duration::from_secs(3));
+    }
+    #[cfg(unix)]
+    #[test]
+    fn damaged_group_writable_environment_reports_recovery() -> Result<(), String> {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let mut files = Files::new();
+        files.insert(
+            "requirements.txt".into(),
+            b"vitrallis-absent-dependency>=1\n".to_vec(),
+        );
+        let target = managed(&root, &files);
+        std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
+        // Python's venv creates group-writable directories under umask 002.
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o775))
+            .map_err(|e| e.to_string())?;
+        let error = ensure(&root, &files).expect_err("damaged environment");
+        assert!(error.contains("damaged"), "{error}");
+        Ok(())
     }
 }

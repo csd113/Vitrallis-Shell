@@ -370,6 +370,28 @@ impl network::Fetch for FixtureFetch {
         network::read_download(std::io::Cursor::new(bytes), limit, progress)
     }
 }
+struct CancelFetch<'a> {
+    inner: &'a FixtureFetch,
+    cancelled: &'a AtomicBool,
+}
+impl network::Fetch for CancelFetch<'_> {
+    fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
+        self.inner.fetch(url, limit)
+    }
+    fn fetch_progress(
+        &self,
+        url: &str,
+        limit: usize,
+        progress: &mut dyn FnMut(usize) -> Result<(), String>,
+    ) -> Result<Vec<u8>, String> {
+        self.inner.fetch_progress(url, limit, &mut |n| {
+            if n > 0 {
+                self.cancelled.store(true, Ordering::Relaxed);
+            }
+            progress(n)
+        })
+    }
+}
 fn catalog_value(p: &Package) -> serde_json::Value {
     serde_json::json!({"schema_version":1,"apps":[{"id":p.id,"name":p.name,"version":p.version.to_string(),"runtime":"python","description":"fixture","entry":p.entry,"permissions":p.permissions,"installable":p.installable,"compatibility_notes":p.notes,"source":{"repository":p.repository.as_str(),"commit":p.commit,"path":p.directory},"files":p.files.iter().map(|r|serde_json::json!({"path":r.path,"size":r.size,"sha256":r.sha256})).collect::<Vec<_>>()}]})
 }
@@ -721,6 +743,9 @@ fn selected_install(
     row: &Checked,
     fetch: &impl network::Fetch,
 ) -> Result<Vec<String>, String> {
+    // The worker always loads the command's sources back from disk during the
+    // locked revalidation phase; direct calls must expose the same state.
+    sources.save(&loc.sources)?;
     let (_send, commands) = mpsc::channel();
     let (updates, receive) = mpsc::channel();
     install_one(
@@ -995,9 +1020,8 @@ fn streamed_byte_progress_and_cancellation_leave_no_installation() -> Result<(),
     let (_scratch, loc) = locations()?;
     let (p, files) = generic()?;
     let fetch = transport(&p, &files)?;
-    let row = install::check(&loc, p.clone())?;
     assert!(
-        acquire(&loc, &row, &fetch, |s| {
+        network::download(&fetch, &p, |s| {
             if s.starts_with("Downloading") {
                 Err("cancelled".into())
             } else {
@@ -1009,7 +1033,7 @@ fn streamed_byte_progress_and_cancellation_leave_no_installation() -> Result<(),
     assert!(!loc.root(&p).exists());
     let fetch = transport(&p, &files)?;
     assert!(
-        acquire(&loc, &row, &fetch, |s| {
+        network::download(&fetch, &p, |s| {
             if s.starts_with("Verifying") {
                 Err("cancelled".into())
             } else {
@@ -1053,28 +1077,6 @@ fn deferred_install_rechecks_source_trust_and_manifest_agreement() -> Result<(),
 
 #[test]
 fn cancellation_token_interrupts_selected_transfer_before_commit() -> Result<(), String> {
-    struct CancelFetch<'a> {
-        inner: &'a FixtureFetch,
-        cancelled: &'a AtomicBool,
-    }
-    impl network::Fetch for CancelFetch<'_> {
-        fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
-            self.inner.fetch(url, limit)
-        }
-        fn fetch_progress(
-            &self,
-            url: &str,
-            limit: usize,
-            progress: &mut dyn FnMut(usize) -> Result<(), String>,
-        ) -> Result<Vec<u8>, String> {
-            self.inner.fetch_progress(url, limit, &mut |n| {
-                if n > 0 {
-                    self.cancelled.store(true, Ordering::Relaxed);
-                }
-                progress(n)
-            })
-        }
-    }
     let (_scratch, loc) = locations()?;
     let (p, files) = generic()?;
     let inner = transport(&p, &files)?;
@@ -1552,9 +1554,11 @@ fn physical_python_managed_update() -> Result<(), String> {
         sources: home.join(".config/vitrallis/app-center.json"),
         home,
     };
-    let _lock = storage::Lock::take(&loc.state)?;
     let sources = Sources::load(&loc.sources)?;
-    let rows = super::cache::load(&loc, &sources);
+    let rows = {
+        let _lock = storage::Lock::take(&loc.state)?;
+        super::cache::load(&loc, &sources)
+    };
     let matches: Vec<_> = rows.iter().filter(|r| r.package.id == id).collect();
     if matches.len() != 1 {
         return Err("Expected exactly one cached app; refusing ambiguous selection".into());
@@ -1613,5 +1617,325 @@ fn tor_manifest_survives_install_discovery_and_launcher_ownership() -> Result<()
     assert!(!loc.data.join("vitrallis/tor").exists());
     // Idempotent repair neither loses the requirement nor treats its wrapper as a user edit.
     assert!(install::prepare(&loc, package, files)?.prepared.is_none());
+    Ok(())
+}
+
+fn default_package() -> Result<(Package, Files), String> {
+    let (mut p, files) = generic()?;
+    p.origin = sources::Repository::parse(sources::DEFAULT)?;
+    p.repository = p.origin.clone();
+    Ok((p, files))
+}
+
+fn run_service(
+    loc: &Locations,
+    fetch: &impl network::Fetch,
+    queue: Vec<Command>,
+) -> Vec<Result<String, String>> {
+    let (send, commands) = mpsc::channel();
+    let (updates, receive) = mpsc::channel();
+    for command in queue {
+        let _ = send.send(command);
+    }
+    drop(send);
+    service(loc, &commands, &updates, &AtomicBool::new(false), fetch);
+    drop(updates);
+    receive
+        .into_iter()
+        .filter_map(|update| match update {
+            Update::Done(result, _) => Some(result),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Records whether the storage lock could be taken from inside every request.
+struct LockProbeFetch<'a> {
+    state: &'a std::path::Path,
+    inner: FixtureFetch,
+    urls: std::cell::RefCell<Vec<String>>,
+    failures: std::cell::RefCell<Vec<String>>,
+}
+impl LockProbeFetch<'_> {
+    fn observe(&self, url: &str) {
+        if let Err(error) = storage::Lock::take(self.state) {
+            self.failures.borrow_mut().push(format!("{url}: {error}"));
+        }
+        self.urls.borrow_mut().push(url.into());
+    }
+}
+impl network::Fetch for LockProbeFetch<'_> {
+    fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
+        self.observe(url);
+        self.inner.fetch(url, limit)
+    }
+    fn fetch_progress(
+        &self,
+        url: &str,
+        limit: usize,
+        progress: &mut dyn FnMut(usize) -> Result<(), String>,
+    ) -> Result<Vec<u8>, String> {
+        self.observe(url);
+        self.inner.fetch_progress(url, limit, progress)
+    }
+}
+
+/// Blocks the first request until the test releases it.
+struct GateFetch {
+    inner: FixtureFetch,
+    entered: mpsc::Sender<()>,
+    release: std::sync::Mutex<mpsc::Receiver<()>>,
+}
+impl GateFetch {
+    fn gate(&self) {
+        let _ = self.entered.send(());
+        if let Ok(release) = self.release.lock() {
+            let _ = release.recv();
+        }
+    }
+}
+impl network::Fetch for GateFetch {
+    fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
+        self.gate();
+        self.inner.fetch(url, limit)
+    }
+    fn fetch_progress(
+        &self,
+        url: &str,
+        limit: usize,
+        progress: &mut dyn FnMut(usize) -> Result<(), String>,
+    ) -> Result<Vec<u8>, String> {
+        self.gate();
+        self.inner.fetch_progress(url, limit, progress)
+    }
+}
+
+#[test]
+fn check_never_holds_lock_while_fetching() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = default_package()?;
+    let fetch = LockProbeFetch {
+        state: &loc.state,
+        inner: transport(&p, &files)?,
+        urls: std::cell::RefCell::new(Vec::new()),
+        failures: std::cell::RefCell::new(Vec::new()),
+    };
+    let messages = run_service(&loc, &fetch, vec![Command::Check]);
+    match messages.as_slice() {
+        [Ok(_), Ok(message)] => {
+            assert_eq!(message, "Refresh complete: 1 entries. Select an app.");
+        }
+        other => return Err(format!("unexpected updates: {other:?}")),
+    }
+    assert!(fetch.urls.borrow().len() >= 3, "{:?}", fetch.urls.borrow());
+    assert!(
+        fetch.failures.borrow().is_empty(),
+        "lock held during fetch: {:?}",
+        fetch.failures.borrow()
+    );
+    let cached = cache::load(&loc, &Sources::default());
+    assert_eq!(cached.len(), 1);
+    assert_eq!(cached[0].package.id, p.id);
+    drop(storage::Lock::take(&loc.state)?);
+    Ok(())
+}
+
+#[test]
+fn install_downloads_unlocked_and_commits_locked() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = default_package()?;
+    let fetch = LockProbeFetch {
+        state: &loc.state,
+        inner: transport(&p, &files)?,
+        urls: std::cell::RefCell::new(Vec::new()),
+        failures: std::cell::RefCell::new(Vec::new()),
+    };
+    let messages = run_service(
+        &loc,
+        &fetch,
+        vec![Command::Check, Command::Install(vec![p.key()])],
+    );
+    match messages.as_slice() {
+        [Ok(_), Ok(refresh), Ok(installed)] => {
+            assert_eq!(refresh, "Refresh complete: 1 entries. Select an app.");
+            assert_eq!(
+                installed,
+                "Complete. The installed version is ready to open."
+            );
+        }
+        other => return Err(format!("unexpected updates: {other:?}")),
+    }
+    assert!(
+        fetch
+            .urls
+            .borrow()
+            .iter()
+            .any(|url| url == &payload_url(&p, "main.py")),
+        "{:?}",
+        fetch.urls.borrow()
+    );
+    assert!(
+        fetch
+            .urls
+            .borrow()
+            .iter()
+            .any(|url| url.ends_with("apps.json")),
+        "{:?}",
+        fetch.urls.borrow()
+    );
+    assert!(
+        fetch.failures.borrow().is_empty(),
+        "lock held during fetch: {:?}",
+        fetch.failures.borrow()
+    );
+    assert_eq!(install::label(&loc, &p)?, "0.1.0");
+    assert!(!loc.root(&p).join(".installation-pending").exists());
+    drop(storage::Lock::take(&loc.state)?);
+    Ok(())
+}
+
+#[test]
+fn check_commit_fails_cleanly_if_lock_taken_mid_fetch() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = default_package()?;
+    // Fast path: a lock held before Check fails before any request is made.
+    let held = storage::Lock::take(&loc.state)?;
+    let fetch = LockProbeFetch {
+        state: &loc.state,
+        inner: transport(&p, &files)?,
+        urls: std::cell::RefCell::new(Vec::new()),
+        failures: std::cell::RefCell::new(Vec::new()),
+    };
+    let messages = run_service(&loc, &fetch, vec![Command::Check]);
+    match messages.as_slice() {
+        [Ok(_), Err(error)] => assert!(
+            error.starts_with("Another Vitrallis storage operation is active"),
+            "{error}"
+        ),
+        other => return Err(format!("unexpected updates: {other:?}")),
+    }
+    assert!(fetch.urls.borrow().is_empty(), "{:?}", fetch.urls.borrow());
+    assert!(!loc.state.join("catalogs").exists());
+    drop(held);
+
+    // Mid-fetch: seed a known-good snapshot, then hold the lock after the
+    // unlocked fetch has started and verify the commit is refused cleanly.
+    let messages = run_service(&loc, &transport(&p, &files)?, vec![Command::Check]);
+    assert!(
+        matches!(messages.as_slice(), [Ok(_), Ok(_)]),
+        "{messages:?}"
+    );
+    let snapshot = loc.state.join("catalogs").join(format!(
+        "{}.json",
+        storage::sha(p.origin.as_str().as_bytes())
+    ));
+    let before = storage::read(&snapshot, metadata::CATALOG_LIMIT)?.ok_or("snapshot")?;
+    let rows_before = cache::load(&loc, &Sources::default());
+    let (entered, started) = mpsc::channel();
+    let (release, locked) = mpsc::channel();
+    let state = loc.state.clone();
+    let holder = std::thread::spawn(move || -> Result<storage::Lock, String> {
+        started.recv().map_err(|e| e.to_string())?;
+        let lock = storage::Lock::take(&state)?;
+        release.send(()).map_err(|e| e.to_string())?;
+        Ok(lock)
+    });
+    let fetch = GateFetch {
+        inner: transport(&p, &files)?,
+        entered,
+        release: std::sync::Mutex::new(locked),
+    };
+    let messages = run_service(&loc, &fetch, vec![Command::Check]);
+    match messages.as_slice() {
+        [Ok(_), Err(error)] => assert!(
+            error.starts_with("Another Vitrallis storage operation is active"),
+            "{error}"
+        ),
+        other => return Err(format!("unexpected updates: {other:?}")),
+    }
+    drop(holder.join().map_err(|_| "lock holder panicked")??);
+    assert_eq!(
+        storage::read(&snapshot, metadata::CATALOG_LIMIT)?,
+        Some(before)
+    );
+    let rows_after = cache::load(&loc, &Sources::default());
+    assert_eq!(rows_after.len(), rows_before.len());
+    assert_eq!(rows_after[0].package.id, rows_before[0].package.id);
+    assert_eq!(rows_after[0].installed, rows_before[0].installed);
+    drop(storage::Lock::take(&loc.state)?);
+    Ok(())
+}
+
+#[test]
+fn concurrent_install_between_download_and_commit_is_detected() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = default_package()?;
+    let messages = run_service(&loc, &transport(&p, &files)?, vec![Command::Check]);
+    assert!(
+        matches!(messages.as_slice(), [Ok(_), Ok(_)]),
+        "{messages:?}"
+    );
+    let (entered, started) = mpsc::channel();
+    let (release, unblock) = mpsc::channel();
+    let installer = {
+        let loc = loc.clone();
+        let p = p.clone();
+        let files = files.clone();
+        std::thread::spawn(move || -> Result<(), String> {
+            started.recv().map_err(|e| e.to_string())?;
+            let prepared = install::prepare(&loc, p.clone(), files)?;
+            install::install(&loc, &prepared)?;
+            release.send(()).map_err(|e| e.to_string())
+        })
+    };
+    let fetch = GateFetch {
+        inner: transport(&p, &files)?,
+        entered,
+        release: std::sync::Mutex::new(unblock),
+    };
+    let messages = run_service(&loc, &fetch, vec![Command::Install(vec![p.key()])]);
+    installer.join().map_err(|_| "installer panicked")??;
+    match messages.as_slice() {
+        [Ok(_), Err(error)] => assert!(error.contains("No available update"), "{error}"),
+        other => return Err(format!("unexpected updates: {other:?}")),
+    }
+    assert_eq!(install::label(&loc, &p)?, "0.1.0");
+    assert_eq!(
+        std::fs::read(loc.root(&p).join("main.py")).map_err(|e| e.to_string())?,
+        files["main.py"]
+    );
+    assert!(!loc.root(&p).join(".installation-pending").exists());
+    drop(storage::Lock::take(&loc.state)?);
+    Ok(())
+}
+
+#[test]
+fn cancelled_install_releases_lock_and_leaves_no_trace() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    let inner = transport(&p, &files)?;
+    let cancelled = AtomicBool::new(false);
+    let fetch = CancelFetch {
+        inner: &inner,
+        cancelled: &cancelled,
+    };
+    let row = install::check(&loc, p.clone())?;
+    let (_send, commands) = mpsc::channel();
+    let (updates, _receive) = mpsc::channel();
+    let error = install_one(
+        &loc,
+        &test_sources(&p),
+        &row,
+        &commands,
+        &updates,
+        &cancelled,
+        &fetch,
+    )
+    .err()
+    .ok_or("expected cancellation")?;
+    assert!(error.contains("Cancelled"));
+    assert!(!loc.root(&p).exists());
+    assert!(!loc.root(&p).join(".installation-pending").exists());
+    drop(storage::Lock::take(&loc.state)?);
     Ok(())
 }

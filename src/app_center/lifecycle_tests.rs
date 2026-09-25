@@ -92,6 +92,83 @@ fn update_invalidates_same_size_timestamp_python_cache() -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(unix)]
+#[test]
+fn update_removes_group_writable_python_bytecode_caches() -> Result<(), String> {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let (_scratch, loc) = locations()?;
+    let (p, mut files) = generic()?;
+    files.insert("release.py".into(), b"VERSION = 'old'\n".to_vec());
+    let p = inventory(p, &files);
+    install::install(&loc, &install::prepare(&loc, p.clone(), files.clone())?)?;
+    // The device's shared umask 002 makes Python create group-writable caches;
+    // the updater must still remove managed modules' stale bytecode.
+    let cache = loc.root(&p).join("__pycache__");
+    fs::create_dir(&cache).map_err(|e| e.to_string())?;
+    fs::set_permissions(&cache, fs::Permissions::from_mode(0o775)).map_err(|e| e.to_string())?;
+    let stale = cache.join("release.cpython-313.pyc");
+    fs::write(&stale, b"stale bytecode").map_err(|e| e.to_string())?;
+    fs::set_permissions(&stale, fs::Permissions::from_mode(0o664)).map_err(|e| e.to_string())?;
+    let (next, files) = upgraded(p, files, "start.py")?;
+    install::install(&loc, &install::prepare(&loc, next.clone(), files)?)?;
+    assert!(!stale.exists());
+    assert_eq!(launch(&loc, &next)?, "new release\n");
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn update_refuses_unsafe_python_cache_paths() -> Result<(), String> {
+    use std::{
+        fs,
+        os::unix::fs::{PermissionsExt, symlink},
+    };
+    for damage in [
+        "symlinked directory",
+        "world-writable directory",
+        "symlinked entry",
+        "hardlinked entry",
+    ] {
+        let (_scratch, loc) = locations()?;
+        let (p, mut files) = generic()?;
+        files.insert("release.py".into(), b"VERSION = 'old'\n".to_vec());
+        let p = inventory(p, &files);
+        install::install(&loc, &install::prepare(&loc, p.clone(), files.clone())?)?;
+        let root = loc.root(&p);
+        let cache = root.join("__pycache__");
+        fs::create_dir(&cache).map_err(|e| e.to_string())?;
+        fs::set_permissions(&cache, fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+        match damage {
+            "symlinked directory" => {
+                fs::remove_dir(&cache).map_err(|e| e.to_string())?;
+                symlink(root.join("elsewhere"), &cache).map_err(|e| e.to_string())?;
+            }
+            "world-writable directory" => {
+                fs::set_permissions(&cache, fs::Permissions::from_mode(0o777))
+                    .map_err(|e| e.to_string())?;
+            }
+            "hardlinked entry" => {
+                let borrowed = root.join("borrowed.pyc");
+                fs::write(&borrowed, b"shared").map_err(|e| e.to_string())?;
+                fs::hard_link(&borrowed, cache.join("release.cpython-313.pyc"))
+                    .map_err(|e| e.to_string())?;
+            }
+            _ => {
+                symlink(
+                    root.join("release.py"),
+                    cache.join("release.cpython-313.pyc"),
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+        let (next, files) = upgraded(p, files, "start.py")?;
+        let error = install::prepare(&loc, next, files).expect_err(damage);
+        assert!(error.contains("Unsafe Python cache"), "{damage}: {error}");
+    }
+    Ok(())
+}
+
 #[test]
 fn worker_keeps_catalog_across_sequential_mutations_and_local_scans_without_remote_refresh()
 -> Result<(), String> {
@@ -154,10 +231,12 @@ fn failed_repository_refresh_retains_snapshot_and_other_repositories_remain_usab
     let (p, files) = generic()?;
     let sources = test_sources(&p);
     let mut fetch = transport(&p, &files)?;
-    let mut rows = cache::refresh(&loc, &sources, &fetch, &mut vec![], |_| ());
+    let fetched = cache::fetch_documents(&loc, &sources, &fetch, |_| ());
+    let mut rows = cache::store_documents(&loc, &sources, fetched, &mut vec![]);
     assert_eq!(rows.len(), 1);
     fetch.responses.clear();
-    let failed = cache::refresh(&loc, &sources, &fetch, &mut rows, |_| ());
+    let fetched = cache::fetch_documents(&loc, &sources, &fetch, |_| ());
+    let failed = cache::store_documents(&loc, &sources, fetched, &mut rows);
     assert!(failed.iter().any(|row| row.package.id == p.id && row.ready));
     assert!(
         failed
@@ -237,7 +316,8 @@ fn cached_changelog_and_icon_need_no_requests_on_reopen_or_unchanged_refresh() -
     let p = inventory(p, &files);
     let fetch = transport(&p, &files)?;
     let sources = test_sources(&p);
-    let mut rows = cache::refresh(&loc, &sources, &fetch, &mut vec![], |_| ());
+    let fetched = cache::fetch_documents(&loc, &sources, &fetch, |_| ());
+    let mut rows = cache::store_documents(&loc, &sources, fetched, &mut vec![]);
     assert!(
         rows[0]
             .package
@@ -248,8 +328,59 @@ fn cached_changelog_and_icon_need_no_requests_on_reopen_or_unchanged_refresh() -
     let count = fetch.requests.borrow().len();
     assert!(cache::load(&loc, &sources)[0].package.changelog.is_some());
     assert_eq!(fetch.requests.borrow().len(), count);
-    let current = cache::refresh(&loc, &sources, &fetch, &mut rows, |_| ());
+    let fetched = cache::fetch_documents(&loc, &sources, &fetch, |_| ());
+    let current = cache::store_documents(&loc, &sources, fetched, &mut rows);
     assert_eq!(current.len(), 1);
     assert_eq!(fetch.requests.borrow().len(), count + 3);
+    Ok(())
+}
+
+#[test]
+fn commit_failure_releases_lock_and_retry_repairs() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    let prepared = install::prepare(&loc, p.clone(), files.clone())?;
+    // A writer creates a target between plan and commit.
+    storage::directory(&loc.root(&p))?;
+    storage::atomic(
+        &loc.root(&p).join("main.py"),
+        &storage::FileData {
+            bytes: b"foreign\n".to_vec(),
+            mode: 0o644,
+        },
+    )?;
+    let result = {
+        let _lock = storage::Lock::take(&loc.state)?;
+        install::install(&loc, &prepared)
+    };
+    assert!(
+        result
+            .as_ref()
+            .is_err_and(|error| error.contains("File changed since preparation")),
+        "{result:?}"
+    );
+    assert!(storage::Lock::take(&loc.state).is_ok());
+    assert!(!loc.root(&p).join(".installation-pending").exists());
+    std::fs::remove_file(loc.root(&p).join("main.py")).map_err(|e| e.to_string())?;
+    install::install(&loc, &install::prepare(&loc, p.clone(), files)?)?;
+    assert_eq!(launch(&loc, &p)?, "fixture\n");
+    Ok(())
+}
+
+#[test]
+fn presentation_refresh_budget_bounds_staged_bytes() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (p, files) = generic()?;
+    let p = inventory(p, &files);
+    let fetch = transport(&p, &files)?;
+    let mut staged = std::collections::BTreeMap::new();
+    let mut budget = 0;
+    cache::stage(&loc, &p, Some(&fetch), &mut staged, &mut budget);
+    assert!(staged.is_empty());
+    assert!(fetch.requests.borrow().is_empty());
+    let mut budget = cache::PRESENTATION_BUDGET;
+    cache::stage(&loc, &p, Some(&fetch), &mut staged, &mut budget);
+    assert_eq!(staged.len(), 1);
+    assert!(budget < cache::PRESENTATION_BUDGET);
     Ok(())
 }

@@ -252,6 +252,30 @@ fn artifacts_reject_foreign_urls_duplicates_missing_hashes_and_bad_sizes() -> Re
 }
 
 #[test]
+fn unrelated_release_assets_do_not_affect_bundle_selection() -> Result<(), String> {
+    let name = target()?.artifact();
+    let mut value = metadata("1.0.0")?;
+    let mut assets = value["assets"].as_array().cloned().unwrap_or_default();
+    // Published releases also carry the project license and third-party
+    // notices; they are not bundle assets and must be ignored here.
+    for notice in [
+        "LICENSE",
+        "THIRD_PARTY_NOTICES.md",
+        "THIRD_PARTY_LICENSES.txt",
+    ] {
+        assets.push(serde_json::json!({
+            "name": notice, "state": "uploaded", "size": 4096,
+            "browser_download_url": format!(
+                "https://github.com/csd113/Vitrallis-Shell/releases/download/v1.0.0/{notice}")
+        }));
+    }
+    value["assets"] = serde_json::json!(assets);
+    let selected = release::select(&value, Version::new(1, 0, 0), name.clone())?;
+    assert_eq!(selected.name, name);
+    Ok(())
+}
+
+#[test]
 fn downloads_require_complete_verified_bytes() -> Result<(), Box<dyn std::error::Error>> {
     let scratch = crate::test_support::Scratch::new()?;
     let release = release()?;

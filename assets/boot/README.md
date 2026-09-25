@@ -10,4 +10,10 @@ See [branding preparation](../branding/README.md) and
 [playback and memory limits](../../docs/visual-design.md). Artwork never becomes
 the default background of normal application or system screens.
 
-See [licensing and unresolved provenance](../../THIRD_PARTY_NOTICES.md) before redistribution.
+`scene.png` is a direct derivative of the supplied cave artwork and the four
+crystal layers are composed from the `assets/branding/source/` masters. The
+supplier, creator and license of those references are not recorded, so these
+files are **not covered by the project's MIT grant** until a dated permission
+statement or replacement is recorded. See [artwork provenance](../PROVENANCE.md)
+and [licensing and third-party notices](../../THIRD_PARTY_NOTICES.md) before
+redistribution.

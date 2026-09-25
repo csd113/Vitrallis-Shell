@@ -9,4 +9,5 @@ artwork, icon library or external asset request is used.
 Edit the SVG sources and rasterize them to PNG with an SVG-capable local tool.
 SVG rasterization is a development step, not an installed runtime dependency.
 
-Project-owned icons are covered by the root [MIT license](../../LICENSE).
+Project-owned icons are covered by the root [MIT license](../../LICENSE);
+the per-file record is [artwork provenance](../PROVENANCE.md).

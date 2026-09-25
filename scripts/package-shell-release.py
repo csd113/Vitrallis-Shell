@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Package the complete native Vitrallis build and a SHA-256 sidecar."""
+"""Package the complete native Vitrallis build and a SHA-256 sidecar.
+
+Every invocation validates the project license and third-party notice files
+so a release payload can never silently omit them. The canonical x86_64
+packaging run also stages them beside the bundles; release tooling uploads that
+directory, so each published release carries exactly one copy of each notice
+beside the architecture bundles."""
 import argparse
 import hashlib
 import json
@@ -15,6 +21,13 @@ BINARIES = ('vitrallis', 'vitrallis-terminal', 'vitrallis-notepad', 'vitrallis-f
 MAGIC = b'VITRALLIS-BUNDLE'
 ROOT = Path(__file__).resolve().parents[1]
 SESSION_HELPERS = ('bootstrap.py', 'install-session.py', 'uninstall.py', 'vitrallis-session.py', 'platform-setup.py', 'media-setup.py')
+# Required legal companions. Publishing duplicates of the same basename is
+# impossible on GitHub releases, so exactly one architecture stages them.
+NOTICES = ('LICENSE', 'THIRD_PARTY_NOTICES.md', 'THIRD_PARTY_LICENSES.txt')
+NOTICE_LIMITS = {'LICENSE': 64 * 1024,
+                 'THIRD_PARTY_NOTICES.md': 1024 * 1024,
+                 'THIRD_PARTY_LICENSES.txt': 16 * 1024 * 1024}
+NOTICE_TARGET = 'x86_64-unknown-linux-gnu'
 
 
 def inventory(directory, target, version, runner):
@@ -47,6 +60,23 @@ def inventory(directory, target, version, runner):
     return entries
 
 
+def release_notices():
+    """Validate and read the legal notices every release payload must carry."""
+    notices = {}
+    for name in NOTICES:
+        source = ROOT / name
+        if source.is_symlink() or not source.is_file():
+            raise ValueError('Missing release legal notice: ' + name)
+        size = source.stat().st_size
+        if not 0 < size <= NOTICE_LIMITS[name]:
+            raise ValueError('Invalid release legal notice: ' + name)
+        data = source.read_bytes()
+        if not data.strip():
+            raise ValueError('Empty release legal notice: ' + name)
+        notices[name] = data
+    return notices
+
+
 def package(directory, target, output, tag, runner=None, transition=False):
     metadata = json.loads(subprocess.check_output(
         ['cargo', 'metadata', '--no-deps', '--locked', '--format-version', '1'], cwd=ROOT))
@@ -57,6 +87,7 @@ def package(directory, target, output, tag, runner=None, transition=False):
         raise ValueError('Output directory already exists; refusing to overwrite release artifacts')
     if transition and version != '0.1.0-beta4':
         raise ValueError('The four-file transition bundle is only authorized for beta4')
+    notices = release_notices()
     entries = inventory(directory, target, version, runner)
     name = 'vitrallis-' + target + '-glibc2.36-v2.vtrbundle'
     output = output.absolute()
@@ -78,6 +109,11 @@ def package(directory, target, output, tag, runner=None, transition=False):
                 compile(data, str(source), 'exec')
                 (stage / helper).write_bytes(data)
                 (stage / (helper + '.sha256')).write_text(hashlib.sha256(data).hexdigest() + '  ' + helper + '\n')
+        if target == NOTICE_TARGET:
+            for filename, data in notices.items():
+                notice = stage / filename
+                notice.write_bytes(data)
+                notice.chmod(0o644)
         stage.rename(output)
 
 
