@@ -70,14 +70,14 @@ impl Geometry {
         let height = i32::from(layout.height);
         let scale = layout.text_scale.max(1);
         let inset = 8 * scale;
-        let title_height = 24 * scale;
-        let actions_height = 30 * scale;
+        let title_height = 20 * scale;
+        let actions_height = 22 * scale;
         let actions_y = title_height + 2 * scale;
         let search_y = actions_y + actions_height + 2 * scale;
-        let search_height = 24 * scale;
+        let search_height = 20 * scale;
         let list_top = search_y + search_height + 4 * scale;
-        let footer_height = 14 * scale;
-        let pinned_height = 30 * scale;
+        let footer_height = 12 * scale;
+        let pinned_height = 24 * scale;
         let pinned_y = height - footer_height - pinned_height - 4 * scale;
         let button_width = (12 * 8 * scale + 2 * inset).min(width - 2 * inset);
         Self {
@@ -109,8 +109,8 @@ impl Geometry {
                 h: search_height,
             },
             list_top,
-            row_height: 34 * scale,
-            row_gap: 3 * scale,
+            row_height: 28 * scale,
+            row_gap: 2 * scale,
             pinned: Rect {
                 x: inset,
                 y: pinned_y,
@@ -135,7 +135,7 @@ impl Geometry {
     #[must_use]
     pub fn rows(&self) -> usize {
         let span = self.pinned.y - self.list_top;
-        usize::try_from(span / (self.row_height + self.row_gap))
+        usize::try_from((span + self.row_gap) / (self.row_height + self.row_gap))
             .unwrap_or(0)
             .max(1)
     }
@@ -2293,6 +2293,40 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn app_list_capacity_preserves_controls_and_room_for_multiple_apps() -> Result<(), String> {
+        for (width, height, capacity) in
+            [(320, 200, 3), (480, 272, 5), (800, 480, 4), (1280, 720, 8)]
+        {
+            let layout = Layout::home(width, height)?;
+            let geometry = Geometry::new(&layout);
+            assert_eq!(geometry.rows(), capacity);
+            let mut center = center()?;
+            for forward in [true, false] {
+                center.event(
+                    &key(if forward {
+                        Keycode::PageDown
+                    } else {
+                        Keycode::PageUp
+                    }),
+                    &layout,
+                );
+                let rows: Vec<_> = center
+                    .targets(&layout)
+                    .into_iter()
+                    .filter(|(target, _, _)| matches!(target, Target::Row(_)))
+                    .collect();
+                assert!(!rows.is_empty());
+                assert!(rows.len() <= capacity);
+                for (_, _, bounds) in rows {
+                    assert!(bounds.y >= geometry.list_top);
+                    assert!(bounds.y + bounds.h <= geometry.pinned.y);
+                }
+            }
+            assert_eq!(center.start, 0);
+        }
+        Ok(())
+    }
     #[test]
     fn every_visible_control_has_keyboard_focus_at_both_sizes() -> Result<(), String> {
         for (w, h) in [(480, 272), (800, 480)] {

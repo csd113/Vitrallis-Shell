@@ -237,11 +237,14 @@ impl Settings {
             }
             return None;
         }
+        if self.confirmation.is_some() {
+            return self.power_input(action);
+        }
         if self.page == Page::Storage {
             self.storage_input(action);
             return None;
         }
-        if self.footer_input(action) {
+        if self.page != Page::Home && self.footer_input(action) {
             return None;
         }
         match self.page {
@@ -271,15 +274,43 @@ impl Settings {
             return None;
         }
         match action {
+            Action::Move(Direction::Down)
+                if self.selected >= HOME_ROWS - HOME_COLUMNS && self.selected < HOME_ROWS =>
+            {
+                self.selected = if self.selected.is_multiple_of(HOME_COLUMNS) {
+                    BACK
+                } else {
+                    footer::RESTART
+                };
+            }
+            Action::Move(Direction::Up) if self.selected >= HOME_ROWS => {
+                self.selected = if self.selected == BACK {
+                    HOME_ROWS - 2
+                } else {
+                    HOME_ROWS - 1
+                };
+            }
+            Action::Move(_) if self.selected >= HOME_ROWS => {
+                self.footer_input(action);
+            }
             Action::Move(direction) => {
                 self.selected = grid_move(self.selected, direction, HOME_ROWS, HOME_COLUMNS);
             }
-            Action::SelectAndActivate(index) if index < HOME_ROWS => {
+            Action::SelectAndActivate(index)
+                if index < HOME_ROWS
+                    || [BACK, footer::RESTART, footer::SHUTDOWN].contains(&index) =>
+            {
                 self.selected = index;
                 return self.home_input(Action::Activate);
             }
             Action::Activate | Action::SelectAndActivate(_) => {
-                if let Some(page) = home_page(self.selected) {
+                if self.selected == BACK {
+                    self.cancel();
+                } else if self.selected == footer::RESTART {
+                    self.begin_power(Power::Reboot);
+                } else if self.selected == footer::SHUTDOWN {
+                    self.begin_power(Power::Shutdown);
+                } else if let Some(page) = home_page(self.selected) {
                     self.page(page);
                 }
             }
@@ -291,6 +322,8 @@ impl Settings {
     fn about_input(&mut self, action: Action) -> Option<Request> {
         if matches!(action, Action::Back | Action::System | Action::Page(_)) {
             self.page(Page::Home);
+        } else if matches!(action, Action::Move(_)) {
+            self.selected = BACK;
         }
         None
     }
@@ -602,21 +635,24 @@ mod tests {
             ..Settings::default()
         };
         settings.show();
-        settings.page(Page::Device);
-        assert_eq!(settings.input(Action::SelectAndActivate(3)), None);
+        assert_eq!(
+            settings.input(Action::SelectAndActivate(footer::SHUTDOWN)),
+            None
+        );
         assert!(settings.confirmation.is_some());
         assert_eq!(settings.input(Action::Activate), None);
-        settings.input(Action::SelectAndActivate(2));
+        settings.input(Action::SelectAndActivate(footer::RESTART));
         settings.input(Action::Move(Direction::Right));
         assert_eq!(
             settings.input(Action::Activate),
             Some(Request::Control(Control::Power(Power::Reboot)))
         );
-        settings.input(Action::SelectAndActivate(3));
+        settings.input(Action::SelectAndActivate(footer::SHUTDOWN));
+        settings.input(Action::Move(Direction::Right));
         settings.input(Action::Back);
         assert!(settings.confirmation.is_none());
         assert!(settings.open);
-        assert_eq!(settings.page, Page::Device);
+        assert_eq!(settings.page, Page::Home);
         settings.confirmation = Some((
             Power::Shutdown,
             Instant::now()
@@ -624,6 +660,28 @@ mod tests {
                 .unwrap_or_else(Instant::now),
         ));
         assert!(settings.expire());
+        assert!(settings.confirmation.is_none());
+    }
+    #[test]
+    fn power_confirmation_rechecks_availability_and_left_returns_to_cancel() {
+        let mut settings = Settings::default();
+        settings.show();
+        settings.input(Action::SelectAndActivate(footer::RESTART));
+        assert!(settings.confirmation.is_none());
+        settings.status.power_controls = true;
+        settings.pending = true;
+        settings.input(Action::SelectAndActivate(footer::RESTART));
+        assert!(settings.confirmation.is_none());
+        settings.pending = false;
+        settings.input(Action::SelectAndActivate(footer::RESTART));
+        settings.input(Action::Move(Direction::Right));
+        settings.input(Action::Move(Direction::Left));
+        assert_eq!(settings.selected, 0);
+        assert_eq!(settings.input(Action::Activate), None);
+        settings.input(Action::SelectAndActivate(footer::RESTART));
+        settings.input(Action::Move(Direction::Right));
+        settings.status.power_controls = false;
+        assert_eq!(settings.input(Action::Activate), None);
         assert!(settings.confirmation.is_none());
     }
     #[test]
@@ -706,6 +764,17 @@ mod tests {
         }
         assert!(home_page(HOME_ROWS).is_none());
         Ok(())
+    }
+    #[test]
+    fn about_back_button_is_reachable_without_a_shortcut() {
+        let mut settings = Settings::default();
+        settings.show();
+        settings.page(Page::About);
+        settings.input(Action::Move(Direction::Down));
+        assert_eq!(settings.selected, BACK);
+        settings.input(Action::Activate);
+        assert_eq!(settings.page, Page::Home);
+        assert!(settings.open);
     }
     #[test]
     fn clock_format_toggles_and_persists_through_the_policy() {

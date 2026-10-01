@@ -18,7 +18,8 @@ impl PanelLayout {
     pub fn home(layout: &Layout) -> [Rect; 8] {
         let gap = (i32::from(layout.height) / 40).max(5);
         let top = layout.title.h + gap;
-        let available = layout.footer.y - top - gap;
+        // One shared summary line replaces eight cramped two-line cards.
+        let available = layout.footer.y - top - gap - 12 * layout.text_scale;
         let height = (available - 3 * gap) / 4;
         let width = (layout.title.w - gap) / 2;
         std::array::from_fn(|index| {

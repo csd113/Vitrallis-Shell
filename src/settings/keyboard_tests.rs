@@ -147,31 +147,63 @@ fn system_controls_and_confirmations_are_reachable_using_only_keys() {
         key(&mut settings, Keycode::Return),
         Some(Request::Calibration)
     );
-    // Restart and Power off each need a distinct confirmation; the default is
-    // always Cancel, and cancelling keeps the page and lets the user retry.
-    for (index, power) in [(2, Power::Reboot), (3, Power::Shutdown)] {
-        settings.page(Page::Device);
-        settings.selected = index;
+    move_keys(&mut settings, &[Keycode::Escape]);
+    // Walk directly from the overview to each power action using arrows.
+    for (keys, power) in [
+        (
+            vec![
+                Keycode::Down,
+                Keycode::Down,
+                Keycode::Down,
+                Keycode::Down,
+                Keycode::Right,
+            ],
+            Power::Reboot,
+        ),
+        (
+            vec![
+                Keycode::Down,
+                Keycode::Down,
+                Keycode::Down,
+                Keycode::Down,
+                Keycode::Right,
+                Keycode::Right,
+            ],
+            Power::Shutdown,
+        ),
+    ] {
+        settings.selected = 0;
+        move_keys(&mut settings, &keys);
+        let target = settings.selected;
         move_keys(&mut settings, &[Keycode::Return]);
         assert!(settings.confirmation.is_some());
-        assert_eq!(key(&mut settings, Keycode::Return), None);
+        assert_eq!(settings.selected, 0);
+        move_keys(&mut settings, &[Keycode::Return]);
         assert!(settings.confirmation.is_none());
-        assert_eq!(settings.page, Page::Device);
-        settings.selected = index;
+        assert_eq!(settings.page, Page::Home);
+        settings.selected = target;
         move_keys(&mut settings, &[Keycode::Return, Keycode::Right]);
         assert_eq!(
             key(&mut settings, Keycode::Return),
             Some(Request::Control(Control::Power(power)))
         );
-        assert_eq!(settings.page, Page::Device);
+        settings.selected = target;
+        move_keys(
+            &mut settings,
+            &[Keycode::Return, Keycode::Right, Keycode::Escape],
+        );
+        assert!(settings.confirmation.is_none());
+        assert_eq!(settings.page, Page::Home);
     }
-    // Escape cancels a pending power confirmation before leaving the page.
-    settings.selected = 2;
-    move_keys(&mut settings, &[Keycode::Return, Keycode::Escape]);
-    assert!(settings.confirmation.is_none());
-    assert_eq!(settings.page, Page::Device);
-    move_keys(&mut settings, &[Keycode::Escape]);
-    assert_eq!(settings.page, Page::Home);
+    // The full-height Close button is keyboard reachable too.
+    settings.selected = 0;
+    move_keys(
+        &mut settings,
+        &[Keycode::Down, Keycode::Down, Keycode::Down, Keycode::Down],
+    );
+    assert_eq!(settings.selected, BACK);
+    move_keys(&mut settings, &[Keycode::Return]);
+    assert!(!settings.open);
 }
 
 #[test]
@@ -243,6 +275,8 @@ fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<
     for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
         let layout = Layout::home(width, height)?;
         for page in [
+            Page::Home,
+            Page::About,
             Page::Display,
             Page::DateTime,
             Page::Device,
@@ -254,6 +288,7 @@ fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<
             Page::Tor,
         ] {
             let mut keyboard = Settings::default();
+            keyboard.status.power_controls = true;
             keyboard.show();
             keyboard.page(page);
             for (bounds, control) in PanelLayout::footer(&layout)
@@ -262,6 +297,7 @@ fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<
             {
                 let Some((index, _)) = control else { continue };
                 let mut touch = Settings::default();
+                touch.status.power_controls = true;
                 touch.show();
                 touch.page(page);
                 touch.status.timezones = (0..6).map(|zone| format!("Zone/{zone}")).collect();
@@ -314,6 +350,10 @@ fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<
                         keyboard.selected,
                         keyboard.zone_start
                     )
+                );
+                assert_eq!(
+                    touch.confirmation.map(|(power, _)| power),
+                    keyboard.confirmation.map(|(power, _)| power)
                 );
             }
         }

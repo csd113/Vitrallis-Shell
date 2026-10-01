@@ -134,7 +134,7 @@ fn body(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<(),
                     canvas,
                     message,
                     Rect {
-                        x: geometry.list_top,
+                        x: geometry.title.x,
                         y: geometry.list_top + 8 * geometry.scale,
                         w: geometry.width - 16 * geometry.scale,
                         h: 24 * geometry.scale,
@@ -237,7 +237,16 @@ fn details(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<
         w: geometry.title.w - icon - 8 * scale,
         h: icon,
     };
-    text_left(canvas, &name, name_bounds, scale + 1, theme::TEXT)?;
+    text_left(
+        canvas,
+        &name,
+        Rect {
+            h: 20 * scale,
+            ..name_bounds
+        },
+        scale,
+        theme::TEXT,
+    )?;
     if let Some((state, label)) = center.chosen_state() {
         let (ink, surface) = state_colors(state);
         let width = super::chip_width(&label, scale);
@@ -429,12 +438,12 @@ fn app_row(
     bounds: Rect,
 ) -> Result<(), String> {
     let scale = geometry.scale;
-    let name_scale = scale + 1;
+    let name_scale = scale;
     let icon_bounds = Rect {
         x: bounds.x + 4 * scale,
-        y: bounds.y + (bounds.h - 28 * scale) / 2,
-        w: 28 * scale,
-        h: 28 * scale,
+        y: bounds.y + (bounds.h - 22 * scale) / 2,
+        w: 22 * scale,
+        h: 22 * scale,
     };
     if let Some(pixels) = icon {
         draw_icon(canvas, pixels, icon_bounds)?;
@@ -458,9 +467,7 @@ fn app_row(
         // One cell of clearance keeps a shortened name from touching the state
         // chip that shares the row.
         w: (bounds.w - icon_bounds.w - 14 * scale - chip_width - advance(scale)).max(0),
-        // The name is drawn one scale larger than the row text, so its box has
-        // to contain that cell: centering inside a shorter box would push the
-        // glyphs up through the row's own border.
+        // Names and descriptions use the same readable scale, on separate lines.
         h: theme::CELL * name_scale,
     };
     text_left(canvas, name, text_bounds, name_scale, theme::TEXT)?;

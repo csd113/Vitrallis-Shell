@@ -14,12 +14,10 @@ use crate::{
 };
 use sdl2::{pixels::Color, render::Texture};
 
-pub(super) const ASSETS: [&[u8]; 5] = [
+pub(super) const ASSETS: [&[u8]; 3] = [
     include_bytes!("../../assets/system/wifi.png"),
     include_bytes!("../../assets/system/sun.png"),
     include_bytes!("../../assets/system/speaker.png"),
-    include_bytes!("../../assets/system/power.png"),
-    include_bytes!("../../assets/system/restart.png"),
 ];
 
 const INK: Color = theme::TEXT;
@@ -33,8 +31,6 @@ pub(super) enum Icon {
     Sun,
     Speaker,
     Wifi,
-    Power,
-    Restart,
     Bolt,
 }
 fn icon(
@@ -48,8 +44,6 @@ fn icon(
         Icon::Wifi => Some(0),
         Icon::Sun => Some(1),
         Icon::Speaker => Some(2),
-        Icon::Power => Some(3),
-        Icon::Restart => Some(4),
         Icon::Bolt => None,
     };
     if let Some(texture) = index
@@ -94,14 +88,6 @@ fn pixel(kind: Icon, x: i32, y: i32) -> bool {
                     || (225..=289).contains(&distance)
                     || (441..=529).contains(&distance)))
                 || (x * x + (y - 9) * (y - 9) <= 7)
-        }
-        Icon::Power => {
-            ((100..=169).contains(&radius) && (y >= -6 || x.abs() >= 6))
-                || (x.abs() <= 1 && (-14..=0).contains(&y))
-        }
-        Icon::Restart => {
-            ((81..=144).contains(&radius) && (x < 5 || y > 0))
-                || ((3..=12).contains(&x) && (-13..=-4).contains(&y) && y >= x - 16)
         }
         Icon::Bolt => polygon(
             &[(6, -14), (-9, 3), (-1, 3), (-5, 14), (10, -5), (2, -5)],
@@ -297,6 +283,9 @@ pub(super) fn panel(
     settings: &Settings,
     textures: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
+    if settings.confirmation.is_some() {
+        return confirmation(canvas, layout, settings, &PanelLayout::new(layout));
+    }
     match settings.page {
         Page::Tor | Page::TorDetails => return tor::panel(canvas, layout, settings),
         Page::Applications => return preferences_panel(canvas, layout, settings),
@@ -313,43 +302,71 @@ pub(super) fn panel(
     home_panel(canvas, layout, settings)
 }
 
-/// Home menu: the same large-option style is reused by every category, so a
-/// user always sees one visual system. Two columns by four rows.
+/// The overview uses simple category labels and one summary for the focused item.
 fn home_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
-    for (index, (bounds, (title, detail))) in PanelLayout::home(layout)
+    let rows = settings.home_rows();
+    for (index, (bounds, (title, _))) in
+        PanelLayout::home(layout).into_iter().zip(&rows).enumerate()
+    {
+        card(canvas, bounds, settings.selected == index)?;
+        label(
+            canvas,
+            title,
+            Rect {
+                x: bounds.x + 8,
+                w: bounds.w - 16,
+                ..bounds
+            },
+            layout.text_scale,
+            TEXT,
+        )?;
+    }
+    let summary = if settings.message.is_empty() {
+        rows.get(settings.selected)
+            .map_or("", |(_, detail)| detail.as_str())
+    } else {
+        &settings.message
+    };
+    text(
+        canvas,
+        summary,
+        Rect {
+            y: layout.footer.y - 12 * layout.text_scale,
+            h: 12 * layout.text_scale,
+            ..layout.footer
+        },
+        layout.text_scale,
+        MUTED,
+    )?;
+    for (position, (bounds, control)) in PanelLayout::footer(layout)
         .into_iter()
-        .zip(settings.home_rows())
+        .zip(settings.footer_controls())
         .enumerate()
     {
+        let Some((index, title)) = control else {
+            continue;
+        };
+        let bounds = Rect {
+            x: bounds.x + 2,
+            w: bounds.w - 4,
+            ..bounds
+        };
         card(canvas, bounds, settings.selected == index)?;
         text(
             canvas,
-            &title,
-            Rect {
-                y: bounds.y + 4 * layout.text_scale,
-                h: bounds.h / 2,
-                ..bounds
-            },
+            title,
+            bounds,
             layout.text_scale,
-            if settings.selected == index {
-                INK
+            if position == 0 {
+                ACCENT
+            } else if settings.status.power_controls && !settings.pending {
+                AMBER
             } else {
-                TEXT
+                theme::DISABLED
             },
-        )?;
-        text(
-            canvas,
-            &detail,
-            Rect {
-                y: bounds.y + bounds.h / 2,
-                h: bounds.h / 2,
-                ..bounds
-            },
-            layout.text_scale,
-            MUTED,
         )?;
     }
-    panel_footer(canvas, layout, settings)
+    Ok(())
 }
 
 /// Shared two-line option row used by every Settings category.
@@ -837,17 +854,14 @@ fn confirmation(
     )
 }
 
-/// Device: hardware controls and the two guarded power actions.
+/// Device: screen timeout and touch calibration.
 fn device_panel(
     canvas: &mut Screen,
     layout: &Layout,
     settings: &Settings,
     textures: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
-    if settings.confirmation.is_some() {
-        return confirmation(canvas, layout, settings, &PanelLayout::new(layout));
-    }
-    let rows = PanelLayout::rows(layout, 4);
+    let rows = PanelLayout::rows(layout, 2);
     for (index, bounds) in rows.into_iter().enumerate() {
         let (title, detail, color, kind) = match index {
             0 => (
@@ -856,7 +870,7 @@ fn device_panel(
                 ACCENT,
                 Icon::Sun,
             ),
-            1 => (
+            _ => (
                 "Calibrate touchscreen",
                 if settings.status.calibration {
                     "Tap the targets; any key cancels".into()
@@ -870,26 +884,6 @@ fn device_panel(
                 },
                 Icon::Bolt,
             ),
-            2 => (
-                "Restart",
-                "Asks for confirmation".into(),
-                if settings.status.power_controls {
-                    AMBER
-                } else {
-                    MUTED
-                },
-                Icon::Restart,
-            ),
-            _ => (
-                "Power off",
-                "Asks for confirmation".into(),
-                if settings.status.power_controls {
-                    AMBER
-                } else {
-                    MUTED
-                },
-                Icon::Power,
-            ),
         };
         card(canvas, bounds, settings.selected == index)?;
         let size = bounds.h * 3 / 5;
@@ -902,11 +896,7 @@ fn device_panel(
                 h: size,
             },
             kind,
-            if index < 2 || settings.status.power_controls {
-                ACCENT
-            } else {
-                MUTED
-            },
+            ACCENT,
             textures,
         )?;
         let content = Rect {

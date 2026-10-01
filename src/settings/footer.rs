@@ -12,6 +12,8 @@ pub(super) const PREVIOUS: usize = 9;
 pub(super) const NEXT: usize = 10;
 pub(super) const REFRESH: usize = 11;
 pub(super) const RESTORE: usize = 12;
+pub(super) const RESTART: usize = 13;
+pub(super) const SHUTDOWN: usize = 14;
 
 impl Settings {
     pub const fn footer_controls(&self) -> [Option<(usize, &'static str)>; 3] {
@@ -19,7 +21,11 @@ impl Settings {
             return [None; 3];
         }
         match self.page {
-            Page::Home | Page::About => [None; 3],
+            Page::Home => [
+                Some((BACK, "Close")),
+                Some((RESTART, "Restart")),
+                Some((SHUTDOWN, "Power off")),
+            ],
             Page::Timezones => [
                 Some((PREVIOUS, "< Previous")),
                 Some((BACK, "Back")),
@@ -129,12 +135,11 @@ impl Settings {
     pub(super) const fn content_rows(&self) -> usize {
         match self.page {
             Page::Home => super::HOME_ROWS,
-            Page::Display | Page::DateTime => 2,
+            Page::Display | Page::DateTime | Page::Device => 2,
             Page::Timezones | Page::About => 5,
             Page::Wireless => super::wireless::WIRELESS_ROWS,
             Page::Tor | Page::TorDetails => 6,
             Page::Applications => super::preferences::APP_ROWS,
-            Page::Device => 4,
             Page::Storage | Page::Updates => 0,
         }
     }

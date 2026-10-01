@@ -27,7 +27,7 @@ pub struct Launcher {
     pub selected: usize,
     pub phase: Phase,
     pub status: String,
-    /// Show `status` in the lower-left status area instead of the idle hint.
+    /// Allow `status` to be presented while an app launch is active.
     pub status_notice: bool,
     pub opening: Option<String>,
     pub error: Option<String>,
@@ -96,7 +96,7 @@ impl Launcher {
             }
         }
     }
-    /// Show a lower-left status message without changing the current phase.
+    /// Record lifecycle feedback without changing the current phase.
     pub fn notify(&mut self, text: String) {
         self.status = text;
         self.status_notice = true;

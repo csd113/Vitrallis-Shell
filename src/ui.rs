@@ -15,6 +15,25 @@ use sdl2::{
 };
 use std::time::{Duration, Instant};
 
+/// Restore persisted shell preferences while keeping diagnostics in the log.
+fn restore_shell_preferences(state: &mut Launcher) {
+    match crate::preferences::Policy::load(state.preferences.ampm) {
+        Ok(policy) => state.settings.policy = policy,
+        Err(error) => {
+            eprintln!("level=warn event=policy_load message={error:?}");
+            state.status = error;
+        }
+    }
+    state.preferences.ampm = state.settings.policy.ampm;
+    match crate::folders::Folders::load() {
+        Ok(folders) => state.folders = folders,
+        Err(error) => {
+            eprintln!("level=warn event=folder_load message={error:?}");
+            state.status = format!("Folder state unavailable: {error}");
+        }
+    }
+}
+
 pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     let (width, height) = config.size.unwrap_or_else(|| platform.resolution());
     Layout::home(width, height)?;
@@ -63,15 +82,7 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     let layout = window_layout(&canvas)?;
     let mut state = Launcher::new(catalog.apps, layout.columns, layout.tiles.len())?;
     state.preferences = catalog.preferences;
-    match crate::preferences::Policy::load(state.preferences.ampm) {
-        Ok(policy) => state.settings.policy = policy,
-        Err(error) => state.status = error,
-    }
-    state.preferences.ampm = state.settings.policy.ampm;
-    match crate::folders::Folders::load() {
-        Ok(folders) => state.folders = folders,
-        Err(error) => state.status = format!("Folder state unavailable: {error}"),
-    }
+    restore_shell_preferences(&mut state);
     state.rebuild_view(None);
     if !catalog.diagnostics.is_empty() {
         state.status = format!("{} APP WARNINGS - SEE LOG", catalog.diagnostics.len());
@@ -1772,8 +1783,8 @@ mod tests {
         assert!(state.settings.open);
         assert_eq!(state.settings.network, crate::settings::NetworkState::Idle);
         state.settings.status.power_controls = true;
-        state.settings.page(crate::settings::Page::Device);
-        state.settings.input(Action::SelectAndActivate(3));
+        state.settings.page(crate::settings::Page::Home);
+        state.settings.input(Action::SelectAndActivate(14));
         assert!(state.settings.confirmation.is_some());
         window_focus(&event, &mut state, &mut pointer, &mut accept_after);
         assert!(state.settings.open);

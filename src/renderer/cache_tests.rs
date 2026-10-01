@@ -34,8 +34,8 @@ pub(super) fn lifecycle(
     textures.reset(creator, &state);
     assert_eq!(
         performance::snapshot().uploads,
-        6,
-        "device reset rebuilds icon and five system textures"
+        4,
+        "device reset rebuilds icon and three system textures"
     );
     performance::reset();
     png(&path, 32, [7, 8, 9, 255])?;

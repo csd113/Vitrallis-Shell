@@ -1,4 +1,4 @@
-//! Device page (screen timeout, calibration, power) and the paged time-zone selector.
+//! Device controls, guarded power actions and the paged time-zone selector.
 use super::{Page, Request, Settings, footer::BACK};
 use crate::{input::Action, navigation::Direction, platform::system::Control};
 impl Settings {
@@ -19,40 +19,46 @@ impl Settings {
         self.clear_pointer();
         self.message.clear();
     }
-    /// Device rows: screen timeout, touch calibration, restart and power off.
-    /// Power actions keep the existing two-step confirmation.
-    pub(super) fn device_input(&mut self, action: Action) -> Option<Request> {
-        if matches!(action, Action::Back | Action::System | Action::Page(_)) {
-            if let Some((power, time)) = self.confirmation.take() {
-                let confirm =
-                    self.selected == 1 && time.elapsed() < std::time::Duration::from_secs(15);
+    /// Start a guarded power action from the Settings overview.
+    pub(super) fn begin_power(&mut self, power: crate::platform::system::Power) {
+        if self.pending || !self.status.power_controls {
+            self.message = "Power control unavailable on this device".into();
+            return;
+        }
+        self.confirmation = Some((power, std::time::Instant::now()));
+        self.selected = 0;
+        self.message.clear();
+        self.clear_pointer();
+    }
+    /// Cancel is the default, and Escape always cancels, regardless of focus.
+    pub(super) fn power_input(&mut self, action: Action) -> Option<Request> {
+        match action {
+            Action::Back | Action::System | Action::Page(_) => self.back(),
+            Action::Move(Direction::Right | Direction::Down) => self.selected = 1,
+            Action::Move(Direction::Left | Direction::Up) => self.selected = 0,
+            Action::SelectAndActivate(index) if index < 2 => {
+                self.selected = index;
+                return self.power_input(Action::Activate);
+            }
+            Action::Activate => {
+                let (power, time) = self.confirmation.take()?;
+                let confirm = self.selected == 1
+                    && time.elapsed() < std::time::Duration::from_secs(15)
+                    && !self.pending
+                    && self.status.power_controls;
                 self.selected = 0;
                 self.message.clear();
+                self.clear_pointer();
                 return confirm.then_some(Request::Control(Control::Power(power)));
             }
-            self.back();
-            return None;
+            Action::SelectAndActivate(_) => {}
         }
-        if self.confirmation.is_some() {
-            match action {
-                Action::Move(Direction::Left | Direction::Right | Direction::Down) => {
-                    self.selected = 1;
-                }
-                Action::Move(Direction::Up) => self.selected = 0,
-                Action::SelectAndActivate(index) if index < 2 => {
-                    self.selected = index;
-                    return self.device_input(Action::Activate);
-                }
-                Action::Activate => {
-                    let (power, time) = self.confirmation.take()?;
-                    let confirm =
-                        self.selected == 1 && time.elapsed() < std::time::Duration::from_secs(15);
-                    self.selected = 0;
-                    self.message.clear();
-                    return confirm.then_some(Request::Control(Control::Power(power)));
-                }
-                _ => {}
-            }
+        None
+    }
+    /// Device rows: screen timeout and touch calibration.
+    pub(super) fn device_input(&mut self, action: Action) -> Option<Request> {
+        if matches!(action, Action::Back | Action::System | Action::Page(_)) {
+            self.back();
             return None;
         }
         match action {
@@ -60,28 +66,13 @@ impl Settings {
                 return self.timeout(action == Action::Move(Direction::Right));
             }
             Action::Move(direction) => self.move_rows(direction),
-            Action::SelectAndActivate(index) if index < 4 => {
+            Action::SelectAndActivate(index) if index < 2 => {
                 self.selected = index;
                 return self.device_input(Action::Activate);
             }
             Action::Activate if !self.pending => match self.selected {
                 0 => return self.timeout(true),
                 1 if self.status.calibration => return Some(Request::Calibration),
-                2 | 3 => {
-                    let power = if self.selected == 2 {
-                        crate::platform::system::Power::Reboot
-                    } else {
-                        crate::platform::system::Power::Shutdown
-                    };
-                    if !self.status.power_controls {
-                        self.message = "Power control unavailable on this device".into();
-                        return None;
-                    }
-                    self.confirmation = Some((power, std::time::Instant::now()));
-                    self.selected = 0;
-                    self.message.clear();
-                    self.clear_pointer();
-                }
                 _ => self.message = "Control unavailable on this device".into(),
             },
             Action::Activate

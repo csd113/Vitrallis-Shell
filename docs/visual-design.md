@@ -1,8 +1,7 @@
 # Vitrallis visual design
 
-Everyday screens retain their existing icons, controls, routes, keyboard actions,
-and layout, with **Manage [F10]** aligned to the rightmost tile and no grid separator
-lines. The crystal logo and environment are reserved for startup. No crystal
+Everyday screens retain their existing features and shared theme, with
+**Manage [F10]** aligned to the rightmost tile and no grid separator lines. The crystal logo and environment are reserved for startup. No crystal
 marks are added to the home header, Settings, App Center, or bundled app icons.
 
 ## Shared interface theme
@@ -57,6 +56,25 @@ User wallpaper/color preferences remain available on the home screen. Settings
 uses the clean background so wallpaper cannot obscure its information. External
 application icons and existing system icons remain unchanged.
 
+## Compact navigation
+
+Settings use a two-column category grid with one label per card. Only the focused
+category's summary appears below the grid, leaving the overview easy to scan.
+Close, Restart and Power off occupy the full-height bottom row. Keyboard and
+matched touch releases share the same actions; power confirmation starts on
+Cancel, and Escape always cancels even after the destructive button is focused.
+Device contains only screen timeout and touchscreen calibration. About also has
+a visible Back control.
+
+App Center names and descriptions use the same text scale. Smaller icons and
+shorter action/search bars leave room for five app rows at 480×272 and four at
+800×480, with search, filters, installation, sources, details and paging still
+available. Details keep the app name and state chip on separate lines.
+
+Home shows launch progress only while a launch is active. Startup diagnostics and
+routine exit notices do not occupy the idle footer. Configuration/discovery
+warnings remain in logs, and launch failures retain their dismissible dialog.
+
 ## Startup
 
 `src/boot.rs` uses five embedded 480×272 PNG keyframes: clean, subtle, cyan sweep,
@@ -96,11 +114,11 @@ PocketCHIP scanout or ARM performance; physical follow-up results are recorded i
 
 Settings, the App Center and the desktop share one presentation vocabulary:
 
-- **Settings** uses the same large two-line option for every category. The home
+- **Settings** uses a single-line card for every category on the overview. The home
   menu lists eight entries (Display & Sound, Date & Time, Wireless Network,
   Applications, Storage, Device, Software Updates, About); each category lists
-  its own settings. Nothing important is hidden behind a footer shortcut, and one
-  Escape always returns exactly one level, with the home menu as the only exit.
+  its own settings. Restart and Power off are directly available on the overview.
+  One Escape always returns exactly one level, with the home menu as the only exit.
 - **App Center** rows show the app name, a state chip (RUNNING, UPDATE, INSTALLED,
   AVAILABLE, UNAVAILABLE, FAILED), the short description and the current
   operation. The details page leads with the name, state, description and the
@@ -112,8 +130,8 @@ Settings, the App Center and the desktop share one presentation vocabulary:
   shared progress ramp.
 - **Running state** is one filled chip derived from the authoritative process
   state, identical in the main menu, inside folders and in the App Center list.
-  Launching and exit notifications appear in the lower-left status area, never as
-  a modal screen.
+  Active launch progress appears in the footer while the menu stays usable;
+  routine exit notices and startup diagnostics leave the idle footer clear.
 - **Bundled applications** reserve their vertical space for content: Terminal
   keeps one ten-pixel status line at the bottom, and Notepad uses a single-line
   header so the editor and its height-1 status row own the rest of the display.

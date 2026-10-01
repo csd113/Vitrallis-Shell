@@ -585,10 +585,14 @@ fn render_launcher(
     Ok(())
 }
 
-/// Lower-left status area: the launching/exit notifications the Shell already
-/// produced, shown without a modal so the menu stays visible and interactive.
+/// Only active launch progress belongs on Home. Idle diagnostics stay in logs
+/// and actionable launch failures retain their dismissible dialog.
 fn launcher_status(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Result<(), String> {
-    if !state.status_notice || state.status.is_empty() || state.error.is_some() {
+    if state.phase != crate::launcher::Phase::Launching
+        || !state.status_notice
+        || state.status.is_empty()
+        || state.error.is_some()
+    {
         return Ok(());
     }
     let right = if state.folder.is_some() {
@@ -1021,11 +1025,14 @@ mod tests {
                     let indices = app_center::drawn_fields(&plan, &fields);
                     assert!(indices.len() <= plan.fields);
                     assert!(indices.iter().all(|index| *index < count));
-                    if plan.omitted
-                        && count > 8
-                        && let Some(failure) = indices.last()
-                    {
-                        assert_eq!(*failure, 7, "{width}x{height} count={count}");
+                    if plan.omitted && count > 8 && !indices.is_empty() {
+                        assert!(
+                            indices.contains(&7),
+                            "failure missing at {width}x{height} count={count}"
+                        );
+                        if plan.fields <= 7 {
+                            assert_eq!(indices.last(), Some(&7), "{width}x{height} count={count}");
+                        }
                     }
                     let drawn = indices.len() + usize::from(plan.omitted);
                     let pitch = app_center::DETAIL_PITCH * scale;
@@ -1481,9 +1488,9 @@ mod system_tests {
         state: &mut Launcher,
         output: &std::path::Path,
     ) -> Result<(), String> {
-        // The guarded power confirmation is reachable from Device.
-        state.settings.page(crate::settings::Page::Device);
-        state.settings.selected = 3;
+        // Power actions are directly reachable from the overview.
+        state.settings.page(crate::settings::Page::Home);
+        state.settings.selected = 14;
         state.settings.input(Action::Activate);
         capture(canvas, layout, state, &[], output, "confirm")?;
         assert_eq!(state.settings.selected, 0);
@@ -1547,6 +1554,21 @@ mod system_tests {
         state.preferences.ampm = original_clock;
         Ok(())
     }
+    fn verify_idle_footer(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &mut Launcher,
+        textures: &[Option<Texture<'_>>],
+    ) -> Result<(), String> {
+        // Startup warnings and exit notices must not leak into the idle footer.
+        let idle = canvas.read_pixels(None, PixelFormatEnum::RGB24)?;
+        state.status = "Folder state unavailable: invalid configuration".into();
+        state.status_notice = true;
+        render(canvas, layout, state, textures)?;
+        assert_eq!(canvas.read_pixels(None, PixelFormatEnum::RGB24)?, idle);
+        Ok(())
+    }
+
     fn home_samples(
         canvas: &mut Screen,
         layout: &Layout,
@@ -1599,6 +1621,7 @@ mod system_tests {
                 )),
             )?;
         }
+        verify_idle_footer(canvas, layout, &mut state, &textures)?;
         // Widest plausible catalogue content exercises the tile label policy;
         // the folder view and the error dialog cover the remaining home
         // surfaces that add their own footer and status bands.

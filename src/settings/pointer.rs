@@ -91,7 +91,7 @@ impl Settings {
             Page::Timezones | Page::About => 5,
             Page::Wireless => i32::try_from(super::wireless::WIRELESS_ROWS).unwrap_or(4),
             Page::Applications => i32::try_from(super::preferences::APP_ROWS).unwrap_or(3),
-            Page::DateTime => 2,
+            Page::DateTime | Page::Device => 2,
             _ => 4,
         }
     }
