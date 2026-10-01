@@ -65,8 +65,14 @@ with a different entry, demonstrating that the original launcher still executes
 the old entry and keeps obsolete files. The normal lifecycle suite retests both
 failure conditions successfully.
 
-The simulator verifies Linux software behavior, not physical the target device touch,
+The simulator verifies Linux software behavior, not physical target-device touch,
 ARMv7 performance, hardware media decoding, battery behavior or display electronics.
+
+`settings.py` also operates the real Shell at 480×272: it saves both clock formats,
+restarts Shell to verify persistence and displayed values, repeatedly visits all
+eight categories, and opens the visible Tor row before returning through its
+keyboard Back control. Results and screenshots are saved alongside the other
+scenarios. Device radio commands and physical suspend/resume remain hardware checks.
 
 ## Desktop shortcuts
 

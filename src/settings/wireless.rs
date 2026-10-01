@@ -141,6 +141,37 @@ mod tests {
         assert_eq!(settings.page, Page::Wireless);
         settings.input(Action::Back);
         assert_eq!(settings.page, Page::Home);
+        // Rendered rows and pointer targets have identical centers at every size.
+        for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+            let layout = Layout::home(width, height)?;
+            settings.page(Page::Wireless);
+            let bounds = PanelLayout::rows(&layout, i32::try_from(WIRELESS_ROWS).unwrap_or(4))[3];
+            for down in [true, false] {
+                let event = if down {
+                    Event::MouseButtonDown {
+                        timestamp: 0,
+                        window_id: 1,
+                        which: 0,
+                        mouse_btn: MouseButton::Left,
+                        clicks: 1,
+                        x: bounds.x + bounds.w / 2,
+                        y: bounds.y + bounds.h / 2,
+                    }
+                } else {
+                    Event::MouseButtonUp {
+                        timestamp: 0,
+                        window_id: 1,
+                        which: 0,
+                        mouse_btn: MouseButton::Left,
+                        clicks: 1,
+                        x: bounds.x + bounds.w / 2,
+                        y: bounds.y + bounds.h / 2,
+                    }
+                };
+                assert_eq!(settings.event(&event, &layout), None);
+            }
+            assert_eq!(settings.page, Page::Tor);
+        }
         Ok(())
     }
     #[test]

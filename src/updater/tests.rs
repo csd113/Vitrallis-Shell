@@ -99,6 +99,9 @@ fn versions_use_semantic_precedence_and_ignore_drafts_prereleases()
 fn beta_builds_receive_published_previews_without_downgrades()
 -> Result<(), Box<dyn std::error::Error>> {
     for (current, newest, available) in [
+        ("1.0.0-beta", "1.0.0-beta-2", true),
+        ("1.0.0-beta-2", "1.0.0-beta", false),
+        ("1.0.0-beta-2", "1.0.0-beta-2", false),
         ("0.1.0-beta.1", "0.1.0-beta.2", true),
         ("0.1.0-beta.2", "0.1.0-beta2.1", true),
         ("0.1.0-beta2.1", "0.1.0-beta.2", false),

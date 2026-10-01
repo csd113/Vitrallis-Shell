@@ -12,6 +12,7 @@ mod update;
 mod wireless;
 pub use geometry::PanelLayout;
 pub use storage::StorageView;
+pub use wireless::WIRELESS_ROWS;
 
 use crate::settings::footer::BACK;
 use crate::{

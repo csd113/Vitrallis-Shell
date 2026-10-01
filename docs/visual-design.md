@@ -153,14 +153,18 @@ VITRALLIS_QA_DIR="$PWD/target/visual-qa" cargo test --lib system_panels_render_a
 ```
 
 The checked pixel hashes are reviewed snapshots, not generated automatically by
-normal tests. The current `macos` block was regenerated for the text-geometry
-audit pass, which also added deterministic `home-folder`, `home-error`,
-`app-center-apps-long` and `app-center-details-long` samples (widest plausible
-catalogue content, folder contents and the error dialog) at the same four sizes.
-The `linux` block was removed with the same change, so Linux runs skip the
-comparison until the documented command above is run on the simulator and the
-new screenshots are reviewed; that re-baseline is still pending and must happen
-before the next release validation. Boot lifecycle coverage exercises decoder
+normal tests. Each reviewed OS/CPU profile covers every generated BMP; a missing
+profile or frame fails the gate. SDL software icon blending can round differently
+across architectures and OS builds, so their exact hashes are reviewed separately.
+The beta-2 review restored Linux coverage and added Wireless/Tor control focus and all App Center confirmations.
+Folder, error-dialog and long-content samples remain covered at the same sizes.
+Use a fresh empty directory for each run; extra BMP files also fail the inventory
+check. After an intentional rendering change, inspect the output at native and
+scaled sizes, record why it changed, then replace only the reviewed profile's
+entries in `tests/fixtures/renderer/phase1-sha256.json` with the BMP SHA-256 values.
+Never regenerate references without reviewing the pixels. See
+[beta-2 validation](release-beta-2-validation.md) for the current review.
+Boot lifecycle coverage exercises decoder
 rejection, renderer reset, Escape handoff, close requests and discovery failure.
 The full host gates are `sh scripts/validate.sh`; Linux interactive checks use the
 existing Docker simulator described in [its README](../tests/simulator/README.md).

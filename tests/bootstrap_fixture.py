@@ -1,4 +1,5 @@
 """OS/transport boundaries for the literal PocketCHIP entry block; never runs sudo."""
+import ast
 import json
 import os
 from pathlib import Path
@@ -90,8 +91,16 @@ if '-c' not in sys.argv:
 
     def write(self, name, code):
         path = self.commands / name
-        path.write_text('#!' + sys.executable + '\nimport json, os, sys\nfrom pathlib import Path\n'
-                        + 'root = Path(' + repr(str(self.root)) + ')\n' + code + '\n')
+        # These fixed mocks are invoked dozens of times by one bootstrap block.
+        # Avoid importing filesystem/JSON modules for simple responses under QEMU;
+        # the existing watchdog and every command/assertion remain unchanged.
+        names = {node.id for node in ast.walk(ast.parse(code)) if isinstance(node, ast.Name)}
+        header = '#!' + sys.executable + '\nimport os, sys\n'
+        if 'json' in names:
+            header += 'import json\n'
+        if names & {'root', 'Path'}:
+            header += 'from pathlib import Path\nroot = Path(' + repr(str(self.root)) + ')\n'
+        path.write_text(header + code + '\n')
         path.chmod(0o755)
 
     def calls(self):

@@ -185,8 +185,8 @@ behaviour, not only pixels.
 ## Pending validation
 
 - The `linux` pixel-reference block was removed with this pass because every frame
-  changed. Run the documented QA command on the Linux simulator, review the new
-  screenshots and re-add the block before the next release validation.
+  changed. The [beta-2 review](release-beta-2-validation.md) subsequently restored
+  reviewed Linux references and made absent platform/frame coverage a test failure.
 - Physical PocketCHIP checks remaining: Mali-400/Lima presentation of the new
   primitives, real launch latency on device storage, background-lifetime policy
   against an App Center-installed app, and Terminal/Notepad keyboard/touch feel.

@@ -18,7 +18,7 @@ def app_window(name):
 
 
 def open_app(shell, name):
-    shell.click(180, 45)  # Open primary action, using the live menu entry.
+    shell.click(180, 33)  # Open primary action, using the live menu entry.
     wait_for(lambda: app_window(name), name + ' real application window', timeout=20)
     window = app_window(name)
     subprocess.run(['import', '-window', window, str(ARTIFACTS / (name.replace(' ', '-') + '.png'))], check=True)
@@ -53,11 +53,11 @@ def main():
         state(published=True, debug='0.1.2')
         shell.refresh()
         shell.select('Vitrallis Debug')
-        shell.click(240, 230)
-        shell.click(240, 45)
+        shell.click(240, 244)
+        shell.click(240, 33)
         shell.shot('published-debug-whats-new')
-        shell.click(240, 45)
-        shell.click(400, 45)
+        shell.click(240, 33)
+        shell.click(400, 33)
         shell.install('Vitrallis Debug', 'debug', '0.1.2')
         new_pid = open_app(shell, 'Vitrallis Debug')
         assert old_pid != new_pid

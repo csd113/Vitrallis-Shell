@@ -2,7 +2,7 @@
 use super::{ACCENT, INK, MUTED, Screen, card, label, panel_footer, text};
 use crate::{
     layout::{Layout, Rect},
-    settings::{PanelLayout, Settings},
+    settings::{PanelLayout, Settings, WIRELESS_ROWS},
 };
 
 pub(super) fn panel(
@@ -10,15 +10,19 @@ pub(super) fn panel(
     layout: &Layout,
     settings: &Settings,
 ) -> Result<(), String> {
-    for (index, bounds) in PanelLayout::rows(layout, 3).into_iter().enumerate() {
+    for (index, bounds) in PanelLayout::rows(layout, i32::try_from(WIRELESS_ROWS).unwrap_or(4))
+        .into_iter()
+        .enumerate()
+    {
         card(canvas, bounds, settings.selected == index)?;
         let value = settings.radio_value(index);
-        let title = ["Wi-Fi", "Bluetooth", "Wi-Fi connections >"][index];
+        let title = ["Wi-Fi", "Bluetooth", "Wi-Fi connections >", "Tor >"][index];
         let detail = match index {
             0 if value == Some(true) => super::wifi_label(settings.status.wifi),
             0 | 1 if value == Some(false) => "Off",
             1 if value == Some(true) => "Default controller powered on",
             2 if settings.network_available => "Choose a network / enter password",
+            3 => settings.tor.mode.label(),
             _ => "Unavailable on this device",
         };
         let content = Rect {

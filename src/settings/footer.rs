@@ -86,7 +86,7 @@ impl Settings {
                 }
             }
             Action::Move(Direction::Up) => {
-                self.selected = self.content_rows().saturating_sub(1);
+                self.selected = self.content_rows().checked_sub(1).unwrap_or(BACK);
             }
             Action::Move(Direction::Down) => {}
             Action::Activate | Action::SelectAndActivate(_) => match self.page {
@@ -132,15 +132,15 @@ impl Settings {
     }
 
     /// Content rows used by the shared vertical navigation of one page.
-    pub(super) const fn content_rows(&self) -> usize {
+    pub(super) fn content_rows(&self) -> usize {
         match self.page {
             Page::Home => super::HOME_ROWS,
-            Page::Display | Page::DateTime | Page::Device => 2,
-            Page::Timezones | Page::About => 5,
+            Page::Display | Page::DateTime | Page::Device | Page::Updates => 2,
+            Page::Timezones => self.visible_zones(),
             Page::Wireless => super::wireless::WIRELESS_ROWS,
-            Page::Tor | Page::TorDetails => 6,
+            Page::Tor => 6,
             Page::Applications => super::preferences::APP_ROWS,
-            Page::Storage | Page::Updates => 0,
+            Page::About | Page::TorDetails | Page::Storage => 0,
         }
     }
 

@@ -1,5 +1,36 @@
 # Release validation and assets
 
+## 1.0.0-beta-2
+
+This beta polishes the existing PocketCHIP-sized interface and keeps the shared
+SDL backbuffer/VSync policy. Settings now has eight clear categories, and App
+Center uses denser app rows. One-command PocketCHIP setup prepares prerequisites
+and enables Vitrallis at desktop login, with PocketHome available on exit or
+startup failure.
+
+Wireless now draws all four controls, including Tor, at the same bounds used by
+touch. Tor arrows, read-only pages and partial time-zone lists keep keyboard
+focus on visible controls. Wireless headings and hints match the other Settings
+pages, and busy update actions use the disabled text treatment.
+
+App Center confirmations now show their warning instead of an empty body or the
+underlying app details. Warnings wrap within the content area, stay above the
+buttons and ignore the previous page's scroll offset. Cancel remains the default.
+Stale publisher/trust selections cannot panic or dispatch an approval. Search
+and repository text stay above the on-screen keyboard.
+
+The renderer gate now requires a complete reviewed reference set on Linux
+and macOS: 337 frames per reviewed OS/CPU profile across 320×200, 480×272, 800×480 and 1280×720,
+including individual Wireless/Tor focus and all App Center confirmation types.
+Missing OS/CPU references or unreviewed frames fail validation. The README and
+visual-validation instructions describe the current build and release workflow.
+See [beta-2 validation](release-beta-2-validation.md) for results and scope.
+
+This release has no new physical PocketCHIP test record. Real radio/service,
+touch, NAND durability and physical VSync acceptance remain in the
+[hardware checklist](devices/pocketchip/v1.0-hardware-acceptance.md). Linux bundles
+require glibc 2.36+ and SDL2 2.26.5+; apps run with the user's permissions.
+
 ## 1.0.0 Beta
 
 This is the first 1.0.0 beta release of Vitrallis Shell and represents the

@@ -817,11 +817,19 @@ impl Center {
     /// Which body the current page draws: a list, the details card or text.
     #[must_use]
     pub const fn page_kind(&self) -> PageKind {
+        if self.confirming() {
+            return PageKind::Text;
+        }
         match self.page {
             Page::Apps | Page::Sources => PageKind::List,
             Page::Details => PageKind::Details,
             Page::Edit | Page::Search | Page::Changelog => PageKind::Text,
         }
+    }
+    /// Confirmations always replace the underlying page with the action warning.
+    #[must_use]
+    pub const fn confirming(&self) -> bool {
+        self.confirmation.is_some()
     }
     /// Catalogue entries currently listed, for the header count.
     #[must_use]
@@ -1570,15 +1578,17 @@ impl Center {
             match c {
                 Confirmation::Running(id, _) => self.send(Command::Answer(id, yes)),
                 Confirmation::Publisher(i) if yes => {
-                    let row = &self.rows[i];
-                    self.chosen = Some(row.package.key());
+                    if let Some(row) = self.rows.get(i) {
+                        self.chosen = Some(row.package.key());
+                    }
                 }
                 Confirmation::Trust(i) if yes => {
-                    let r = &self.rows[i];
-                    let mut next = self.sources.clone();
-                    next.approvals
-                        .insert((r.package.origin.clone(), r.package.repository.clone()));
-                    self.send(Command::Save(next));
+                    if let Some(r) = self.rows.get(i) {
+                        let mut next = self.sources.clone();
+                        next.approvals
+                            .insert((r.package.origin.clone(), r.package.repository.clone()));
+                        self.send(Command::Save(next));
+                    }
                 }
                 Confirmation::Uninstall(i) if yes => {
                     if let Some(row) = self.rows.get(i) {
@@ -1597,7 +1607,7 @@ impl Center {
         self.selected = 0;
     }
     pub const fn detail_start(&self) -> usize {
-        if matches!(self.page, Page::Details | Page::Changelog) {
+        if !self.confirming() && matches!(self.page, Page::Details | Page::Changelog) {
             self.start
         } else {
             0
@@ -1698,6 +1708,15 @@ impl Center {
             "Close and update? Unsaved work may be lost. App: Example app".into(),
         ));
         out.push(("confirm", center));
+        for (name, confirmation) in [
+            ("confirm-trust", Confirmation::Trust(0)),
+            ("confirm-publisher", Confirmation::Publisher(0)),
+            ("confirm-remove", Confirmation::Remove(0)),
+        ] {
+            let mut center = Self::fixture()?;
+            center.confirmation = Some(confirmation);
+            out.push((name, center));
+        }
         Ok(out)
     }
 }
@@ -2561,6 +2580,65 @@ mod browsing_tests {
         center.activate(Target::Edit, &layout);
         assert!(center.edit.is_none());
         assert_eq!(center.page, Page::Apps);
+        Ok(())
+    }
+
+    #[test]
+    fn all_confirmations_replace_the_page_and_ignore_old_scroll_offsets() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        for page in [
+            Page::Apps,
+            Page::Sources,
+            Page::Details,
+            Page::Changelog,
+            Page::Edit,
+            Page::Search,
+        ] {
+            for confirmation in [
+                Confirmation::Running(1, "Unsaved work may be lost. Close this app?".into()),
+                Confirmation::Uninstall(0),
+                Confirmation::Trust(0),
+                Confirmation::Publisher(0),
+                Confirmation::Remove(0),
+            ] {
+                let mut center = Center::fixture()?;
+                center.page(page);
+                center.start = 100;
+                center.confirmation = Some(confirmation);
+                assert_eq!(center.page_kind(), PageKind::Text);
+                assert_eq!(center.detail_start(), 0);
+                assert!(!center.lines(56).is_empty());
+                let targets = center.targets(&layout);
+                assert_eq!(targets.len(), 2);
+                assert_eq!(targets[center.selected].0, Target::Confirm(false));
+                center.activate(targets[center.selected].0, &layout);
+                assert!(!center.confirming());
+                assert!(!center.busy);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn stale_publisher_and_trust_confirmations_never_dispatch_or_panic() -> Result<(), String> {
+        let mut center = Center::fixture()?;
+        let (send, commands) = std::sync::mpsc::channel();
+        let (_updates, receive) = std::sync::mpsc::channel();
+        center.worker = Some(Worker {
+            send,
+            receive,
+            cancelled: std::sync::Arc::default(),
+        });
+        for confirmation in [
+            Confirmation::Publisher(usize::MAX),
+            Confirmation::Trust(usize::MAX),
+        ] {
+            center.confirmation = Some(confirmation);
+            center.answer(true);
+            assert!(center.chosen.is_none());
+            assert!(!center.busy);
+            assert!(commands.try_recv().is_err());
+        }
         Ok(())
     }
 }

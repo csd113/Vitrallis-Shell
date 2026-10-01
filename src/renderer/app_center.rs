@@ -154,10 +154,17 @@ pub(super) fn text_body(
     geometry: &Geometry,
     center: &Center,
 ) -> Result<(), String> {
-    let width = fit_columns(geometry.width, geometry.scale);
+    let width = fit_columns(geometry.title.w - 4 * geometry.scale, geometry.scale);
     let lines = center.lines(width.max(1));
     let line = detail_line(geometry.scale);
-    let capacity = usize::try_from((geometry.footer.y - geometry.list_top).max(0) / line.max(1))
+    let bottom = if center.confirming() {
+        geometry.pinned.y - 4 * geometry.scale
+    } else if center.editing() {
+        geometry.list_top + 40 * geometry.scale
+    } else {
+        geometry.footer.y
+    };
+    let capacity = usize::try_from((bottom - geometry.list_top).max(0) / line.max(1))
         .unwrap_or(1)
         .max(1);
     for (index, line_text) in lines
@@ -525,4 +532,61 @@ pub fn qa(canvas: &mut Screen, layout: &Layout, output: &std::path::Path) -> Res
         )?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn confirmation_text_is_visible_and_never_reaches_buttons() -> Result<(), String> {
+        let _guard = crate::test_support::sdl_lock();
+        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        let sdl = sdl2::init()?;
+        let video = sdl.video()?;
+        for (width, height) in [(480, 272), (800, 480), (1280, 720)] {
+            let layout = Layout::home(width, height)?;
+            let geometry = Geometry::new(&layout);
+            let window = video
+                .window("confirmation text", u32::from(width), u32::from(height))
+                .hidden()
+                .build()
+                .map_err(|e| e.to_string())?;
+            let canvas = window
+                .into_canvas()
+                .software()
+                .build()
+                .map_err(|e| e.to_string())?;
+            let creator = canvas.texture_creator();
+            let mut canvas = Screen::new(canvas, &creator)?;
+            for (name, center) in Center::qa_samples()?
+                .into_iter()
+                .filter(|(_, center)| center.confirming())
+            {
+                canvas.set_draw_color(theme::BACKGROUND);
+                canvas.clear();
+                body(&mut canvas, &geometry, &center)?;
+                let pixels = canvas.read_pixels(None, sdl2::pixels::PixelFormatEnum::RGB24)?;
+                let background = [
+                    theme::BACKGROUND.r,
+                    theme::BACKGROUND.g,
+                    theme::BACKGROUND.b,
+                ];
+                let mut ink = 0;
+                for (index, pixel) in pixels.chunks_exact(3).enumerate() {
+                    if pixel != background {
+                        ink += 1;
+                        let y =
+                            i32::try_from(index / usize::from(width)).map_err(|e| e.to_string())?;
+                        assert!(
+                            y >= geometry.list_top && y < geometry.pinned.y,
+                            "{name}: text overlaps controls"
+                        );
+                    }
+                }
+                assert!(ink > 0, "{name}: confirmation warning is blank");
+            }
+        }
+        Ok(())
+    }
 }

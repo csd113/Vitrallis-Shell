@@ -121,18 +121,19 @@ class Shell:
         time.sleep(.5)
 
     def select(self, name):
-        self.shot("search-list-title")
-        self.click(170, 78)
+        list_title = self.shot("search-list-title").crop((0, 0, 480, 20)).tobytes()
+        self.click(170, 56)  # Geometry.search: y=46..66 at 480x272.
         # The activated search field opens the Find-an-app page; applying a
         # search returns to the Apps page, whose title/count header differs.
         search_page = self.shot("search-page-title").crop((0, 0, 480, 30)).tobytes()
-        self.click(180, 45)  # Clear search text
+        assert search_page[:480 * 20 * 3] != list_title, "Search field did not open text entry"
+        self.click(180, 33)  # Geometry.actions: y=22..44; Clear search text
         self.xdo('type', '--window', self.window, '--clearmodifiers', name)
         self.key("Left", "Return")  # Clear retains focus; Search is previous.
         wait_for(lambda: self.shot("search-applied").crop((0, 0, 480, 30)).tobytes() != search_page, "search applied to list")
         image = self.shot('selection')
-        if image.getpixel((9, 106)) != (112, 215, 255):
-            self.click(220, 106)
+        if image.getpixel((9, 84)) != (112, 215, 255):
+            self.click(220, 84)
 
     def root(self, slug):
         return self.home / '.local/share/vitrallis/apps' / ('io.vitrallis.' + slug)
@@ -147,13 +148,13 @@ class Shell:
     def install(self, name, slug, version):
         self.select(name)
         before = remote_checks()
-        header = self.shot('before-' + slug).crop((8, 66, 310, 92)).tobytes()
+        header = self.shot('before-' + slug).crop((8, 46, 310, 66)).tobytes()
         self.key('i')
         wait_for(lambda: self.version(slug) == version, name + ' installation')
         time.sleep(.25)
         after = self.shot('installed-' + slug)
-        assert after.getpixel((20, 106)) != (9, 13, 27), 'Catalog disappeared'
-        assert header == after.crop((8, 66, 310, 92)).tobytes(), 'Search changed'
+        assert after.getpixel((20, 84)) != (9, 13, 27), 'Catalog disappeared'
+        assert header == after.crop((8, 46, 310, 66)).tobytes(), 'Search changed'
         assert remote_checks() == before, 'Mutation fetched remote catalog'
 
     def menu(self):
@@ -181,16 +182,16 @@ class Shell:
 
     def remove(self, name, slug):
         self.select(name)
-        self.click(240, 230)  # Details
-        self.click(240, 230)  # Remove
+        self.click(240, 244)  # Details
+        self.click(240, 244)  # Remove
         self.shot('remove-confirmation')
         self.key('Return')  # Safe default is Cancel
         assert self.version(slug) is not None
-        self.click(240, 230)
+        self.click(240, 244)
         self.click(360, 242)  # Confirm
         wait_for(lambda: self.version(slug) is None, 'removal')
         time.sleep(.3)
-        self.click(400, 45)  # Back
+        self.click(400, 33)  # Back
         self.shot('removed-' + slug)
         assert all(app['id'] != 'io.vitrallis.' + slug for app in self.menu())
 
@@ -219,19 +220,19 @@ def main():
         shell.refresh()
         shell.select('Debug')
         shell.shot('update-available')
-        shell.click(400, 78)
-        shell.click(400, 78)
-        update_filter = shell.shot('updates-filter').crop((333, 70, 398, 84)).tobytes()
-        shell.click(240, 230)
+        shell.click(400, 56)
+        shell.click(400, 56)
+        update_filter = shell.shot('updates-filter').crop((333, 46, 398, 66)).tobytes()
+        shell.click(240, 244)
         shell.shot('details-update')
         before = len(requests())
-        shell.click(240, 45)
+        shell.click(240, 33)
         shell.shot('changelog')
         shell.key('Next')
         shell.shot('changelog-history')
         assert len(requests()) == before, 'Opening release notes fetched network data'
-        shell.click(240, 45)  # Back to details
-        shell.click(400, 45)  # Back to apps
+        shell.click(240, 33)  # Back to details
+        shell.click(400, 33)  # Back to apps
         passed('Available-version changelog and history display from verified cache')
         state(debug='0.2.0', corrupt_payload='start.py')
         shell.key('i')
@@ -263,15 +264,15 @@ def main():
                 held.terminate()
                 held.wait(timeout=10)
         passed('Running old entry: Cancel keeps process; Close and update stops it and commits new version')
-        wait_for(lambda: shell.shot('updated-filter-preserved').getpixel((20, 106)) == (9, 13, 27), 'updated UI filter')
+        wait_for(lambda: shell.shot('updated-filter-preserved').getpixel((20, 84)) == (9, 13, 27), 'updated UI filter')
         filtered = shell.shot('updated-filter-preserved')
-        assert filtered.crop((333, 70, 398, 84)).tobytes() == update_filter
-        assert filtered.getpixel((20, 106)) == (9, 13, 27)
-        assert (226, 227, 255) not in set(filtered.crop((126, 34, 233, 56)).getdata()), 'hidden selection must not expose an active app action'
+        assert filtered.crop((333, 46, 398, 66)).tobytes() == update_filter
+        assert filtered.getpixel((20, 84)) == (9, 13, 27)
+        assert (226, 227, 255) not in set(filtered.crop((126, 22, 233, 44)).getdata()), 'hidden selection must not expose an active app action'
         passed('Active Updates filter survives mutation and explains zero matches')
         assert not (shell.root('debug') / 'obsolete.py').exists()
         shell.launch_menu('debug', '0.2.0')
-        shell.click(400, 78)  # Updates -> All
+        shell.click(400, 56)  # Updates -> All
         passed('Update changes installed metadata, removes obsolete files and launches new entry/version')
         shell.remove('Carousel', 'mediacarousel')
         passed('Removal updates App Center and menu; confirmation defaults to Cancel')
@@ -283,8 +284,8 @@ def main():
         script.unlink()
         script.symlink_to(shell.root('debug') / 'start.py')
         shell.select('Plain')
-        shell.click(240, 230)
-        shell.click(240, 230)
+        shell.click(240, 244)
+        shell.click(240, 244)
         shell.click(360, 242)
         time.sleep(.5)
         shell.shot('failed-removal')
@@ -292,20 +293,20 @@ def main():
         assert (shell.root('debug') / 'start.py').read_bytes() == unrelated
         script.unlink()
         script.write_bytes(saved)
-        shell.click(400, 45)
+        shell.click(400, 33)
         passed('Failed removal rejects unsafe files and preserves unrelated installation')
         shell.select('Plain')
-        shell.click(240, 230)
-        shell.click(240, 45)
+        shell.click(240, 244)
+        shell.click(240, 33)
         shell.shot('missing-changelog')
-        shell.click(240, 45)
-        shell.click(400, 45)
+        shell.click(240, 33)
+        shell.click(400, 33)
         shell.select('Malformed')
-        shell.click(240, 230)
-        shell.click(240, 45)
+        shell.click(240, 244)
+        shell.click(240, 33)
         shell.shot('malformed-changelog')
-        shell.click(240, 45)
-        shell.click(400, 45)
+        shell.click(240, 33)
+        shell.click(400, 33)
         passed('Missing and malformed changelogs leave readable Details and catalog')
         state(debug='0.2.0', fail_payload='main.py')
         shell.key('i')
@@ -320,7 +321,7 @@ def main():
         time.sleep(.5)
         shell.shot('offline-catalog')
         shell.select('Debug')
-        assert shell.shot('offline-debug').getpixel((20, 106)) != (9, 13, 27)
+        assert shell.shot('offline-debug').getpixel((20, 84)) != (9, 13, 27)
         passed('Failed repository refresh retains known-good entries')
         before = len(requests())
         shell.key('Home')
@@ -337,20 +338,20 @@ def main():
         shell.refresh()
         shell.select('Debug')
         shell.shot('one-bad-app')
-        assert shell.shot('good-app-retained').getpixel((20, 106)) != (9, 13, 27)
+        assert shell.shot('good-app-retained').getpixel((20, 84)) != (9, 13, 27)
         passed('One malformed app does not disable valid repository apps')
-        shell.click(300, 45)  # Repositories
-        shell.click(60, 45)  # Add
+        shell.click(300, 33)  # Repositories
+        shell.click(60, 33)  # Add
         shell.xdo('type', '--window', shell.window, '--clearmodifiers', 'broken/catalog')
-        shell.click(48, 45)  # Save
+        shell.click(48, 33)  # Save
         time.sleep(.3)
-        shell.click(420, 45)  # Back
+        shell.click(420, 33)  # Back
         shell.refresh()
         shell.select('Debug')
-        assert shell.shot('multiple-repositories').getpixel((20, 106)) != (9, 13, 27)
-        shell.click(300, 45)
+        assert shell.shot('multiple-repositories').getpixel((20, 84)) != (9, 13, 27)
+        shell.click(300, 33)
         shell.shot('repositories-with-error')
-        shell.click(420, 45)
+        shell.click(420, 33)
         passed('Multiple configured repositories: one unavailable source preserves usable apps')
     finally:
         shell.stop()

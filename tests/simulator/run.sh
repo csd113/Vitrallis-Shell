@@ -15,6 +15,7 @@ dbus-run-session -- /usr/bin/python3 tests/simulator/session.py
 /usr/bin/python3 tests/simulator/lifecycle.py
 cp /sim/artifacts/scenarios.json /sim/artifacts/scenarios-fixtures.json
 /usr/bin/python3 tests/simulator/shortcuts.py
+/usr/bin/python3 tests/simulator/settings.py
 if test "${VITRALLIS_TEST_PUBLISHED:-0}" = 1; then
     git config --global --add safe.directory /workspace/target/app-center-audit/published-repo
     /usr/bin/python3 tests/simulator/published.py

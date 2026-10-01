@@ -23,9 +23,10 @@ impl Settings {
             Action::Move(direction) => {
                 self.selected = match direction {
                     Direction::Up => self.selected.saturating_sub(3),
-                    Direction::Down => (self.selected + 3).min(super::footer::BACK),
+                    Direction::Down if self.selected >= 3 => super::footer::BACK,
+                    Direction::Down => self.selected + 3,
                     Direction::Left => self.selected.saturating_sub(1),
-                    Direction::Right => (self.selected + 1).min(super::footer::BACK),
+                    Direction::Right => (self.selected + 1).min(5),
                 };
             }
             Action::SelectAndActivate(index) if index < 6 => {

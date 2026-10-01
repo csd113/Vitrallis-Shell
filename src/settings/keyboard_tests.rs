@@ -446,3 +446,52 @@ fn settings_navigation_has_no_dead_ends() {
         assert!(settings.open, "home option {index} exited Settings early");
     }
 }
+
+#[test]
+fn tor_arrows_never_select_an_invisible_control() {
+    let mut settings = Settings::default();
+    settings.show();
+    settings.page(Page::Tor);
+    for index in 0..6 {
+        for direction in [Keycode::Up, Keycode::Down, Keycode::Left, Keycode::Right] {
+            settings.selected = index;
+            move_keys(&mut settings, &[direction]);
+            assert!(settings.selected < 6 || settings.selected == BACK);
+        }
+    }
+    for index in 3..6 {
+        settings.selected = index;
+        move_keys(&mut settings, &[Keycode::Down]);
+        assert_eq!(settings.selected, BACK);
+        move_keys(&mut settings, &[Keycode::Up]);
+        assert_eq!(settings.selected, 5);
+    }
+    move_keys(&mut settings, &[Keycode::Return]);
+    assert_eq!(settings.page, Page::TorDetails);
+}
+
+#[test]
+fn read_only_pages_and_partial_timezone_pages_keep_visible_focus() {
+    let mut settings = Settings::default();
+    settings.show();
+    for page in [Page::About, Page::TorDetails] {
+        settings.page(page);
+        assert_eq!(settings.selected, BACK);
+        move_keys(&mut settings, &[Keycode::Up, Keycode::Down]);
+        assert_eq!(settings.selected, BACK);
+        move_keys(&mut settings, &[Keycode::Return]);
+        assert_eq!(settings.page, super::parent(page));
+    }
+    for count in [1, 2, 6, 7, 11] {
+        settings.status.timezones = (0..count).map(|index| format!("Zone/{index}")).collect();
+        settings.page(Page::Timezones);
+        settings.zone_start = (count - 1) / 5 * 5;
+        settings.selected = BACK;
+        move_keys(&mut settings, &[Keycode::Up]);
+        assert_eq!(settings.selected, (count - 1) % 5);
+        assert_eq!(
+            key(&mut settings, Keycode::Return),
+            Some(Request::Control(Control::Timezone(count - 1)))
+        );
+    }
+}

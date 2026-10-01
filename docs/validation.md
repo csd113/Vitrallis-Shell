@@ -1,5 +1,8 @@
 # Validation
 
+The [1.0.0-beta-2 record](release-beta-2-validation.md) records the current release
+gate, visual review and software/hardware scope.
+
 Run the complete host gate from the repository root:
 
 ```sh

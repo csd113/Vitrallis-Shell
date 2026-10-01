@@ -479,7 +479,7 @@ const fn settings_title(page: crate::settings::Page) -> &'static str {
         crate::settings::Page::Timezones => "SETTINGS / TIME ZONE",
         crate::settings::Page::Updates => "SETTINGS / SOFTWARE UPDATES",
         crate::settings::Page::Storage => "SETTINGS / STORAGE",
-        crate::settings::Page::Wireless => "Wireless Network Controls",
+        crate::settings::Page::Wireless => "SETTINGS / WIRELESS",
         crate::settings::Page::Tor => "SETTINGS / TOR",
         crate::settings::Page::TorDetails => "TOR / DETAILS",
         crate::settings::Page::About => "SETTINGS / ABOUT",
@@ -1474,10 +1474,41 @@ mod system_tests {
         update_samples(&mut canvas, &layout, &mut state, &textures, output, (w, h))?;
         state.settings.page(crate::settings::Page::About);
         capture(&mut canvas, &layout, &state, &textures, output, "about")?;
+        control_focus_samples(&mut canvas, &layout, &mut state, &textures, output)?;
         state.settings.page(crate::settings::Page::Timezones);
         capture(&mut canvas, &layout, &state, &textures, output, "zones")?;
         footer_focus_samples(&mut canvas, &layout, &mut state, &textures, output)?;
         system_overlay_samples(&mut canvas, &layout, &mut state, output)
+    }
+
+    /// Each actionable row must show focus at the same bounds used for input.
+    fn control_focus_samples(
+        canvas: &mut Screen,
+        layout: &Layout,
+        state: &mut Launcher,
+        textures: &[Option<Texture<'_>>],
+        output: &std::path::Path,
+    ) -> Result<(), String> {
+        use crate::settings::{Page, WIRELESS_ROWS};
+        for (page, count) in [
+            (Page::Display, 2),
+            (Page::Wireless, WIRELESS_ROWS),
+            (Page::Tor, 6),
+        ] {
+            state.settings.page(page);
+            for index in 0..count {
+                state.settings.selected = index;
+                capture(
+                    canvas,
+                    layout,
+                    state,
+                    textures,
+                    output,
+                    &format!("focus-{page:?}-{index}"),
+                )?;
+            }
+        }
+        Ok(())
     }
 
     /// The guarded confirmations, unavailable state and launch feedback that
@@ -1688,7 +1719,32 @@ mod system_tests {
             "../tests/fixtures/renderer/phase1-sha256.json"
         ))
         .map_err(|e| e.to_string())?;
-        for (name, expected) in references.get(std::env::consts::OS).into_iter().flatten() {
+        // SDL's software image blending uses architecture-specific SIMD rounding.
+        // Keep exact reviewed pixels for each host instead of tolerating differences.
+        let profile = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
+        let references = references
+            .get(&profile)
+            .ok_or_else(|| format!("No renderer references for {profile}"))?;
+        let rendered: std::collections::BTreeSet<_> = std::fs::read_dir(output)
+            .map_err(|e| e.to_string())?
+            .map(|entry| entry.map(|entry| entry.path()).map_err(|e| e.to_string()))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|path| path.extension().is_some_and(|extension| extension == "bmp"))
+            .filter_map(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .collect();
+        let expected_names = references.keys().cloned().collect();
+        if rendered != expected_names {
+            return Err(format!(
+                "Renderer reference inventory differs: unreviewed {:?}; missing {:?}",
+                rendered.difference(&expected_names).collect::<Vec<_>>(),
+                expected_names.difference(&rendered).collect::<Vec<_>>()
+            ));
+        }
+        for (name, expected) in references {
             let bytes = std::fs::read(output.join(name)).map_err(|e| e.to_string())?;
             let digest = Sha256::digest(bytes);
             let mut actual = String::with_capacity(digest.len() * 2);

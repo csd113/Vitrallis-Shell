@@ -117,6 +117,7 @@ impl Settings {
             },
             Page::Updates => &geometry.confirmation,
             Page::Display => &geometry.controls[..2],
+            Page::Timezones => &rows[..self.visible_zones()],
             _ => rows,
         }
     }
@@ -249,6 +250,25 @@ mod tests {
                 y,
             }
         }
+    }
+    #[test]
+    fn empty_timezone_rows_are_not_touch_targets() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut settings = Settings::default();
+        settings.status.timezones = vec!["UTC".into()];
+        settings.show();
+        settings.page(Page::Timezones);
+        for bounds in PanelLayout::rows(&layout, 5).into_iter().skip(1) {
+            for down in [true, false] {
+                assert_eq!(
+                    settings.event(&mouse(down, bounds.x + 4, bounds.y + 4), &layout),
+                    None
+                );
+            }
+            assert_eq!(settings.selected, 0);
+            assert_eq!(settings.page, Page::Timezones);
+        }
+        Ok(())
     }
     #[test]
     fn relaunch_uses_matched_mouse_and_touch_activation() -> Result<(), String> {

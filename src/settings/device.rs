@@ -13,7 +13,11 @@ impl Settings {
             self.storage_start = 0;
         }
         self.page = page;
-        self.selected = 0;
+        self.selected = if matches!(page, Page::About | Page::TorDetails) {
+            BACK
+        } else {
+            0
+        };
         self.confirmation = None;
         self.update_confirmation = None;
         self.clear_pointer();

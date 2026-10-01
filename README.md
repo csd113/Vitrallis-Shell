@@ -15,18 +15,17 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 - **Keys or touch:** visible selection and shared activation across native controls, with confirmations for destructive actions.
 - **Optional system integration:** brightness, volume, status, Wi-Fi utility access, and a supervised session that restores the original Home binding on exit.
 - **Whole-build updates:** System Settings updates the shell and all three native utilities together when a compatible newer release is available.
+- **Compact Settings:** display and sound, clock format and time zone, wireless and Tor, background-app policy, storage, device controls, software updates and About. A verified retained build can be restored from Software Updates.
 
 ## Installation
 
-**Vitrallis Shell 1.0.0 Beta.** Install the complete bundle containing the shell, Terminal, Notepad,
+**Vitrallis Shell 1.0.0-beta-2.** Install the complete bundle containing the shell, Terminal, Notepad,
 Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
 OS/runtime requirements, the single copy-and-paste setup command and hardware
 validation limits. Setup prepares missing Debian packages and installs a verified
 complete bundle with all five executables. Run it as your normal desktop user;
-sudo is used for package and platform preparation. The updated entry point must be
-published before these source changes are available through the public download
-URL, and a complete release containing the updated helpers must be published.
+sudo is used for package and platform preparation.
 
 Run this as your normal user on a supported PocketCHIP (requires `curl` and
 working HTTPS certificates):
@@ -55,7 +54,7 @@ Setup starts Vitrallis automatically at subsequent desktop logins, including aft
 | Return to the original home | Select **Exit Vitrallis** in a supervised session |
 | Update the native build | System Settings → Software Updates → Check for Updates |
 
-Running apps remain open when you return Home. Save and close them before stopping or removing the session. Native utility menus and dialogs have visible keyboard focus; see [Terminal, Notepad and Files controls](docs/native-apps.md). App Center has [its own navigation and package guide](docs/app-center.md).
+Returning Home backgrounds an app. Apps stay open by default; Settings → Applications can set an automatic background timeout or exempt individual apps. Save and close them before stopping or removing the session. Native utility menus and dialogs have visible keyboard focus; see [Terminal, Notepad and Files controls](docs/native-apps.md). App Center has [its own navigation and package guide](docs/app-center.md).
 
 Use **Manage [F10] → Add shortcut** (F2) to launch ordinary Linux programs or scripts without an
 App Center package. See [desktop shortcuts](docs/desktop-shortcuts.md) for command
@@ -83,9 +82,10 @@ Host development uses the pinned Rust 1.91.1 toolchain (minimum 1.91), SDL2 deve
 cargo build --workspace --locked
 cargo run --locked
 sh scripts/validate.sh
+cargo build --workspace --release --locked
 ```
 
-The workspace build includes all native utilities. [Contributor guidance](CONTRIBUTING.md) covers setup, focused changes, validation, and pull requests. Please use the [bug and feature forms](https://github.com/csd113/Vitrallis-Shell/issues/new/choose) for feedback and the [security reporting policy](SECURITY.md) for security concerns.
+The workspace build includes all native utilities. The validation script runs formatting, strict Clippy, Rust/Python tests, release builds and SDL smoke checks; [validation guidance](docs/validation.md) covers visual checks and Linux simulators. [Contributor guidance](CONTRIBUTING.md) covers setup, focused changes, validation, and pull requests. Please use the [bug and feature forms](https://github.com/csd113/Vitrallis-Shell/issues/new/choose) for feedback and the [security reporting policy](SECURITY.md) for security concerns.
 
 **License:** project-owned code and documentation use [MIT](LICENSE). Third-party terms and unresolved artwork rights are listed in [third-party notices](THIRD_PARTY_NOTICES.md); MIT does not relicense those items.
 

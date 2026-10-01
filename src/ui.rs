@@ -95,7 +95,11 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         .renderer_info
         .as_ref()
         .map_or_else(String::new, |info| {
-            format!("{} {}", info.sdl.name, info.actual.as_str())
+            if info.sdl.name == info.actual.as_str() {
+                info.sdl.name.to_owned()
+            } else {
+                format!("{} {}", info.sdl.name, info.actual.as_str())
+            }
         });
     sdl.mouse().show_cursor(state.preferences.show_cursor);
     if let Some(path) = &config.screenshot {

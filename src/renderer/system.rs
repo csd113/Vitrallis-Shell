@@ -641,7 +641,8 @@ fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
         Page::Display => "Left/right: adjust   Esc: back",
         Page::DateTime => "Left/right: change   Enter: select",
         Page::Device => "Left/right: timeout   Enter: select",
-        Page::Wireless => "Left: off   Right: on   Enter: toggle",
+        Page::Wireless if settings.selected < 2 => "Left: off   Right: on   Enter: toggle",
+        Page::Wireless => "Enter: open   Esc: back",
         Page::Applications => "Enter: change   Esc: back",
         Page::About => "Esc: back",
         Page::Timezones => "Arrows: select   Enter: apply",
@@ -1048,6 +1049,8 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
             layout.text_scale,
             if index == 1 && confirming.is_some() {
                 AMBER
+            } else if index == 1 && settings.updater.state.busy() {
+                theme::DISABLED
             } else {
                 ACCENT
             },
