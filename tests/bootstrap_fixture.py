@@ -14,6 +14,8 @@ class ShellFixture:
         self.commands.mkdir()
         self.home = root / 'home'
         self.home.mkdir()
+        (self.home / '.config/awesome').mkdir(parents=True)
+        (self.home / '.config/awesome/rc.lua').write_text('-- existing desktop startup\n')
         self.uid = 1000
         self.runtime = root / 'run/user/1000'
         self.runtime.mkdir(parents=True, mode=0o700)
@@ -37,13 +39,20 @@ class ShellFixture:
             self.script = self.script.replace(original, str(replacement) + ('/' if original.endswith('/') else ''))
         self.write('id', 'print("1000")')
         self.write('uname', 'print("Linux" if sys.argv[1] == "-s" else "armv7l")')
-        self.write('dpkg', 'print("armhf") if sys.argv[1] == "--print-architecture" else None')
+        self.write('dpkg', '''
+if sys.argv[1] == '--print-architecture':
+    print('armhf')
+elif sys.argv[1] == '--compare-versions':
+    assert sys.argv[3] == 'ge'
+    sys.exit(0 if tuple(map(int, sys.argv[2].split('.'))) >= tuple(map(int, sys.argv[4].split('.'))) else 1)
+''')
         self.write('getconf', 'print("glibc 2.36")')
+        self.write('getent', 'print("chip:x:1000:1000:chip:" + os.environ["HOME"] + ":/bin/bash")')
         for tool in ('picom', 'dtc', 'fdtoverlay', 'bwrap'):
             self.write(tool, 'pass')
         self.write('awesome-client', 'print(\'string "vitrallis-desktop-available"\')')
         self.write('awesome', 'print("awesome v4.3")')
-        self.write('stat', 'print("1000:700" if sys.argv[2] == "%u:%a" else "1000")')
+        self.write('stat', 'print({"%u:%a": "1000:700", "%u": "1000", "%a": "700", "%h": "1"}[sys.argv[2]])')
         self.write('systemctl', 'print("inactive")')
         self.write('df', 'print("Filesystem 1024-blocks Used Available Capacity Mounted on\\nfixture 999999 0 999999 0% /")')
         self.write('dpkg-query', '''

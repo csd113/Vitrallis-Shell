@@ -7,6 +7,7 @@ import shutil
 import struct
 import subprocess
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 import tempfile
 import unittest
@@ -37,6 +38,9 @@ class Installer(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.home = Path(self.temp.name).resolve() / 'user home'
         self.home.mkdir()
+        self.awesome = self.home / '.config/awesome/rc.lua'
+        self.awesome.parent.mkdir(parents=True)
+        self.awesome.write_bytes(b'-- original Awesome/PocketHome startup\n')
         self.config = self.home / '.pocket-home/config.json'
         self.config.parent.mkdir()
         self.original = {'defaultPage': 'Apps', 'pages': [{'name': 'Apps', 'items': [{'name': 'Keep', 'shell': 'keep'}]}], 'custom': 19}
@@ -48,6 +52,8 @@ class Installer(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(m, 'preflight').start()
         patch.object(m, 'require_stopped_session').start()
+        # Privileged/device-tree provisioning belongs to the separate fixtures.
+        patch.object(m, 'setup_platform').start()
         self.binary = self.source / 'binary'
         header = bytearray(84)
         header[:7] = b'\x7fELF\x01\x01\x01'
@@ -66,6 +72,88 @@ class Installer(unittest.TestCase):
         with patch.object(m, 'setup_platform') as setup:
             self.install()
         setup.assert_called_once_with(self.source)
+
+    def default_install(self):
+        with patch.object(m, 'verify_versions'), patch.object(m, 'validate_startup'):
+            m.install(self.binary, self.source, self.home, make_default=True)
+
+    def test_default_startup_is_idempotent_backed_up_and_preserves_desktop(self):
+        original = self.awesome.read_bytes()
+        self.awesome.chmod(0o600)
+        self.default_install()
+        self.default_install()
+        self.assertEqual(self.awesome.read_bytes(), original + m.STARTUP.encode())
+        self.assertEqual(self.awesome.stat().st_mode & 0o777, 0o600)
+        backups = self.home / '.local/share/vitrallis-backups'
+        originals = []
+        for backup in backups.iterdir():
+            paths = json.loads((backup / 'paths.json').read_bytes())
+            originals.append((backup / str(paths.index(str(self.awesome)))).read_bytes())
+        self.assertIn(original, originals)
+        self.assertEqual(self.config.read_text(), json.dumps(self.original))
+
+    def test_invalid_default_configuration_never_provisions_or_publishes(self):
+        for content in (b'-- BEGIN Vitrallis startup\nuser edit', m.STARTUP.encode() * 2):
+            self.awesome.write_bytes(content)
+            with patch.object(m, 'setup_platform') as setup, self.assertRaisesRegex(ValueError, 'startup block'):
+                self.default_install()
+            setup.assert_not_called()
+            self.assertFalse(self.target.exists())
+            self.assertEqual(self.awesome.read_bytes(), content)
+        self.awesome.write_bytes(b'-- original\n')
+        with patch.object(m, 'verify_versions'), patch.object(m, 'setup_platform') as setup, \
+                patch.object(m, 'validate_startup', side_effect=subprocess.CalledProcessError(1, 'awesome')):
+            with self.assertRaises(subprocess.CalledProcessError):
+                m.install(self.binary, self.source, self.home, make_default=True)
+        setup.assert_not_called()
+        self.assertFalse((self.target / 'current').exists())
+        self.assertEqual(self.awesome.read_bytes(), b'-- original\n')
+
+    def test_missing_linked_or_writable_default_config_fails_before_installation(self):
+        self.awesome.unlink()
+        with self.assertRaises(FileNotFoundError): self.default_install()
+        outside = self.home / 'outside-rc.lua'
+        outside.write_bytes(b'keep')
+        self.awesome.symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, 'symlink'): self.default_install()
+        self.awesome.unlink()
+        os.link(outside, self.awesome)
+        with self.assertRaisesRegex(ValueError, 'hardlink'): self.default_install()
+        self.awesome.unlink()
+        self.awesome.write_bytes(b'keep')
+        self.awesome.chmod(0o666)
+        with self.assertRaisesRegex(ValueError, 'permissions'): self.default_install()
+        self.assertFalse(self.target.exists())
+        self.assertEqual(outside.read_bytes(), b'keep')
+
+    def test_default_startup_rolls_back_when_build_publication_fails(self):
+        self.install()
+        before = self.awesome.read_bytes()
+        old = os.readlink(self.target / 'current')
+        with patch.object(m, 'atomic_pointer', side_effect=OSError('injected publication failure')):
+            with self.assertRaises(OSError): self.default_install()
+        self.assertEqual(self.awesome.read_bytes(), before)
+        self.assertEqual(os.readlink(self.target / 'current'), old)
+        self.default_install()
+        self.assertEqual(self.awesome.read_bytes(), before + m.STARTUP.encode())
+
+    def test_config_edit_during_staging_is_preserved(self):
+        def edit(*args):
+            self.awesome.write_bytes(b'-- concurrent edit\n')
+        with patch.object(m, 'verify_versions', side_effect=edit), patch.object(m, 'validate_startup'):
+            with self.assertRaisesRegex(ValueError, 'configuration changed'):
+                m.install(self.binary, self.source, self.home, make_default=True)
+        self.assertEqual(self.awesome.read_bytes(), b'-- concurrent edit\n')
+        self.assertFalse((self.target / 'current').exists())
+
+    def test_uninstall_removes_default_startup_and_preserves_later_edits(self):
+        import uninstall
+        original = self.awesome.read_bytes()
+        self.default_install()
+        self.awesome.write_bytes(self.awesome.read_bytes() + b'-- later user edit\n')
+        actions = uninstall.plan(self.home)
+        action = next(a for a in actions if a['path'] == uninstall.AWESOME.as_posix())
+        self.assertEqual(bytes.fromhex(action['replacement']), original + b'-- later user edit\n')
 
     def test_invalid_bundle_never_runs_privileged_platform_setup(self):
         self.binary.write_bytes(b'invalid')
@@ -338,7 +426,7 @@ class Installer(unittest.TestCase):
             "spec = importlib.util.spec_from_file_location('device_install', script)\n"
             'module = importlib.util.module_from_spec(spec)\n'
             'spec.loader.exec_module(module)\n'
-            "with patch.object(module, 'preflight'), patch.object(module, 'require_stopped_session'), patch.object(module, 'verify_versions'):\n"
+            "with patch.object(module, 'preflight'), patch.object(module, 'require_stopped_session'), patch.object(module, 'verify_versions'), patch.object(module, 'setup_platform'):\n"
             '    module.install(Path(bundle), Path(script).parent, Path.home())\n'
         )
         return subprocess.run(
@@ -386,9 +474,15 @@ class Preflight(unittest.TestCase):
         from unittest.mock import Mock
         self.addCleanup(patch.stopall)
         patch.object(m.os, 'geteuid', return_value=1000).start()
+        patch.object(m.os, 'getuid', return_value=1000).start()
         patch.object(m.platform, 'system', return_value='Linux').start()
         patch.object(m.platform, 'machine', return_value='armv7l').start()
         patch.object(m.Path, 'read_text', return_value='ID=debian\nVERSION_ID="13"\n').start()
+        patch.object(m.Path, 'read_bytes', return_value=b'nextthing,pocketchip\0').start()
+        patch.object(m.pwd, 'getpwuid', return_value=SimpleNamespace(pw_dir=str(Path.home()))).start()
+        import stat
+        patch.object(m.Path, 'lstat', autospec=True, side_effect=lambda path: SimpleNamespace(
+            st_mode=(stat.S_IFSOCK | 0o600) if path.name == 'bus' else (stat.S_IFDIR | 0o700), st_uid=1000)).start()
         patch.object(m.os, 'access', return_value=True).start()
         self.answers = {'dpkg': 'armhf\n', 'getconf': 'glibc 2.36\n',
                         'awesome': 'awesome v4.3\n', 'systemctl': 'inactive\n'}
@@ -433,6 +527,33 @@ class Preflight(unittest.TestCase):
             m.preflight()
         with patch.object(m.os, 'access', return_value=False), self.assertRaisesRegex(ValueError, 'prerequisite'):
             m.preflight()
+
+    def test_other_boards_future_os_and_unsafe_user_bus_fail_before_writes(self):
+        import stat
+        cases = [patch.object(m.Path, 'read_bytes', return_value=b'nextthing,chip\0'),
+                 patch.object(m.Path, 'read_bytes', return_value=b'nextthing,pocketchip-impostor\0'),
+                 patch.object(m.Path, 'read_text', return_value='ID=debian\nVERSION_ID=14\n'),
+                 patch.object(m.Path, 'read_text', return_value='ID=ubuntu\nVERSION_ID=13\n'),
+                 patch.object(m.Path, 'read_text', return_value='ID=debian\nVERSION_ID="13\n'),
+                 patch.object(m.Path, 'read_text', return_value='ID=debian\nVERSION_ID=14\nVERSION_ID=13\n'),
+                 patch.object(m.Path, 'read_text', return_value='ID=debian\nVERSION_ID=013\n'),
+                 patch.object(m.pwd, 'getpwuid', return_value=SimpleNamespace(pw_dir='/wrong-home')),
+                 patch.object(m.Path, 'lstat', return_value=SimpleNamespace(st_uid=1000, st_mode=stat.S_IFLNK | 0o777))]
+        for case in cases:
+            with case, patch.object(m, 'make_directories') as write, self.assertRaises(ValueError):
+                m.install(Path('/bundle'), Path('/source'), Path.home(), make_default=True)
+            write.assert_not_called()
+
+
+class PlatformSetup(unittest.TestCase):
+    def test_failed_read_only_platform_check_never_invokes_sudo(self):
+        with patch.object(m.pwd, 'getpwuid', return_value=SimpleNamespace(pw_name='chip')), \
+                patch.object(m.subprocess, 'run', side_effect=subprocess.CalledProcessError(1, 'check')) as command:
+            with self.assertRaises(subprocess.CalledProcessError):
+                m.setup_platform(Path('/verified-helpers'))
+        command.assert_called_once()
+        self.assertEqual(command.call_args.args[0], [sys.executable, '-I',
+                         '/verified-helpers/platform-setup.py', '--check-user', 'chip'])
 
 
 class BoundedInputs(unittest.TestCase):

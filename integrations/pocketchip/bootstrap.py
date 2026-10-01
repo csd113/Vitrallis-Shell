@@ -145,7 +145,7 @@ def finish_install(directory):
     if not desktop_available(os.environ):
         print('To open it on your PocketCHIP, open Terminal on the device and run:\n'
               '~/.local/share/vitrallis/launch\n'
-              'Automatic startup at boot has not been enabled.', flush=True)
+              'Vitrallis will start automatically at your next desktop login.', flush=True)
         return
     session = load_session(directory)
     script = target / 'vitrallis-session.py'
@@ -174,7 +174,7 @@ def finish_install(directory):
                          'Inspect {} and retry {} from the device Terminal.{}'.format(
                              error, target / 'session.log', launch, cleanup)) from error
     print('Vitrallis is open. Home returns from an app; Exit Vitrallis returns to your original desktop.\n'
-          'Automatic startup at boot has not been enabled. Any GPU reboot notice above still applies.', flush=True)
+          'Vitrallis will start automatically at your next desktop login. Any GPU reboot notice above still applies.', flush=True)
 
 
 def fetch(url, destination, limit, timeout=30):
@@ -332,7 +332,7 @@ def main():
         check_download_space(release, directory)
         bundle = download_release(release, directory)
         subprocess.run([sys.executable, '-I', str(directory / 'install-session.py'), str(bundle),
-                        '--expected-version', release['tag_name'][1:]], check=True, env=env)
+                        '--expected-version', release['tag_name'][1:], '--make-default'], check=True, env=env)
         finish_install(directory)
 
 

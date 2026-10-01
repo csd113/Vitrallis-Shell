@@ -97,16 +97,16 @@ class Uninstaller(unittest.TestCase):
         self.assertEqual(desktop.read_text(), 'edited shortcut')
         self.assertFalse(autostart.exists())
 
-    def test_optional_startup_removes_only_exact_block(self):
+    def test_managed_startup_removes_only_exact_block(self):
         path = self.home / u.AWESOME
-        path.parent.mkdir(parents=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text('before\n' + u.STARTUP + '\nafter user edits\n')
         self.remove()
         self.assertEqual(path.read_text(), 'before\n\nafter user edits\n')
 
     def test_edited_startup_and_menu_entries_are_preserved(self):
         path = self.home / u.AWESOME
-        path.parent.mkdir(parents=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         edited = u.STARTUP.replace('start_new(5', 'start_new(9')
         path.write_text(edited)
         config = json.loads(self.config.read_bytes())
@@ -167,7 +167,7 @@ class Uninstaller(unittest.TestCase):
 
     def test_write_failure_rolls_back_owned_files_and_startup_block(self):
         owned_config = self.home / u.AWESOME
-        owned_config.parent.mkdir(parents=True)
+        owned_config.parent.mkdir(parents=True, exist_ok=True)
         owned_config.write_text('before\n' + u.STARTUP + '\nafter\n')
         before = owned_config.read_bytes()
         real = u.atomic
@@ -246,7 +246,7 @@ class Uninstaller(unittest.TestCase):
 
     def test_recovery_preserves_later_edits_and_leaves_journal(self):
         owned_config = self.home / u.AWESOME
-        owned_config.parent.mkdir(parents=True)
+        owned_config.parent.mkdir(parents=True, exist_ok=True)
         owned_config.write_text('before\n' + u.STARTUP + '\nafter\n')
         real = u.atomic
         def fail(path, *args):

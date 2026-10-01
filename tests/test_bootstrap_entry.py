@@ -90,6 +90,41 @@ class Prerequisites(unittest.TestCase):
         self.assertIn('desktop user bus', result.stderr)
         self.assertEqual(self.fixture.calls(), [])
 
+    def test_wrong_board_abi_libc_future_release_and_home_never_mutate(self):
+        for name, code in [('uname', 'print("Linux" if sys.argv[1] == "-s" else "aarch64")'),
+                           ('dpkg', 'print("armel")'), ('getconf', 'print("glibc 2.35")'),
+                           ('awesome', 'print("awesome v3.5")'),
+                           ('getent', 'print("chip:x:1000:1000:chip:/wrong-home:/bin/bash")')]:
+            original = (self.fixture.commands / name).read_text()
+            self.fixture.write(name, code)
+            result = self.run_script()
+            self.assertNotEqual(result.returncode, 0, name)
+            self.assertEqual(self.fixture.calls(), [])
+            self.assertFalse((self.fixture.root / 'download-path').exists())
+            (self.fixture.commands / name).write_text(original)
+        for compatible in (b'nextthing,chip\0', b'nextthing,pocketchip-impostor\0'):
+            (self.fixture.root / 'compatible').write_bytes(compatible)
+            self.assertNotEqual(self.run_script().returncode, 0)
+            self.assertEqual(self.fixture.calls(), [])
+        (self.fixture.root / 'compatible').write_bytes(b'nextthing,pocketchip\0')
+        self.fixture.os_release.write_text('ID=debian\nVERSION_ID=14\n')
+        self.assertNotEqual(self.run_script().returncode, 0)
+        self.assertEqual(self.fixture.calls(), [])
+
+    def test_unsafe_or_invalid_awesome_config_fails_before_packages(self):
+        config = self.fixture.home / '.config/awesome/rc.lua'
+        config.unlink()
+        self.assertNotEqual(self.run_script().returncode, 0)
+        self.assertEqual(self.fixture.calls(), [])
+        config.symlink_to(self.fixture.root / 'boot.scr')
+        self.assertNotEqual(self.run_script().returncode, 0)
+        self.assertEqual(self.fixture.calls(), [])
+        config.unlink()
+        config.write_text('-- original startup\n')
+        self.fixture.write('awesome', 'print("awesome v4.3"); sys.exit(1 if "--check" in sys.argv else 0)')
+        self.assertNotEqual(self.run_script().returncode, 0)
+        self.assertEqual(self.fixture.calls(), [])
+
     def test_network_package_and_download_failure_stop_and_clean(self):
         for flag in ('FIXTURE_UPDATE_FAIL', 'FIXTURE_INSTALL_FAIL', 'FIXTURE_DOWNLOAD_FAIL'):
             with self.subTest(flag=flag):

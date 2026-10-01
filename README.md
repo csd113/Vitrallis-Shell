@@ -21,19 +21,30 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 **Vitrallis Shell 1.0.0 Beta.** Install the complete bundle containing the shell, Terminal, Notepad,
 Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
-OS/runtime requirements, the single copy-and-paste setup block and hardware
+OS/runtime requirements, the single copy-and-paste setup command and hardware
 validation limits. Setup prepares missing Debian packages and installs a verified
 complete bundle with all five executables. Run it as your normal desktop user;
 sudo is used for package and platform preparation. The updated entry point must be
 published before these source changes are available through the public download
-URL.
+URL, and a complete release containing the updated helpers must be published.
+
+Run this as your normal user on a supported PocketCHIP (requires `curl` and
+working HTTPS certificates):
+
+<!-- pocketchip-install-command -->
+```sh
+(set -eu; PATH=/usr/sbin:/usr/bin:/sbin:/bin; export PATH; umask 077; vitrallis_setup=$(mktemp -d /tmp/vitrallis-entry.XXXXXXXX); trap 'rm -rf "$vitrallis_setup"' 0; trap 'exit 130' 1 2 15; curl -q -fSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 10 --max-time 30 --max-filesize 262144 https://raw.githubusercontent.com/csd113/Vitrallis-Shell/main/integrations/pocketchip/bootstrap.sh -o "$vitrallis_setup/bootstrap.sh"; sh "$vitrallis_setup/bootstrap.sh")
+```
+
+Setup enables Vitrallis as your desktop at login. PocketHome remains available
+through **Exit Vitrallis** and when startup fails.
 
 ## First launch and controls
 
 Setup from the PocketCHIP graphical Terminal opens Vitrallis and checks that its
 window appears. Setup over SSH prints the on-device launch command:
 `~/.local/share/vitrallis/launch`. You can also use that command for later launches.
-Setup preserves the original boot default.
+Setup starts Vitrallis automatically at subsequent desktop logins, including after reboot.
 
 | Action | Control |
 | --- | --- |
@@ -86,6 +97,6 @@ The workspace build includes all native utilities. [Contributor guidance](CONTRI
 python3 "$HOME/.local/share/vitrallis/uninstall.py"
 ```
 
-Add `--dry-run` to inspect first. Add `--purge` to also remove the default Vitrallis preferences and session logs; deletion requires typing `PURGE`. Purge still keeps third-party apps, saves, App Center transaction backups, installation backups, user documents, system packages, and the original desktop. Custom XDG locations and edited or unrecognized files are preserved. Matching shortcuts and the exact optional startup block are removed without restoring entire configuration files.
+Add `--dry-run` to inspect first. Add `--purge` to also remove the default Vitrallis preferences and session logs; deletion requires typing `PURGE`. Purge still keeps third-party apps, saves, App Center transaction backups, installation backups, user documents, system packages, and the original desktop. Custom XDG locations and edited or unrecognized files are preserved. Matching shortcuts and the exact managed startup block are removed without restoring entire configuration files.
 
 A tiny update lock remains for safe concurrency. After successful removal the uninstaller itself is gone; running the line again reports a missing script and changes nothing. For interrupted or partial installs, retained paths, and the local recovery command, see [offline removal and recovery](docs/devices/pocketchip.md#offline-removal-and-recovery).

@@ -1,13 +1,14 @@
 # PocketCHIP installation and recovery
 
 Vitrallis is an additional launch target inside the existing Awesome session.
-PocketHome remains installed and remains the normal boot default. The supported
+Setup makes Vitrallis the default desktop at login. PocketHome remains installed
+and available when Vitrallis exits or fails. The supported
 installer consumes one complete native bundle, never a source build or standalone
 shell executable. The original menu and launcher files are preserved.
 
 ## Prerequisites and release selection
 
-Use your normal desktop account on a PocketCHIP running Debian 12+ ARMv7
+Use your normal desktop account on a PocketCHIP running Debian 12 or 13 ARMv7
 hard-float (`armhf`), with the existing Awesome 4 desktop, PocketHome, systemd
 user manager and CHIP flash-kernel boot layout. The recorded physical image is
 Debian 13; original Jessie is unsupported. The desktop account must already have
@@ -15,11 +16,24 @@ sudo access and be logged into the device desktop. Internet access to your Debia
 repositories and GitHub is required. Keep at least 128 MiB free on the system,
 home and temporary filesystems; APT may require more for missing dependencies.
 
-Paste the **entire block** into Terminal on the PocketCHIP, or an SSH terminal
+Paste the **single command** below into Terminal on the PocketCHIP, or an SSH terminal
 logged in as that same user. It checks the device and existing session, installs
 missing prerequisites, downloads and verifies one complete release, and installs
-it as your normal user. It may request your sudo password. Exit any running
+it as your normal user, enabling automatic startup at subsequent logins. It may
+request your sudo password. Exit any running
 Vitrallis session first; your open applications are never forcibly closed.
+
+The entry command needs `curl` and working HTTPS certificates. It downloads to
+a private temporary directory, executes only after a successful HTTPS download,
+and cleans up on exit. Unsupported devices stop before APT or platform setup.
+
+<!-- pocketchip-install-command -->
+```sh
+(set -eu; PATH=/usr/sbin:/usr/bin:/sbin:/bin; export PATH; umask 077; vitrallis_setup=$(mktemp -d /tmp/vitrallis-entry.XXXXXXXX); trap 'rm -rf "$vitrallis_setup"' 0; trap 'exit 130' 1 2 15; curl -q -fSL --proto '=https' --proto-redir '=https' --max-redirs 5 --connect-timeout 10 --max-time 30 --max-filesize 262144 https://raw.githubusercontent.com/csd113/Vitrallis-Shell/main/integrations/pocketchip/bootstrap.sh -o "$vitrallis_setup/bootstrap.sh"; sh "$vitrallis_setup/bootstrap.sh")
+```
+
+For inspection or use after preparing transport tools, the downloaded script is
+shown verbatim below. This block performs the same installation:
 
 <!-- pocketchip-bootstrap -->
 ```sh
@@ -32,7 +46,11 @@ export LC_ALL
 umask 077
 fail() { printf '%s\n' "Vitrallis setup: $*" >&2; exit 1; }
 [ "$(id -u)" -ne 0 ] || fail 'Run as your normal desktop user, without sudo.'
-[ "$(uname -s)" = Linux ] || fail 'Requires a PocketCHIP running Debian 12 or newer.'
+[ "$(id -u)" -ge 1000 ] || fail 'Run as your normal desktop user, not a system account.'
+[ "$(uname -s)" = Linux ] || fail 'Requires a PocketCHIP running Debian 12 or 13.'
+for vitrallis_tool in dpkg dpkg-query getconf getent cut stat sed tr grep awk systemctl df awesome awesome-client sudo mktemp; do
+    command -v "$vitrallis_tool" >/dev/null || fail "Missing system prerequisite: $vitrallis_tool."
+done
 case "$(uname -m)" in armv7l|armv8l) ;; *) fail 'Requires 32-bit ARMv7 Linux.' ;; esac
 [ "$(dpkg --print-architecture)" = armhf ] || fail 'Requires Debian armhf.'
 vitrallis_libc=$(getconf GNU_LIBC_VERSION)
@@ -42,13 +60,23 @@ dpkg --compare-versions "${vitrallis_libc#glibc }" ge 2.36 || fail 'Requires gli
 [ "$(sed -n 's/^ID=\([^" ]*\)$/\1/p;s/^ID="\([^" ]*\)"$/\1/p' /etc/os-release)" = debian ] || fail 'Requires Debian.'
 vitrallis_debian=$(sed -n 's/^VERSION_ID=\([0-9]*\)$/\1/p;s/^VERSION_ID="\([0-9]*\)"$/\1/p' /etc/os-release)
 case "$vitrallis_debian" in ''|*[!0-9]*) fail 'Cannot identify the Debian release.' ;; esac
-[ "$vitrallis_debian" -ge 12 ] || fail 'Requires Debian 12 or newer; original Jessie is unsupported.'
+case "$vitrallis_debian" in 12|13) ;; *) fail 'Requires Debian 12 or 13; original Jessie and unvalidated releases are unsupported.' ;; esac
 tr '\000' '\n' < /sys/firmware/devicetree/base/compatible | grep -qx 'nextthing,pocketchip' || fail 'Requires a PocketCHIP.'
 command -v sudo >/dev/null || fail 'sudo must be configured for your desktop account first.'
 command -v awesome-client >/dev/null || fail 'Requires the existing Awesome desktop.'
 awesome --version | grep -q '^awesome v4\.' || fail 'Requires the existing Awesome 4 desktop.'
 [ -r /boot/boot.scr ] || fail 'Requires the supported CHIP flash-kernel boot layout.'
 vitrallis_uid=$(id -u)
+vitrallis_home=$(getent passwd "$vitrallis_uid" | cut -d: -f6)
+[ -n "$vitrallis_home" ] && [ "$HOME" = "$vitrallis_home" ] || fail 'HOME must be your normal desktop account home directory.'
+for vitrallis_path in "$HOME" "$HOME/.config" "$HOME/.config/awesome" "$HOME/.config/awesome/rc.lua"; do
+    [ ! -L "$vitrallis_path" ] && [ "$(stat -c '%u' "$vitrallis_path")" = "$vitrallis_uid" ] || fail "Unsafe desktop configuration: $vitrallis_path."
+    vitrallis_mode=$(stat -c '%a' "$vitrallis_path")
+    case "$vitrallis_mode" in [0-7][0-7][0-7]) ;; *) fail "Unsafe desktop permissions: $vitrallis_path." ;; esac
+    case "$vitrallis_mode" in ?[2367]?|??[2367]) fail "Writable by other users: $vitrallis_path." ;; esac
+done
+[ -f "$HOME/.config/awesome/rc.lua" ] && [ "$(stat -c '%h' "$HOME/.config/awesome/rc.lua")" = 1 ] || fail 'Requires an existing single-link Awesome configuration.'
+awesome --check --config "$HOME/.config/awesome/rc.lua" || fail 'The existing Awesome configuration failed its syntax check.'
 vitrallis_runtime=/run/user/$vitrallis_uid
 [ "$(stat -c '%u:%a' "$vitrallis_runtime")" = "$vitrallis_uid:700" ] && [ ! -L "$vitrallis_runtime" ] || fail 'Log into the PocketCHIP desktop first; its private user runtime is unavailable.'
 [ -S "$vitrallis_runtime/bus" ] && [ "$(stat -c '%u' "$vitrallis_runtime/bus")" = "$vitrallis_uid" ] && [ ! -L "$vitrallis_runtime/bus" ] || fail 'The desktop user bus is unavailable; log into the device desktop first.'
@@ -162,18 +190,23 @@ forwarding, finish with the on-device launch command instead. They use the
 validated existing user manager; they do not invent display credentials or start
 a new login session. Missing graphical access also defers launch. A launch failure
 is reported separately from the successful installation, with the session log and
-retry command. Automatic startup at boot is not enabled. A GPU reboot notice
+retry command. Vitrallis starts automatically at the next desktop login; the
+existing Awesome and PocketHome startup remains in place as recovery. A GPU
+reboot notice
 still applies even if Vitrallis opens successfully.
 
 **Source and published releases:** the prerequisite and checked-launch
 entry-point changes in this checkout become public only when the updated source
-is published at the URL above. This work does not bump versions or publish a
+is published at the URL above and a complete release includes the matching
+helpers with `--make-default` support. Older release helpers reject that flag
+before installing; publish the updated helpers together, never mix releases.
+This work does not bump versions or publish a
 release. See the [release inventory](../releases.md) for currently published
 bundles and helpers. To validate a complete locally built ARM bundle with this
 checkout's helpers after preparing prerequisites:
 
 ```sh
-python3 integrations/pocketchip/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle
+python3 integrations/pocketchip/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle --make-default
 ```
 
 That local installer is the bundle transaction; automatic package preparation and
@@ -379,25 +412,25 @@ X11 keycodes on the device, not manual switch presses. The device was left on
 Home; the installer retained its previous generation and backup. Formatting,
 strict workspace Clippy, workspace tests and the ARM release build passed.
 
-## Optional startup
+## Default startup and recovery
 
-Automatic startup is opt-in and is not installed by the bootstrap. If wanted,
-back up `~/.config/awesome/rc.lua`, preserve its existing session startup, and
-append exactly this block after the existing startup code:
+The one-command installer appends a managed startup block to your existing
+`~/.config/awesome/rc.lua`. It checks the existing configuration and the proposed
+configuration with Awesome before enabling startup, preserves the original
+startup and permissions, and backs up the file with the installation transaction.
+Vitrallis starts once after five seconds at each login. No display-manager,
+login-shell, autologin or bootloader defaults are replaced.
 
-```lua
--- BEGIN optional Vitrallis startup
-require('gears').timer.start_new(5, function()
-    require('awful').spawn({os.getenv('HOME') .. '/.local/share/vitrallis/launch'}, false)
-    return false
-end)
--- END optional Vitrallis startup
-```
+A failed install rolls back the startup change. Reinstalling does not duplicate
+it. Edited or duplicate Vitrallis blocks, missing configurations, symlinks,
+hardlinks and unsafe permissions stop installation for review. A concurrent
+configuration edit is preserved. Local bundle installation without
+`--make-default` installs only the launch target.
 
-It starts once after five seconds; failure leaves PocketHome available. Removal
-recognizes precisely this block and preserves surrounding edits. A customized
-block is retained for manual review. Do not restore an entire old `rc.lua` over
-later changes.
+If Vitrallis fails to start or exits, PocketHome remains available. Removal
+recognizes only the exact managed block and preserves surrounding edits; an
+edited block is retained for manual review. Do not restore an entire old
+`rc.lua` over later changes.
 
 ## Offline removal and recovery
 
@@ -413,7 +446,7 @@ hashes identify current and OTA-installed builds without following pointers into
 arbitrary directories. Missing/edited generations and modified helper/shortcut
 files are preserved. Reconcile an edited session helper before removal; it is
 not executed to stop the session. PocketHome configuration is never read or written.
-Matching desktop/autostart shortcuts and the exact optional startup block are
+Matching desktop/autostart shortcuts and the exact managed startup block are
 removed. Known incomplete download and binary staging files are removed under the same
 lock. Unknown contents are never recursively erased.
 

@@ -213,11 +213,26 @@ class ReadmeCommands(unittest.TestCase):
         self.env = dict(self.shell.env, HOME=str(self.home),
                         PATH=str(self.commands) + os.pathsep + os.environ['PATH'],
                         VITRALLIS_TEST_NETWORK=str(self.network), VITRALLIS_TEST_LOG=str(self.home / 'outer-download'))
+        entry_script = self.commands.parent / 'prepared-bootstrap.sh'
+        entry_script.write_text(self.shell.script)
         self.write_command('curl', '''#!/bin/sh
+entry=no
+for argument in "$@"; do
+    case "$argument" in */bootstrap.sh) entry=yes ;; esac
+done
 while [ "$#" -gt 0 ]; do
     if [ "$1" = -o ]; then shift; output=$1; fi
     shift
 done
+if [ "$entry" = yes ]; then
+    printf '%s' "$output" > "$HOME/entry-download"
+    if [ "${VITRALLIS_TEST_ENTRY_FAIL-}" = yes ]; then
+        printf 'touch "$HOME/incorrectly-executed"' > "$output"
+        exit 22
+    fi
+    cp ''' + shlex.quote(str(entry_script)) + ''' "$output"
+    exit 0
+fi
 printf '%s' "$output" > "$VITRALLIS_TEST_LOG"
 if [ "${VITRALLIS_TEST_FAIL-}" = yes ]; then
     printf 'raise SystemExit("partial payload must never execute")' > "$output"
@@ -231,6 +246,11 @@ cp ''' + shlex.quote(str(DEVICE / 'bootstrap.py')) + ''' "$output"
         block = re.search(r'<!-- pocketchip-bootstrap -->\n```sh\n(.*?)\n```', readme, re.S).group(1)
         self.assertEqual(block, (DEVICE / 'bootstrap.sh').read_text().split('\n', 2)[2].rstrip())
         self.install_line = self.shell.script
+        one_line = re.search(r'<!-- pocketchip-install-command -->\n```sh\n([^\n]+)\n```', readme).group(1)
+        readme_line = re.search(r'<!-- pocketchip-install-command -->\n```sh\n([^\n]+)\n```', (ROOT / 'README.md').read_text()).group(1)
+        self.assertEqual(one_line, readme_line)
+        self.single_command = one_line.replace('PATH=/usr/sbin:/usr/bin:/sbin:/bin',
+                                               'PATH=' + shlex.quote(str(self.commands)) + ':/usr/bin:/bin')
         self.uninstall_line = re.search(r'## Uninstall\n.*?```sh\n([^\n]+)\n```', (ROOT / 'README.md').read_text(), re.S).group(1)
 
     def write_command(self, name, data):
@@ -259,6 +279,27 @@ cp ''' + shlex.quote(str(DEVICE / 'bootstrap.py')) + ''' "$output"
         self.assertFalse((self.fixture.target / 'uninstall.py').exists())
         again = self.run_line(self.uninstall_line)
         self.assertNotEqual(again.returncode, 0)
+
+    def test_literal_single_command_installs_default_reinstalls_and_uninstalls(self):
+        original = self.fixture.awesome.read_bytes()
+        for _ in range(2):
+            result = self.run_line(self.single_command)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.fixture.awesome.read_bytes(), original + fixture.m.STARTUP.encode())
+            for log in ('entry-download', 'outer-download'):
+                self.assertFalse(Path((self.home / log).read_text()).exists())
+        result = self.run_line(self.uninstall_line)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.fixture.awesome.read_bytes(), original)
+        self.assertFalse((self.fixture.target / 'current').exists())
+
+    def test_single_command_never_executes_partial_entry_download(self):
+        self.env['VITRALLIS_TEST_ENTRY_FAIL'] = 'yes'
+        result = self.run_line(self.single_command)
+        self.assertEqual(result.returncode, 22, result.stderr)
+        self.assertFalse(self.fixture.target.exists())
+        self.assertFalse((self.home / 'incorrectly-executed').exists())
+        self.assertFalse(Path((self.home / 'entry-download').read_text()).exists())
 
     def test_failed_literal_download_cleans_temp_and_never_executes_python(self):
         self.env['VITRALLIS_TEST_FAIL'] = 'yes'
@@ -305,8 +346,12 @@ def readme_driver():
             raise AssertionError('installer must use isolated Python')
         args = [args[0]] + args[2:]
         installer = load('readme_installer', Path(args[1]))
-        with patch.object(installer, 'preflight'), patch.object(installer, 'require_stopped_session'), patch.object(installer, 'verify_versions') as probe:
-            installer.install(Path(args[2]), Path(args[1]).parent, Path.home(), args[4])
+        with patch.object(installer, 'preflight'), patch.object(installer, 'require_stopped_session'), \
+                patch.object(installer, 'setup_platform'), patch.object(installer, 'validate_startup'), \
+                patch.object(installer, 'verify_versions') as probe:
+            if args[5:] != ['--make-default']:
+                raise AssertionError('bootstrap must enable the default desktop')
+            installer.install(Path(args[2]), Path(args[1]).parent, Path.home(), args[4], make_default=True)
             self_expected = probe.call_args.args[1]
             if self_expected != '1.2.3-beta.2':
                 raise AssertionError('release tag was not passed to the installer')

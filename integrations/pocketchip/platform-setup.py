@@ -431,7 +431,8 @@ def save_status(extra=None):
     return result
 
 
-def install(username):
+def preflight(username):
+    """Validate the supported board and boot trees without changing the device."""
     user = pwd.getpwnam(username)
     if user.pw_uid == 0: raise ValueError('Choose the normal desktop user')
     nodes = live_nodes()
@@ -447,7 +448,16 @@ def install(username):
     private_group(user)
     for path in (HELPER, SERVICE, HOOK, STATE / 'user.json'):
         safe(path, regular=True)
-    update_dtbs([dtb_path(version), dtb_path(version, boot=True)])
+    paths = [dtb_path(version), dtb_path(version, boot=True)]
+    for path in paths:
+        safe(path, regular=True)
+        patched(read_file(path))
+    return user, paths
+
+
+def install(username):
+    user, paths = preflight(username)
+    update_dtbs(paths)
     atomic(HELPER, Path(__file__).read_bytes())
     atomic(HOOK, KERNEL_HOOK, 0o755)
     atomic(SERVICE, UNIT)
@@ -493,11 +503,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--install-user')
+    group.add_argument('--check-user')
     group.add_argument('--kernel')
     group.add_argument('--boot', action='store_true')
     group.add_argument('--stop', action='store_true')
     group.add_argument('--verify', action='store_true')
     args = parser.parse_args()
+    if args.check_user:
+        preflight(args.check_user)
+        return
     if os.geteuid() != 0: raise ValueError('Platform setup needs root; run through the installer')
     safe(STATE)
     STATE.mkdir(mode=0o755, exist_ok=True)

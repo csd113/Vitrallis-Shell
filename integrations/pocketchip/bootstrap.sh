@@ -9,7 +9,11 @@ export LC_ALL
 umask 077
 fail() { printf '%s\n' "Vitrallis setup: $*" >&2; exit 1; }
 [ "$(id -u)" -ne 0 ] || fail 'Run as your normal desktop user, without sudo.'
-[ "$(uname -s)" = Linux ] || fail 'Requires a PocketCHIP running Debian 12 or newer.'
+[ "$(id -u)" -ge 1000 ] || fail 'Run as your normal desktop user, not a system account.'
+[ "$(uname -s)" = Linux ] || fail 'Requires a PocketCHIP running Debian 12 or 13.'
+for vitrallis_tool in dpkg dpkg-query getconf getent cut stat sed tr grep awk systemctl df awesome awesome-client sudo mktemp; do
+    command -v "$vitrallis_tool" >/dev/null || fail "Missing system prerequisite: $vitrallis_tool."
+done
 case "$(uname -m)" in armv7l|armv8l) ;; *) fail 'Requires 32-bit ARMv7 Linux.' ;; esac
 [ "$(dpkg --print-architecture)" = armhf ] || fail 'Requires Debian armhf.'
 vitrallis_libc=$(getconf GNU_LIBC_VERSION)
@@ -19,13 +23,23 @@ dpkg --compare-versions "${vitrallis_libc#glibc }" ge 2.36 || fail 'Requires gli
 [ "$(sed -n 's/^ID=\([^" ]*\)$/\1/p;s/^ID="\([^" ]*\)"$/\1/p' /etc/os-release)" = debian ] || fail 'Requires Debian.'
 vitrallis_debian=$(sed -n 's/^VERSION_ID=\([0-9]*\)$/\1/p;s/^VERSION_ID="\([0-9]*\)"$/\1/p' /etc/os-release)
 case "$vitrallis_debian" in ''|*[!0-9]*) fail 'Cannot identify the Debian release.' ;; esac
-[ "$vitrallis_debian" -ge 12 ] || fail 'Requires Debian 12 or newer; original Jessie is unsupported.'
+case "$vitrallis_debian" in 12|13) ;; *) fail 'Requires Debian 12 or 13; original Jessie and unvalidated releases are unsupported.' ;; esac
 tr '\000' '\n' < /sys/firmware/devicetree/base/compatible | grep -qx 'nextthing,pocketchip' || fail 'Requires a PocketCHIP.'
 command -v sudo >/dev/null || fail 'sudo must be configured for your desktop account first.'
 command -v awesome-client >/dev/null || fail 'Requires the existing Awesome desktop.'
 awesome --version | grep -q '^awesome v4\.' || fail 'Requires the existing Awesome 4 desktop.'
 [ -r /boot/boot.scr ] || fail 'Requires the supported CHIP flash-kernel boot layout.'
 vitrallis_uid=$(id -u)
+vitrallis_home=$(getent passwd "$vitrallis_uid" | cut -d: -f6)
+[ -n "$vitrallis_home" ] && [ "$HOME" = "$vitrallis_home" ] || fail 'HOME must be your normal desktop account home directory.'
+for vitrallis_path in "$HOME" "$HOME/.config" "$HOME/.config/awesome" "$HOME/.config/awesome/rc.lua"; do
+    [ ! -L "$vitrallis_path" ] && [ "$(stat -c '%u' "$vitrallis_path")" = "$vitrallis_uid" ] || fail "Unsafe desktop configuration: $vitrallis_path."
+    vitrallis_mode=$(stat -c '%a' "$vitrallis_path")
+    case "$vitrallis_mode" in [0-7][0-7][0-7]) ;; *) fail "Unsafe desktop permissions: $vitrallis_path." ;; esac
+    case "$vitrallis_mode" in ?[2367]?|??[2367]) fail "Writable by other users: $vitrallis_path." ;; esac
+done
+[ -f "$HOME/.config/awesome/rc.lua" ] && [ "$(stat -c '%h' "$HOME/.config/awesome/rc.lua")" = 1 ] || fail 'Requires an existing single-link Awesome configuration.'
+awesome --check --config "$HOME/.config/awesome/rc.lua" || fail 'The existing Awesome configuration failed its syntax check.'
 vitrallis_runtime=/run/user/$vitrallis_uid
 [ "$(stat -c '%u:%a' "$vitrallis_runtime")" = "$vitrallis_uid:700" ] && [ ! -L "$vitrallis_runtime" ] || fail 'Log into the PocketCHIP desktop first; its private user runtime is unavailable.'
 [ -S "$vitrallis_runtime/bus" ] && [ "$(stat -c '%u' "$vitrallis_runtime/bus")" = "$vitrallis_uid" ] && [ ! -L "$vitrallis_runtime/bus" ] || fail 'The desktop user bus is unavailable; log into the device desktop first.'

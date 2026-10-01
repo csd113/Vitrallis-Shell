@@ -134,12 +134,14 @@ BASE = Path('.local/share/vitrallis')
 DESKTOP = Path('.local/share/applications/vitrallis.desktop')
 AUTOSTART = Path('.config/autostart/vitrallis.desktop')
 AWESOME = Path('.config/awesome/rc.lua')
-STARTUP = """-- BEGIN optional Vitrallis startup
+STARTUP = """
+-- BEGIN Vitrallis startup
 require('gears').timer.start_new(5, function()
     require('awful').spawn({os.getenv('HOME') .. '/.local/share/vitrallis/launch'}, false)
     return false
 end)
--- END optional Vitrallis startup"""
+-- END Vitrallis startup
+"""
 PURGE = (BASE / 'session.log', BASE / 'session.log.1',
          Path('.config/vitrallis/screen-timeout'), Path('.config/vitrallis/app-center.json'))
 HEX = re.compile(r'[0-9a-f]{64}')

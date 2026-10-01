@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('gpu_setup', ROOT / 'integrations/pocketchip/platform-setup.py')
@@ -102,6 +103,44 @@ class Trees(unittest.TestCase):
             self.assertEqual((event / 'filter').read_text(), 'dev_name == "1c40000.gpu"')
             self.assertFalse((trace / 'tracing_on').exists())
             self.assertEqual((instance / 'trace_clock').read_text(), 'mono')
+
+
+class PlatformPreflight(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(patch.stopall)
+        self.nodes = {'/': {'compatible': b'nextthing,pocketchip\0nextthing,chip\0allwinner,sun5i-r8\0'},
+                      m.GPU: {'compatible': b'arm,mali-400\0'}}
+        patch.object(m, 'live_nodes', return_value=self.nodes).start()
+        patch.object(m.pwd, 'getpwnam', return_value=SimpleNamespace(pw_uid=1000)).start()
+        patch.object(m, 'active_boot_version', return_value='supported-kernel').start()
+        patch.object(m.Path, 'rglob', return_value=[]).start()
+        patch.object(m.os, 'access', return_value=True).start()
+        patch.object(m, 'private_group').start()
+        patch.object(m, 'safe').start()
+        patch.object(m, 'read_file', return_value=b'fixture-tree').start()
+        self.transform = patch.object(m, 'patched', return_value=b'checked-tree').start()
+
+    def test_read_only_check_validates_both_trees_without_root_or_persistent_writes(self):
+        with patch.object(m.os, 'geteuid', return_value=1000), \
+                patch.object(m.sys, 'argv', ['platform-setup.py', '--check-user', 'chip']), \
+                patch.object(m, 'atomic') as write, patch.object(m, 'update_dtbs') as update, \
+                patch.object(m.Path, 'mkdir') as mkdir:
+            m.main()
+        self.assertEqual(self.transform.call_count, 2)
+        write.assert_not_called()
+        update.assert_not_called()
+        mkdir.assert_not_called()
+
+    def test_foreign_board_custom_boot_override_or_invalid_tree_prevents_install(self):
+        cases = [patch.object(m, 'live_nodes', return_value={'/': {'compatible': b'other-board\0'}}),
+                 patch.object(m, 'active_boot_version', side_effect=ValueError('unsupported boot script')),
+                 patch.object(m.Path, 'rglob', return_value=[Path('/custom.dtb')]),
+                 patch.object(m, 'patched', side_effect=[b'valid', ValueError('invalid second tree')])]
+        for case in cases:
+            with case, patch.object(m, 'atomic') as write, patch.object(m, 'update_dtbs') as update:
+                with self.assertRaises(ValueError): m.install('chip')
+            write.assert_not_called()
+            update.assert_not_called()
 
 
 class Recovery(unittest.TestCase):

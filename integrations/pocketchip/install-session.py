@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Stage Vitrallis in the user's home and add an opt-in desktop shortcut."""
+"""Install a verified PocketCHIP bundle, optionally making it the default desktop."""
 import fcntl
 import argparse
 import ctypes
@@ -27,22 +27,33 @@ if sys.version_info < (3, 8):
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
-    from uninstall import BINARIES, HELPERS, MAGIC, atomic, file_digest, make_directories, pointer, read_file, safe, validate_receipt
+    from uninstall import AWESOME, STARTUP, BINARIES, HELPERS, MAGIC, atomic, file_digest, make_directories, pointer, read_file, safe, validate_receipt
 except ImportError as error:
     raise SystemExit('Keep uninstall.py beside install-session.py: ' + str(error)) from error
 
 
 def preflight():
-    if os.geteuid() == 0:
+    if os.getuid() < 1000 or os.geteuid() != os.getuid():
         raise ValueError('Run as your normal desktop user, without sudo')
     if platform.system() != 'Linux' or platform.machine() not in ('armv7l', 'armv8l'):
         raise ValueError('This bundle requires 32-bit ARMv7 Linux (armhf)')
+    if b'nextthing,pocketchip' not in Path('/sys/firmware/devicetree/base/compatible').read_bytes().split(b'\0'):
+        raise ValueError('Requires a PocketCHIP; other ARM boards are unsupported')
+    if Path.home().resolve() != Path(pwd.getpwuid(os.getuid()).pw_dir).resolve():
+        raise ValueError('HOME must be your normal desktop account home directory')
     release = Path('/etc/os-release').read_text()
-    fields = dict(line.split('=', 1) for line in release.splitlines() if '=' in line)
-    if (fields.get('ID', '').strip('"') != 'debian'
-            or not re.fullmatch(r'[0-9]+', fields.get('VERSION_ID', '').strip('"'))
-            or int(fields['VERSION_ID'].strip('"')) < 12):
-        raise ValueError('Requires Debian 12 or newer; original Jessie images are unsupported')
+    fields = {}
+    for line in release.splitlines():
+        key, separator, value = line.partition('=')
+        if separator and key in ('ID', 'VERSION_ID'):
+            if key in fields:
+                raise ValueError('Ambiguous Debian identity in /etc/os-release')
+            match = re.fullmatch(r'"([A-Za-z0-9]+)"|([A-Za-z0-9]+)', value)
+            if match is None:
+                raise ValueError('Malformed Debian identity in /etc/os-release')
+            fields[key] = match.group(1) or match.group(2)
+    if fields.get('ID') != 'debian' or fields.get('VERSION_ID') not in ('12', '13'):
+        raise ValueError('Requires Debian 12 or 13; original Jessie and unvalidated releases are unsupported')
     if subprocess.check_output(['/usr/bin/dpkg', '--print-architecture'], timeout=5, text=True).strip() != 'armhf':
         raise ValueError('Requires the Debian ARM hard-float ABI (armhf)')
     libc = subprocess.check_output(['/usr/bin/getconf', 'GNU_LIBC_VERSION'], timeout=5, text=True)
@@ -86,9 +97,19 @@ def graphics_advice():
 
 
 def require_stopped_session():
+    uid = os.getuid()
+    runtime = Path('/run/user') / str(uid)
+    directory = runtime.lstat()
+    bus = (runtime / 'bus').lstat()
+    if (not stat.S_ISDIR(directory.st_mode) or directory.st_uid != uid
+            or stat.S_IMODE(directory.st_mode) != 0o700
+            or not stat.S_ISSOCK(bus.st_mode) or bus.st_uid != uid):
+        raise ValueError('No safe desktop user bus; log into the PocketCHIP desktop first')
+    env = dict(os.environ, XDG_RUNTIME_DIR=str(runtime),
+               DBUS_SESSION_BUS_ADDRESS='unix:path=' + str(runtime / 'bus'))
     state = subprocess.check_output(['/usr/bin/systemctl', '--user', 'show',
                                      'vitrallis-session.service', '--property=ActiveState', '--value'],
-                                    timeout=5, text=True).strip()
+                                    timeout=5, text=True, env=env).strip()
     if state not in ('inactive', 'failed'):
         raise ValueError('Close the existing Vitrallis session before installing')
 
@@ -202,9 +223,31 @@ def load_inputs(source, home):
     return helpers
 
 
-def install(bundle, source, home, expected_version=None):
+def startup_config(home):
+    """Only extend an existing safe Awesome configuration; never replace it."""
+    path = home / AWESOME
+    original = read_file(path)
+    mode = stat.S_IMODE(path.stat().st_mode)
+    block = STARTUP.encode()
+    if original.count(block) == 1 and original.count(b'Vitrallis startup') == 2:
+        return path, original, original, mode
+    if b'Vitrallis startup' in original:
+        raise ValueError('Edited or duplicate Vitrallis startup block; review ' + str(path))
+    # Include the separator in the managed block so removal restores exact bytes.
+    return path, original, original + block, mode
+
+
+def validate_startup(startup, directory):
+    candidate = directory / 'rc.lua'
+    candidate.write_bytes(startup[2])
+    subprocess.run(['/usr/bin/awesome', '--check', '--config', str(candidate)],
+                   stdin=subprocess.DEVNULL, timeout=5, check=True)
+
+
+def install(bundle, source, home, expected_version=None, make_default=False):
     preflight()
     inputs = load_inputs(source, home)
+    startup = startup_config(home) if make_default else None
     target = home / '.local/share/vitrallis'
     safe(home / '.local/share/vitrallis-backups/.preflight')
     make_directories(target)
@@ -232,19 +275,23 @@ def install(bundle, source, home, expected_version=None):
             generation.mkdir(mode=0o755)
             digest = extract_bundle(bundle, generation)
             verify_versions(generation, expected_version)
+            if startup is not None:
+                validate_startup(startup, Path(temporary))
             setup_platform(source)
-            install_locked(generation, digest, home, inputs)
+            install_locked(generation, digest, home, inputs, startup)
 
 
 def setup_platform(source):
     """Privilege is confined to explicit platform provisioning, never the shell."""
-    compatible = Path('/sys/firmware/devicetree/base/compatible')
-    if not compatible.exists() or b'nextthing,pocketchip' not in compatible.read_bytes().split(b'\0'):
-        return
+    username = pwd.getpwuid(os.getuid()).pw_name
+    # Check the real boot selection and both trees without privilege or writes.
+    # The privileged helper repeats these checks under its lock before mutation.
+    subprocess.run([sys.executable, '-I', str(source / 'platform-setup.py'),
+                    '--check-user', username], check=True, timeout=90)
     print('Configuring PocketCHIP GPU OPP and private utilization access. '
           'The system may request your administrator password.', flush=True)
     subprocess.run(['/usr/bin/sudo', '--', '/usr/bin/python3', '-I',
-                    str(source / 'platform-setup.py'), '--install-user', pwd.getpwuid(os.getuid()).pw_name],
+                    str(source / 'platform-setup.py'), '--install-user', username],
                    check=True)
     print('Enabling the fixed FFmpeg installation action for Media Carousel. '
           'No multimedia packages are installed until requested in the app.', flush=True)
@@ -288,7 +335,7 @@ def tor_defaults(home, writes):
     return directories
 
 
-def install_locked(generation, digest, home, inputs):
+def install_locked(generation, digest, home, inputs, startup=None):
     target = home / '.local/share/vitrallis'
     helpers = inputs
     generations = target / 'generations'
@@ -311,6 +358,11 @@ def install_locked(generation, digest, home, inputs):
             '[Desktop Entry]\nType=Application\nName=Vitrallis\nExec="' + str(launch) +
             '"\nTerminal=false\nCategories=System;\n').encode(), 0o644),
     }
+    if startup is not None:
+        path, original, content, mode = startup
+        if read_file(path) != original or stat.S_IMODE(path.stat().st_mode) != mode:
+            raise ValueError('Awesome configuration changed during installation; retry')
+        writes[path] = (content, mode)
     tor_directories = tor_defaults(home, writes)
     receipt_path = target / 'installed.json'
     safe(receipt_path)
@@ -422,7 +474,10 @@ def install_locked(generation, digest, home, inputs):
     print('Installed:', target)
     print('Backups:', backup)
     print('Launch:', launch)
-    print('The original session and menu are unchanged. Run the launch command above.')
+    if startup is not None:
+        print('Vitrallis is the default desktop at your next login. Exit Vitrallis returns to PocketHome.')
+    else:
+        print('Run the launch command above to open Vitrallis.')
     print('Native bundle SHA256:', digest)
     print('Offline uninstall: python3 "' + str(target / 'uninstall.py') + '"')
 
@@ -431,9 +486,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('bundle', type=Path)
     parser.add_argument('--expected-version')
+    parser.add_argument('--make-default', action='store_true', help='Start Vitrallis after the existing Awesome desktop at login')
     args = parser.parse_args()
     try:
-        install(args.bundle, Path(__file__).resolve().parent, Path.home(), args.expected_version)
+        install(args.bundle, Path(__file__).resolve().parent, Path.home(), args.expected_version, args.make_default)
     except (OSError, ValueError, TypeError, SyntaxError, subprocess.SubprocessError) as error:
         print('Install failed: ' + str(error), file=sys.stderr)
         sys.exit(1)

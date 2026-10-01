@@ -12,11 +12,50 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('bootstrap_desktop', ROOT / 'integrations/pocketchip/bootstrap.py')
 b = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(b)
+spec = importlib.util.spec_from_file_location('startup_block', ROOT / 'integrations/pocketchip/uninstall.py')
+u = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(u)
 ENABLED = os.environ.get('VITRALLIS_DESKTOP_FIXTURE') == '1' and Path('/.dockerenv').exists()
 
 
 @unittest.skipUnless(ENABLED, 'requires explicit disposable Awesome/X11 simulator')
 class DesktopReadiness(unittest.TestCase):
+    def test_real_awesome_login_starts_default_once_and_retains_existing_startup(self):
+        with tempfile.TemporaryDirectory(prefix='vitrallis-default-desktop-') as temporary:
+            root = Path(temporary)
+            env = dict(os.environ, DISPLAY=':98', HOME=str(root))
+            config = root / 'rc.lua'
+            original = Path('/etc/xdg/awesome/rc.lua').read_bytes()
+            config.write_bytes(original + b'\nlocal original = io.open(os.getenv("HOME") .. "/original-started", "w"); original:close()\n'
+                               + u.STARTUP.encode())
+            launch = root / '.local/share/vitrallis/launch'
+            launch.parent.mkdir(parents=True)
+            launch.write_text('#!/bin/sh\nprintf "launched\\n" >> "$HOME/default-started"\n')
+            launch.chmod(0o700)
+            subprocess.run(['/usr/bin/awesome', '--check', '--config', str(config)], env=env, check=True, timeout=5)
+            processes = []
+            try:
+                processes.append(subprocess.Popen(['Xvfb', ':98', '-screen', '0', '480x272x24', '-nolisten', 'tcp'],
+                                                  env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+                time.sleep(0.5)
+                processes.append(subprocess.Popen(['/usr/bin/awesome', '--config', str(config)], env=env,
+                                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+                deadline = time.monotonic() + 15
+                while not (root / 'default-started').exists() and time.monotonic() < deadline:
+                    time.sleep(0.1)
+                self.assertTrue((root / 'original-started').exists())
+                self.assertEqual((root / 'default-started').read_text(), 'launched\n')
+                time.sleep(1)
+                self.assertEqual((root / 'default-started').read_text(), 'launched\n')
+            finally:
+                for process in reversed(processes):
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+
     def test_real_visible_window_pid_and_parent_are_verified(self):
         with tempfile.TemporaryDirectory(prefix='vitrallis-desktop-') as temporary:
             root = Path(temporary)
