@@ -189,11 +189,9 @@ fn catalog_paths_and_device_session_entries_survive_import_boundaries()
     };
     let desktop = list(&mut command)?;
     assert_eq!(desktop["apps"].as_array().ok_or("missing apps")?.len(), 4);
-    assert!(
-        desktop["diagnostics"]
-            .as_array()
-            .ok_or("diagnostics")?
-            .is_empty()
+    assert_eq!(
+        desktop["diagnostics"].as_array().ok_or("diagnostics")?,
+        &Vec::<serde_json::Value>::new()
     );
     command.arg("--linux-handheld");
     let fallback = list(&mut command)?;

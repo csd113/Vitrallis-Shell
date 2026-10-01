@@ -296,10 +296,7 @@ impl Center {
     }
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
-        loop {
-            let Some(worker) = &self.worker else {
-                break;
-            };
+        while let Some(worker) = &self.worker {
             let update = match worker.receive.try_recv() {
                 Ok(update) => update,
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -2029,7 +2026,7 @@ mod tests {
                     center.event(&key(Keycode::Down), &layout);
                     center.event(&key(Keycode::Space), &layout);
                 }
-                assert!(center.chosen.as_ref() == Some(&current));
+                assert_eq!(center.chosen.as_ref(), Some(&current));
                 // The chosen entry is marked by its own highlight, not a label prefix.
                 assert!(center.row_chosen(&Target::Row(0)));
                 assert_eq!(center.targets_count(), center.visible_rows().len());
@@ -2335,7 +2332,7 @@ mod tests {
                     .into_iter()
                     .filter(|(target, _, _)| matches!(target, Target::Row(_)))
                     .collect();
-                assert!(!rows.is_empty());
+                assert_ne!(rows.len(), 0);
                 assert!(rows.len() <= capacity);
                 for (_, _, bounds) in rows {
                     assert!(bounds.y >= geometry.list_top);
@@ -2471,11 +2468,11 @@ mod tests {
         assert_eq!(center.chosen.iter().count(), 1);
         center.toggle(1);
         center.answer(false);
-        assert!(center.chosen.as_ref() == Some(&center.rows[0].package.key()));
+        assert_eq!(center.chosen.as_ref(), Some(&center.rows[0].package.key()));
         center.toggle(1);
         center.answer(true);
         assert_eq!(center.chosen.iter().count(), 1);
-        assert!(center.chosen.as_ref() == Some(&center.rows[1].package.key()));
+        assert_eq!(center.chosen.as_ref(), Some(&center.rows[1].package.key()));
         let (send, receive) = std::sync::mpsc::channel();
         let (_updates, queue) = std::sync::mpsc::channel();
         center.worker = Some(Worker {
@@ -2607,7 +2604,7 @@ mod browsing_tests {
                 center.confirmation = Some(confirmation);
                 assert_eq!(center.page_kind(), PageKind::Text);
                 assert_eq!(center.detail_start(), 0);
-                assert!(!center.lines(56).is_empty());
+                assert_ne!(center.lines(56), Vec::<String>::new());
                 let targets = center.targets(&layout);
                 assert_eq!(targets.len(), 2);
                 assert_eq!(targets[center.selected].0, Target::Confirm(false));

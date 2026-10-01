@@ -226,10 +226,10 @@ remain outside the managed updater contract. See [upgrade details](beta4-upgrade
 
 ## Release gates
 
-The tag workflow builds on Debian 12 with Rust 1.91.1 and runs
+The tag workflow builds on Debian 12 with Rust 1.99.0 and runs
 `sh scripts/validate.sh`: formatting, locked workspace check, strict Clippy,
 complete Rust/Python tests, native release build, SDL smoke checks and
-repository/documentation validation. Separate host CI also validates Rust 1.91.0.
+repository/documentation validation. Separate host CI also validates Rust 1.91.0 and latest stable.
 
 Packaging checks each executable's target and version: the four Vitrallis binaries
 match the workspace version; Arti independently reports 2.6.0. ARMv7

@@ -76,7 +76,7 @@ Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Cata
 
 Start with the [documentation index](docs/README.md), [device guide](docs/devices/pocketchip.md), or [app developer guide](docs/app-development.md).
 
-Host development uses the pinned Rust 1.91.1 toolchain (minimum 1.91), SDL2 development libraries, and pkg-config:
+Host development uses the pinned Rust 1.99.0 toolchain (minimum 1.91), SDL2 development libraries, and pkg-config. CI also validates latest stable; release pins advance after the complete validation gates pass, including ARMv7 cross-builds. See [compiler policy](docs/dependencies.md).
 
 ```sh
 cargo build --workspace --locked

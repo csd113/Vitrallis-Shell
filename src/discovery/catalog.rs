@@ -65,7 +65,7 @@ mod tests {
         let backend = CatalogFile { paths: &paths };
         let user = br#"{"pages":[{"name":"Apps","items":[]}]}"#;
         std::fs::write(root.join("user.json"), user)?;
-        assert!(backend.discover()?.apps.is_empty());
+        assert_eq!(backend.discover()?.apps.len(), 0);
         assert_eq!(std::fs::read(root.join("user.json"))?, user);
         assert_eq!(std::fs::read(root.join("config.json"))?, default);
         std::fs::write(root.join("user.json"), "broken")?;

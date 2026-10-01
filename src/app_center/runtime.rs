@@ -130,7 +130,7 @@ pub fn ensure(root: &Path, files: &Files) -> Result<Runtime, String> {
             requirements.into(),
             REQUIREMENTS.into(),
         ],
-        std::time::Duration::from_secs(720),
+        std::time::Duration::from_mins(12),
     )
     .map_err(|e| format!("{e}\nApp dependency installation failed."))?;
     detect(root, files)

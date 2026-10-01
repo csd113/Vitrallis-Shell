@@ -96,7 +96,9 @@ mod tests {
         let mut output = Vec::new();
         assert!(copy_bounded(&b"12345"[..], &mut output, 4).is_err());
         assert_eq!(output, b"1234");
-        assert!(copy_bounded(&b"12"[..], &mut &mut [0_u8; 1][..], 4).is_err());
+        let mut buffer = [0_u8; 1];
+        let mut sink = &mut buffer[..];
+        assert!(copy_bounded(&b"12"[..], &mut sink, 4).is_err());
     }
     #[test]
     fn maximum_limit_does_not_overflow_the_extra_byte_probe() {

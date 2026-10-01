@@ -719,7 +719,7 @@ fn running_app_identity_is_rechecked_and_only_exact_script_is_closed() -> Result
     stale.start.push_str("changed");
     native.terminate(&script, &stale)?;
     assert!(child.0.try_wait().map_err(|e| e.to_string())?.is_none());
-    assert!(native.list(&loc.home.join("other.py"))?.is_empty());
+    assert_eq!(native.list(&loc.home.join("other.py"))?.len(), 0);
     running::close(
         &native,
         &script,

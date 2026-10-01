@@ -178,7 +178,7 @@ mod tests {
         };
         let mut catalog = Catalog::default();
         installed(&mut catalog, &loc)?;
-        assert!(catalog.apps.is_empty());
+        assert_eq!(catalog.apps.len(), 0);
         let root = loc.data.join("vitrallis/apps/io.vitrallis.hello");
         for (name, bytes) in [
             (
@@ -228,7 +228,7 @@ mod integration_tests {
         install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
         let mut catalog = Catalog::default();
         installed(&mut catalog, &loc)?;
-        assert!(catalog.diagnostics.is_empty());
+        assert_eq!(catalog.diagnostics, Vec::<String>::new());
         assert_eq!(catalog.apps.len(), 1);
         let app = &catalog.apps[0];
         assert_eq!(app.id, package.id);

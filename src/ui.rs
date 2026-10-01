@@ -1565,10 +1565,9 @@ mod tests {
         state.sync_states(&child);
         assert_eq!(state.phase, Phase::Ready);
         assert_eq!(state.app_state(&id), AppState::RunningBackground);
-        assert!(
-            child
-                .background_policy(&crate::preferences::Policy::default(), Instant::now())
-                .is_empty()
+        assert_eq!(
+            child.background_policy(&crate::preferences::Policy::default(), Instant::now()),
+            Vec::<String>::new()
         );
         assert_eq!(child.state(&id), AppState::RunningBackground);
         // Resuming focuses the existing process instead of starting another.

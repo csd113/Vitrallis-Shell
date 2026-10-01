@@ -1,10 +1,15 @@
-# Rust 1.91 and dependency policy
+# Rust toolchain and dependency policy
 
 The workspace uses edition 2024, Cargo resolver 3 and `rust-version = "1.91"`.
-`rust-toolchain.toml` pins Rust **1.91.1** with rustfmt and Clippy. CI also checks
-1.91.0 to verify the declared minimum. Workspace packages inherit `version`,
-`edition`, `rust-version` and shared dependencies. The dependency refresh does
-not change the Vitrallis release version, compiler baseline or device ABI.
+`rust-toolchain.toml` pins Rust **1.99.0** with rustfmt and Clippy. CI also checks
+1.91.0 to verify the declared minimum and latest `stable` to catch future changes.
+The MSRV is a compatibility floor, not the release compiler. After each stable
+release, install its exact version with rustup, update the host/CI/container pins
+together, and pass canonical host, Linux container and ARMv7 validation before
+advancing the release compiler. Do not change the global rustup default or add
+background update jobs. Workspace packages inherit `version`,
+`edition`, `rust-version` and shared dependencies. The Rust 1.99 upgrade preserves the Vitrallis release version, edition,
+MSRV and device ABI; dependency versions remain unchanged.
 
 ## Dependency review: 2026-09-19
 
@@ -101,7 +106,8 @@ dependency pins. This refresh does not upgrade global or device packages.
 CI's only external action, [actions/checkout 7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1),
 was verified as the latest release and remains pinned to its full commit SHA.
 Repository permissions and disabled credential persistence are unchanged. The
-release container remains Debian 12 with Rust 1.91.1 to preserve the release ABI.
+release container remains Debian 12, now with Rust 1.99.0. The Debian glibc
+2.36 / SDL2 2.26.5 and ARMv7 hard-float contracts remain unchanged.
 
 ## Application dependency boundaries
 

@@ -58,7 +58,7 @@ fn update_replaces_launcher_entry_removes_obsolete_files_and_launches_new_code()
     uninstall::uninstall(&loc, &package)?;
     let mut menu = crate::discovery::Catalog::default();
     discovery::installed(&mut menu, &loc)?;
-    assert!(menu.apps.is_empty());
+    assert_eq!(menu.apps.len(), 0);
     Ok(())
 }
 

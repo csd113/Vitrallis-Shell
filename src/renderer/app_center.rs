@@ -573,8 +573,8 @@ mod tests {
                     theme::BACKGROUND.b,
                 ];
                 let mut ink = 0;
-                for (index, pixel) in pixels.chunks_exact(3).enumerate() {
-                    if pixel != background {
+                for (index, pixel) in pixels.as_chunks::<3>().0.iter().enumerate() {
+                    if *pixel != background {
                         ink += 1;
                         let y =
                             i32::try_from(index / usize::from(width)).map_err(|e| e.to_string())?;

@@ -432,8 +432,9 @@ fn progress_counts_successful_partial_writes_only() {
     let mut output = [0_u8; 3];
     let mut samples = Vec::new();
     let mut progress = |state| samples.push(state);
+    let mut sink = &mut output[..];
     let mut writer = DownloadWriter {
-        output: &mut &mut output[..],
+        output: &mut sink,
         received: 0,
         total: 5,
         progress: &mut progress,

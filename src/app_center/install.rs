@@ -516,7 +516,7 @@ pub fn install(loc: &Locations, checked: &Planned) -> Result<(), String> {
         .prepared
         .as_ref()
         .ok_or("No verified update available")?;
-    if prepared.created_at.elapsed() > Duration::from_secs(15 * 60) {
+    if prepared.created_at.elapsed() > Duration::from_mins(15) {
         return Err("Installation plan expired; retry installation".into());
     }
     metadata::validate_bundle(&checked.package, &prepared.files)?;

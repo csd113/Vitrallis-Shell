@@ -248,11 +248,10 @@ pub fn download(
         let bytes = fetch
             .fetch_progress(&url, row.size, &mut |received| {
                 let received = downloaded + received;
-                let percent = if total == 0 {
-                    100
-                } else {
-                    received.saturating_mul(100) / total
-                };
+                let percent = received
+                    .saturating_mul(100)
+                    .checked_div(total)
+                    .unwrap_or(100);
                 progress(format!(
                     "Downloading: {received} / {total} bytes ({percent}%)\n{}",
                     p.name

@@ -1432,7 +1432,10 @@ mod tests {
             ..Default::default()
         };
         // Becoming the foreground Shell again never terminates anything.
-        assert!(processes.background_policy(&policy, now).is_empty());
+        assert_eq!(
+            processes.background_policy(&policy, now),
+            Vec::<String>::new()
+        );
         assert_eq!(processes.members[0].1.close_requests, 0);
         processes.background_policy(&policy, now + Duration::from_secs(59));
         assert!(!processes.background_requested("test"));
@@ -1445,7 +1448,7 @@ mod tests {
         // An app that ignores the request is stopped only after the grace period,
         // so a save-to-disk has time to finish.
         let stopped = processes.background_policy(&policy, now + Duration::from_secs(60 + 29));
-        assert!(stopped.is_empty());
+        assert_eq!(stopped, Vec::<String>::new());
         assert_eq!(processes.members.len(), 1);
         let stopped =
             processes.background_policy(&policy, now + Duration::from_secs(60) + BACKGROUND_GRACE);
@@ -1469,10 +1472,9 @@ mod tests {
         let now = Instant::now();
         let policy = crate::preferences::Policy::default();
         for seconds in [0_u64, 600, 86_400] {
-            assert!(
-                processes
-                    .background_policy(&policy, now + Duration::from_secs(seconds))
-                    .is_empty()
+            assert_eq!(
+                processes.background_policy(&policy, now + Duration::from_secs(seconds)),
+                Vec::<String>::new()
             );
         }
         assert_eq!(processes.members[0].1.close_requests, 0);
