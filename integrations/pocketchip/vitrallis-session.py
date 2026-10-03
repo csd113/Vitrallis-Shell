@@ -26,9 +26,41 @@ if not vitrallis_home_route then
         end
     end
     local awful = require("awful")
+    -- The original desktop can create its window after this hook runs, then
+    -- remap it for a delayed update check. Bind its process start identity so
+    -- remapped windows are covered without blocking a later reused PID.
+    local function process_identity(pid)
+        if type(pid) ~= "number" or pid <= 1 or pid ~= math.floor(pid) then return end
+        local stream = io.open("/proc/" .. tostring(pid) .. "/stat", "r")
+        if not stream then return end
+        local text = stream:read(4096); stream:close()
+        local fields = text and text:match("^.*%)%s+(.*)$")
+        if not fields then return end
+        local index = 0
+        for field in fields:gmatch("%S+") do
+            index = index + 1
+            if index == 20 and field:match("^%d+$") then return field end
+        end
+    end
+    route.filter = function(c, context)
+        if (context == "rules" or context == "ewmh") and route.shell and route.shell.valid
+            and route.desktop_pid and c.pid == route.desktop_pid
+            and process_identity(c.pid) == route.desktop_start then
+            return false
+        end
+    end
+    awful.ewmh.add_activate_filter(route.filter, "rules")
+    awful.ewmh.add_activate_filter(route.filter, "ewmh")
     -- Window names can arrive after manage. Claim the launcher once when its
     -- actual client is ready; later title changes must not steal app focus.
     route.activate = function(c)
+        if c.valid and c.name == "pocket-home" and home_screen and home_screen.client == c then
+            local identity = process_identity(c.pid)
+            if identity then
+                route.desktop_pid = c.pid; route.desktop_start = identity
+            end
+            if not route.previous or not route.previous.valid then route.previous = c end
+        end
         if c.valid and c.name == "Vitrallis" and c.class == "vitrallis"
             and (not route.shell or not route.shell.valid) then
             route.shell = c
@@ -59,6 +91,9 @@ if vitrallis_home_route then
     local route = vitrallis_home_route
     client.disconnect_signal("manage", route.activate)
     client.disconnect_signal("property::name", route.activate)
+    local awful = require("awful")
+    awful.ewmh.remove_activate_filter(route.filter, "rules")
+    awful.ewmh.remove_activate_filter(route.filter, "ewmh")
     local keys = {}
     for _, key in ipairs(root.keys()) do
         local owned = false

@@ -378,7 +378,14 @@ the systemd user manager, with cgroup cleanup, a five-second stop timeout and no
 automatic restart. The physical Home/Power key temporarily routes through Awesome
 to Vitrallis. Selecting **Exit Vitrallis** stops the owned session and restores the
 displaced Home bindings, preserving unrelated new bindings. The previously focused
-window is raised if still open; no launcher-specific Lua function is required. Two session logs are limited to 128 KiB each.
+window is raised if still open; no launcher-specific Lua function is required.
+While the launcher is active, temporary Awesome activation filters prevent
+PocketHome's delayed background update window from taking focus. The filters
+identify the original desktop through the existing session's client and its
+process start time, permit other applications to activate normally, and are
+removed when Vitrallis exits. A PocketHome window that arrives after the supervisor
+starts is also retained for desktop restoration. Two session logs are limited to
+128 KiB each.
 
 To stop from the installed helper:
 

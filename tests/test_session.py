@@ -26,6 +26,7 @@ local other_key = {key = "F1", modifiers = {}}
 local keys = {original_key, other_key}
 local windows = {previous}
 local callbacks = {}
+local filters = {}
 root = {keys = function(value) if value then keys = value end; return keys end}
 client = {focus = previous, get = function() return windows end,
     connect_signal = function(name, callback) callbacks[name] = callback end,
@@ -34,7 +35,11 @@ client = {focus = previous, get = function() return windows end,
     end}
 require = function(name)
     assert(name == "awful")
-    return {key = function(modifiers, name, callback)
+    return {ewmh = {
+        add_activate_filter = function(callback, context) filters[context] = callback end,
+        remove_activate_filter = function(callback, context)
+            assert(filters[context] == callback); filters[context] = nil
+        end}, key = function(modifiers, name, callback)
         return {{key = name, modifiers = modifiers, callback = callback}}
     end}
 end
@@ -67,12 +72,102 @@ local concurrent_key = {key = "F12", modifiers = {}}
 table.insert(keys, concurrent_key)
 ''' + '\n' + s.RESTORE_HOOK + r'''
 assert(callbacks.manage == nil and callbacks["property::name"] == nil)
+assert(filters.rules == nil and filters.ewmh == nil)
 assert(client.focus == previous and previous.raised == 1)
 assert(vitrallis_home_route == nil)
 assert(#keys == 3 and keys[1] == other_key and keys[2] == concurrent_key and keys[3] == original_key)
 '''
         # Each hook returns a status string; give it a function scope so both
         # execute in one sandbox with the same mocked Awesome client lifecycle.
+        script = script.replace(s.HOME_HOOK, 'do local status = (function()\n' + s.HOME_HOOK + '\nend)() end')
+        script = script.replace(s.RESTORE_HOOK, 'do local status = (function()\n' + s.RESTORE_HOOK + '\nend)() end')
+        result = subprocess.run([LUA, '-'], input=script, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    @unittest.skipUnless(LUA, 'requires an available Lua interpreter for Awesome hook execution')
+    def test_delayed_desktop_windows_cannot_steal_focus_and_filters_are_reversible(self):
+        fixture = r'''
+local vitrallis_home_route
+local keys, windows, callbacks = {}, {}, {}
+local original_filter = function() return nil end
+local filters = {rules = {original_filter}, ewmh = {original_filter}}
+local identity, readable = "1234", true
+io.open = function(path, mode)
+    assert(path == "/proc/42/stat" and mode == "r")
+    if not readable then return nil end
+    return {read = function(_, size)
+        assert(size == 4096)
+        return "42 (desktop with ) parens) S " .. string.rep("0 ", 18) .. identity .. " 0\n"
+    end, close = function() end}
+end
+root = {keys = function(value) if value then keys = value end; return keys end}
+client = {get = function() return windows end,
+    connect_signal = function(name, callback) callbacks[name] = callback end,
+    disconnect_signal = function(name, callback)
+        assert(callbacks[name] == callback); callbacks[name] = nil
+    end}
+home_screen = {}
+require = function(name)
+    assert(name == "awful")
+    return {ewmh = {
+        add_activate_filter = function(callback, context) table.insert(filters[context], callback) end,
+        remove_activate_filter = function(callback, context)
+            assert(filters[context][2] == callback); table.remove(filters[context], 2)
+        end}, key = function(modifiers, name, callback)
+        return {{key = name, modifiers = modifiers, callback = callback}}
+    end}
+end
+local function window(name, class, pid)
+    local c = {valid = true, name = name, class = class, pid = pid, raised = 0}
+    function c:raise() self.raised = self.raised + 1 end
+    return c
+end
+'''
+        script = fixture + '\n' + s.HOME_HOOK + r'''
+assert(client.focus == nil)
+local shell = window("Vitrallis", "vitrallis", 100)
+callbacks.manage(shell)
+assert(client.focus == shell)
+-- A title alone is insufficient to identify the existing session desktop.
+local impostor = window("pocket-home", nil, 42)
+callbacks.manage(impostor)
+assert(filters.ewmh[2](impostor, "ewmh") == nil)
+local desktop = window("pocket-home", nil, 42)
+home_screen.client = desktop
+callbacks.manage(desktop)
+assert(client.focus == shell and vitrallis_home_route.previous == desktop)
+assert(filters.rules[2](desktop, "rules") == false)
+assert(filters.ewmh[2](desktop, "ewmh") == false)
+assert(filters.ewmh[2](desktop, "mouse.enter") == nil)
+local app = window("Notepad", "vitrallis-notepad", 101)
+client.focus = app
+assert(filters.ewmh[2](app, "ewmh") == nil)
+callbacks["property::name"](shell)
+assert(client.focus == app)
+-- The original window can be destroyed before the same process maps a dialog.
+desktop.valid = false
+local dialog = window("Checking for updates", nil, 42)
+assert(filters.rules[2](dialog, "rules") == false)
+assert(filters.ewmh[2](dialog, "ewmh") == false)
+identity = "5678"
+assert(filters.ewmh[2](dialog, "ewmh") == nil)
+identity = "1234"; readable = false
+assert(filters.ewmh[2](dialog, "ewmh") == nil)
+readable = true; shell.valid = false
+assert(filters.ewmh[2](dialog, "ewmh") == nil)
+shell.valid = true
+local remapped = window("pocket-home", nil, 42)
+home_screen.client = remapped
+callbacks.manage(remapped)
+assert(vitrallis_home_route.previous == remapped)
+assert(client.focus == app)
+''' + '\n' + s.RESTORE_HOOK + r'''
+assert(client.focus == remapped and remapped.raised == 1)
+assert(vitrallis_home_route == nil and callbacks.manage == nil)
+assert(#filters.rules == 1 and filters.rules[1] == original_filter)
+assert(#filters.ewmh == 1 and filters.ewmh[1] == original_filter)
+'''
         script = script.replace(s.HOME_HOOK, 'do local status = (function()\n' + s.HOME_HOOK + '\nend)() end')
         script = script.replace(s.RESTORE_HOOK, 'do local status = (function()\n' + s.RESTORE_HOOK + '\nend)() end')
         result = subprocess.run([LUA, '-'], input=script, text=True,
