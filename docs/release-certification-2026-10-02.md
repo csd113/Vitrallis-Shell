@@ -1,6 +1,6 @@
 # Public-release certification — 2026-10-02
 
-**NOT RELEASE READY. Certification is in progress.** This record distinguishes
+**NOT RELEASE READY. Certification is in progress, continuing into 2026-10-03.** This record distinguishes
 published beta testing from development testing and will be updated as the
 remaining gates are exercised. The owner authorized preparation of Shell 1.0.0,
 Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
@@ -9,10 +9,12 @@ The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
 reviewed in separate commits. The installed native bundle and helpers correspond
-to `c17280da336ae04931ff8ad8ceafcde081743632`, including the startup guard at
+to `fbf2ec72fbdaac1369d82bc32ea393b09ae60ff1`, including the startup guard at
 `70540cb02e7f1268efc141b9f6e72dead32f0142` and runtime notices at
 `290ce8836449345ea6df3e17d6875f2fe218681a`. Remote Rust 1.91.0, 1.99.0 and
-stable checks pass for that exact head. The final candidate is not yet established.
+stable checks pass for that exact head. Its offline diagnostic Details page
+passed physical inspection. Complete host validation, ARMv7 packaging and
+normal-user installation also passed. The final candidate is not yet established.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
@@ -85,7 +87,7 @@ Notepad was active kept the editor foregrounded. Exit Vitrallis restored PocketH
 stopped the user service and removed both owned activation filters (zero remaining
 in each context). Final-candidate reboot and cold-power testing remain pending.
 
-The latest complete ARMv7 bundle digest is
+The Notepad header candidate's complete ARMv7 bundle digest is
 `39d011de974babb7fedd6cc4697e2adec46f3eef260874d999c652ab6d0e0284`.
 It includes a one-cell gap between Notepad's title and document name, correcting
 the observed joined label without reducing editor rows. The root/focus corrections
@@ -96,7 +98,18 @@ installed runtime, canonical AppData and Shell configuration. Current/previous
 are the two explicitly validated generation symlinks. The first integrity harness
 incorrectly treated their symlink mode as file permissions; that failed harness
 result is retained, and the corrected check validates their owner and bounded
-relative generation targets. No canonical catalog app payload is installed yet.
+relative generation targets. Debug 0.3.2 is now installed in the canonical
+payload directory. The newer refresh-message bundle has digest
+`e8a4db2166ade88f7b850972a2e1d8f4d1dcb0415ee3e3fa912030bb2f03c0eb`;
+its normal-user installation, sustained software-launch focus, root integration
+readability and runtime/AppData ownership checks passed. This is a prepared
+candidate installation, not the pending clean public route.
+The currently installed diagnostic-details bundle has digest
+`11b3199f34105ac8e50e8cde91754db955b97058c6e96954d61d2a759a2dd467`.
+It passed normal-user installation, a 23.21-second software-launch focus
+observation and runtime/AppData integrity checks. Debug's marker, both newer
+Notepad saves and the Places source approval retained their exact bytes and
+private ownership through the replacement.
 
 Eleven actual reboots have completed so far: the initial published-beta boot,
 recovery from the development test harness's RAM-backed `/tmp` exhaustion, two
@@ -141,7 +154,7 @@ no physical cold power cycle has been performed.
   and saved value consistent and reports uncertain reboot persistence.
 - The owner's ChatGPT artwork provenance and MIT redistribution confirmation
   are recorded with per-file hashes. This resolves the supplied artwork issue;
-  it does not substitute for the remaining dependency/license inventory review.
+  final released artifact notices still need verification.
 - The authorized version changes affect exactly four Software Updates frames
   per reviewed OS/CPU profile. All 337 frames were generated for macOS ARM64,
   Linux ARM64, ARMv7 and x86-64; the four changed frames in each were visually
@@ -156,6 +169,11 @@ no physical cold power cycle has been performed.
   and saved a 41-byte Notepad note with spaces and punctuation in its filename,
   exercised keyboard Save, and read it back after closing Files. Key-repeat
   stress and explicit visual-tearing acceptance remain separate checks.
+- The Notepad header gap was inspected with both a dirty unnamed document and
+  a saved filename. Keyboard Save and the Open browser saved and reopened notes
+  with spaces, punctuation and `café` in the path; the original note remained
+  unchanged. UTF-8 file contents and filenames were preserved. The current bitmap
+  font displays an unsupported em dash as `?`; glyph coverage remains limited.
 - The clock changed to 12-hour time and screen timeout to 1800 seconds on the
   device; both preference files are `chip:chip` mode 0600. After the development
   reboot, the display still used 12-hour time and `xset` reported 1800-second
@@ -173,19 +191,51 @@ no physical cold power cycle has been performed.
   [Apps draft PR #18](https://github.com/csd113/Vitrallis-Apps/pull/18). Catalog
   pins match the published payload bytes; every other catalog entry and all
   installable flags are preserved. The earlier submission's remote CI passed;
-  the latest tree passed pinned-source validation, changelog policy and 74 tooling
-  tests locally. Its remote checks are pending.
+  the published draft tree passed pinned-source validation, changelog policy and
+  74 tooling tests locally. Its remote runtime checks then failed on a relative
+  Places asset root; that failure is retained. The corrected five-file mirror
+  and catalog pin are prepared locally and pass source/package validation and
+  the changelog policy against public main. They are not yet published.
   Public main is unchanged. Coordination preserves the other Apps writer's work;
   that writer also recorded the owner's Codex code/artwork confirmation.
 - PocketCHIP Places 0.11.2 is committed locally as
-  `738c778d7b20f702a8917a2d620ffaee3bbbea38` on
+  `768abe2015c52940f3c082b94c931c0bf030d718` on
   `codex/pocketchip-appdata-certification` in the isolated pinned-source checkout.
   Modern Places work is untouched. The source is published for review in
   [Places draft PR #2](https://github.com/csd113/Places/pull/2); public main is
   unchanged. Its build cache is excluded from the package and commit. The exact
-  source rebuilt byte-for-byte to the catalog's ARMv7 executable; its SHA-256 is
-  `f39b9d4812f29b4ccfa6d8c80319937ea1ae83a86631a6447176805f4add722d`.
+  source canonicalizes its asset root before comparing the persistent-state
+  boundary. This fixes the real CI failure with external Cargo target directories
+  without permitting in-package state. The failing case, expanded boundary test,
+  full macOS/Linux suites and mirrored CI-context retest pass. Its ARMv7 executable
+  SHA-256 is `97f6607e95a63bc26aee5a2b3feb122010038d2ddd20893ecff6f776b168866d`.
   Device checks remain separate from the modern renderer work.
+- Debug 0.3.2 installed from the public catalog, launched as `chip` with AppData
+  as its working directory, returned to Home and resumed the same PID, then
+  exited with its running badge cleared. With Wi-Fi disabled through Settings,
+  normal keyboard-confirmed uninstall removed the receipt-owned payload while
+  preserving a private Unicode-named data marker. Reconnecting through Settings,
+  refreshing, reinstalling and relaunching preserved the exact marker hash.
+  All 14 installed payload files match the pinned receipt, with no unreceipted
+  files or Vitrallis-service zombies. Its dependency file declares no pip packages;
+  the actual runtime is system Python 3.13.5 with Tk.
+- Physical offline refresh retained cached entries but exposed misleading
+  `Refresh complete` wording. The correction reports an incomplete refresh at
+  480×272; successful online retry removes the source-error entry. The regression
+  reproduces the old failure with and without a cache and verifies recovery and
+  unchanged snapshot bytes. Error Details also hid the cause behind placeholder
+  app metadata; the separate correction now exposes the reason and recovery step,
+  and passed physical inspection with the actual network failure wrapped inside
+  the content area. Source trust for Places was explicitly
+  confirmed through the UI, with Cancel as the default and a private 0600 settings
+  file. Cancelling the published Places 0.11.1 download left no receipt, payload
+  files or Vitrallis-owned curl process and preserved Debug's data. The UI offered
+  Install again. Its complete installation/retry remains pending.
+- Debug's actual GPU Pulse produced a rise and return to idle in the private
+  Mali utilization trace. This verifies activity reporting; it does not certify
+  physical tear-free presentation. Process checks distinguish the original
+  PocketHome's outside-service zombies from Vitrallis-owned processes. An initial
+  overbroad all-user zombie assertion is retained as a failed harness result.
 - The selected Arti ARMv7 normal/build graph contains 428 distinct package
   versions. Fifteen missing inventory entries were reconciled against cached
   originals and immutable upstream source revisions; all selected graph entries
@@ -213,18 +263,18 @@ no physical cold power cycle has been performed.
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core Settings/launcher screenshots reviewed; remaining utilities, App Center and failure states pending |
 | Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic routes exercised; repeat/stress coverage pending |
-| Every catalog app lifecycle | Coherent review source/catalog pins published; public flags preserved; physical runs pending |
+| Every catalog app lifecycle | Debug public install/launch/resume/exit and offline uninstall/reinstall passed; Places source trust passed; other app/update runs pending |
 | Real data persistence | Host lifecycle passed; physical update/reboot/reinstall sequence pending |
 | Python runtime | Host tests passed; current device dependency/lifecycle checks pending |
-| Process lifecycle stress | Development sampler found no zombies; utility/app repetition pending |
+| Process lifecycle stress | Debug exits left no app processes or Vitrallis-service zombies; stock PocketHome zombies distinguished; sustained repetition pending |
 | Repeated startup | Delayed original-desktop focus grab repaired; two reboots passed sustained idle focus; exact final build and cold-power checks pending |
 | Hardware features | Display/GPU backend observed; radio/audio/backlight/battery/power acceptance incomplete |
 | Every setting persistence | Clock format and timeout survived development reboot; remaining matrix pending |
-| Offline/network failures | Host fixtures pass; physical offline and recovery checks pending |
+| Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
 | Low NAND / ENOSPC | Host fault tests present; safe physical storage pressure pending |
 | Shell update/rollback | Host recovery tests pass; actual candidate device update/rollback pending |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
-| Failure UX | Core confirmations inspected; deliberately induced device errors pending |
+| Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and download cancellation inspected; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor and footer wraparound passed on device; remaining manual utility cases pending |
 | Performance | Development measurements recorded; exact-candidate measurements pending |
 | Extended soak | 30-minute development session completed with intentional restart; exact-candidate soak pending |
@@ -242,8 +292,9 @@ Shell `sh scripts/validate.sh` passes on macOS ARM64 and native Linux ARM64 with
 the approved 1.0.0 version and reviewed references: formatting, locked
 all-target/all-feature check, strict Clippy, workspace tests, Python tests,
 release binaries, SDL/native smokes and doc links. The latest runs include the
-editor/importer, private-root-umask and real-Lua focus regressions: 361 Rust
-tests on macOS, 362 on Linux, and 173 Python tests (nine existing skips on macOS, eight on Linux), plus the native
+editor/importer, private-root-umask, real-Lua focus and offline diagnostic
+regressions: 363 Rust tests on macOS, 364 on Linux, and 173 Python tests
+(nine existing skips on macOS, eight on Linux), plus the native
 renderer suite (two tests, one existing skip).
 The ARMv7 release build and complete five-executable packaging/version checks
 pass against glibc 2.36/SDL2 2.26.5. Bitcoin 1.3.1 has 71 passing tests; Carousel
@@ -262,7 +313,8 @@ suite passed 12 tests with two standalone-Lua skips; those two scenarios were
 therefore exercised separately inside Awesome rather than silently omitted.
 An Arti QEMU probe initially crashed when the harness mixed the cross-toolchain
 loader with the multiarch runtime libraries. With the matching system loader/libc
-prefix, all five ARMv7 version probes and exact `c17280d` packaging passed. The
+prefix, all five ARMv7 version probes and exact `c17280d`, `a4a3e8f` and
+`fbf2ec7` packaging passed. The
 same Arti bytes also passed their native device version probe. The failed mixed
 sysroot attempts remain in the evidence.
 
