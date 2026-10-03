@@ -249,6 +249,14 @@ no physical cold power cycle has been performed.
   query timeouts and the timezone-return failure below are retained. Process
   stability does not make those failures pass, establish repeated-install
   memory behavior or certify the newer revision.
+- Exact `5c56067` then collected 61 samples over 1800.09 seconds during Settings
+  navigation and managed Carousel launch, upload, settings and Home/resume tests.
+  The Shell PID/start time, generation and boot ID remained fixed, with no
+  service-owned zombies in the samples. Shell RSS stayed at 38,580 KiB and CPU
+  averaged 0.69%; Awesome RSS was 36,500–37,332 KiB, available RAM remained at
+  least 215,420 KiB and the private log grew 18,956 bytes. Carousel's retained
+  failures below qualify this activity run. This does not establish bounded
+  memory over repeated installations or certify a future final revision.
 - Bitcoin and Carousel's scoped source changes are published for review at
   `b1460ed1d7b373719e0edfc1d4fb5fbc9e29e504`, with the separate catalog/history
   commit `2c66c4dfd7741429ef0aebffaf804b2e992a5e59`, followed by the exact Places
@@ -384,8 +392,39 @@ no physical cold power cycle has been performed.
   system Python still has no qrcode. No unsafe entries or pending runtime remain.
   Installation creates an empty private AppData directory; the owner's deleted
   media/preferences were not restored. An initial harness incorrectly expected
-  that directory to remain absent; its failure is retained separately. Launch,
-  playback, managed update and uninstall/reinstall certification remain pending.
+  that directory to remain absent; its failure is retained separately.
+  Actual managed launch uses the app-local Python and canonical AppData as its
+  working directory. The real LAN browser created a Unicode-named test collection,
+  saved eight disposable PNG/JPEG/GIF/animated-WebP/VP8/VP9 files and rejected a
+  corrupt upload. Reordering and shared settings saved privately; settings,
+  metadata and media survived normal exit/relaunch. Home/resume preserved the
+  exact PID/start time and data hashes. Normal Escape exit returned status zero
+  and left no app or service-owned decoder process. An authenticated device API
+  download verified all eight ZIP entries and original hashes. The browser said
+  “Folder download ready,” but its automation download event timed out; that
+  harness observation is retained separately. After relaunch, the previous code
+  and unauthenticated requests returned 401, while wrong Host/Origin returned 403.
+  Paused native still/GIF frames and all five playback controls were inspected;
+  the renderer reports Mali400 hardware presentation and software video decode.
+  Physical motion/tearing acceptance, managed update and uninstall/reinstall
+  certification remain pending. These are newly generated test media, not the
+  owner's deleted files.
+- Carousel's first managed run reported VP8 unavailable and later surfaced
+  “WebM decoder stalled.” Settled exact probes and a direct three-frame native
+  decoder test pass; a second managed launch reports VP8/VP9/WebP ready. The
+  first failure's cause was not logged and remains unexplained. Some unoverlaid
+  GPU screenshots are black, while paused captures show images; physical display
+  observation is requested before attributing this to capture or presentation.
+  The second launch's focused native window was first observed at 51.019 seconds
+  from the click, including SSH-query overhead. A read-only, bracketed import
+  profile took 12.696/13.016 seconds and 9.423/9.455 CPU seconds with the managed
+  cache prefix, versus 6.274 seconds and 2.834 CPU seconds with ordinary caches.
+  This explains part of the cost, not the whole launch delay. The namespace's
+  stale-bytecode protections remain intact pending further investigation.
+  The stale web footer also displays 0.4.1; its two-file correction passes all
+  271 tests with the existing skip and is kept uncommitted. Because replacing
+  the pinned 0.4.3 bytes requires a new immutable package version, 0.4.4
+  preparation is awaiting the owner's explicit authorization.
 - Wireless once reported “Wi-Fi change denied or unavailable” while the same
   screen and independent NetworkManager readback showed Wi-Fi enabled and
   connected. A clean UI off/on retry and six bounded direct radio changes pass;
@@ -500,9 +539,9 @@ no physical cold power cycle has been performed.
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core Settings/launcher screenshots reviewed; remaining utilities, App Center and failure states pending |
 | Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic navigation, held-key filtering and control changes exercised; physical Fn-key and remaining stress coverage pending |
-| Every catalog app lifecycle | Debug lifecycle and Places update/offline uninstall/reinstall pass; Firefly baseline lifecycle and prepared Carousel fresh managed install pass; Carousel playback/update and remaining ecosystem coverage pending |
+| Every catalog app lifecycle | Debug and Places sequences pass; Firefly baseline lifecycle and prepared Carousel install/launch/Home/resume/normal exit/relaunch/data retention pass; Carousel first-run decoder failure retained, motion/update/uninstall and remaining ecosystem coverage pending |
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
-| Python runtime | Carousel managed app-local runtime verified without changing system qrcode; remaining lifecycle/dependency checks pending |
+| Python runtime | Carousel app-local dependencies and normal exit/relaunch verified without changing system qrcode; startup profile and remaining lifecycle/dependency checks pending |
 | Process lifecycle stress | Debug exits left no app processes or Vitrallis-service zombies; stock PocketHome zombies distinguished; sustained repetition pending |
 | Repeated startup | Delayed original-desktop focus grab repaired; three reboots passed sustained idle focus, including the current offline build; exact final build and cold-power checks pending |
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
@@ -513,8 +552,8 @@ no physical cold power cycle has been performed.
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on device; remaining manual utility cases pending |
-| Performance | Clean-boot measurements recorded; Firefly packing hotspot repaired and measured in a matched developer comparison; final managed performance and repeated-install memory checks pending |
-| Extended soak | Exact bce0d86 and ae343ad continuous 30-minute runs passed identity/boot/process checks; ae343ad had retained focus/Settings failures; repeated-install memory behavior and final-revision soak remain pending |
+| Performance | Firefly packing comparison and Carousel startup/import profile recorded; final managed performance, launch-delay investigation and repeated-install memory checks pending |
+| Extended soak | Exact bce0d86, ae343ad and 5c56067 continuous 30-minute runs passed identity/boot/process checks; activity failures retained separately; repeated-install memory behavior and final-revision soak remain pending |
 | Logs | Initial renderer/startup logs inspected; final audit pending |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
 | Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
