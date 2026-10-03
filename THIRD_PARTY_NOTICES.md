@@ -1,8 +1,8 @@
 # Licensing and third-party notices
 
-Audit date: **2026-09-25**. Project-owned code, documentation and original artwork
+Audit date: **2026-10-02**. Project-owned code, documentation and original artwork
 are offered under the root [MIT License](LICENSE), at the owner's direction.
-This grants no rights to third-party material or the unresolved items below.
+This grants no rights to third-party material outside the project-owned artwork described below.
 Copyright remains with the respective contributors; no assignment is implied.
 
 [Dependency inventory](docs/dependency-licenses.md) records exact cached crate
@@ -53,35 +53,26 @@ text or a documented source offer before that binary is cleared.
   third-party programs, trademarks or content. The per-file record for every
   bundled image is [artwork provenance](assets/PROVENANCE.md).
 
-## Unresolved provenance and distribution limits
+## Artwork provenance and distribution
 
 The authoritative per-file record is [artwork provenance](assets/PROVENANCE.md).
-In summary:
+On 2026-10-02 the project owner confirmed ownership of the logo, storyboard and
+cave references and identified all of those references and the system icons as
+ChatGPT-generated artwork commissioned for the project. The project MIT grant
+includes the generated masters and their derivatives. The provenance record
+links OpenAI's output terms, introducing commits, preparation prompts and hashes.
+The original reference sheets and exact image model/version were not retained.
 
-- `assets/system/*.png` were generated with an AI image tool at the project
-  owner's request on 2026-09-10 and 2026-09-11. The method, dates and complete
-  prompts are recorded in the introducing commits `7895a1c` (`gear`, `wifi`,
-  `sun`, `speaker`, `power`, `restart`) and `718f4e6` (`apps`). The tool's
-  output and redistribution terms are not recorded, so redistribution rights
-  remain unverified.
-- `assets/branding/` and `assets/boot/` derive from supplied logo, boot
-  storyboard and cave references. The preparation record documents image-tool
-  transformations, but the reference creator, supplier, license and
-  redistribution permission are not recorded. MIT does not cover those
-  references or establish rights to their derivatives; `assets/boot/scene.png`
-  is a direct derivative of the supplied cave artwork.
-- `assets/{boot,system,native}/**` are embedded in the Shell executables and
-  both binary and source distributions include them. `assets/branding/**` is
-  not embedded in released executables (its only code reference is test-only)
-  but still ships in source archives. The complete binary therefore cannot be
-  represented as wholly cleared for redistribution until the rights are
-  documented or the assets are replaced with verified material.
+`assets/{boot,system,native}/**` are embedded in the Shell executables.
+`assets/branding/**` ships in source archives; its only code reference is
+test-only. These assets are covered by the recorded project grant. This does not
+relicense external programs depicted in screenshots or third-party dependencies.
+
 - Existing release inventories list bundles/helpers and checksums. The package
   format is unchanged by this documentation task, but packaging now stages the
   project `LICENSE`, this file and the collected license texts beside the
   x86_64 bundles so published releases carry the required legal companions.
-  That does not clear the unresolved artwork above and does not repair already
-  published artifacts.
+  Previously published artifacts retain their original bytes and notice sets.
 
 No separate GPL-linked component was identified in the Shell workspace graph or
 in Arti's pinned build graph. This does not settle licensing of OS images,

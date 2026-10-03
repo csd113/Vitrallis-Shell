@@ -1,5 +1,29 @@
 # Release validation and assets
 
+## 1.0.0 — preparation
+
+The owner authorized this version on 2026-10-02. Certification is still in
+progress; this entry does not declare the release ready or published.
+
+Managed packages now live in `Documents/Vitrallis/Apps/<id>` and persistent
+state in private `Documents/Vitrallis/AppData/<id>` directories. Launchers
+provide explicit data/package paths, use a private umask and start in AppData.
+Updates and normal uninstall preserve user data. See the
+[application storage contract](application-storage.md).
+
+An explicit saved-data import tool previews selected old files, validates them
+and publishes private AppData without overwriting an existing destination.
+Sources remain available until their imported data has been checked. Files can
+open Notepad while Files is still in the foreground; native requests continue
+to wait while another launch or Shell dialog is pending.
+Files' footer now follows the direction of the Left and Right keys.
+
+Screen-timeout persistence now validates paths before writing, creates private
+directories and syncs the renamed preference. A storage sync failure reports
+uncertain reboot persistence while keeping the committed timer and saved value
+consistent. Artwork provenance records the owner's ChatGPT generation and MIT
+redistribution confirmation, with a per-file digest inventory.
+
 ## 1.0.0-beta-2
 
 This beta polishes the existing PocketCHIP-sized interface and keeps the shared
@@ -75,9 +99,10 @@ Release packaging now validates and stages `LICENSE`, `THIRD_PARTY_NOTICES.md`
 and `THIRD_PARTY_LICENSES.txt` once in each release payload, beside the
 architecture bundles, so released payloads carry the required legal
 companions. The per-file artwork record in
-[artwork provenance](../assets/PROVENANCE.md) separates project-owned icons
-from the artwork whose redistribution basis is still unresolved; those assets
-remain outside any claim that the whole binary is MIT-cleared.
+[artwork provenance](../assets/PROVENANCE.md) records the artwork and its redistribution basis. The project owner confirmed
+on 2026-10-02 that the referenced artwork was generated with ChatGPT at their
+request and is covered by the project MIT grant. Earlier published notices
+remain historical release bytes.
 
 The App Center no longer holds its cross-process storage lock across catalog
 and bundle-download network work. Catalog refreshes fetch metadata and
