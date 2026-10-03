@@ -86,25 +86,34 @@ fn setting_path() -> Result<PathBuf, String> {
     Ok(home.join(".config/vitrallis/screen-timeout"))
 }
 fn safe(path: &Path) -> Result<(), String> {
-    for part in path.ancestors() {
-        match fs::symlink_metadata(part) {
-            Ok(meta) if meta.file_type().is_symlink() => {
-                return Err("Screen timeout path is a symlink".into());
-            }
-            Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
-        }
-    }
+    crate::app_center::storage::safe(path)?;
     if path.exists() && !path.is_file() {
         return Err("Screen timeout path must be a regular file".into());
     }
     Ok(())
 }
-fn save(path: &Path, seconds: u16) -> Result<(), String> {
+enum Saved {
+    Durable,
+    SyncFailed(String),
+}
+fn save(path: &Path, seconds: u16) -> Result<Saved, String> {
+    save_with_sync(path, seconds, crate::app_center::storage::sync)
+}
+fn save_with_sync(
+    path: &Path,
+    seconds: u16,
+    sync: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<Saved, String> {
     safe(path)?;
     let parent = path.parent().ok_or("Missing settings directory")?;
-    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let mut directories = fs::DirBuilder::new();
+    directories.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        directories.mode(0o700);
+    }
+    directories.create(parent).map_err(|e| e.to_string())?;
     safe(path)?;
     let temp = parent.join(format!(".screen-timeout-{}", std::process::id()));
     let mut options = fs::OpenOptions::new();
@@ -120,12 +129,26 @@ fn save(path: &Path, seconds: u16) -> Result<(), String> {
             .and_then(|()| file.sync_all())
             .map_err(|e| e.to_string())?;
         safe(path)?;
-        fs::rename(&temp, path).map_err(|e| e.to_string())
+        fs::rename(&temp, path).map_err(|e| e.to_string())?;
+        // Rename commits the preference. A subsequent sync failure must not
+        // restore the old X timer while leaving the new value on disk.
+        Ok(match sync(parent) {
+            Ok(()) => Saved::Durable,
+            Err(error) => Saved::SyncFailed(error),
+        })
     })();
     let _ = fs::remove_file(temp);
     result
 }
 fn set(io: &impl Hardware, seconds: u16, path: Option<&Path>) -> Result<(), String> {
+    set_with_save(io, seconds, path, save)
+}
+fn set_with_save(
+    io: &impl Hardware,
+    seconds: u16,
+    path: Option<&Path>,
+    persist: impl FnOnce(&Path, u16) -> Result<Saved, String>,
+) -> Result<(), String> {
     if !SCREEN_TIMEOUTS.contains(&seconds) {
         return Err("Unsupported screen timeout".into());
     }
@@ -144,8 +167,12 @@ fn set(io: &impl Hardware, seconds: u16, path: Option<&Path>) -> Result<(), Stri
         if readback != new {
             return Err("Display sleep setting was not accepted".into());
         }
-        path.map_or(Ok(()), |path| save(path, seconds))
+        path.map_or(Ok(Saved::Durable), |path| persist(path, seconds))
     });
+    if let Ok(Saved::SyncFailed(error)) = &result {
+        eprintln!("level=warn event=screen_timeout_sync message={error:?}");
+        return Err("Timer saved; storage sync failed. Reboot persistence is uncertain.".into());
+    }
     if let Err(error) = result {
         return match old.apply(io) {
             Ok(()) => Err(error),
@@ -326,6 +353,65 @@ mod tests {
             std::os::unix::fs::symlink(&path, &link).map_err(|e| e.to_string())?;
             assert!(save(&link, 600).is_err());
             assert_eq!(fs::read_to_string(&path).map_err(|e| e.to_string())?, "0\n");
+        }
+        Ok(())
+    }
+    #[test]
+    fn committed_timeout_sync_failure_keeps_timer_and_reports_uncertainty() -> Result<(), String> {
+        let io = FakeDisplay(std::cell::Cell::new(Timer {
+            timeout: 600,
+            cycle: 600,
+            standby: 600,
+            suspend: 600,
+            off: 600,
+            enabled: true,
+        }));
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let path = scratch
+            .0
+            .canonicalize()
+            .map_err(|e| e.to_string())?
+            .join("screen-timeout");
+        let result = set_with_save(&io, 30, Some(&path), |path, seconds| {
+            save_with_sync(path, seconds, |_| {
+                Err("injected directory sync failure".into())
+            })
+        });
+        assert!(result.is_err_and(|error| error.contains("persistence is uncertain")));
+        assert_eq!(timeout(&io), Some(30));
+        assert_eq!(fs::read_to_string(path).map_err(|e| e.to_string())?, "30\n");
+        Ok(())
+    }
+    #[cfg(unix)]
+    #[test]
+    fn timeout_storage_rejects_unsafe_paths_before_creating_directories() -> Result<(), String> {
+        use std::os::unix::fs::PermissionsExt;
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        for path in [
+            root.join("new/../screen-timeout"),
+            root.join("control\nscreen-timeout"),
+        ] {
+            assert!(save(&path, 30).is_err());
+        }
+        assert!(!root.join("new").exists());
+        let unsafe_parent = root.join("unsafe");
+        fs::create_dir(&unsafe_parent).map_err(|e| e.to_string())?;
+        fs::set_permissions(&unsafe_parent, fs::Permissions::from_mode(0o775))
+            .map_err(|e| e.to_string())?;
+        assert!(save(&unsafe_parent.join("settings/screen-timeout"), 30).is_err());
+        assert!(!unsafe_parent.join("settings").exists());
+        let path = root.join("private/settings/screen-timeout");
+        save(&path, 60)?;
+        for directory in [root.join("private"), root.join("private/settings")] {
+            assert_eq!(
+                fs::metadata(directory)
+                    .map_err(|e| e.to_string())?
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o700
+            );
         }
         Ok(())
     }

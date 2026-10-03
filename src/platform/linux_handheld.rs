@@ -126,6 +126,13 @@ impl System for LinuxHandheld {
             status.clock = command::clock();
             return Ok(());
         }
+        if let Control::ScreenTimeout(seconds) = control {
+            let result = display::apply(&Native, seconds);
+            // Read back even on save failure: the timer may be restored or a
+            // committed preference may have an uncertain durability result.
+            status.screen_timeout = display::timeout(&Native);
+            return result;
+        }
         apply(&Native, control)?;
         match control {
             Control::Brightness(_) => {
