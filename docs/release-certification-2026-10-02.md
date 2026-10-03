@@ -9,12 +9,14 @@ The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
 reviewed in separate commits. The installed native bundle and helpers correspond
-to `ae343adf5c4038c6cad2f890ab8665839afe40b9`, including the startup guard at
+to `5c560670eaf4a775f2b563b1d9ec344cb4f73bba`, including the startup guard at
 `70540cb02e7f1268efc141b9f6e72dead32f0142` and runtime notices at
 `290ce8836449345ea6df3e17d6875f2fe218681a`. Remote Rust 1.91.0, 1.99.0 and
 stable checks pass for that exact head. Its offline diagnostic Details page
-and cause-first cancelled-update message passed physical inspection. The newer
-save-specific ENOSPC dialog and retry also passed on hardware. Complete host
+and cause-first cancelled-update message passed physical inspection. The
+save-specific ENOSPC dialog and retry also passed on hardware, including a
+NAND-backed isolated volume. Actual UBIFS low-space tests and the repaired
+timezone return passed within the scopes recorded below. Complete host
 validation, ARMv7 packaging and normal-user installation also passed. The final
 candidate is not yet established.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
@@ -132,7 +134,7 @@ ownership, 12-hour time and the 1800-second display timeout survived. An earlier
 confirmation expired during harness inspection and did not reboot; its
 observation is excluded from reboot certification.
 
-The latest radio-readback bundle, built from exact code `ae343ad`, has digest
+The earlier radio-readback bundle, built from exact code `ae343ad`, has digest
 `d5dfe623f631b8a48b28c9304b3f5261006f7d872e415018adb6ba68c71325a4`.
 All seven artifact sidecars, normal-user installation under `umask 077`, helper
 hashes, runtime ownership, root-status readability and persistent data pass.
@@ -142,6 +144,17 @@ An SSH launch missing XAUTHORITY was a harness-context failure; launch with the
 existing desktop's verified display/authentication environment succeeded. Wi-Fi
 off/on reports Saved with matching authoritative readback. This is a prepared
 software launch on the same boot, not an additional reboot or public-route pass.
+
+The current Settings-utility return bundle, built from exact code `5c56067`, has
+digest `e5bdb419b999e08519ed0cc8de232b3f48fad869d9917be5a11ca0f3340e3a7c`.
+All seven artifact sidecars, normal-user installation under `umask 077`, helper
+hashes, root-status access, runtime ownership and persistent data pass. The
+prepared complete ARMv7 bundle contains the five release executables and passed
+three native smoke scenarios. Its timezone authentication utility exited with
+status zero after changing Vancouver to Whitehorse and after restoring Vancouver;
+both returns reopened Date & Time with the actual zone and “Time zone refreshed.”
+This is a prepared same-boot installation and hardware retest, not a final public
+installation or cold-power pass.
 
 Twelve actual reboots have completed so far: the initial published-beta boot,
 recovery from the development test harness's RAM-backed `/tmp` exhaustion, two
@@ -227,6 +240,15 @@ no physical cold power cycle has been performed.
   least 215,512 KiB and the private log grew 20,807 bytes. This single activity
   sequence does not establish bounded memory over repeated install cycles or
   certify a future final revision; repeated-use investigation remains pending.
+- A further continuous run of exact `ae343ad` collected 61 samples over
+  1800.16 seconds during NAND writes, Notepad fault/recovery and control tests.
+  The Shell PID/start time, generation and boot ID remained fixed; no
+  service-owned zombie appeared in the samples. Shell RSS stayed at 68,020 KiB
+  and average CPU was 0.93%; Awesome RSS was 36,388–37,540 KiB, available RAM
+  stayed at least 188,508 KiB and the private log grew 22,819 bytes. Actual focus
+  query timeouts and the timezone-return failure below are retained. Process
+  stability does not make those failures pass, establish repeated-install
+  memory behavior or certify the newer revision.
 - Bitcoin and Carousel's scoped source changes are published for review at
   `b1460ed1d7b373719e0edfc1d4fb5fbc9e29e504`, with the separate catalog/history
   commit `2c66c4dfd7741429ef0aebffaf804b2e992a5e59`, followed by the exact Places
@@ -353,6 +375,17 @@ no physical cold power cycle has been performed.
   Firefly release-version preparation is awaiting the owner's explicit approval;
   its public 0.3.1 payload and catalog are unchanged. Final managed lifecycle,
   update and uninstall/reinstall coverage remain pending.
+- Prepared Carousel 0.4.3 installed through the actual App Center from immutable
+  source `b1460ed1d7b373719e0edfc1d4fb5fbc9e29e504`. Completion with its committed
+  receipt was observed while the owned NAND-pressure filler remained present,
+  with 118,513,664 bytes free. All 29 payload files (323,461 bytes) were verified
+  after pressure cleanup. Its private app-local runtime contains 1061 entries
+  totaling 24,915,555 bytes, with qrcode 8.2, Pillow 11.1.0 and packaging 25.0;
+  system Python still has no qrcode. No unsafe entries or pending runtime remain.
+  Installation creates an empty private AppData directory; the owner's deleted
+  media/preferences were not restored. An initial harness incorrectly expected
+  that directory to remain absent; its failure is retained separately. Launch,
+  playback, managed update and uninstall/reinstall certification remain pending.
 - Wireless once reported “Wi-Fi change denied or unavailable” while the same
   screen and independent NetworkManager readback showed Wi-Fi enabled and
   connected. A clean UI off/on retry and six bounded direct radio changes pass;
@@ -363,6 +396,25 @@ no physical cold power cycle has been performed.
   tests, complete macOS/Linux gates and exact-head remote CI pass. The matching
   ARMv7 bundle is installed; keyboard off/on shows Saved and NetworkManager
   confirms disabled, then enabled/connected on the actual 480×272 screen.
+- Actual timezone authentication saved the zone and exited normally but returned
+  to the launcher. A focus-gained event made the launcher Ready and cleared the
+  active process identity before the exit callback; the callback consequently
+  missed the pending Settings utility. The fix retains the reaped child's exact
+  identity and matches only the pending internal utility. Timezone completion
+  returns to Date & Time, calibration to Device and network management to Home;
+  unrelated background exits do not reopen Settings. Two regressions cover event
+  ordering, matching and unrelated exits. Exact `5c56067` passes complete host
+  gates and all six remote jobs. Both physical timezone changes described above
+  returned correctly with visible keyboard selection and normal child reaping.
+- Keyboard brightness changed the actual backlight from 1 to 2; touch selected
+  maximum 10 and restored the lit minimum 1. A held synthetic Left changed 10
+  to 9 once, consistent with Shell's deliberate repeat filtering; an initial
+  harness expectation of repeated changes is excluded. Keyboard volume changed
+  mixer readback from 57/63 (90%) to 50/63 (79%, displayed as 80%) and restored
+  57/63. A mid-test probe that raced restoration is excluded; a separate settled
+  read passed. Audible output, the physical Fn-key matrix and battery/power
+  transitions remain pending. Clock format, brightness, volume and Vancouver
+  timezone were restored after these tests.
 - A controlled physical-device Notepad save on an isolated 512 KiB tmpfs with
   only 16 KiB free failed with ENOSPC. The original 64 KiB document, ownership
   and private mode survived, and the staging file was cleaned. Removing the
@@ -382,6 +434,31 @@ no physical cold power cycle has been performed.
   Ctrl+Shift+S saved the edited document into a writable folder with user
   ownership and mode 0600. Normal exit and removal of both disposable test
   files/folder passed. Original AppData notes are unchanged.
+- The actual UBIFS root was reduced to 67,100,672 bytes free using one private,
+  normal-user, incompressible filler, with a 48 MiB hard floor and write headroom.
+  Storage visibly reported 67.1 MB and LOW STORAGE at 480×272. The exact prepared
+  bootstrap's real preflight refused a 26,805,604-byte bundle requiring
+  70,388,424 free bytes, preserving current/previous generations, receipt,
+  preferences and the original note. This exercises the actual NAND preflight,
+  not a complete public installer or Shell update. Clock 12→24→12 writes passed
+  and restored identical preference bytes. Native Notepad saved a one-character
+  edit to a disposable 64 KiB document at this free-space level, privately and
+  without leftover staging files. The filler was reduced before Carousel's
+  app-local runtime installation. Two earlier fill attempts timed out or were
+  deliberately stopped before reaching the threshold; both cleaned up and are
+  excluded from low-space success. The successful fill's 1200-second hold ended
+  with automatic cleanup; the same bootstrap preflight then passed. No fillers,
+  markers, disposable notes or pressure mounts remain. A brief SSH read stall
+  near cleanup recovered; its cause is not established.
+- A separate 4 MiB ext2 loop image on UBIFS NAND, mounted nosuid/nodev/noexec,
+  provided isolated real ENOSPC without filling the operating system volume.
+  Native Notepad's failed save preserved the original 64 KiB file and cleaned
+  its stage; the recovery message fit at 480×272. Removing only the validated
+  filler let the same editor save successfully. Find selected actual text;
+  a new disposable dirty note exercised safe Cancel and explicit Discard.
+  Normal exit, owned-file removal, unmount, loop detach and image/mount cleanup
+  passed. Original AppData hashes remained unchanged. This covers NAND-backed
+  ext2 I/O, not global UBIFS ENOSPC or power-loss durability.
 - The certification screenshot harness leaked one GDK display connection per
   capture, retaining 135 connections in Awesome. This is a harness defect, not
   a measured production leak. Closing the verified temporary connections and
@@ -422,22 +499,22 @@ no physical cold power cycle has been performed.
 | Installer failure cases | Canonical fixtures pass; physical fault matrix pending |
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core Settings/launcher screenshots reviewed; remaining utilities, App Center and failure states pending |
-| Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic routes exercised; repeat/stress coverage pending |
-| Every catalog app lifecycle | Debug public lifecycle and offline uninstall/reinstall passed; Places and Firefly public install/launch/resume/exit passed; prepared Places update cancellation preserves installed bytes/data; complete updates and remaining app runs pending |
+| Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic navigation, held-key filtering and control changes exercised; physical Fn-key and remaining stress coverage pending |
+| Every catalog app lifecycle | Debug lifecycle and Places update/offline uninstall/reinstall pass; Firefly baseline lifecycle and prepared Carousel fresh managed install pass; Carousel playback/update and remaining ecosystem coverage pending |
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
-| Python runtime | Host tests passed; current device dependency/lifecycle checks pending |
+| Python runtime | Carousel managed app-local runtime verified without changing system qrcode; remaining lifecycle/dependency checks pending |
 | Process lifecycle stress | Debug exits left no app processes or Vitrallis-service zombies; stock PocketHome zombies distinguished; sustained repetition pending |
 | Repeated startup | Delayed original-desktop focus grab repaired; three reboots passed sustained idle focus, including the current offline build; exact final build and cold-power checks pending |
-| Hardware features | Display/GPU backend observed; radio/audio/backlight/battery/power acceptance incomplete |
-| Every setting persistence | Clock format and timeout survived development reboot; remaining matrix pending |
+| Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
+| Every setting persistence | Clock format and timeout survived development reboot; timezone save/return and restored values pass; remaining full persistence matrix pending |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
-| Low NAND / ENOSPC | Controlled physical Notepad ENOSPC/recovery passed on isolated 512 KiB tmpfs; NAND-backed permission fault/Save as recovery passed; actual NAND pressure remains pending |
+| Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; full app/Shell update faults and durability pending |
 | Shell update/rollback | Host recovery tests pass; actual candidate device update/rollback pending |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
-| Files/Terminal/Notepad | Real note save/read, direct editor and footer wraparound passed on device; remaining manual utility cases pending |
+| Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on device; remaining manual utility cases pending |
 | Performance | Clean-boot measurements recorded; Firefly packing hotspot repaired and measured in a matched developer comparison; final managed performance and repeated-install memory checks pending |
-| Extended soak | Exact bce0d86 continuous 1800.25-second active session passed identity/boot/process checks; repeated-install memory behavior and final-revision soak remain pending |
+| Extended soak | Exact bce0d86 and ae343ad continuous 30-minute runs passed identity/boot/process checks; ae343ad had retained focus/Settings failures; repeated-install memory behavior and final-revision soak remain pending |
 | Logs | Initial renderer/startup logs inspected; final audit pending |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
 | Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
@@ -453,10 +530,14 @@ the approved 1.0.0 version and reviewed references: formatting, locked
 all-target/all-feature check, strict Clippy, workspace tests, Python tests,
 release binaries, SDL/native smokes and doc links. The latest runs include the
 editor/importer, private-root-umask, real-Lua focus and offline diagnostic
-regressions and two radio-result regressions: 366 Rust tests on macOS,
-367 on Linux, and 173 Python tests
+regressions, two radio-result regressions and two Settings utility regressions:
+368 Rust tests on macOS, 369 on Linux, and 173 Python tests
 (nine existing skips on macOS, eight on Linux), plus the native
 renderer suite (two tests, one existing skip).
+An earlier macOS run hit a local Tor relay half-close socket timeout. The failure
+is retained; the targeted Tor suite and a complete unchanged-code retry passed.
+Its transient cause is not established. The final utility-return macOS/Linux
+gates both passed independently.
 The ARMv7 release build and complete five-executable packaging/version checks
 pass against glibc 2.36/SDL2 2.26.5. Bitcoin 1.3.1 has 71 passing tests; Carousel
 0.4.3 has 271 passing tests and one existing skip. The isolated Places package's
