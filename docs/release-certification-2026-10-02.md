@@ -421,10 +421,49 @@ no physical cold power cycle has been performed.
   cache prefix, versus 6.274 seconds and 2.834 CPU seconds with ordinary caches.
   This explains part of the cost, not the whole launch delay. The namespace's
   stale-bytecode protections remain intact pending further investigation.
+  A subsequent actual managed launch was measured with reversible, read-only
+  Awesome window-event observers and a normal-user process sampler. The process
+  started 0.260 seconds after the click; focus arrived at 15.817 seconds. The
+  last pre-focus sample had used 9.88 CPU seconds and 27,088 KiB RSS. The observer
+  was removed afterwards. This demonstrates variable startup latency; it does
+  not explain or erase the earlier 51-second observation.
+  The longer playback run also surfaced “File missing, corrupt or no longer
+  readable.” All eight fixture files remained byte-identical. Two complete
+  direct passes through the installed production decoder succeeded for every
+  fixture, including 60 frames per moving clip, 12 frames per animation and
+  three frames per one-frame WebM. That diagnostic bypasses Tk/GPU presentation
+  and playback pacing, so the actual playback failure remains unexplained.
+  The temporary repeat setting was restored from ten to three, and two further
+  managed Escape exits returned status zero with unchanged private test data.
   The stale web footer also displays 0.4.1; its two-file correction passes all
   271 tests with the existing skip and is kept uncommitted. Because replacing
   the pinned 0.4.3 bytes requires a new immutable package version, 0.4.4
   preparation is awaiting the owner's explicit authorization.
+- Carousel's actual offline receipt-owned removal passed after inspecting the
+  visible Cancel default, cancelling with Enter, then explicitly selecting
+  Uninstall by keyboard. NetworkManager reported Wi-Fi disabled and an external
+  TCP connection failed with “Network is unreachable.” The manifest, receipt,
+  pending marker and generated launcher were removed; all 15 private AppData
+  entries and 236 other installed-app file hashes were unchanged. The current
+  uninstall retains 934 app-local Python runtime files totaling 24,915,555 bytes
+  because those generated files are outside its package receipt. Full dependency
+  cleanup acceptance remains open. A checker that required the entire app
+  directory to disappear failed; it is retained separately from the qualified
+  receipt/payload result. Settings restored Wi-Fi and a GitHub TCP connection
+  succeeded on the same boot. Actual App Center reinstall of the same immutable
+  prepared 0.4.3 verified all 29 payload hashes, recreated its launcher and kept
+  those 15 data entries and 236 other-app hashes unchanged. It reused the
+  retained runtime; this is not fresh dependency provisioning or a public-main
+  catalog installation. Post-reinstall Open launched a new, focused normal-user
+  process in canonical AppData. Native Home showed all eight items; native
+  Settings and the authenticated device API agreed on five seconds, three
+  repeats and the saved order/loop values. VP8/VP9/WebP decode checks were ready.
+  Normal Escape exit returned status zero, left no process-group member and
+  retained every fixture hash; Wi-Fi and the current Shell generation stayed
+  restored.
+  Shell RSS after completion was 39,584 KiB, compared
+  with 38,580 KiB in the preceding soak. One lifecycle is not evidence that
+  repeated installs have bounded memory use.
 - Wireless once reported “Wi-Fi change denied or unavailable” while the same
   screen and independent NetworkManager readback showed Wi-Fi enabled and
   connected. A clean UI off/on retry and six bounded direct radio changes pass;
@@ -539,9 +578,9 @@ no physical cold power cycle has been performed.
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core Settings/launcher screenshots reviewed; remaining utilities, App Center and failure states pending |
 | Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic navigation, held-key filtering and control changes exercised; physical Fn-key and remaining stress coverage pending |
-| Every catalog app lifecycle | Debug and Places sequences pass; Firefly baseline lifecycle and prepared Carousel install/launch/Home/resume/normal exit/relaunch/data retention pass; Carousel first-run decoder failure retained, motion/update/uninstall and remaining ecosystem coverage pending |
+| Every catalog app lifecycle | Debug and Places sequences pass; Firefly baseline and prepared Carousel install/launch/Home/resume/exit/relaunch/receipt-owned offline removal/reinstall/data retention verified; Carousel playback failures and retained dependency cleanup unresolved, motion/update and remaining ecosystem coverage pending |
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
-| Python runtime | Carousel app-local dependencies and normal exit/relaunch verified without changing system qrcode; startup profile and remaining lifecycle/dependency checks pending |
+| Python runtime | Carousel app-local dependencies, normal exit/relaunch and cached-runtime reinstall verified without changing system qrcode; variable startup measured, uninstall dependency cleanup and remaining checks pending |
 | Process lifecycle stress | Debug exits left no app processes or Vitrallis-service zombies; stock PocketHome zombies distinguished; sustained repetition pending |
 | Repeated startup | Delayed original-desktop focus grab repaired; three reboots passed sustained idle focus, including the current offline build; exact final build and cold-power checks pending |
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
