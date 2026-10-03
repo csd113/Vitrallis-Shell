@@ -37,13 +37,19 @@ text or a documented source offer before that binary is cleared.
   are not built (for example `equix`/`hashx` and `dynasm` tooling). Where a
   dependency offers a choice, this project relies on the permissive option:
   **MIT** for MIT/Apache-2.0 crates, **MPL-2.0** for the dual LGPL-3.0-or-later OR
-  MPL-2.0 `priority-queue` (a dev/test-only crate in Arti's tooling; its text is
-  not part of the collected inventory), with `option-ext` (MPL-2.0) and `ring`
+  MPL-2.0 `priority-queue`, with `option-ext` (MPL-2.0) and `ring`
   (Apache-2.0 AND ISC) texts retained. `libsqlite3-sys` bundles SQLite (public
   domain), `zstd-sys` bundles Zstandard 1.5.7 (BSD-3-Clause) and `liblzma-sys`
   bundles XZ Utils liblzma (0BSD); their notices are preserved. A complete
   binary notice set still requires resolving any missing text for a crate that is
   actually linked.
+  The selected ARMv7 normal/build dependency graph includes `priority-queue`
+  2.7.0; its MPL text and immutable upstream source location are retained in the
+  collected notices. The 2026-10-02 reconciliation also adds missing cookie-factory
+  and void MIT notices and rustix-linux-procfs attribution, and matches shared
+  Apache/MIT texts to their exact source files. Seven Tor helper crates share
+  the MIT text verified at their exact registry VCS revision. The compiled Rust
+  runtime inventory remains under review.
 - Python, Tk, Bubblewrap, picom, graphics drivers and optional FFmpeg are system
   packages, not payloads in the native bundle. Installation through the system
   package manager does not relicense them. A redistributed OS image must retain
