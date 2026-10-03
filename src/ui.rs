@@ -383,15 +383,21 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
             Ok(Some(status)) => {
                 eprintln!("level=info event=app_exited status={status:?}");
                 self.state.sync_states(self.child);
-                refresh_utility(self.state, self.worker, self.child.exited_active);
-                let raise = app_exited(self.state, status, self.child.exited_active);
+                // Focus can return before the next exit poll clears the child.
+                // Match the completed utility rather than relying on foreground
+                // ownership that the intervening focus event may have released.
+                let return_settings =
+                    completed_settings_utility(self.state, self.child.exited_id.as_deref());
+                let active = self.child.exited_active || return_settings;
+                refresh_utility(self.state, self.worker, active);
+                let raise = app_exited(self.state, status, active);
                 let catalog_changed =
                     refresh_exit_catalog(self.sdl, self.config, self.state, self.pointer);
                 if catalog_changed {
                     self.textures.refresh(self.creator, self.state);
                 }
                 self.last_wait_error = None;
-                if self.child.exited_active {
+                if active {
                     self.accept_after = Instant::now();
                 }
                 raise_after_exit(self.canvas, self.platform, raise);
@@ -813,6 +819,22 @@ fn refresh_launch(state: &mut Launcher, child: &mut impl Processes) -> bool {
     }
 }
 
+fn completed_settings_utility(state: &Launcher, exited_id: Option<&str>) -> bool {
+    use crate::settings::NetworkState;
+    matches!(
+        (state.settings.network, exited_id),
+        (NetworkState::Open, Some("vitrallis-network-manager"))
+            | (
+                NetworkState::CalibrationOpen,
+                Some("vitrallis-touch-calibration")
+            )
+            | (
+                NetworkState::TimezoneOpen,
+                Some("vitrallis-timezone-authentication")
+            )
+    )
+}
+
 fn refresh_utility(
     state: &mut Launcher,
     worker: &mut Option<crate::platform::system::Worker>,
@@ -838,20 +860,16 @@ fn app_exited(state: &mut Launcher, status: std::process::ExitStatus, active: bo
             format!("APP EXITED: {status}")
         });
     }
-    if active && state.settings.network == crate::settings::NetworkState::Open {
+    let return_page = match state.settings.network {
+        crate::settings::NetworkState::Open => Some(crate::settings::Page::Home),
+        crate::settings::NetworkState::CalibrationOpen => Some(crate::settings::Page::Device),
+        crate::settings::NetworkState::TimezoneOpen => Some(crate::settings::Page::DateTime),
+        _ => None,
+    };
+    if active && let Some(page) = return_page {
         state.settings.network = crate::settings::NetworkState::Idle;
         state.settings.show();
-    }
-    if active
-        && matches!(
-            state.settings.network,
-            crate::settings::NetworkState::CalibrationOpen
-                | crate::settings::NetworkState::TimezoneOpen
-        )
-    {
-        state.settings.network = crate::settings::NetworkState::Idle;
-        state.settings.show();
-        state.settings.page(crate::settings::Page::Device);
+        state.settings.page(page);
     }
     raise
 }
@@ -1840,6 +1858,85 @@ mod tests {
         assert!(state.error.is_none());
         assert!(state.opening.is_none());
         assert_eq!(state.phase, Phase::Ready);
+        Ok(())
+    }
+    #[test]
+    fn settings_utility_return_survives_focus_gained_before_exit_poll() -> Result<(), String> {
+        use crate::settings::{NetworkState, Page};
+        use std::os::unix::process::ExitStatusExt;
+
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        for (network, id, page) in [
+            (NetworkState::Open, "vitrallis-network-manager", Page::Home),
+            (
+                NetworkState::CalibrationOpen,
+                "vitrallis-touch-calibration",
+                Page::Device,
+            ),
+            (
+                NetworkState::TimezoneOpen,
+                "vitrallis-timezone-authentication",
+                Page::DateTime,
+            ),
+        ] {
+            let mut state = Launcher::new(apps.clone(), 3, 6)?;
+            state.launched("Utility");
+            state.settings.network = network;
+            let mut pointer = PointerInput::default();
+            let mut accept_after = Instant::now();
+            window_focus(
+                &Event::Window {
+                    timestamp: 0,
+                    window_id: 1,
+                    win_event: WindowEvent::FocusGained,
+                },
+                &mut state,
+                &mut pointer,
+                &mut accept_after,
+            );
+            assert_eq!(state.phase, Phase::Ready);
+            assert!(!completed_settings_utility(&state, None));
+            assert!(!completed_settings_utility(&state, Some("another-app")));
+            assert!(completed_settings_utility(&state, Some(id)));
+            assert!(!app_exited(
+                &mut state,
+                std::process::ExitStatus::from_raw(0),
+                true,
+            ));
+            assert!(state.settings.open);
+            assert_eq!(state.settings.page, page);
+            assert!(!completed_settings_utility(&state, Some(id)));
+        }
+        Ok(())
+    }
+    #[test]
+    fn utility_exit_returns_to_its_settings_page_only_while_active() -> Result<(), String> {
+        use crate::settings::{NetworkState, Page};
+        use std::os::unix::process::ExitStatusExt;
+
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        for (network, page) in [
+            (NetworkState::Open, Page::Home),
+            (NetworkState::CalibrationOpen, Page::Device),
+            (NetworkState::TimezoneOpen, Page::DateTime),
+        ] {
+            for active in [false, true] {
+                let mut state = Launcher::new(apps.clone(), 3, 6)?;
+                state.launched("Utility");
+                state.settings.network = network;
+                assert_eq!(
+                    app_exited(&mut state, std::process::ExitStatus::from_raw(0), active),
+                    active
+                );
+                assert_eq!(state.settings.open, active);
+                if active {
+                    assert_eq!(state.settings.page, page);
+                    assert_eq!(state.settings.network, NetworkState::Idle);
+                } else {
+                    assert_eq!(state.settings.network, network);
+                }
+            }
+        }
         Ok(())
     }
     #[test]

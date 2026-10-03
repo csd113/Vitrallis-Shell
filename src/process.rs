@@ -158,6 +158,8 @@ pub struct ProcessSet<P = NativeProcess> {
     tor_pending: Option<(AppEntry, Instant)>,
     active: Option<String>,
     pub exited_active: bool,
+    /// Identity of the last reaped member, retained even after foreground return.
+    pub(crate) exited_id: Option<String>,
     resume: Option<Resume>,
     pending: Option<PendingStart<P>>,
     /// Outcome of a start that completed without a worker (resume/instant start).
@@ -645,6 +647,7 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
                 if self.exited_active {
                     self.active = None;
                 }
+                self.exited_id = Some(id);
                 return Ok(Some(status));
             }
         }
@@ -1220,10 +1223,12 @@ mod tests {
         processes.members[1].1.exited = true;
         assert!(processes.poll()?.is_some());
         assert!(!processes.exited_active);
+        assert_eq!(processes.exited_id.as_deref(), Some("second"));
         assert_eq!(processes.running_ids(), ["test"]);
         processes.members[0].1.exited = true;
         assert!(processes.poll()?.is_some());
         assert!(processes.exited_active);
+        assert_eq!(processes.exited_id.as_deref(), Some("test"));
         assert!(!processes.has_children());
         Ok(())
     }
