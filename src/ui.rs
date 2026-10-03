@@ -591,11 +591,10 @@ fn open_native(
     layout: &Layout,
     state: &mut Launcher,
     icons: &[Option<Texture<'_>>],
-    child: &mut ProcessSet,
+    child: &mut impl Processes,
 ) -> Result<bool, String> {
-    if state.phase != Phase::Ready {
-        return Ok(false);
-    }
+    // Files requests an editor while it still owns the foreground. The broker
+    // defers requests during pending actions and dialogs, but Running is safe.
     match crate::native::requested(broker, state) {
         Ok(Some(index)) => {
             render(
@@ -1380,6 +1379,84 @@ fn open_requested(state: &mut Launcher, child: &mut impl Processes) -> bool {
 mod tests {
     use super::*;
     use sdl2::mouse::MouseButton;
+    #[test]
+    fn foreground_files_request_opens_notepad_without_returning_home()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::app::{AppEntry, AppManifest, AppSource};
+        use std::os::unix::{ffi::OsStrExt, net::UnixDatagram};
+
+        #[derive(Default)]
+        struct Capture(Option<AppEntry>);
+        impl Processes for Capture {
+            fn start(&mut self, app: &AppEntry) -> Result<(), String> {
+                self.0 = Some(app.clone());
+                Ok(())
+            }
+            fn poll(&mut self) -> Result<Option<std::process::ExitStatus>, String> {
+                Ok(None)
+            }
+        }
+
+        let _lock = crate::test_support::sdl_lock();
+        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        let sdl = sdl2::init()?;
+        let video = sdl.video()?;
+        let raw = video
+            .window("Native request regression", 480, 272)
+            .hidden()
+            .build()?
+            .into_canvas()
+            .software()
+            .build()?;
+        let creator = raw.texture_creator();
+        let mut canvas = Screen::new(raw, &creator)?;
+        let layout = Layout::home(480, 272)?;
+        let scratch = crate::test_support::Scratch::new()?;
+        let note = scratch.0.join("a saved note ! é.txt");
+        std::fs::write(&note, "saved text\n")?;
+        let note = note.canonicalize()?;
+        let app = AppEntry {
+            id: "io.vitrallis.notepad".into(),
+            source: AppSource::Native,
+            name: "Notepad".into(),
+            icon: None,
+            unavailable: None,
+            manifest: AppManifest {
+                entry: "/bin/true".into(),
+                ..AppManifest::default()
+            },
+        };
+        let mut state = Launcher::new(vec![app], 3, 6)?;
+        let broker = crate::native::broker(&mut state)?;
+        let sender = UnixDatagram::unbound()?;
+        sender.send_to(note.as_os_str().as_bytes(), &broker.path)?;
+        state.phase = Phase::Running;
+        let mut child = Capture::default();
+        state.settings.open = true;
+        assert!(!open_native(
+            &broker,
+            &mut canvas,
+            &layout,
+            &mut state,
+            &[],
+            &mut child
+        )?);
+        assert!(child.0.is_none());
+        state.settings.open = false;
+        assert!(open_native(
+            &broker,
+            &mut canvas,
+            &layout,
+            &mut state,
+            &[],
+            &mut child
+        )?);
+        let launched = child.0.ok_or("Notepad was not dispatched")?;
+        assert_eq!(launched.id, "io.vitrallis.notepad");
+        assert_eq!(launched.manifest.args, ["--".into(), note.into_os_string()]);
+        assert_eq!(state.phase, Phase::Launching);
+        Ok(())
+    }
     #[test]
     #[ignore = "opt-in real idle-loop measurement; takes four seconds"]
     fn idle_loop_stops_after_startup() -> Result<(), String> {
