@@ -28,6 +28,9 @@ The public installer's private umask no longer makes root-owned GPU status
 unreadable by the desktop user. Dedicated status/telemetry directories retain
 their required traversal permissions, private account files stay private, and
 new multimedia-helper directories remain usable by the desktop account.
+The supervised session also selects the launcher when its real window becomes
+ready, including a window whose title arrives after creation, and removes its
+temporary focus hooks on exit. Later title changes do not interrupt apps.
 
 ## 1.0.0-beta-2
 

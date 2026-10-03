@@ -26,6 +26,17 @@ if not vitrallis_home_route then
         end
     end
     local awful = require("awful")
+    -- Window names can arrive after manage. Claim the launcher once when its
+    -- actual client is ready; later title changes must not steal app focus.
+    route.activate = function(c)
+        if c.valid and c.name == "Vitrallis" and c.class == "vitrallis"
+            and (not route.shell or not route.shell.valid) then
+            route.shell = c
+            client.focus = c; c:raise()
+        end
+    end
+    client.connect_signal("manage", route.activate)
+    client.connect_signal("property::name", route.activate)
     route.added = awful.key({}, "XF86PowerOff", function()
         for _, c in ipairs(client.get()) do
             if c.name == "Vitrallis" then
@@ -39,12 +50,15 @@ if not vitrallis_home_route then
     for _, key in ipairs(route.added) do table.insert(keys, key) end
     vitrallis_home_route = route
     root.keys(keys)
+    for _, c in ipairs(client.get()) do route.activate(c) end
 end
 return "vitrallis home routing active"
 '''
 RESTORE_HOOK = '''
 if vitrallis_home_route then
     local route = vitrallis_home_route
+    client.disconnect_signal("manage", route.activate)
+    client.disconnect_signal("property::name", route.activate)
     local keys = {}
     for _, key in ipairs(root.keys()) do
         local owned = false
