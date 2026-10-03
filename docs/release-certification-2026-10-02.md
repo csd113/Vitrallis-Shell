@@ -9,9 +9,10 @@ The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
 reviewed in separate commits. The installed native bundle and helpers correspond
-to `fe5825bfd516f1f6f55a12ad71002babe91490e6`; the subsequent notice reconciliation
-is `caf9293f701970daff0319937dc573a7a553761a`. Both revisions have passing remote
-Rust 1.91.0, 1.99.0 and stable checks. The final candidate is not yet established.
+to `c17280da336ae04931ff8ad8ceafcde081743632`, including the startup guard at
+`70540cb02e7f1268efc141b9f6e72dead32f0142` and runtime notices at
+`290ce8836449345ea6df3e17d6875f2fe218681a`. Remote Rust 1.91.0, 1.99.0 and
+stable checks pass for that exact head. The final candidate is not yet established.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
@@ -68,12 +69,27 @@ signal while Notepad was focused passed. Exit Vitrallis restored PocketHome and
 removed the owned route. The second reboot reproduced a remaining defect with
 no injected input: about 15 seconds after Shell came forward, PocketHome regained
 focus. The first observation is an initial-focus pass, not sustained startup
-certification. Window-manager event tracing is in progress; startup remains a
-release blocker.
+certification. Window-manager tracing identified the original PocketHome process's
+delayed update dialog and subsequent direct X11 focus grab. The first contextual
+activation filter at `72fb6821da1bfa479c5a74a2ce284a6fecd5c806` blocked its EWMH
+request but failed the actual reboot because the direct focus grab bypassed it.
+That failed observation is retained.
+
+The scoped guard at `70540cb` identifies the original desktop using its existing
+trusted client, PID and process start time. Temporary activation filters and a
+focus callback keep that process from displacing the Shell or the current app;
+unrelated windows are unaffected. Two actual reboots then passed 125.35 and
+126.37 seconds of idle foreground observation without injected input. Screenshots
+confirmed the normal 480×272 launcher. A direct desktop focus attempt while native
+Notepad was active kept the editor foregrounded. Exit Vitrallis restored PocketHome,
+stopped the user service and removed both owned activation filters (zero remaining
+in each context). Final-candidate reboot and cold-power testing remain pending.
 
 The latest complete ARMv7 bundle digest is
-`a4a3c315c040d45920e89ec137a9e1456e4cf251ad1fb715c77e7acbb77aca4e`.
-The root/focus corrections change its companion installer/session helpers, whose
+`39d011de974babb7fedd6cc4697e2adec46f3eef260874d999c652ab6d0e0284`.
+It includes a one-cell gap between Notepad's title and document name, correcting
+the observed joined label without reducing editor rows. The root/focus corrections
+change its companion installer/session helpers, whose
 installed hashes and receipt were independently verified. Normal-user integrity
 checks found no unsafe ownership, writable entries or unexpected links in the
 installed runtime, canonical AppData and Shell configuration. Current/previous
@@ -82,10 +98,10 @@ incorrectly treated their symlink mode as file permissions; that failed harness
 result is retained, and the corrected check validates their owner and bounded
 relative generation targets. No canonical catalog app payload is installed yet.
 
-Seven actual reboots have completed so far: the initial published-beta boot,
+Eleven actual reboots have completed so far: the initial published-beta boot,
 recovery from the development test harness's RAM-backed `/tmp` exhaustion, two
 returns to the original desktop during complete cleanup, the corrected root
-provisioning boot and two focus-candidate boots. These are software reboots;
+provisioning boot and six startup-diagnostic/candidate boots. These are software reboots;
 no physical cold power cycle has been performed.
 
 ## Repairs and reviewed evidence
@@ -152,27 +168,38 @@ no physical cold power cycle has been performed.
   stability and repeated application stress remain pending.
 - Bitcoin and Carousel's scoped source changes are published for review at
   `b1460ed1d7b373719e0edfc1d4fb5fbc9e29e504`, with the separate catalog/history
-  commit `2c66c4dfd7741429ef0aebffaf804b2e992a5e59`, in
+  commit `2c66c4dfd7741429ef0aebffaf804b2e992a5e59`, followed by the exact Places
+  mirror/catalog publication at `8c0a247d304524552d5cc66d906089214cdefa28`, in
   [Apps draft PR #18](https://github.com/csd113/Vitrallis-Apps/pull/18). Catalog
   pins match the published payload bytes; every other catalog entry and all
-  installable flags are preserved. Changelog policy and both Python CI jobs pass.
+  installable flags are preserved. The earlier submission's remote CI passed;
+  the latest tree passed pinned-source validation, changelog policy and 74 tooling
+  tests locally. Its remote checks are pending.
   Public main is unchanged. Coordination preserves the other Apps writer's work;
   that writer also recorded the owner's Codex code/artwork confirmation.
 - PocketCHIP Places 0.11.2 is committed locally as
-  `aac179bc02b1cf09711de698617171d900022173` on
+  `738c778d7b20f702a8917a2d620ffaee3bbbea38` on
   `codex/pocketchip-appdata-certification` in the isolated pinned-source checkout.
   Modern Places work is untouched. The source is published for review in
   [Places draft PR #2](https://github.com/csd113/Places/pull/2); public main is
-  unchanged. Its build cache is excluded from the package and commit. Exact
-  source/package/device checks remain separate from the modern renderer work.
+  unchanged. Its build cache is excluded from the package and commit. The exact
+  source rebuilt byte-for-byte to the catalog's ARMv7 executable; its SHA-256 is
+  `f39b9d4812f29b4ccfa6d8c80319937ea1ae83a86631a6447176805f4add722d`.
+  Device checks remain separate from the modern renderer work.
 - The selected Arti ARMv7 normal/build graph contains 428 distinct package
   versions. Fifteen missing inventory entries were reconciled against cached
   originals and immutable upstream source revisions; all selected graph entries
   now reference retained notices. Four new verbatim texts preserve their
   copyright holders, and the MPL component includes its unmodified source URL.
   The existing 1,294,896 notice bytes were preserved. This conservative dependency
-  graph does not establish which build-only crates are linked. The compiled Rust
-  runtime notice inventory is still being reviewed.
+  graph does not establish which build-only crates are linked.
+- The matching Rust 1.99.0 source/runtime inventory is reconciled for the three
+  distributed Linux targets. Shell and PocketCHIP Places retain 37 distinct exact
+  texts/annotations/excerpts, including compiler-builtins' complete AND terms,
+  the LLVM exception, Unicode data, and nested musl/Sun/BSD/CORE-MATH notices.
+  Existing collected bytes were preserved. The conservative source inventory is
+  documented in [Rust runtime licenses](rust-runtime-licenses.md); it does not
+  claim every build dependency or math routine is linked, or certify an OS image.
 
 ## Gate ledger
 
@@ -190,7 +217,7 @@ no physical cold power cycle has been performed.
 | Real data persistence | Host lifecycle passed; physical update/reboot/reinstall sequence pending |
 | Python runtime | Host tests passed; current device dependency/lifecycle checks pending |
 | Process lifecycle stress | Development sampler found no zombies; utility/app repetition pending |
-| Repeated startup | Initial focus repaired; second reboot FAILED sustained foreground focus with no injected input; event tracing in progress |
+| Repeated startup | Delayed original-desktop focus grab repaired; two reboots passed sustained idle focus; exact final build and cold-power checks pending |
 | Hardware features | Display/GPU backend observed; radio/audio/backlight/battery/power acceptance incomplete |
 | Every setting persistence | Clock format and timeout survived development reboot; remaining matrix pending |
 | Offline/network failures | Host fixtures pass; physical offline and recovery checks pending |
@@ -204,7 +231,7 @@ no physical cold power cycle has been performed.
 | Logs | Initial renderer/startup logs inspected; final audit pending |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
 | Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
-| License/repository consistency | Artwork and selected Arti dependency notice gaps resolved; compiled runtime and final artifact notices pending |
+| License/repository consistency | Artwork, selected Arti graph and matching Rust runtime notices reconciled; final published artifact verification pending |
 | Canonical release builds | Shell full host gate passes; ARM development bundle builds/packages; remaining exact-state checks pending |
 | Exact clean candidate | Final revision not established; reviewed focus/native state has matching CI and physical evidence; no final tag/release |
 | Final physical smoke | Not run |
@@ -216,7 +243,7 @@ the approved 1.0.0 version and reviewed references: formatting, locked
 all-target/all-feature check, strict Clippy, workspace tests, Python tests,
 release binaries, SDL/native smokes and doc links. The latest runs include the
 editor/importer, private-root-umask and real-Lua focus regressions: 361 Rust
-tests on macOS, 362 on Linux, and 172 Python tests (nine existing skips on macOS, eight on Linux), plus the native
+tests on macOS, 362 on Linux, and 173 Python tests (nine existing skips on macOS, eight on Linux), plus the native
 renderer suite (two tests, one existing skip).
 The ARMv7 release build and complete five-executable packaging/version checks
 pass against glibc 2.36/SDL2 2.26.5. Bitcoin 1.3.1 has 71 passing tests; Carousel
@@ -226,8 +253,18 @@ settings/ENOSPC regression and cache round trip pass. Its final strict Clippy
 includes all, pedantic, nursery and cargo groups, with documented exceptions for
 two unavoidable upstream duplicate-crate pairs. Formatting and ARMv7 rebuild
 pass. Its 212-file staged package passes the Apps manifest validator, and its
-notices record all 39 locked ARMv7 dependencies. Physical package validation and
-the compiled-runtime license inventory remain pending.
+notices record all 39 locked ARMv7 dependencies and the matched Rust runtime.
+Physical package validation remains pending.
+
+The startup hook's two Lua regression scenarios also passed inside the physical
+Awesome Lua 5.3 runtime, in an isolated mock environment. The device Python session
+suite passed 12 tests with two standalone-Lua skips; those two scenarios were
+therefore exercised separately inside Awesome rather than silently omitted.
+An Arti QEMU probe initially crashed when the harness mixed the cross-toolchain
+loader with the multiarch runtime libraries. With the matching system loader/libc
+prefix, all five ARMv7 version probes and exact `c17280d` packaging passed. The
+same Arti bytes also passed their native device version probe. The failed mixed
+sysroot attempts remain in the evidence.
 
 The physical ARMv7 Shell library suite passes unchanged: 298 tests passed and
 nine existing opt-in tests were excluded. The controlled run used a private
