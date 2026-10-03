@@ -34,7 +34,9 @@ temporary focus hooks on exit. Later title changes do not interrupt apps.
 
 App Center reports an incomplete refresh when a repository or catalog entry
 fails, while keeping cached packages available for offline management. A
-successful retry removes the error entries and reports completion.
+successful retry removes the error entries and reports completion. Diagnostic
+Details show the failure reason and recovery step instead of placeholder app
+versions and download sizes.
 
 ## 1.0.0-beta-2
 

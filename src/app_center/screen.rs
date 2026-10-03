@@ -594,6 +594,15 @@ impl Center {
         let Some(row) = self.chosen_row() else {
             return Vec::new();
         };
+        if row.package.entry.is_empty() {
+            return vec![
+                ("Source".into(), row.package.origin.as_str().into()),
+                (
+                    "Next step".into(),
+                    "Check source or connection; then Refresh.".into(),
+                ),
+            ];
+        }
         let mut fields = vec![(
             "Version".into(),
             format!("{}   Installed: {}", row.package.version, row.installed),
@@ -633,8 +642,13 @@ impl Center {
     }
     /// The full description shown under the name on the details page.
     pub fn detail_description(&self) -> String {
-        self.chosen_row()
-            .map_or_else(String::new, |row| row.package.description.clone())
+        self.chosen_row().map_or_else(String::new, |row| {
+            if row.package.entry.is_empty() {
+                row.status.clone()
+            } else {
+                row.package.description.clone()
+            }
+        })
     }
     fn primary(&self) -> (Target, &'static str) {
         if self.busy && self.download_cancel.is_some() {
@@ -1736,6 +1750,38 @@ mod tests {
     }
     fn focused(center: &Center, layout: &Layout) -> Target {
         center.targets(layout)[center.selected].0
+    }
+    #[test]
+    fn diagnostic_details_show_the_error_and_recovery_instead_of_placeholder_metadata()
+    -> Result<(), String> {
+        for error in [
+            "Repository unavailable; cached apps kept. Check connection/rate limit",
+            "Catalog entry has an invalid package path",
+        ] {
+            let mut center = center()?;
+            let origin = center.rows[0].package.origin.clone();
+            let diagnostic = super::super::source_error(&origin, error);
+            center.rows = vec![Row::from(&diagnostic)];
+            center.chosen = Some(diagnostic.package.key());
+            center.page(Page::Details);
+            assert_eq!(center.detail_description(), error);
+            assert_eq!(
+                center.detail_fields(),
+                [
+                    ("Source".into(), origin.as_str().into()),
+                    (
+                        "Next step".into(),
+                        "Check source or connection; then Refresh.".into(),
+                    ),
+                ]
+            );
+            assert!(!center.enabled(&Target::Install));
+            assert!(!center.enabled(&Target::Uninstall));
+            let layout = Layout::home(480, 272)?;
+            tap(&mut center, Target::Cancel, &layout)?;
+            assert_eq!(center.page, Page::Apps);
+        }
+        Ok(())
     }
     #[test]
     fn directional_navigation_follows_rows_and_bypasses_long_lists() -> Result<(), String> {
