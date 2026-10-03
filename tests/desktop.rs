@@ -262,6 +262,9 @@ fn fifo_catalog_is_rejected_without_blocking() -> Result<(), Box<dyn std::error:
     let fifo = scratch.0.join("config.json");
     assert!(Command::new("mkfifo").arg(&fifo).status()?.success());
     let mut child = Command::new(env!("CARGO_BIN_EXE_vitrallis"))
+        .env("HOME", &scratch.0)
+        .env_remove("XDG_DATA_HOME")
+        .env_remove("XDG_CONFIG_HOME")
         .arg("--app-config")
         .arg(&fifo)
         .arg("--list-apps")

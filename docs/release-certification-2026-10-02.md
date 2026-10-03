@@ -723,8 +723,39 @@ no physical cold power cycle has been performed.
   `635497dbb46b188fab812b7f1bbb8787b9c314e3f3b755ceed142de162260c86`.
   The actual x86 release-bundle update probe passes with no ignored test, and
   all three utility smokes pass for both targets; ARM runs under Cortex-A8
-  emulation. Native candidate comparison and complete launch-latency tracing
-  remain open while the Apps worker owns PocketCHIP.
+  emulation. Complete native launch-latency tracing remains pending until the
+  candidate is deployed.
+
+- The Apps hardware worker released PocketCHIP at 2026-10-03 22:04:02 UTC
+  after restoring the original catalog and connected Wi-Fi. The installed Shell
+  remains `5c56067`; the private native-test staging area does not replace it.
+  All ten cross-built workspace test executables from `dba70da` were verified
+  and run as `chip`, one test thread at a time, with temporary files on NAND.
+  The first run recorded 378 passes, two failures and twelve existing opt-in
+  exclusions. The FIFO catalog regression inherited eight real app installs,
+  producing twelve launcher entries instead of four. Its child now uses its
+  scratch HOME and clears XDG data/config overrides; the count, nonblocking
+  deadline and regular-file refusal assertions remain intact. The corrected
+  FIFO test passes on PocketCHIP in 0.57 seconds and the complete desktop group
+  passes seven tests with its three existing graphical opt-ins excluded.
+  The native package lifecycle fixture initially tried to invoke unavailable
+  device `rustc`. Supplying the documented host-built ARM `v1`/`v2` fixtures
+  makes the unchanged install/launch/process-detection/update/uninstall test
+  pass in 3.81 seconds. Both initial failures are retained. The full library
+  rerun passes 316 tests with nine existing opt-in exclusions in 604.34 seconds.
+  Together with the corrected desktop group and other workspace executables,
+  all 380 default tests pass on native ARMv7; twelve existing opt-ins remain
+  excluded. No assertion was weakened and no new exclusion was added.
+  Full `sh scripts/validate.sh`
+  passes for the three-line test isolation repair on macOS and native Linux
+  AArch64: 378/380 Rust tests, nine/twelve existing opt-in exclusions, 172 Python
+  tests with nine/ten environment skips, release builds, smokes, strict Clippy
+  and 59-file Markdown-link validation. Production source, dependencies,
+  versions and renderer references are unchanged. Before the planned candidate
+  deployment, hashes, ownership and modes were recorded for all 32 current
+  AppData files and four configuration files. A private local archive verifies
+  all 36 files and 26 directory modes against that baseline. This includes the
+  Apps audit's intentionally corrupt Music fixture; its 0664 mode is preserved.
 
 ## Gate ledger
 
