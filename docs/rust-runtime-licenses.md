@@ -10,11 +10,13 @@ This inventory supplements [the crate inventory](dependency-licenses.md) and
 The matching `rust-src` component, toolchain `COPYRIGHT-library.html`, and exact
 upstream [REUSE annotations](https://github.com/rust-lang/rust/blob/b940084d7eb6a299eb4bfeb8e34901bc051e7ac4/REUSE.toml)
 were reconciled with the standard library's locked normal/build graph, using
-`backtrace,panic-unwind`, for all three distributed Linux targets:
+`backtrace,panic-unwind`, for all three Linux targets supported by the bundle
+format:
 `armv7-unknown-linux-gnueabihf`, `aarch64-unknown-linux-gnu`, and
-`x86_64-unknown-linux-gnu`. Those conservative source graphs resolve the same
-10 external package versions. This does not assert that every listed build
-crate, math routine, or source file is linked into every executable.
+`x86_64-unknown-linux-gnu`. The current release workflow packages ARMv7 and
+x86-64; this inventory also covers AArch64. Those conservative source graphs
+resolve the same 10 external package versions. This does not assert that every
+listed build crate, math routine, or source file is linked into every executable.
 Compiler tooling, documentation, tests, and other-platform code in the full
 compiler copyright report are outside this binary runtime inventory.
 

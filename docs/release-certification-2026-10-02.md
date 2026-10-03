@@ -521,9 +521,11 @@ no physical cold power cycle has been performed.
   sidecars pass. The 14-file prepared package includes the 26,842,468-byte
   bundle with SHA-256
   `7910151b0ff16833acb1746ac982ddeb9a8bd9f0eb2a911d824a33608d5b005f`.
-  These follow-up fixes have not been installed on PocketCHIP while the Apps
-  worker owns the device. Exact-commit remote CI and physical interruption,
-  runtime cleanup and fresh reprovisioning acceptance remain separate gates.
+  All six native amd64 remote Rust 1.91.0/1.99.0/stable jobs pass for exact
+  `391744e7faab5840a3cd5584fe277eef205ed34b` (PR run 37147384379, push run
+  37147382585). These follow-up fixes have not been installed on PocketCHIP
+  while the Apps worker owns the device. Physical interruption, runtime cleanup
+  and fresh reprovisioning acceptance remain open.
 - Wireless once reported “Wi-Fi change denied or unavailable” while the same
   screen and independent NetworkManager readback showed Wi-Fi enabled and
   connected. A clean UI off/on retry and six bounded direct radio changes pass;
@@ -619,12 +621,34 @@ no physical cold power cycle has been performed.
   The existing 1,294,896 notice bytes were preserved. This conservative dependency
   graph does not establish which build-only crates are linked.
 - The matching Rust 1.99.0 source/runtime inventory is reconciled for the three
-  distributed Linux targets. Shell and PocketCHIP Places retain 37 distinct exact
-  texts/annotations/excerpts, including compiler-builtins' complete AND terms,
-  the LLVM exception, Unicode data, and nested musl/Sun/BSD/CORE-MATH notices.
+  Linux targets supported by the bundle format. Shell and PocketCHIP Places
+  retain 37 distinct exact texts/annotations/excerpts, including compiler-builtins'
+  complete AND terms, the LLVM exception, Unicode data, and nested
+  musl/Sun/BSD/CORE-MATH notices.
   Existing collected bytes were preserved. The conservative source inventory is
   documented in [Rust runtime licenses](rust-runtime-licenses.md); it does not
   claim every build dependency or math routine is linked, or certify an OS image.
+- The prepared x86-64 package was then rebuilt from native code `391744e` with
+  Rust 1.99.0 and the canonical locked Arti feature set. All five version probes,
+  a reviewed 480×272 demo frame, three native utility software smokes and the
+  actual-bundle updater probe pass in the emulated Linux environment. These
+  checks do not certify native x86-64 hardware or physical display synchronization.
+  The x86-64 bundle is 31,050,416 bytes, SHA-256
+  `4c16f74507385f2477c6098e76f2a256096b4044c7e85a61c375ff6e8f081c7f`.
+  Together with the matching ARMv7 package recorded above, its prepared release
+  inventory has exactly 19 distinct assets, eight verified checksum sidecars,
+  five hash-verified executable members per bundle, six helpers matching the
+  committed source, and one exact copy each of LICENSE and both notice files.
+  ELF inspection confirms both targets' expected machine type, ARM hard-float
+  ABI and maximum GLIBC requirements of 2.34, within the 2.36 release contract.
+  The selected x86-64 Arti normal/build graph contains 429 packages, including
+  three packages absent from the ARMv7 selection; every selected package has
+  retained notice Text IDs. Fifteen resolved items were removed from the stale
+  missing-evidence list without changing the collected notice bytes. The
+  runtime inventory now distinguishes the bundle format's AArch64 support from
+  the current workflow's two published targets. This is prepared local artifact
+  evidence; final tagged builds, published-byte verification and exact final
+  physical certification remain open. PocketCHIP remains with the Apps worker.
 
 ## Gate ledger
 
@@ -656,8 +680,8 @@ no physical cold power cycle has been performed.
 | Logs | Initial renderer/startup logs inspected; final audit pending |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
 | Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
-| License/repository consistency | Artwork, selected Arti graph and matching Rust runtime notices reconciled; final published artifact verification pending |
-| Canonical release builds | Shell full host gate passes; ARM development bundle builds/packages; remaining exact-state checks pending |
+| License/repository consistency | Artwork, both selected Arti graphs, Rust runtime notices and exact prepared legal companions reconciled; final published artifact verification pending |
+| Canonical release builds | Shell full host gate and exact-code ARMv7/x86-64 prepared packages pass; final tagged workflow and exact final-state checks pending |
 | Exact clean candidate | Final revision not established; reviewed focus/native state has matching CI and physical evidence; no final tag/release |
 | Final physical smoke | Not run |
 
@@ -666,9 +690,10 @@ no physical cold power cycle has been performed.
 Shell `sh scripts/validate.sh` passes on macOS ARM64 and native Linux ARM64 with
 the approved 1.0.0 version and reviewed references: formatting, locked
 all-target/all-feature check, strict Clippy, workspace tests, Python tests,
-release binaries, SDL/native smokes and doc links. The latest runs include the
-editor/importer, private-root-umask, real-Lua focus and offline diagnostic
-regressions, two radio-result regressions and two Settings utility regressions:
+release binaries, SDL/native smokes and doc links. The Settings utility-return
+runs include the editor/importer, private-root-umask, real-Lua focus and offline
+diagnostic regressions, two radio-result regressions and two Settings utility
+regressions:
 368 Rust tests on macOS, 369 on Linux, and 173 Python tests
 (nine existing skips on macOS, eight on Linux), plus the native
 renderer suite (two tests, one existing skip).

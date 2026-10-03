@@ -663,10 +663,11 @@ inside that graph must still be resolved before a binary release is cleared
 
 ## Missing evidence
 
-- amplify_num 0.5.4 (no license text in cached crate)
-- amplify_syn 2.0.1 (no license text in cached crate)
+Resolved rows with retained Text IDs have been removed from this list. The
+remaining entries include optional, build-only and other-target source records;
+this list alone does not identify components linked into a shipped binary.
+
 - arti-rpcserver 0.46.0 (source unavailable)
-- asn1-rs-impl 0.2.0 (no license text in cached crate)
 - assert_cmd 2.2.2 (source unavailable)
 - async-ctrlc 1.2.0 (source unavailable)
 - async-fs 2.2.0 (source unavailable)
@@ -675,16 +676,13 @@ inside that graph must still be resolved before a binary release is cleared
 - base16ct 1.0.0 (source unavailable)
 - bincode 1.3.3 (source unavailable)
 - block2 0.6.2 (no license text in cached crate)
-- caret 0.10.1 (no license text in cached crate)
 - console-api 0.9.0 (source unavailable)
 - console-subscriber 0.5.0 (source unavailable)
 - const-hex 1.19.1 (source unavailable)
 - content_inspector 0.2.4 (source unavailable)
-- cookie-factory 0.3.3 (no license text in cached crate)
 - critical-section 1.2.0 (source unavailable)
 - crossbeam-deque 0.8.7 (source unavailable)
 - crossbeam-epoch 0.9.20 (source unavailable)
-- derive-deftly-macros 1.11.5 (no license text in cached crate)
 - difflib 0.4.0 (source unavailable)
 - dispatch2 0.3.1 (no license text in cached crate)
 - dynasm 5.1.0 (no license text in cached crate)
@@ -695,7 +693,6 @@ inside that graph must still be resolved before a binary release is cleared
 - evmap 11.0.0 (source unavailable)
 - foreign-types 0.3.2 (source unavailable)
 - foreign-types-shared 0.1.1 (source unavailable)
-- fs-mistrust 0.15.1 (no license text in cached crate)
 - futures-await-test 0.3.0 (no license text in cached crate)
 - futures-await-test-macro 0.3.0 (no license text in cached crate)
 - generator 0.8.9 (source unavailable)
@@ -720,7 +717,6 @@ inside that graph must still be resolved before a binary release is cleared
 - objc2-core-foundation 0.3.2 (no license text in cached crate)
 - objc2-encode 4.1.0 (no license text in cached crate)
 - objc2-io-kit 0.3.2 (no license text in cached crate)
-- oneshot-fused-workaround 0.7.1 (no license text in cached crate)
 - openssl 0.10.81 (source unavailable)
 - openssl-macros 0.1.1 (source unavailable)
 - openssl-src 300.6.1+3.6.3 (source unavailable)
@@ -737,7 +733,6 @@ inside that graph must still be resolved before a binary release is cleared
 - predicates 3.1.4 (source unavailable)
 - predicates-core 1.0.10 (source unavailable)
 - predicates-tree 1.0.13 (source unavailable)
-- priority-queue 2.7.0 (no license text in cached crate)
 - proptest 1.11.0 (source unavailable)
 - prost 0.14.4 (source unavailable)
 - prost-derive 0.14.4 (source unavailable)
@@ -752,15 +747,11 @@ inside that graph must still be resolved before a binary release is cleared
 - raw-cpuid 11.6.0 (source unavailable)
 - rayon 1.12.0 (source unavailable)
 - rayon-core 1.13.0 (source unavailable)
-- retry-error 0.13.1 (no license text in cached crate)
 - rsqlite-vfs 0.1.1 (no license text in cached crate)
-- rustix-linux-procfs 0.1.1 (source unavailable)
-- safelog 0.9.1 (no license text in cached crate)
 - sha256 1.6.0 (source unavailable)
 - shlex 1.3.0 (source unavailable)
 - similar 3.1.1 (source unavailable)
 - sketches-ddsketch 0.3.1 (source unavailable)
-- slotmap-careful 0.8.1 (no license text in cached crate)
 - smol 2.0.2 (source unavailable)
 - snapbox 1.2.2 (source unavailable)
 - snapbox-macros 1.1.0 (source unavailable)
@@ -788,11 +779,9 @@ inside that graph must still be resolved before a binary release is cleared
 - unarray 0.1.4 (source unavailable)
 - valuable 0.1.1 (no license text in cached crate)
 - value-bag 1.13.2 (source unavailable)
-- void 1.0.2 (no license text in cached crate)
 - wait-timeout 0.2.1 (source unavailable)
 - wasm-bindgen-futures 0.4.76 (source unavailable)
 - web-sys 0.3.103 (source unavailable)
-- web-time-compat 0.2.1 (no license text in cached crate)
 - winapi-i686-pc-windows-gnu 0.4.0 (no license text in cached crate)
 - winapi-x86_64-pc-windows-gnu 0.4.0 (no license text in cached crate)
 - windows-sys 0.45.0 (source unavailable)
@@ -811,4 +800,5 @@ revision before distributing a binary containing those components. This inventor
 does not certify existing binaries or replace target-specific distribution review.
 
 Additional verified upstream MIT text: [arti, exact source revision](https://gitlab.torproject.org/tpo/core/arti/-/raw/a71097fdf7b141b56d1eb3709628ee38d232c9d1/LICENSE-MIT).
-Matched using registry `.cargo_vcs_info.json`; other missing records remain open.
+Matched using registry `.cargo_vcs_info.json`; the remaining records listed above
+remain open for any future build that incorporates them.
