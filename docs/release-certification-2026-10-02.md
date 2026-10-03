@@ -9,7 +9,7 @@ The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
 reviewed in separate commits. The installed native bundle and helpers correspond
-to `bce0d86c22dd67dc6da1f80f90e64bd471e28b2e`, including the startup guard at
+to `ae343adf5c4038c6cad2f890ab8665839afe40b9`, including the startup guard at
 `70540cb02e7f1268efc141b9f6e72dead32f0142` and runtime notices at
 `290ce8836449345ea6df3e17d6875f2fe218681a`. Remote Rust 1.91.0, 1.99.0 and
 stable checks pass for that exact head. Its offline diagnostic Details page
@@ -118,7 +118,7 @@ Normal-user installation under `umask 077`, runtime/AppData ownership checks and
 23.95 seconds of software-launch foreground observation passed. The original
 saved note remains private and unchanged. These are prepared candidate tests;
 the corrected public installation route and final-candidate reboot remain pending.
-The current Notepad save-error bundle has digest
+The earlier Notepad save-error bundle has digest
 `69a363acef44157eabef4f7266f2b856d18707fe9fece5fdc8d3243d80cd4139`.
 Its normal-user installation and helper/runtime/AppData integrity checks pass.
 Places settings, both cache files and its private Unicode marker retained their
@@ -131,6 +131,17 @@ is a measured startup observation, not a claim of fast boot. Root status, privat
 ownership, 12-hour time and the 1800-second display timeout survived. An earlier
 confirmation expired during harness inspection and did not reboot; its
 observation is excluded from reboot certification.
+
+The latest radio-readback bundle, built from exact code `ae343ad`, has digest
+`d5dfe623f631b8a48b28c9304b3f5261006f7d872e415018adb6ba68c71325a4`.
+All seven artifact sidecars, normal-user installation under `umask 077`, helper
+hashes, runtime ownership, root-status readability and persistent data pass.
+The installer first correctly refused replacement while Shell was open, leaving
+its generation unchanged; normal UI Exit completed service cleanup before retry.
+An SSH launch missing XAUTHORITY was a harness-context failure; launch with the
+existing desktop's verified display/authentication environment succeeded. Wi-Fi
+off/on reports Saved with matching authoritative readback. This is a prepared
+software launch on the same boot, not an additional reboot or public-route pass.
 
 Twelve actual reboots have completed so far: the initial published-beta boot,
 recovery from the development test harness's RAM-backed `/tmp` exhaustion, two
@@ -220,17 +231,24 @@ no physical cold power cycle has been performed.
   `b1460ed1d7b373719e0edfc1d4fb5fbc9e29e504`, with the separate catalog/history
   commit `2c66c4dfd7741429ef0aebffaf804b2e992a5e59`, followed by the exact Places
   mirror/catalog publication at `8c0a247d304524552d5cc66d906089214cdefa28`, in
-  [Apps draft PR #18](https://github.com/csd113/Vitrallis-Apps/pull/18). Catalog
+  [earlier Apps PR #18](https://github.com/csd113/Vitrallis-Apps/pull/18). Catalog
   pins match the published payload bytes; every other catalog entry and all
   installable flags are preserved. The earlier submission's remote CI passed;
   the published draft tree passed pinned-source validation, changelog policy and
   74 tooling tests locally. Its remote runtime checks then failed on a relative
-  Places asset root; that failure is retained. The corrected five-file mirror
-  and catalog pin are prepared locally and pass source/package validation and
-  the changelog policy against public main. They are not yet published.
-  Public main is unchanged. Coordination preserves the other Apps writer's work;
-  that writer also recorded the owner's Codex code/artwork confirmation.
-- PocketCHIP Places 0.11.2 is committed locally as
+  Places asset root; that failure is retained. A separate candidate branch starts
+  from `2c66c4d`, before the earlier Places preparation, preserving the original
+  branch, draft and all seven working files without rewriting history. Its
+  corrected package/catalog commit is `33b8447a4190fd3ce6b2cb899646b57a2c8a9df0`,
+  reviewed in [Apps draft PR #19](https://github.com/csd113/Vitrallis-Apps/pull/19).
+  The superseded PR #18 was closed after the replacement passed; its branch and
+  prior failed checks are retained.
+  Pinned-source validation, 74 tooling tests and changelog policy against both
+  the branch base and current main pass. All six exact-head remote Python
+  3.11/3.13/runtime and policy jobs pass. Public main is unchanged. Coordination
+  preserves the other Apps writer's work; that writer also recorded the owner's
+  Codex code/artwork confirmation.
+- The earlier PocketCHIP Places 0.11.2 correction was committed as
   `768abe2015c52940f3c082b94c931c0bf030d718` on
   `codex/pocketchip-appdata-certification` in the isolated pinned-source checkout.
   Modern Places work is untouched. The source is published for review in
@@ -241,6 +259,20 @@ no physical cold power cycle has been performed.
   without permitting in-package state. The failing case, expanded boundary test,
   full macOS/Linux suites and mirrored CI-context retest pass. Its ARMv7 executable
   SHA-256 is `97f6607e95a63bc26aee5a2b3feb122010038d2ddd20893ecff6f776b168866d`.
+  A later focused startup-wording correction distinguishes the asset working
+  directory from persistent settings/cache. Its source is
+  `368dd1f0c45ca81a0e7f29041eb4bbfe33846b70`, with rebuilt ARMv7 binary
+  `39c7431b4775c84d2c8f5ccab03fcedbace11c54c0bf9532a01029428fd986a6`.
+  All 212 mirrored package files match that source, and full macOS/Linux gates
+  and ARMv7 rebuilding pass. The new development fixture preserves the original
+  public-cache backup and changes only this package pin/inventory. The older
+  installed payload remains intact under the changed-inventory fixture; Open
+  and receipt-scoped Remove remain available. Keyboard-confirmed removal retains
+  AppData, and reinstall verifies all 201 new payload files, sizes, hashes and
+  modes with no extras. Debug and Firefly retain their pinned payloads. All
+  persistent data hashes remain unchanged. The latest build restores Nearest
+  and VSync, resumes the same PID/start time after Home, then exits normally
+  with no app process and unchanged saved-data hashes.
   Device checks remain separate from the modern renderer work.
 - Debug 0.3.2 installed from the public catalog, launched as `chip` with AppData
   as its working directory, returned to Home and resumed the same PID, then
@@ -328,7 +360,9 @@ no physical cold power cycle has been performed.
   inference. The source correction lets authoritative readback establish success
   after a command error and retains the complete command error in the private
   log. Denied, unconfirmed and disappeared adapters still fail. All four radio
-  tests and complete macOS/Linux gates pass; exact ARMv7/device retest is pending.
+  tests, complete macOS/Linux gates and exact-head remote CI pass. The matching
+  ARMv7 bundle is installed; keyboard off/on shows Saved and NetworkManager
+  confirms disabled, then enabled/connected on the actual 480×272 screen.
 - A controlled physical-device Notepad save on an isolated 512 KiB tmpfs with
   only 16 KiB free failed with ENOSPC. The original 64 KiB document, ownership
   and private mode survived, and the staging file was cleaned. Removing the
@@ -419,7 +453,8 @@ the approved 1.0.0 version and reviewed references: formatting, locked
 all-target/all-feature check, strict Clippy, workspace tests, Python tests,
 release binaries, SDL/native smokes and doc links. The latest runs include the
 editor/importer, private-root-umask, real-Lua focus and offline diagnostic
-regressions: 364 Rust tests on macOS, 365 on Linux, and 173 Python tests
+regressions and two radio-result regressions: 366 Rust tests on macOS,
+367 on Linux, and 173 Python tests
 (nine existing skips on macOS, eight on Linux), plus the native
 renderer suite (two tests, one existing skip).
 The ARMv7 release build and complete five-executable packaging/version checks
