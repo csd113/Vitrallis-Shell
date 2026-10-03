@@ -225,6 +225,18 @@ def atomic(path, data, mode=0o644):
         if os.path.exists(name): os.unlink(name)
 
 
+def public_directory(path):
+    """Our status/reader directories must be traversable under any install umask."""
+    safe(path)
+    path.mkdir(mode=0o755, exist_ok=True)
+    safe(path)
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fchmod(fd, 0o755)
+    finally:
+        os.close(fd)
+
+
 def dtb_path(version, boot=False):
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}', version):
         raise ValueError('Invalid kernel version')
@@ -394,8 +406,7 @@ def configure_trace(gid):
         # Expose only the dedicated pipe through a read-only bind mount. Giving
         # traversal to the tracefs root also exposes its world-readable global
         # files, so the normal session never gets access to that directory.
-        safe(READER.parent)
-        READER.parent.mkdir(mode=0o755, exist_ok=True)
+        public_directory(READER.parent)
         if not reader_mounted():
             safe(READER, regular=True)
             if not READER.exists(): atomic(READER, b'', 0o600)
@@ -513,8 +524,7 @@ def main():
         preflight(args.check_user)
         return
     if os.geteuid() != 0: raise ValueError('Platform setup needs root; run through the installer')
-    safe(STATE)
-    STATE.mkdir(mode=0o755, exist_ok=True)
+    public_directory(STATE)
     lock = STATE / 'lock'
     safe(lock, regular=True)
     with os.fdopen(os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600), 'a+') as stream:

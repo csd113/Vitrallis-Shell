@@ -24,6 +24,11 @@ uncertain reboot persistence while keeping the committed timer and saved value
 consistent. Artwork provenance records the owner's ChatGPT generation and MIT
 redistribution confirmation, with a per-file digest inventory.
 
+The public installer's private umask no longer makes root-owned GPU status
+unreadable by the desktop user. Dedicated status/telemetry directories retain
+their required traversal permissions, private account files stay private, and
+new multimedia-helper directories remain usable by the desktop account.
+
 ## 1.0.0-beta-2
 
 This beta polishes the existing PocketCHIP-sized interface and keeps the shared
