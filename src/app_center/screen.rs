@@ -582,7 +582,7 @@ impl Center {
         Some((RowState::Unavailable, "UNAVAILABLE".into()))
     }
     /// First line of the last failure for this entry, for the primary UI. The
-    /// full backend error stays in the log and in `detail_fields`.
+    /// full backend error stays in the private session log.
     pub fn failure_summary(&self, index: usize) -> Option<String> {
         let row = self.rows.get(index)?;
         let error = self.errors.get(&row.package.key())?;

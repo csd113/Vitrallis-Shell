@@ -36,7 +36,9 @@ App Center reports an incomplete refresh when a repository or catalog entry
 fails, while keeping cached packages available for offline management. A
 successful retry removes the error entries and reports completion. Diagnostic
 Details show the failure reason and recovery step instead of placeholder app
-versions and download sizes.
+versions and download sizes. Failed downloads show their cause before the file
+path, and transfer timeouts suggest checking the connection and retrying. Full
+operation errors are recorded in the private session log.
 
 ## 1.0.0-beta-2
 

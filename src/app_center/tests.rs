@@ -495,6 +495,56 @@ fn branch_resolution_complete_inventory_and_partial_failures() -> Result<(), Str
     Ok(())
 }
 #[test]
+fn failed_download_prioritizes_the_cause_and_leaves_installation_unchanged() -> Result<(), String> {
+    struct FailedAsset<'a> {
+        inner: &'a FixtureFetch,
+        url: String,
+        error: &'a str,
+    }
+    impl network::Fetch for FailedAsset<'_> {
+        fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
+            if url == self.url {
+                Err(self.error.into())
+            } else {
+                self.inner.fetch(url, limit)
+            }
+        }
+    }
+    let (_scratch, loc) = locations()?;
+    let (mut package, mut files) = generic()?;
+    let path = "assets/environment/pool/textures/lights/pool_light_wall_01.png";
+    files.insert(path.into(), fixture_icon()?);
+    package = inventory(package, &files);
+    let inner = transport(&package, &files)?;
+    let sources = test_sources(&package);
+    let row = install::check(&loc, package.clone())?;
+    for cause in [
+        "Download timed out; check connection and retry",
+        "Cancelled",
+    ] {
+        let fetch = FailedAsset {
+            inner: &inner,
+            url: payload_url(&package, path),
+            error: cause,
+        };
+        let error = selected_install(&loc, &sources, &row, &fetch)
+            .err()
+            .ok_or("expected download failure")?;
+        assert_eq!(error.lines().next(), Some(cause));
+        assert!(error.contains(path));
+        assert!(!loc.root(&package).exists());
+        assert_eq!(install::label(&loc, &package)?, "not installed");
+        drop(storage::Lock::take(&loc.state)?);
+    }
+    selected_install(&loc, &sources, &row, &inner)?;
+    assert_eq!(install::label(&loc, &package)?, "0.1.0");
+    assert_eq!(
+        std::fs::read(loc.root(&package).join(path)).map_err(|e| e.to_string())?,
+        files[path]
+    );
+    Ok(())
+}
+#[test]
 fn install_update_repair_origin_and_local_edit_protections() -> Result<(), String> {
     let (_scratch, loc) = locations()?;
     let (p, mut files) = generic()?;

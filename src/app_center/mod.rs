@@ -216,6 +216,9 @@ fn finish_storage_operation(
     result: Result<String, String>,
     changed: bool,
 ) {
+    if let Err(error) = &result {
+        eprintln!("level=warn event=app_center_operation error={error:?}");
+    }
     if changed {
         STORAGE_REVISION.fetch_add(1, Ordering::Relaxed);
     }
