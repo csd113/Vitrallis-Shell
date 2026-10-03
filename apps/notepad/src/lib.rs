@@ -10,6 +10,16 @@ use vitrallis_native::{
 };
 const BUTTONS: [&str; 6] = ["New", "Open", "Save", "Save as", "Find", "Close"];
 
+fn save_failure(error: &std::io::Error) -> String {
+    eprintln!("level=warn event=notepad_save error={error:?}");
+    let action = match error.kind() {
+        std::io::ErrorKind::StorageFull => "\nFree disk space, then retry.",
+        std::io::ErrorKind::PermissionDenied => "\nChoose a writable folder with Save as.",
+        _ => "",
+    };
+    format!("Could not save: {error}{action}")
+}
+
 /// Run Notepad's event-driven UI.
 /// # Errors
 /// Reports startup and unrecoverable SDL errors; file errors use recoverable dialogs.
@@ -487,7 +497,7 @@ impl Editor {
         let default_directory = if self.document.path.is_none() {
             Some(
                 vitrallis_native::paths::create_documents("io.vitrallis.notepad")
-                    .map_err(|e| e.to_string())?,
+                    .map_err(|e| save_failure(&e))?,
             )
         } else {
             None
@@ -518,7 +528,7 @@ impl Editor {
         }
         self.document
             .save(&path, replacing)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| save_failure(&e))?;
         self.notice = Some("Saved");
         Ok(true)
     }

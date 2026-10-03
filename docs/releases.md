@@ -39,6 +39,8 @@ Details show the failure reason and recovery step instead of placeholder app
 versions and download sizes. Failed downloads show their cause before the file
 path, and transfer timeouts suggest checking the connection and retrying. Full
 operation errors are recorded in the private session log.
+Notepad's save errors identify the failed action and suggest freeing disk space
+or choosing a writable folder when those conditions cause the failure.
 
 ## 1.0.0-beta-2
 
