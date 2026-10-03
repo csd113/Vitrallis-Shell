@@ -9,12 +9,14 @@ The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
 reviewed in separate commits. The installed native bundle and helpers correspond
-to `9f6f0d0eb7cea0dc49f5015105c66978daaac031`, including the startup guard at
+to `bce0d86c22dd67dc6da1f80f90e64bd471e28b2e`, including the startup guard at
 `70540cb02e7f1268efc141b9f6e72dead32f0142` and runtime notices at
 `290ce8836449345ea6df3e17d6875f2fe218681a`. Remote Rust 1.91.0, 1.99.0 and
 stable checks pass for that exact head. Its offline diagnostic Details page
-and cause-first cancelled-update message passed physical inspection. Complete host validation, ARMv7 packaging and
-normal-user installation also passed. The final candidate is not yet established.
+and cause-first cancelled-update message passed physical inspection. The newer
+save-specific ENOSPC dialog and retry also passed on hardware. Complete host
+validation, ARMv7 packaging and normal-user installation also passed. The final
+candidate is not yet established.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
@@ -110,17 +112,30 @@ It passed normal-user installation, a 23.21-second software-launch focus
 observation and runtime/AppData integrity checks. Debug's marker, both newer
 Notepad saves and the Places source approval retained their exact bytes and
 private ownership through the replacement.
-The current download-error bundle has digest
+The earlier download-error bundle has digest
 `b9c7bf9367ec57bdaaf1fe1396ff29751638be5ebca248b8b3406c4ea65fd0de`.
 Normal-user installation under `umask 077`, runtime/AppData ownership checks and
 23.95 seconds of software-launch foreground observation passed. The original
 saved note remains private and unchanged. These are prepared candidate tests;
 the corrected public installation route and final-candidate reboot remain pending.
+The current Notepad save-error bundle has digest
+`69a363acef44157eabef4f7266f2b856d18707fe9fece5fdc8d3243d80cd4139`.
+Its normal-user installation and helper/runtime/AppData integrity checks pass.
+Places settings, both cache files and its private Unicode marker retained their
+exact hashes through this Shell replacement and the next offline reboot.
+The Settings Restart action, confirmed with the keyboard after its safe Cancel
+default, produced a new boot ID with Wi-Fi disabled. Automatic launcher focus
+then remained uninterrupted for 126.56 seconds without injected input. The
+observer first saw the launcher at 186.03 seconds after observation began; this
+is a measured startup observation, not a claim of fast boot. Root status, private
+ownership, 12-hour time and the 1800-second display timeout survived. An earlier
+confirmation expired during harness inspection and did not reboot; its
+observation is excluded from reboot certification.
 
-Eleven actual reboots have completed so far: the initial published-beta boot,
+Twelve actual reboots have completed so far: the initial published-beta boot,
 recovery from the development test harness's RAM-backed `/tmp` exhaustion, two
 returns to the original desktop during complete cleanup, the corrected root
-provisioning boot and six startup-diagnostic/candidate boots. These are software reboots;
+provisioning boot and seven startup-diagnostic/candidate boots. These are software reboots;
 no physical cold power cycle has been performed.
 
 ## Repairs and reviewed evidence
@@ -190,6 +205,17 @@ no physical cold power cycle has been performed.
   37,908–38,164 KiB RSS and averaged 0.77% CPU; Picom used 3612 KiB and 0.11% CPU.
   The session log grew by 18,853 bytes during active testing. Exact-candidate
   stability and repeated application stress remain pending.
+- A separate continuous 30-minute run of exact Shell code `bce0d86` collected
+  61 samples over 1800.25 seconds after the clean offline reboot. The Shell PID,
+  process start time, generation and boot ID stayed fixed, with no service-owned
+  zombies in the samples. It included Places launch/settings/exit, offline
+  uninstall/cancel, Wi-Fi recovery, background reinstall, Notepad permission
+  failure/Save as recovery and Firefly launch. Shell CPU averaged 2.57%; RSS
+  ranged from 37,032 to 69,208 KiB and ended at 65,420 KiB after catalog/install
+  activity. Awesome stayed within 36,336–36,896 KiB, available RAM remained at
+  least 215,512 KiB and the private log grew 20,807 bytes. This single activity
+  sequence does not establish bounded memory over repeated install cycles or
+  certify a future final revision; repeated-use investigation remains pending.
 - Bitcoin and Carousel's scoped source changes are published for review at
   `b1460ed1d7b373719e0edfc1d4fb5fbc9e29e504`, with the separate catalog/history
   commit `2c66c4dfd7741429ef0aebffaf804b2e992a5e59`, followed by the exact Places
@@ -258,22 +284,79 @@ no physical cold power cycle has been performed.
   device payload files match the new receipt, including binary SHA-256
   `97f6607e95a63bc26aee5a2b3feb122010038d2ddd20893ecff6f776b168866d`.
   The AppData marker is unchanged and there are no unreceipted payload files.
-  Updated-app launch and application-created state checks remain pending.
+  Updated-app launch, keyboard settings change and normal menu Exit passed.
+  Settings and both generated lightmap-cache files are private, user-owned and
+  stored in canonical AppData; no settings/cache remains in the payload. The
+  saved nearest-filter preference, cache and marker survived the next Shell
+  replacement and offline reboot byte for byte. Relaunch restored Nearest and
+  VSync on the actual Graphics screen, and normal menu Exit left no app process.
+  Offline uninstall first defaulted to Cancel, and Enter left the app installed.
+  Keyboard confirmation then removed every receipt-owned payload file, receipt
+  and launcher while retaining private AppData and unrelated apps. Reinstall
+  from the same reviewed source completed in the background while Notepad was
+  usable. All 201 payload files again match pinned sizes, hashes and modes;
+  generated settings/cache and the marker remain byte-identical. Post-reinstall
+  launch restored Nearest and VSync, Home/resume retained the same app process,
+  and normal menu Exit reaped it. All persistent data hashes remained unchanged.
+  A 60-second menu-background
+  render sample used 20.65% process CPU and a stable 58,384 KiB RSS; HUD snapshots
+  showed 9–11 FPS. This does not establish sustained gameplay performance.
 - Firefly Field 0.3.1 installed from the public catalog, launched with canonical
   AppData as its working directory, resumed the same process after Home and
   exited normally through Escape. Its renderer reports hardware GLES2/Mali400,
   480×272 and requested VSync. HUD snapshots showed 4 FPS at startup and 1 FPS
   after resume, with a 43-second process sample at 40.5% average CPU and 45,100 KiB
-  RSS. These are observations, not a sustained benchmark; measurement and
-  investigation remain pending before performance acceptance. Update and
-  uninstall/reinstall coverage also remain pending.
+  RSS. These observations were taken before repairing the screenshot harness
+  leak described below, so they do not establish clean-device performance.
+  Clean-boot managed HUD snapshots reproduced 3–4 FPS. A 60-second active-field
+  sample used 61.41% process CPU with stable 45,104 KiB RSS. A separate instrumented
+  diagnostic attributed about 63% of render CPU to Python sprite packing; SDL
+  presentation itself was inexpensive in that diagnostic. A developer packing
+  correction preserves all positions, UVs, colors and indices across 5,126
+  randomized quads and 250 frames with reused slots. Isolated PocketCHIP packing
+  CPU improves 2.28×. Matched seeded standalone runs improve from 7.67 to 12.15
+  FPS and from 65.74% to 55.24% process CPU over a minute each. These standalone
+  measurements do not replace managed-package acceptance. The reviewed source
+  and three added geometry/cache/bounds regressions pass all 21 app tests.
+  Firefly release-version preparation is awaiting the owner's explicit approval;
+  its public 0.3.1 payload and catalog are unchanged. Final managed lifecycle,
+  update and uninstall/reinstall coverage remain pending.
+- Wireless once reported “Wi-Fi change denied or unavailable” while the same
+  screen and independent NetworkManager readback showed Wi-Fi enabled and
+  connected. A clean UI off/on retry and six bounded direct radio changes pass;
+  the original command failure cause was not logged, so a timeout remains an
+  inference. The source correction lets authoritative readback establish success
+  after a command error and retains the complete command error in the private
+  log. Denied, unconfirmed and disappeared adapters still fail. All four radio
+  tests and complete macOS/Linux gates pass; exact ARMv7/device retest is pending.
 - A controlled physical-device Notepad save on an isolated 512 KiB tmpfs with
   only 16 KiB free failed with ENOSPC. The original 64 KiB document, ownership
   and private mode survived, and the staging file was cleaned. Removing the
   owned filler allowed a successful retry through the same editor. This tests
   real kernel I/O and the native UI, not NAND pressure or NAND durability. The
-  generic error dialog lacks save-specific context; its wording remains to be
-  improved.
+  original generic error dialog lacked save-specific context. The correction at
+  `bce0d86` prefixes the cause with “Could not save”, gives a space-recovery or
+  writable-folder action and retains the complete quoted I/O error in the
+  private session log. The exact ARMv7 build repeated the physical fault: both
+  lines fit at 480×272, the log records `StorageFull`, the original note stays
+  unchanged and no staging file remains. Freeing the owned filler permits a
+  successful retry. Normal exit and complete temporary-volume cleanup passed.
+- A disposable NAND-backed folder with mode 0500 produced a real Notepad
+  permission-denied save after a one-character edit. Its original file stayed
+  unchanged and no staging file remained. The save-specific dialog and writable
+  folder advice fit at 480×272; the private log retains `PermissionDenied`.
+  Ctrl+Shift+S saved the edited document into a writable folder with user
+  ownership and mode 0600. Normal exit and removal of both disposable test
+  files/folder passed. Original AppData notes are unchanged.
+- The certification screenshot harness leaked one GDK display connection per
+  capture, retaining 135 connections in Awesome. This is a harness defect, not
+  a measured production leak. Closing the verified temporary connections and
+  repairing capture cleanup leaves zero connections open after a screenshot.
+  Awesome RSS fell from 161,544 to 94,344 KiB immediately, retaining some
+  allocations; available RAM was only 35,500 KiB before cleanup. Earlier
+  performance and soak observations require qualification and repetition after
+  a clean reboot. This finding does not establish that every UI delay or low FPS
+  was caused by the harness.
 - Debug's actual GPU Pulse produced a rise and return to idle in the private
   Mali utilization trace. This verifies activity reporting; it does not certify
   physical tear-free presentation. Process checks distinguish the original
@@ -307,20 +390,20 @@ no physical cold power cycle has been performed.
 | 480×272 UI | Core Settings/launcher screenshots reviewed; remaining utilities, App Center and failure states pending |
 | Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic routes exercised; repeat/stress coverage pending |
 | Every catalog app lifecycle | Debug public lifecycle and offline uninstall/reinstall passed; Places and Firefly public install/launch/resume/exit passed; prepared Places update cancellation preserves installed bytes/data; complete updates and remaining app runs pending |
-| Real data persistence | Host lifecycle passed; physical update/reboot/reinstall sequence pending |
+| Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
 | Python runtime | Host tests passed; current device dependency/lifecycle checks pending |
 | Process lifecycle stress | Debug exits left no app processes or Vitrallis-service zombies; stock PocketHome zombies distinguished; sustained repetition pending |
-| Repeated startup | Delayed original-desktop focus grab repaired; two reboots passed sustained idle focus; exact final build and cold-power checks pending |
+| Repeated startup | Delayed original-desktop focus grab repaired; three reboots passed sustained idle focus, including the current offline build; exact final build and cold-power checks pending |
 | Hardware features | Display/GPU backend observed; radio/audio/backlight/battery/power acceptance incomplete |
 | Every setting persistence | Clock format and timeout survived development reboot; remaining matrix pending |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
-| Low NAND / ENOSPC | Controlled physical Notepad ENOSPC/recovery passed on isolated 512 KiB tmpfs; actual NAND pressure remains pending |
+| Low NAND / ENOSPC | Controlled physical Notepad ENOSPC/recovery passed on isolated 512 KiB tmpfs; NAND-backed permission fault/Save as recovery passed; actual NAND pressure remains pending |
 | Shell update/rollback | Host recovery tests pass; actual candidate device update/rollback pending |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor and footer wraparound passed on device; remaining manual utility cases pending |
-| Performance | Development measurements recorded; Firefly HUD reports low FPS across startup/resume and needs sustained measurement/investigation; exact-candidate measurements pending |
-| Extended soak | 30-minute development session completed with intentional restart; exact-candidate soak pending |
+| Performance | Clean-boot measurements recorded; Firefly packing hotspot repaired and measured in a matched developer comparison; final managed performance and repeated-install memory checks pending |
+| Extended soak | Exact bce0d86 continuous 1800.25-second active session passed identity/boot/process checks; repeated-install memory behavior and final-revision soak remain pending |
 | Logs | Initial renderer/startup logs inspected; final audit pending |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
 | Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
@@ -349,8 +432,10 @@ two unavoidable upstream duplicate-crate pairs. Formatting and ARMv7 rebuild
 pass. Its 212-file staged package passes the Apps manifest validator, and its
 notices record all 39 locked ARMv7 dependencies and the matched Rust runtime.
 The development-fixture 0.11.2 update verified all 201 installed device payload
-files and retained the private marker; application-created state checks remain
-pending.
+files and retained the private marker; private application-created settings/cache
+and the keyboard change also pass. Reboot/relaunch and offline uninstall/online
+reinstall persistence pass, followed by successful post-reinstall launch,
+Home/resume and normal Exit with unchanged persistent data hashes.
 
 The startup hook's two Lua regression scenarios also passed inside the physical
 Awesome Lua 5.3 runtime, in an isolated mock environment. The device Python session
@@ -359,7 +444,7 @@ therefore exercised separately inside Awesome rather than silently omitted.
 An Arti QEMU probe initially crashed when the harness mixed the cross-toolchain
 loader with the multiarch runtime libraries. With the matching system loader/libc
 prefix, all five ARMv7 version probes and exact `c17280d`, `a4a3e8f` and
-`fbf2ec7` and `9f6f0d0` packaging passed. The
+`fbf2ec7`, `9f6f0d0` and `bce0d86` packaging passed. The
 same Arti bytes also passed their native device version probe. The failed mixed
 sysroot attempts remain in the evidence.
 
