@@ -151,7 +151,8 @@ impl Editor {
         ui.text(&head, 0, 0, head_width, ACCENT)?;
         let path_columns = Self::columns(ui).saturating_sub(head.chars().count() + 1);
         let shown = tail(&path, path_columns);
-        ui.text(&shown, head_width, 0, ui.width - head_width, MUTED)?;
+        let path_x = head_width + ui.cell();
+        ui.text(&shown, path_x, 0, ui.width - path_x, MUTED)?;
         ui.fill(
             Rect::new(0, ui.line(), ui.width.unsigned_abs(), 1),
             vitrallis_native::theme::BORDER,
