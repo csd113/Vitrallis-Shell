@@ -1655,6 +1655,50 @@ fn run_service(
         .collect()
 }
 
+#[test]
+fn failed_refresh_reports_errors_preserves_cache_and_recovers() -> Result<(), String> {
+    for cached in [false, true] {
+        let (_scratch, loc) = locations()?;
+        let (package, files) = default_package()?;
+        let online = transport(&package, &files)?;
+        let mut offline = transport(&package, &files)?;
+        offline.responses.clear();
+        let (updates, receive) = mpsc::channel();
+        let mut rows = Vec::new();
+        if cached {
+            refresh_catalog(&loc, &online, &mut rows, &updates)?;
+        }
+        let snapshot = loc.state.join("catalogs").join(format!(
+            "{}.json",
+            storage::sha(package.origin.as_str().as_bytes())
+        ));
+        let before = storage::read(&snapshot, metadata::CATALOG_LIMIT)?;
+        let (_, message) = refresh_catalog(&loc, &offline, &mut rows, &updates)?;
+        assert_eq!(
+            message,
+            "Refresh incomplete. Cached apps kept; see error entries."
+        );
+        assert_eq!(storage::read(&snapshot, metadata::CATALOG_LIMIT)?, before);
+        assert_eq!(rows.len(), usize::from(cached) + 1);
+        assert!(rows.iter().any(|row| {
+            row.package.entry.is_empty() && row.status.contains("Repository unavailable")
+        }));
+        if cached {
+            assert!(rows.iter().any(|row| row.package.key() == package.key()));
+        }
+        let (_, message) = refresh_catalog(&loc, &online, &mut rows, &updates)?;
+        assert_eq!(message, "Refresh complete: 1 entries. Select an app.");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].package.key(), package.key());
+        assert!(rows[0].ready);
+        drop(updates);
+        assert!(receive.into_iter().any(|update| {
+            matches!(update, Update::Rows(rows) if rows.iter().any(|row| row.package.entry.is_empty()))
+        }));
+    }
+    Ok(())
+}
+
 /// Records whether the storage lock could be taken from inside every request.
 struct LockProbeFetch<'a> {
     state: &'a std::path::Path,

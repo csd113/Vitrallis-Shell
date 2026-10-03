@@ -32,6 +32,10 @@ The supervised session also selects the launcher when its real window becomes
 ready, including a window whose title arrives after creation, and removes its
 temporary focus hooks on exit. Later title changes do not interrupt apps.
 
+App Center reports an incomplete refresh when a repository or catalog entry
+fails, while keeping cached packages available for offline management. A
+successful retry removes the error entries and reports completion.
+
 ## 1.0.0-beta-2
 
 This beta polishes the existing PocketCHIP-sized interface and keeps the shared

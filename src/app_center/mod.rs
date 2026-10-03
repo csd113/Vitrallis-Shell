@@ -305,7 +305,9 @@ fn refresh_catalog(
         return Err("Source settings changed; Refresh again".into());
     }
     *rows = cache::store_documents(loc, &sources, fetched, rows);
-    let success = if rows.is_empty() {
+    let success = if rows.iter().any(|row| row.package.entry.is_empty()) {
+        "Refresh incomplete. Cached apps kept; see error entries.".into()
+    } else if rows.is_empty() {
         "Refresh finished: repositories contain no apps".into()
     } else {
         format!("Refresh complete: {} entries. Select an app.", rows.len())
