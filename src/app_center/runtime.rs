@@ -274,30 +274,27 @@ fn drain(
     Ok(receive)
 }
 
-pub fn launcher(runtime: &Runtime, entry: &Path, commit: &str) -> Result<Vec<u8>, String> {
+pub fn launcher(runtime: &Runtime, entry: &Path) -> Result<Vec<u8>, String> {
     fn quote(s: &str) -> String {
         format!("'{}'", s.replace('\'', "'\\''"))
     }
     use std::fmt::Write;
-    super::metadata::hex(commit, 40)?;
-    let cache = entry
-        .parent()
-        .ok_or("Missing entry parent")?
-        .join(".vitrallis-bytecode")
-        .join(commit);
     let mut s = String::from("#!/bin/sh\n");
-    s.push_str("unset PYTHONHOME PYTHONPATH PYTHONSTARTUP\nexport PYTHONNOUSERSITE=1\nexport PYTHONDONTWRITEBYTECODE=1\n");
-    let _ = writeln!(
-        s,
-        "export PYTHONPYCACHEPREFIX={}",
-        quote(cache.to_str().ok_or("Cache path must be UTF-8")?)
-    );
+    // Reuse installed library bytecode without creating caches in app payloads.
+    // Managed module caches are invalidated before replacement by install.rs;
+    // always checking hashes also rejects stale unchecked-hash library caches.
+    s.push_str("unset PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONPYCACHEPREFIX\nexport PYTHONNOUSERSITE=1\nexport PYTHONDONTWRITEBYTECODE=1\n");
     let program = runtime
         .program
         .to_str()
         .ok_or("Runtime path must be UTF-8")?;
     let entry = entry.to_str().ok_or("Entry path must be UTF-8")?;
-    let _ = writeln!(s, "exec {} {}", quote(program), quote(entry));
+    let _ = writeln!(
+        s,
+        "exec {} --check-hash-based-pycs always {}",
+        quote(program),
+        quote(entry)
+    );
     Ok(s.into_bytes())
 }
 
@@ -408,6 +405,161 @@ fn compile_sources(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<()
 mod completion_tests {
     use super::*;
     use std::time::{Duration, Instant};
+
+    struct CachedLibrary {
+        _scratch: crate::test_support::Scratch,
+        entry: PathBuf,
+        module: PathBuf,
+        bytecode: PathBuf,
+        default_prefix: Option<String>,
+        external_cache: Option<PathBuf>,
+    }
+
+    impl Drop for CachedLibrary {
+        fn drop(&mut self) {
+            // Apple Python's default cache lives outside the source tree. Remove
+            // only the subtree containing this unique scratch-directory name.
+            if let Some(cache) = &self.external_cache {
+                let _ = std::fs::remove_dir_all(cache);
+            }
+        }
+    }
+
+    fn cached_library(checked: bool, prefixed: bool) -> Result<CachedLibrary, String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let library = root.join("library");
+        let app = root.join("app");
+        std::fs::create_dir(&library).map_err(|e| e.to_string())?;
+        std::fs::create_dir(&app).map_err(|e| e.to_string())?;
+        let module = library.join("trusted_lib.py");
+        std::fs::write(&module, "VALUE = 'old'\n").map_err(|e| e.to_string())?;
+        let compiled = std::process::Command::new("/usr/bin/python3")
+            .args([
+                "-s",
+                "-c",
+                "import json,py_compile,sys\ndefault=sys.pycache_prefix\nif sys.argv[2]: sys.pycache_prefix=sys.argv[2]\nbytecode=py_compile.compile(sys.argv[1],doraise=True,invalidation_mode=py_compile.PycInvalidationMode[sys.argv[3]])\nprint(json.dumps({'bytecode':bytecode,'default_prefix':default}))",
+            ])
+            .arg(&module)
+            .arg(if prefixed { root.join("poison") } else { PathBuf::new() })
+            .arg(if checked { "CHECKED_HASH" } else { "UNCHECKED_HASH" })
+            .env_remove("PYTHONHOME")
+            .env_remove("PYTHONPATH")
+            .env_remove("PYTHONSTARTUP")
+            .env_remove("PYTHONPYCACHEPREFIX")
+            .env("PYTHONNOUSERSITE", "1")
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !compiled.status.success() {
+            return Err(format!("Compile library fixture: {compiled:?}"));
+        }
+        let compiled: serde_json::Value =
+            serde_json::from_slice(&compiled.stdout).map_err(|e| e.to_string())?;
+        let bytecode = PathBuf::from(
+            compiled["bytecode"]
+                .as_str()
+                .ok_or("Missing fixture bytecode path")?,
+        );
+        let default_prefix = match &compiled["default_prefix"] {
+            serde_json::Value::Null => None,
+            serde_json::Value::String(prefix) => Some(prefix.clone()),
+            _ => return Err("Invalid interpreter cache prefix".into()),
+        };
+        let external_cache = if bytecode.starts_with(&root) {
+            None
+        } else {
+            Some(
+                bytecode
+                    .ancestors()
+                    .find(|path| path.file_name() == root.file_name())
+                    .ok_or("Library cache lacks its scratch namespace")?
+                    .to_path_buf(),
+            )
+        };
+        let entry = app.join("main.py");
+        std::fs::write(
+            &entry,
+            "import sys\nsys.dont_write_bytecode=True\nfrom pathlib import Path\nlibrary=Path(__file__).parent.parent/'library'\nsource=library/'trusted_lib.py'\ncompiles=[]\ndef audit(event,args):\n if event=='compile' and args[1]==str(source): compiles.append(True)\nsys.addaudithook(audit)\nsys.path.insert(0,str(library))\nimport trusted_lib,json\nprint(json.dumps({'value':trusted_lib.VALUE,'compiles':len(compiles),'prefix':sys.pycache_prefix,'writes_disabled':sys.dont_write_bytecode}))\n",
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(CachedLibrary {
+            _scratch: scratch,
+            entry,
+            module,
+            bytecode,
+            default_prefix,
+            external_cache,
+        })
+    }
+
+    fn launch_cached_library(fixture: &CachedLibrary) -> Result<serde_json::Value, String> {
+        let script = fixture.entry.with_file_name("launch");
+        std::fs::write(
+            &script,
+            launcher(
+                &Runtime {
+                    program: "/usr/bin/python3".into(),
+                },
+                &fixture.entry,
+            )?,
+        )
+        .map_err(|e| e.to_string())?;
+        let output = std::process::Command::new("/bin/sh")
+            .arg(script)
+            .env(
+                "PYTHONPYCACHEPREFIX",
+                fixture
+                    .module
+                    .parent()
+                    .ok_or("Library parent")?
+                    .with_file_name("poison"),
+            )
+            .current_dir("/")
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(format!("Launch library fixture: {output:?}"));
+        }
+        serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())
+    }
+
+    #[test]
+    fn launcher_reuses_valid_library_bytecode_without_writes() -> Result<(), String> {
+        let fixture = cached_library(true, false)?;
+        let before = std::fs::read(&fixture.bytecode).map_err(|e| e.to_string())?;
+        for _ in 0..2 {
+            let result = launch_cached_library(&fixture)?;
+            assert_eq!(result["value"], "old");
+            assert_eq!(result["compiles"], 0);
+            assert_eq!(result["prefix"], serde_json::json!(fixture.default_prefix));
+            assert_eq!(result["writes_disabled"], true);
+            assert_eq!(
+                std::fs::read(&fixture.bytecode).map_err(|e| e.to_string())?,
+                before
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn launcher_rejects_stale_unchecked_hashes_and_inherited_cache_prefix() -> Result<(), String> {
+        for prefixed in [false, true] {
+            let fixture = cached_library(false, prefixed)?;
+            let before = std::fs::read(&fixture.bytecode).map_err(|e| e.to_string())?;
+            std::fs::write(&fixture.module, "VALUE = 'new'\n").map_err(|e| e.to_string())?;
+            let result = launch_cached_library(&fixture)?;
+            assert_eq!(result["value"], "new");
+            assert_eq!(result["compiles"], 1);
+            assert_eq!(result["prefix"], serde_json::json!(fixture.default_prefix));
+            assert_eq!(result["writes_disabled"], true);
+            assert_eq!(
+                std::fs::read(&fixture.bytecode).map_err(|e| e.to_string())?,
+                before
+            );
+        }
+        Ok(())
+    }
+
     #[test]
     fn launcher_environment_quotes_paths_and_does_not_depend_on_callers_directory()
     -> Result<(), String> {

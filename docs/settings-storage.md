@@ -27,7 +27,7 @@ For each installed app, the scanner measures:
 
 - Installed files listed in its local receipt.
 - Private runtimes inside `runtime` or `.venv`.
-- Python caches in `.vitrallis-bytecode` and `__pycache__`, plus the app's XDG cache.
+- Python caches in `__pycache__`, plus the app's XDG cache.
 - User documents under `$HOME/Documents/Vitrallis/AppData/<stable-app-id>/Documents/`.
 - Internal settings/state under the app's AppData root, other installation
   files and transaction backups. Managed launchers and verified desktop entries

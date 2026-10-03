@@ -155,10 +155,7 @@ pub fn native(loc: &Locations, scanner: &mut Scanner<'_>) -> Result<Vec<AppUsage
 }
 
 fn category(path: &std::path::Path, owned: &BTreeSet<String>) -> usize {
-    if path
-        .components()
-        .any(|c| c.as_os_str() == ".vitrallis-bytecode" || c.as_os_str() == "__pycache__")
-    {
+    if path.components().any(|c| c.as_os_str() == "__pycache__") {
         2
     } else if path.starts_with("runtime") || path.starts_with(".venv") {
         1
@@ -251,7 +248,7 @@ mod tests {
                 b"application".as_slice(),
             ),
             ("runtime/venv/lib/package", b"private runtime".as_slice()),
-            (".vitrallis-bytecode/cache", b"bytecode".as_slice()),
+            ("__pycache__/cache.pyc", b"bytecode".as_slice()),
             ("config/preferences", b"user preferences".as_slice()),
             (
                 "icon.png",

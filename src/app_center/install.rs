@@ -115,7 +115,6 @@ pub(super) fn validate_owned_path(name: &str) -> Result<(), String> {
                 | ".installation-pending"
                 | ".venv"
                 | "runtime"
-                | ".vitrallis-bytecode"
                 | "__pycache__"
         )
     }) {
@@ -403,7 +402,7 @@ fn support(
         bytes: runtime::environment(
             &crate::tor::wrap_launcher(
                 match runtime {
-                    Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
+                    Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry))?,
                     None => super::native::launcher(&root.join(&p.entry))?,
                 },
                 tor,
@@ -416,10 +415,6 @@ fn support(
     };
     if let Some(old) = &before {
         let old_entry = super::uninstall::installed_entry(&root, p)?;
-        let saved = receipt(&root)?;
-        let old_commit = saved
-            .as_ref()
-            .map_or(Ok(p.commit.as_str()), |r| metadata::text(&r["commit"], 40))?;
         let mut old_files = Files::new();
         if let Some(requirements) = storage::read(&root.join("requirements.txt"), 65536)? {
             old_files.insert("requirements.txt".into(), requirements.bytes);
@@ -439,9 +434,7 @@ fn support(
         let managed_launcher = if old_runtime == metadata::RuntimeKind::Python {
             runtime::candidates(&root, &old_files)
                 .into_iter()
-                .map(|program| {
-                    runtime::launcher(&Runtime { program }, &old_entry, old_commit).and_then(wrap)
-                })
+                .map(|program| runtime::launcher(&Runtime { program }, &old_entry).and_then(wrap))
                 .collect::<Result<Vec<_>, _>>()?
                 .contains(&old.bytes)
         } else {

@@ -47,6 +47,13 @@ Installed generations and release bundles require all five executables, includin
 Arti. Equal versions remain current. Replace obsolete pre-release layouts with
 the current installer.
 
+Python app launchers reuse installed library bytecode while disabling cache
+writes and always validating hash-based caches. Managed module caches are removed
+before source replacement, and inherited cache prefixes are cleared. The former
+per-release cache namespace forced repeated library compilation and has been
+removed. Recreate obsolete pre-release app installations with the current Shell;
+persistent AppData remains separate, and custom launchers are protected.
+
 ## 1.0.0-beta-2
 
 This beta polishes the existing PocketCHIP-sized interface and keeps the shared

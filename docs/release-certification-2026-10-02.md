@@ -684,6 +684,47 @@ no physical cold power cycle has been performed.
   No version, dependency or notice bytes changed. These are host and emulated
   checks; device verification of this source remains pending while the Apps
   worker owns PocketCHIP.
+- The Apps worker's native Tk/Pillow import probe takes 3.665 seconds with the
+  generated per-commit bytecode prefix versus 0.793 seconds with the interpreter's
+  default caches; CPU time is 3.023 versus 0.557 seconds. The Shell worker inspected the
+  successful tool output without accessing the held device. Sketch disables
+  bytecode writes before imports, so the private namespace cannot become warm.
+  A five-run host import-only reproduction of unchanged Sketch source has median
+  times of 0.187 seconds with the namespace and 0.059 seconds with default caches
+  plus unconditional hash checks; source compilations fall from 91 to 28. No
+  cache files are created. These host figures are not device launch estimates,
+  and the native control did not exercise the final hash-checking option.
+  Current generated launchers clear inherited prefixes, reuse installed library
+  caches, keep bytecode writes disabled and always verify hash-based caches,
+  including producer-marked unchecked caches. Managed module cache invalidation
+  and unsafe-cache refusal remain in the update path. The obsolete namespace,
+  its commit-only launcher argument and its accounting/reserved-path references
+  are removed; current consumers use the single new policy. No old-launcher
+  recognition or compatibility shim is added. Obsolete pre-release app installs
+  must be recreated; separate AppData and custom-launcher protections remain.
+  A failing regression reproduces repeated compilation of valid cached library
+  source. New regressions execute real generated launchers and verify cache reuse,
+  stale unchecked-hash rejection, inherited-prefix exclusion and unchanged cache
+  bytes. All six targeted runtime tests and 13 lifecycle tests pass. A macOS
+  fixture initially assumed isolated-mode and normal-mode cache defaults were
+  identical; the corrected fixture observes the selected interpreter's normal
+  default and cleans only its own unique cache subtree. The initial failures and
+  an unsupported Serde-derive test attempt are retained. No dependency or version
+  changes are made. Full `sh scripts/validate.sh` passes on macOS and native
+  Linux AArch64: 378/380 Rust tests, with nine/twelve existing opt-in exclusions;
+  172 Python tests, with nine/ten environment skips; and the native renderer
+  suite, with its existing accelerated-backend skip. Formatting, locked checks,
+  strict Clippy, release/smoke/script/doc gates pass without changing renderer
+  baselines. Both five-executable release bundles build and package successfully;
+  their combined 19 assets include eight verified checksum sidecars and exact
+  current helper/license bytes. The ARM bundle is 26,838,372 bytes, SHA-256
+  `ea6fc653952fc591ff9602ee2b740a873e1c8e6d6aec94a799b862a2081013bd`;
+  x86 is 31,044,368 bytes, SHA-256
+  `635497dbb46b188fab812b7f1bbb8787b9c314e3f3b755ceed142de162260c86`.
+  The actual x86 release-bundle update probe passes with no ignored test, and
+  all three utility smokes pass for both targets; ARM runs under Cortex-A8
+  emulation. Native candidate comparison and complete launch-latency tracing
+  remain open while the Apps worker owns PocketCHIP.
 
 ## Gate ledger
 

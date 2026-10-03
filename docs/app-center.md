@@ -217,10 +217,16 @@ Updates remove old receipt-owned files absent from the new inventory. Managed
 Python module caches are cleared before the commit; bytecode is regenerable
 derived data and is deleted directly rather than journaled, including the
 group-writable caches Python creates under the device's shared umask. Launchers
-use a release-specific bytecode-cache namespace and disable bytecode writes, so
-interpreter-wide or same-size/same-second caches cannot silently execute a
-previous release. Python startup/home/path overrides are excluded consistently
-with runtime preflight. Same-version republishing, downgrades, source switches
+reuse installed library bytecode, disable bytecode writes and always validate
+hash-based caches, including caches marked unchecked by their producer. Inherited
+bytecode-cache prefixes are cleared along with Python startup/home/path overrides.
+Removing managed module caches before replacement prevents same-size/same-second
+timestamps from executing the previous app source. Runtime preflight uses isolated
+mode. The former per-release cache namespace has been removed; it repeatedly
+compiled Python library source while apps intentionally disabled cache writes.
+Obsolete pre-release launch scripts must be replaced through fresh app installs
+with the current Shell; custom launchers remain protected. Same-version
+republishing, downgrades, source switches
 and modified managed source files are rejected before replacement.
 
 Running-app detection reads the **installed manifest's runtime entry**, even when the
