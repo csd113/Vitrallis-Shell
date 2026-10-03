@@ -143,30 +143,40 @@ pub fn sync(path: &Path) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 pub fn atomic(path: &Path, data: &FileData) -> Result<(), String> {
-    safe(path)?;
     let parent = path.parent().ok_or("Missing parent")?;
-    directory(parent)?;
     let tmp = parent.join(format!(
         ".app-center-{}-{}",
         std::process::id(),
         SERIAL.fetch_add(1, Ordering::Relaxed)
     ));
+    atomic_with_temp(path, data, &tmp)
+}
+pub(super) fn atomic_with_temp(path: &Path, data: &FileData, tmp: &Path) -> Result<(), String> {
+    safe(path)?;
+    safe(tmp)?;
+    let parent = path.parent().ok_or("Missing parent")?;
+    if tmp == path || tmp.parent() != Some(parent) {
+        return Err("Atomic temporary must be a distinct sibling".into());
+    }
+    directory(parent)?;
+    let mut created = false;
     let result = (|| {
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
         options.mode(0o600);
-        let mut f = options.open(&tmp).map_err(|e| e.to_string())?;
+        let mut f = options.open(tmp).map_err(|e| e.to_string())?;
+        created = true;
         f.write_all(&data.bytes).map_err(|e| e.to_string())?;
         #[cfg(unix)]
         f.set_permissions(fs::Permissions::from_mode(data.mode))
             .map_err(|e| e.to_string())?;
         f.sync_all().map_err(|e| e.to_string())?;
         safe(path)?;
-        fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+        fs::rename(tmp, path).map_err(|e| e.to_string())?;
         sync(parent)
     })();
-    if tmp.exists() {
+    if created && tmp.exists() {
         let _ = fs::remove_file(tmp);
     }
     result

@@ -52,23 +52,44 @@ fn value(data: Option<&FileData>) -> Value {
 fn record(journal: &Path, writes: &[Write]) -> Result<(), String> {
     validate_bounds(writes)?;
     storage::directory(journal)?;
-    let mut rows = Vec::new();
+    let mut rows = Vec::with_capacity(writes.len());
+    for write in writes {
+        let path = write
+            .path
+            .to_str()
+            .ok_or("App storage paths must be UTF-8")?;
+        rows.push(serde_json::json!({"path":path,"before":value(write.before.as_ref()),"after":value(write.after.as_ref())}));
+    }
+    let bytes = serde_json::to_vec(&rows).map_err(|e| e.to_string())?;
+    if bytes.len() > metadata::CATALOG_LIMIT {
+        return Err("App journal exceeds recovery bounds; no files were changed".into());
+    }
+    // Publish staging authority before allocating snapshots. No target can be
+    // changed until every image is durable and this becomes pending.json.
+    storage::atomic_with_temp(
+        &journal.join("staging.json"),
+        &FileData { bytes, mode: 0o600 },
+        &journal.join("staging.json.tmp"),
+    )?;
     for (i, w) in writes.iter().enumerate() {
         if let Some(old) = &w.before {
-            storage::atomic(&journal.join(format!("{i}.before")), old)?;
+            storage::atomic_with_temp(
+                &journal.join(format!("{i}.before")),
+                old,
+                &journal.join(format!("{i}.before.tmp")),
+            )?;
         }
         if let Some(after) = &w.after {
-            storage::atomic(&journal.join(format!("{i}.after")), after)?;
+            storage::atomic_with_temp(
+                &journal.join(format!("{i}.after")),
+                after,
+                &journal.join(format!("{i}.after.tmp")),
+            )?;
         }
-        rows.push(serde_json::json!({"path":w.path,"before":value(w.before.as_ref()),"after":value(w.after.as_ref())}));
     }
-    storage::atomic(
-        &journal.join("pending.json"),
-        &FileData {
-            bytes: serde_json::to_vec(&rows).map_err(|e| e.to_string())?,
-            mode: 0o600,
-        },
-    )
+    std::fs::rename(journal.join("staging.json"), journal.join("pending.json"))
+        .map_err(|e| e.to_string())?;
+    storage::sync(journal)
 }
 fn validate_bounds(writes: &[Write]) -> Result<(), String> {
     let bytes = writes.iter().try_fold(0_usize, |bytes, write| {
@@ -124,7 +145,9 @@ fn apply_validated(
     mut after_write: impl FnMut(usize) -> Result<(), String>,
     finalize: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
-    if storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)?.is_some() {
+    if storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)?.is_some()
+        || storage::read(&journal.join("staging.json"), metadata::CATALOG_LIMIT)?.is_some()
+    {
         return Err("Pending transaction must be recovered first".into());
     }
     for w in writes {
@@ -193,8 +216,22 @@ fn rollback(writes: &[Write]) -> Result<(), String> {
     }
 }
 pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, String> {
-    let Some(file) = storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)? else {
-        return Ok(false);
+    let staging = storage::read(&journal.join("staging.json"), metadata::CATALOG_LIMIT)?;
+    let pending = storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)?;
+    let file = match (staging, pending) {
+        (Some(_), Some(_)) => return Err("Conflicting transaction states; recovery refused".into()),
+        (Some(file), None) => return recover_staging(journal, &file, allowed),
+        (None, Some(file)) => file,
+        (None, None) => {
+            if let Some(path) =
+                temporary(journal, "staging.json.tmp", metadata::CATALOG_LIMIT, 0o600)?
+            {
+                std::fs::remove_file(path).map_err(|e| e.to_string())?;
+                storage::sync(journal)?;
+                return Ok(true);
+            }
+            return Ok(false);
+        }
     };
     let v = metadata::json(&file.bytes)?;
     let rows = v
@@ -242,25 +279,138 @@ pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, 
     Ok(true)
 }
 
-// Derived runtimes are backed up until completion is durable. They have no
-// user data to retain after success; payload backups keep their existing policy.
+fn recover_staging(
+    journal: &Path,
+    file: &FileData,
+    allowed: impl Fn(&Path) -> bool,
+) -> Result<bool, String> {
+    let value = metadata::json(&file.bytes)?;
+    let rows = value
+        .as_array()
+        .filter(|rows| rows.len() <= WRITE_LIMIT)
+        .ok_or("Invalid staging journal")?;
+    let mut seen = BTreeSet::new();
+    let mut snapshots = Vec::new();
+    let mut temporaries = Vec::new();
+    let mut bytes = 0;
+    for (i, row) in rows.iter().enumerate() {
+        metadata::fields(row, "path before after")?;
+        let target = PathBuf::from(metadata::text(&row["path"], 4096)?);
+        storage::safe(&target)?;
+        if !allowed(&target) || !seen.insert(target) {
+            return Err("Staging target is outside installation scope".into());
+        }
+        for kind in ["before", "after"] {
+            if row[kind].is_null() {
+                continue;
+            }
+            metadata::fields(&row[kind], "sha256 mode")?;
+            let mode = row[kind]["mode"]
+                .as_u64()
+                .filter(|mode| *mode <= 0o777)
+                .ok_or("Invalid staging image mode")?;
+            let name = format!("{i}.{kind}.tmp");
+            if temporary(journal, &name, metadata::BUNDLE_LIMIT, mode)?.is_some() {
+                temporaries.push((name, metadata::BUNDLE_LIMIT, mode));
+            }
+            let path = journal.join(format!("{i}.{kind}"));
+            match std::fs::symlink_metadata(&path) {
+                // A pre-existing directory can prevent atomic publication.
+                // It was never a snapshot and is not ours to remove.
+                Ok(info) if info.is_dir() => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => return Err(error.to_string()),
+                Ok(_) => (),
+            }
+            let image = load_saved(journal, i, kind, &row[kind])?;
+            bytes += image.bytes.len();
+            if bytes > BYTE_LIMIT {
+                return Err("Staging images exceed recovery bounds".into());
+            }
+            snapshots.push((path, &row[kind]));
+        }
+    }
+    if temporary(journal, "staging.json.tmp", metadata::CATALOG_LIMIT, 0o600)?.is_some() {
+        temporaries.push(("staging.json.tmp".into(), metadata::CATALOG_LIMIT, 0o600));
+    }
+    for (path, expected) in snapshots {
+        if let Some(data) = storage::read(&path, metadata::BUNDLE_LIMIT)? {
+            validate_saved(&data, expected)?;
+            std::fs::remove_file(path).map_err(|e| e.to_string())?;
+        }
+    }
+    for (name, limit, mode) in temporaries {
+        if let Some(path) = temporary(journal, &name, limit, mode)? {
+            std::fs::remove_file(path).map_err(|e| e.to_string())?;
+        }
+    }
+    storage::sync(journal)?;
+    if storage::read(&journal.join("staging.json"), metadata::CATALOG_LIMIT)?.as_ref() != Some(file)
+    {
+        return Err("Staging journal changed during cleanup".into());
+    }
+    std::fs::rename(journal.join("staging.json"), journal.join("aborted.json"))
+        .map_err(|e| e.to_string())?;
+    storage::sync(journal)?;
+    Ok(true)
+}
+
+// These exact names are producer-owned scratch space, never published images
+// or persistent data. Partial bytes cannot have the completed image's hash.
+fn temporary(
+    journal: &Path,
+    name: &str,
+    limit: usize,
+    mode: u64,
+) -> Result<Option<PathBuf>, String> {
+    let path = journal.join(name);
+    let Some(data) = storage::read(&path, limit)? else {
+        return Ok(None);
+    };
+    if data.mode != 0o600 && u64::from(data.mode) != mode {
+        return Err("Temporary snapshot permissions changed; cleanup refused".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if std::fs::symlink_metadata(&path)
+            .map_err(|e| e.to_string())?
+            .uid()
+            != std::fs::symlink_metadata(journal)
+                .map_err(|e| e.to_string())?
+                .uid()
+        {
+            return Err("Temporary snapshot owner differs; cleanup refused".into());
+        }
+    }
+    Ok(Some(path))
+}
+
+// Derived runtimes are backed up until commit or rollback is durable. They have
+// no user data to retain afterward; payload backups keep their existing policy.
 // Repeat this after startup so a crash during reclamation cannot leak each venv.
-pub(super) fn discard_completed_removals(
+pub(super) fn discard_finished_removals(
     journal: &Path,
     disposable: impl Fn(&Path) -> bool,
 ) -> Result<(), String> {
     if storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)?.is_some() {
         return Ok(());
     }
-    let Some(file) = storage::read(&journal.join("completed.json"), metadata::CATALOG_LIMIT)?
-    else {
+    if storage::read(&journal.join("staging.json"), metadata::CATALOG_LIMIT)?.is_some() {
+        return Ok(());
+    }
+    let finished = match storage::read(&journal.join("completed.json"), metadata::CATALOG_LIMIT)? {
+        Some(file) => Some(file),
+        None => storage::read(&journal.join("recovered.json"), metadata::CATALOG_LIMIT)?,
+    };
+    let Some(file) = finished else {
         return Ok(());
     };
     let value = metadata::json(&file.bytes)?;
     let rows = value
         .as_array()
         .filter(|rows| rows.len() <= WRITE_LIMIT)
-        .ok_or("Invalid completed journal")?;
+        .ok_or("Invalid finished journal")?;
     let mut paths = Vec::new();
     let mut bytes = 0;
     for (i, row) in rows.iter().enumerate() {
@@ -272,7 +422,7 @@ pub(super) fn discard_completed_removals(
                 validate_saved(&data, &row["before"])?;
                 bytes += data.bytes.len();
                 if bytes > BYTE_LIMIT {
-                    return Err("Completed runtime backups exceed cleanup bounds".into());
+                    return Err("Finished runtime backups exceed cleanup bounds".into());
                 }
                 paths.push((backup, &row["before"]));
             }
@@ -304,6 +454,130 @@ fn validate_saved(d: &FileData, v: &Value) -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
+    fn staging_crash_cleans_declared_scratch_and_preserves_later_edits() -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let first = root.join("first");
+        let second = root.join("second");
+        let original = FileData {
+            bytes: b"unchanged installed software".to_vec(),
+            mode: 0o600,
+        };
+        storage::atomic(&first, &original)?;
+        storage::atomic(&second, &original)?;
+        let writes = [remove(first.clone())?, remove(second.clone())?];
+        let journal = root.join("journal");
+        storage::directory(&journal.join("1.before"))?;
+        assert!(record(&journal, &writes).is_err());
+        assert!(journal.join("staging.json").exists());
+        let partial = journal.join("1.before.tmp");
+        storage::atomic(
+            &partial,
+            &FileData {
+                bytes: original.bytes[..7].to_vec(),
+                mode: 0o600,
+            },
+        )?;
+        let unrelated = journal.join("user-note.txt");
+        storage::atomic(&unrelated, &original)?;
+        assert!(recover(&journal, |_| false).is_err());
+        assert!(partial.exists());
+        let edited = FileData {
+            bytes: b"later backup edit".to_vec(),
+            mode: 0o600,
+        };
+        storage::atomic(&journal.join("0.before"), &edited)?;
+        assert!(recover(&journal, |p| p == first || p == second).is_err());
+        assert_eq!(storage::read(&journal.join("0.before"), 100)?, Some(edited));
+        assert!(partial.exists());
+        storage::atomic(&journal.join("0.before"), &original)?;
+        assert!(recover(&journal, |p| p == first || p == second)?);
+        assert!(!partial.exists());
+        assert!(!journal.join("0.before").exists());
+        assert!(journal.join("1.before").is_dir());
+        assert!(journal.join("aborted.json").is_file());
+        assert_eq!(storage::read(&first, 100)?, Some(original.clone()));
+        assert_eq!(storage::read(&second, 100)?, Some(original.clone()));
+        assert_eq!(storage::read(&unrelated, 100)?, Some(original));
+        assert!(!recover(&journal, |_| true)?);
+        let incomplete = root.join("incomplete-metadata");
+        storage::atomic(
+            &incomplete.join("staging.json.tmp"),
+            &FileData {
+                bytes: b"{unfinished".to_vec(),
+                mode: 0o600,
+            },
+        )?;
+        assert!(recover(&incomplete, |_| false)?);
+        assert!(!incomplete.join("staging.json.tmp").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn atomic_temp_collision_preserves_the_preexisting_file() -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let destination = root.join("destination");
+        let temporary = root.join("temporary");
+        let existing = FileData {
+            bytes: b"keep the existing file".to_vec(),
+            mode: 0o600,
+        };
+        storage::atomic(&temporary, &existing)?;
+        assert!(storage::atomic_with_temp(&destination, &existing, &temporary).is_err());
+        assert_eq!(storage::read(&temporary, 100)?, Some(existing));
+        assert!(!destination.exists());
+        Ok(())
+    }
+    #[test]
+    fn journal_staging_failure_releases_owned_partial_backups() -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let first = root.join("first");
+        let second = root.join("second");
+        let data = FileData {
+            bytes: vec![42; 1024 * 1024],
+            mode: 0o600,
+        };
+        storage::atomic(&first, &data)?;
+        storage::atomic(&second, &data)?;
+        let writes = [remove(first.clone())?, remove(second.clone())?];
+        let journal = root.join("journal");
+        storage::directory(&journal)?;
+        let enospc = std::env::var_os("VITRALLIS_QA_JOURNAL_ENOSPC").is_some();
+        if !enospc {
+            // Deterministic I/O failure after the first before image is staged.
+            storage::directory(&journal.join("1.before"))?;
+        }
+        let marker = root.join(".installation-pending");
+        storage::atomic(
+            &marker,
+            &FileData {
+                bytes: b"pending".to_vec(),
+                mode: 0o600,
+            },
+        )?;
+        let error = commit(&journal, &writes, &marker).expect_err("journal staging must fail");
+        if enospc {
+            assert!(
+                error.to_ascii_lowercase().contains("no space left"),
+                "{error}"
+            );
+        }
+        assert_eq!(
+            storage::read(&first, metadata::FILE_LIMIT)?,
+            Some(data.clone())
+        );
+        assert_eq!(storage::read(&second, metadata::FILE_LIMIT)?, Some(data));
+        assert!(!marker.exists());
+        assert!(!journal.join("pending.json").exists());
+        assert!(!journal.join("0.before").exists());
+        if !enospc {
+            assert!(journal.join("1.before").is_dir());
+        }
+        Ok(())
+    }
+    #[test]
     fn runtime_reclamation_waits_for_completion_and_preserves_edited_backups() -> Result<(), String>
     {
         let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
@@ -323,24 +597,27 @@ mod tests {
         let journal = root.join("journal");
         record(&journal, &writes)?;
         replace(&runtime, None)?;
-        discard_completed_removals(&journal, |path| path == runtime)?;
+        discard_finished_removals(&journal, |path| path == runtime)?;
         assert!(journal.join("0.before").exists());
         assert!(recover(&journal, |path| path == runtime || path == source)?);
         assert_eq!(storage::read(&runtime, 100)?, Some(original));
+        discard_finished_removals(&journal, |path| path == runtime)?;
+        assert!(!journal.join("0.before").exists());
+        assert!(journal.join("1.before").exists());
         apply_with(&journal, &writes, |_| Ok(()))?;
         let edited = FileData {
             bytes: b"a later edit".to_vec(),
             mode: 0o600,
         };
         storage::atomic(&journal.join("0.before"), &edited)?;
-        assert!(discard_completed_removals(&journal, |path| path == runtime).is_err());
+        assert!(discard_finished_removals(&journal, |path| path == runtime).is_err());
         assert_eq!(storage::read(&journal.join("0.before"), 100)?, Some(edited));
         storage::atomic(
             &journal.join("0.before"),
             writes[0].before.as_ref().ok_or("missing before image")?,
         )?;
-        discard_completed_removals(&journal, |path| path == runtime)?;
-        discard_completed_removals(&journal, |path| path == runtime)?;
+        discard_finished_removals(&journal, |path| path == runtime)?;
+        discard_finished_removals(&journal, |path| path == runtime)?;
         assert!(!journal.join("0.before").exists());
         assert!(journal.join("1.before").exists());
         Ok(())

@@ -75,11 +75,20 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), Str
             mode: 0o600,
         },
     )?;
-    transaction::commit(&journal, &writes, &marker)?;
-    transaction::discard_completed_removals(&journal, |path| {
+    let result = transaction::commit(&journal, &writes, &marker);
+    let cleanup = transaction::discard_finished_removals(&journal, |path| {
         runtime_cleanup::owned_file(&root, path)
-    })
-    .map_err(|e| format!("App uninstalled; runtime backup cleanup failed: {e}"))
+    });
+    match (result, cleanup) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(error)) => Err(format!(
+            "App uninstalled; runtime backup cleanup failed: {error}"
+        )),
+        (Err(error), Err(cleanup)) => {
+            Err(format!("{error}; runtime backup cleanup failed: {cleanup}"))
+        }
+    }
 }
 pub(super) fn installed_entry(
     root: &Path,
@@ -154,6 +163,30 @@ fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
 mod tests {
     use super::*;
     use crate::app_center::tests::{generic, locations};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn invalid_utf8_runtime_filename_returns_error_without_mutation() -> Result<(), String> {
+        use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+        let (_scratch, loc) = locations()?;
+        let (package, files) = generic()?;
+        install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
+        let root = loc.root(&package);
+        let file = root
+            .join("runtime")
+            .join("a".repeat(64))
+            .join(OsString::from_vec(b"invalid-\xff.py".to_vec()));
+        let original = FileData {
+            bytes: b"retain this file".to_vec(),
+            mode: 0o600,
+        };
+        storage::atomic(&file, &original)?;
+        assert!(uninstall(&loc, &package).is_err());
+        assert_eq!(install::label(&loc, &package)?, "0.1.0");
+        assert!(!root.join(".installation-pending").exists());
+        assert_eq!(storage::read(&file, 100)?, Some(original));
+        Ok(())
+    }
 
     #[test]
     fn generated_dependencies_are_journaled_and_custom_data_survives() -> Result<(), String> {

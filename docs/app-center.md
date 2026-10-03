@@ -235,8 +235,16 @@ A cross-process lock serializes source settings and every durable write. Refresh
 metadata and bundle downloads run outside the lock so slow network work cannot
 block another Shell's storage operations; the commit phase reacquires the lock,
 revalidates the source snapshot, readiness and running state, and only then
-mutates. Writes are staged, synced and atomically renamed individually. A durable journal
-records before/after bytes and modes, including removals. Final readback verifies
+mutates. Writes are staged, synced and atomically renamed individually. Before
+copying before/after images, a durable `staging.json` records their hashes,
+modes and target paths. Only after every image is synced does it become
+`pending.json`; application files cannot change during staging. Recovery of an
+interrupted staging phase removes matching snapshots and declared temporary
+copy files, preserves later edits to published images and never writes application
+files. A partial staging-manifest temporary is also disposable. These temporary
+names are reserved internal scratch space, separate from published backups and
+user data. Atomic writes do not remove a pre-existing temporary after an exclusive
+creation failure. The durable journal includes removals. Final readback verifies
 every planned output before marker cleanup and journal completion. A finalization
 failure participates in rollback. Successful rollback releases the incomplete
 marker; unresolved conflicts retain it and a recovery diagnostic.
@@ -247,7 +255,7 @@ Recovery restores a path only if it still matches the transaction's recorded
 output; later user changes are preserved. Journals and backups remain under
 `$XDG_DATA_HOME/vitrallis/app-center/transactions/`. Do not delete markers or journals
 to bypass a recovery failure. Resolve the reported conflict and repair the app.
-Generated-runtime removal backups are reclaimed after durable completion and
+Generated-runtime removal backups are reclaimed after durable commit or rollback and
 checked again during subsequent recovery scans. Pending-operation backups and
 ordinary payload backups remain. A later edit to a runtime backup blocks its
 reclamation and is reported. Runtime removal is bounded to 64 MiB, 16 MiB per
@@ -271,6 +279,8 @@ request deadlines. Plans expire after 15 minutes. Hashes establish publisher
 content integrity, not an independent signature. Filesystem checks reject unsafe
 ancestors, links and special files; they do not isolate hostile same-user processes.
 No obsolete package-layout migrations or compatibility paths are provided.
+Journaled storage paths require UTF-8. Unsupported runtime filenames return an
+error without removing the installed app or the offending file.
 
 See [the validation report](app-center-validation.md) and
 [Docker simulator instructions](../tests/simulator/README.md).

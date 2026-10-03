@@ -481,12 +481,49 @@ no physical cold power cycle has been performed.
   the prepared 26,826,084-byte bundle hash is
   `4c4fa2aca954d2c4acb9a887b30e17b0df743b39c9805861147f01bdff9a0c50`.
   An emulated amd64 container attempt failed three existing process launch/
-  identity tests; those unchanged tests pass in native Linux. The failed attempt
-  is retained, and native amd64 remote CI must also pass for the new commit.
+  identity tests. A standalone probe reproduces Rosetta reporting successful
+  spawn followed by exit 127 for a nonexistent executable and exposing Rosetta
+  as the process executable; native Linux reports ENOENT and the actual
+  executable. Those unchanged tests pass in native Linux. All six native amd64
+  Rust 1.91.0/1.99.0/stable remote jobs pass for exact `c9f70fb` (PR run
+  37143031683, push run 37143028507); the emulated failures remain recorded.
   This correction has not been installed or tested on PocketCHIP: the device
   was handed to the existing Apps worker for its hardware audit. Dependency
   cleanup, fresh reprovisioning, low-space/fault behavior and repeated-install
   memory acceptance remain open until handback and physical retesting.
+- Host fault testing then reproduced two resource leaks: failure while copying
+  a later journal image retained an earlier backup outside a pending journal,
+  and successful rollback retained disposable runtime backups. Staging now
+  publishes its bounded path/hash/mode manifest before copying images, becomes
+  pending only after all images are durable, and recovers interrupted staging
+  without writing application files. Cleanup validates the complete scope and
+  published image integrity, preserves later edits and unrelated files, and
+  removes only its declared temporary scratch names. Exclusive temporary-file
+  creation failure also preserves the pre-existing file. Runtime backups are
+  reclaimed after durable rollback as well as commit; pending backups and
+  ordinary payload backups retain their existing policies.
+  A Linux raw-byte runtime filename separately reproduced a JSON serialization
+  panic. Journal paths now require UTF-8 and return an error while retaining
+  the installed app, receipt and offending file. The regression runs on Linux,
+  whose filesystem supports the fixture; macOS rejected fixture creation with
+  EILSEQ before reaching uninstall, and that initial attempt remains recorded.
+  All new regressions pass without new ignores. An actual 4 MiB native-Linux
+  tmpfs reproduced ENOSPC after staging began: both original 1 MiB files and
+  modes remained intact, the incomplete marker and owned partial snapshots
+  were removed, and free space returned from 4,194,304 bytes to the same value.
+  The transient test mount was removed. This is host filesystem evidence,
+  separate from the earlier physical NAND tests.
+  Final complete `sh scripts/validate.sh` passes on macOS and native
+  Linux/aarch64 with 376/378 Rust tests (9/12 existing ignores), 173 Python
+  tests (9/10 environment skips), two renderer tests (one existing skip),
+  strict Clippy, release builds, native smokes, script checks and document links.
+  The final ARMv7 build, three native utility smokes and all seven package
+  sidecars pass. The 14-file prepared package includes the 26,842,468-byte
+  bundle with SHA-256
+  `7910151b0ff16833acb1746ac982ddeb9a8bd9f0eb2a911d824a33608d5b005f`.
+  These follow-up fixes have not been installed on PocketCHIP while the Apps
+  worker owns the device. Exact-commit remote CI and physical interruption,
+  runtime cleanup and fresh reprovisioning acceptance remain separate gates.
 - Wireless once reported “Wi-Fi change denied or unavailable” while the same
   screen and independent NetworkManager readback showed Wi-Fi enabled and
   connected. A clean UI off/on retry and six bounded direct radio changes pass;
