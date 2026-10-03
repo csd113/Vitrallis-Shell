@@ -48,8 +48,11 @@ text or a documented source offer before that binary is cleared.
   collected notices. The 2026-10-02 reconciliation also adds missing cookie-factory
   and void MIT notices and rustix-linux-procfs attribution, and matches shared
   Apache/MIT texts to their exact source files. Seven Tor helper crates share
-  the MIT text verified at their exact registry VCS revision. The compiled Rust
-  runtime inventory remains under review.
+  the MIT text verified at their exact registry VCS revision. The matching Rust
+  1.99.0 binary runtime inventory covers the standard library, its 10 external
+  normal/build dependencies, compiler-builtins' LLVM exception, Unicode data,
+  and in-tree math/channel/backtrace attributions. Exact texts and per-file
+  notice excerpts are retained; see [the runtime inventory](docs/rust-runtime-licenses.md).
 - Python, Tk, Bubblewrap, picom, graphics drivers and optional FFmpeg are system
   packages, not payloads in the native bundle. Installation through the system
   package manager does not relicense them. A redistributed OS image must retain

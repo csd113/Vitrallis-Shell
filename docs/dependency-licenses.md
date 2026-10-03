@@ -8,6 +8,8 @@ refer to verbatim deduplicated texts in `../THIRD_PARTY_LICENSES.txt`.
 
 Also includes the separately installed Arti 2.6.0 crate and its upstream Cargo.lock.
 The Shell workspace lock alone does not cover Arti or its bundled native code.
+The separate [Rust binary runtime inventory](rust-runtime-licenses.md) covers
+the matching Rust 1.99.0 standard library and compiler intrinsics.
 `MISSING` rows outside the pinned Arti feature graph are optional, build-only or
 other-target crates that the shipped executable does not link; any `MISSING` row
 inside that graph must still be resolved before a binary release is cleared
