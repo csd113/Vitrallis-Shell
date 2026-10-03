@@ -71,25 +71,41 @@ pub(super) fn apply(
         }
         Radio::Bluetooth => status.bluetooth = actual,
     }
-    result.map_err(|_| format!("{} change denied or unavailable", radio.label()))?;
-    if actual != Some(enabled) {
-        return Err(format!(
+    if let Err(error) = &result {
+        eprintln!(
+            "level=warn event=radio_command radio={radio:?} requested={enabled} actual={actual:?} error={error:?}"
+        );
+    }
+    // A command can apply the change before failing or reaching its deadline.
+    // Authoritative readback establishes the result; keep command failures in
+    // the private log even when the requested state was successfully applied.
+    if actual == Some(enabled) {
+        Ok(())
+    } else {
+        result.map_err(|_| format!("{} change denied or unavailable", radio.label()))?;
+        Err(format!(
             "{} change not confirmed; check adapter / radio block",
             radio.label()
-        ));
+        ))
     }
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::cell::{Cell, RefCell};
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum CommandOutcome {
+        Apply,
+        Ignore,
+        Deny,
+        FailAfterApply,
+    }
     struct Fake {
         enabled: Cell<bool>,
         missing: Cell<bool>,
-        apply: bool,
-        denied: bool,
+        outcome: CommandOutcome,
+        disappear_after_apply: bool,
         calls: RefCell<Vec<String>>,
         writes: RefCell<Vec<String>>,
     }
@@ -109,11 +125,15 @@ mod tests {
                 return Err("no adapter".into());
             }
             if matches!(args.last(), Some(&"on" | &"off")) {
-                if self.denied {
+                if self.outcome == CommandOutcome::Deny {
                     return Err("permission denied".into());
                 }
-                if self.apply {
+                if self.outcome != CommandOutcome::Ignore {
                     self.enabled.set(args.last() == Some(&"on"));
+                }
+                self.missing.set(self.disappear_after_apply);
+                if self.outcome == CommandOutcome::FailAfterApply {
+                    return Err("command timed out after applying the change".into());
                 }
                 return Ok("Failed to set power: blocked".into());
             }
@@ -137,10 +157,50 @@ mod tests {
         Fake {
             enabled: Cell::new(false),
             missing: Cell::new(false),
-            apply: true,
-            denied: false,
+            outcome: CommandOutcome::Apply,
+            disappear_after_apply: false,
             calls: RefCell::default(),
             writes: RefCell::default(),
+        }
+    }
+    #[test]
+    fn confirmed_radio_state_succeeds_after_command_failure() -> Result<(), String> {
+        for radio in [Radio::Wifi, Radio::Bluetooth] {
+            let mut io = fake();
+            io.outcome = CommandOutcome::FailAfterApply;
+            let mut status = Status::default();
+            for enabled in [true, false] {
+                apply(&io, radio, enabled, &mut status)?;
+                assert_eq!(
+                    if radio == Radio::Wifi {
+                        status.wifi_enabled
+                    } else {
+                        status.bluetooth
+                    },
+                    Some(enabled)
+                );
+            }
+        }
+        Ok(())
+    }
+    #[test]
+    fn disappeared_radio_never_claims_success_after_command() {
+        for radio in [Radio::Wifi, Radio::Bluetooth] {
+            for outcome in [CommandOutcome::Apply, CommandOutcome::FailAfterApply] {
+                let mut io = fake();
+                io.disappear_after_apply = true;
+                io.outcome = outcome;
+                let mut status = Status::default();
+                assert!(apply(&io, radio, true, &mut status).is_err());
+                assert_eq!(
+                    if radio == Radio::Wifi {
+                        status.wifi_enabled
+                    } else {
+                        status.bluetooth
+                    },
+                    None
+                );
+            }
         }
     }
     #[test]
@@ -181,10 +241,9 @@ mod tests {
             assert!(apply(&io, radio, true, &mut status).is_err());
             assert_eq!(io.calls.borrow().len(), 1);
             io.missing.set(false);
-            io.denied = true;
+            io.outcome = CommandOutcome::Deny;
             assert!(apply(&io, radio, true, &mut status).is_err());
-            io.denied = false;
-            io.apply = false;
+            io.outcome = CommandOutcome::Ignore;
             assert!(apply(&io, radio, true, &mut status).is_err());
             assert_eq!(
                 if radio == Radio::Wifi {
