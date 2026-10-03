@@ -30,14 +30,11 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          transition=
-          if [ "$RELEASE_TAG" = v0.1.0-beta4 ]; then transition=--transition-bundle; fi
           python3 scripts/package-shell-release.py \
             --bin-dir target/release \
             --target x86_64-unknown-linux-gnu \
             --output target/shell-release \
-            --tag "$RELEASE_TAG" $transition
-          if [ "$RELEASE_TAG" = v0.1.0-beta4 ]; then export VITRALLIS_TEST_FOUR_FILE_SOURCE=1; fi
+            --tag "$RELEASE_TAG"
           VITRALLIS_TEST_UPDATE_BUNDLE="$PWD/target/shell-release/vitrallis-x86_64-unknown-linux-gnu-glibc2.36-v2.vtrbundle" \
           VITRALLIS_TEST_UPDATE_VERSION="${RELEASE_TAG#v}" \
             cargo test --locked -p vitrallis-shell release_bundle_upgrade_probe -- --nocapture
@@ -59,12 +56,10 @@ jobs:
           for app in vitrallis-terminal vitrallis-notepad vitrallis-files; do
             SDL_VIDEODRIVER=dummy qemu-arm "target/armv7-unknown-linux-gnueabihf/release/$app" --size 480x272 --smoke-test
           done
-          transition=
-          if [ "$RELEASE_TAG" = v0.1.0-beta4 ]; then transition=--transition-bundle; fi
           python3 scripts/package-shell-release.py \
             --bin-dir target/armv7-unknown-linux-gnueabihf/release \
             --target armv7-unknown-linux-gnueabihf --runner /usr/bin/qemu-arm \
-            --output target/arm-shell-release --tag "$RELEASE_TAG" $transition
+            --output target/arm-shell-release --tag "$RELEASE_TAG"
       - name: Verify release legal notices
         run: |
           # Notices are staged with the canonical x86_64 payload and are

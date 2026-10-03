@@ -42,6 +42,11 @@ operation errors are recorded in the private session log.
 Notepad's save errors identify the failed action and suggest freeing disk space
 or choosing a writable folder when those conditions cause the failure.
 
+The obsolete beta3.9/beta4 four-executable update bridge has been removed.
+Installed generations and release bundles require all five executables, including
+Arti. Equal versions remain current. Replace obsolete pre-release layouts with
+the current installer.
+
 ## 1.0.0-beta-2
 
 This beta polishes the existing PocketCHIP-sized interface and keeps the shared
@@ -262,10 +267,11 @@ sidecar. beta4 therefore has 20 assets. beta3.9 has the original 16-asset invent
 The matching beta4 bootstrap uses the complete v2 bundle directly.
 
 Native OTA updates switch the binary generation and preserve installed session
-helpers and user configuration. The narrowly scoped four-file transition exists
-only for the published beta3.9/beta4 upgrade and is scheduled for removal once
-those builds age out; older standalone layouts
-remain outside the managed updater contract. See [upgrade details](beta4-upgrade.md).
+helpers and user configuration. The narrowly scoped four-file transition was
+specific to the published beta3.9/beta4 upgrade and has been removed from current
+source. Current installed generations and bundles require all five executables;
+older standalone layouts remain outside the managed updater contract. See the
+[historical upgrade record](beta4-upgrade.md).
 
 ## Release gates
 

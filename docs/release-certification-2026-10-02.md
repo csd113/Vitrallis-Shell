@@ -649,6 +649,41 @@ no physical cold power cycle has been performed.
   the current workflow's two published targets. This is prepared local artifact
   evidence; final tagged builds, published-byte verification and exact final
   physical certification remain open. PocketCHIP remains with the Apps worker.
+- The obsolete beta3.9/beta4 four-executable bridge is removed from the updater,
+  installation inventory, release packager and tag workflow. Current generations
+  require all five companions and equal semantic versions remain current. The
+  historical release record is retained and explicitly separated from the current
+  update contract. The retired CLI option now fails during argument parsing,
+  before creating output; its initial failing regression is retained. A new
+  filesystem regression removes each companion in turn and verifies refusal
+  before staging, with the active pointer unchanged. Existing checksum, unsafe
+  file, concurrency, rollback and semantic-version guards remain exercised.
+  Targeted updater and filesystem suites pass 18 and 23 tests respectively.
+  The four update-available frames per OS/CPU profile now say “New version
+  available” instead of offering same-version completion. All 333 other frames
+  per profile remain byte-identical. The new four-size macOS, Linux AArch64 and
+  emulated ARMv7 pages were manually reviewed; Linux x86-64 captures match
+  AArch64 exactly. Only these 16 reviewed hashes changed. At 480×272 the macOS
+  pixel difference is confined to the status text rectangle (12,60)–(170,68).
+  Initial reference failures and harness failures from a missing or reused
+  capture directory remain in the evidence; successful reruns use fresh output.
+  Full `sh scripts/validate.sh` passes on macOS and native Linux AArch64:
+  376/378 Rust tests pass with nine/twelve existing opt-in exclusions, 172 Python
+  tests pass with nine/ten existing environment skips, and the native renderer
+  suite passes with one existing accelerated-backend skip. The lower Python
+  count replaces two obsolete bridge packaging tests with the current CLI
+  refusal regression. The rebuilt ARMv7 and x86-64 bundles pass all version
+  probes, software utility smokes and their complete renderer reference gates;
+  the actual x86-64 bundle updater probe passes with one exercised test and no
+  exclusions. The combined prepared inventory verifies 19 distinct assets,
+  eight sidecars, five hash/ELF-verified members per bundle and exact helper and
+  legal companion bytes. ARMv7 is 26,838,372 bytes, SHA-256
+  `5aa1042317fee561de5e172441bb02471177628303a2f92417b2934a182feb53`;
+  x86-64 is 31,046,048 bytes, SHA-256
+  `633586de1ab624c3ce0f142e0028e97354c87b424d00b3732354aeac9b3f4b55`.
+  No version, dependency or notice bytes changed. These are host and emulated
+  checks; device verification of this source remains pending while the Apps
+  worker owns PocketCHIP.
 
 ## Gate ledger
 

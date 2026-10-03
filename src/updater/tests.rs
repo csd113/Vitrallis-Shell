@@ -661,35 +661,3 @@ fn failed_restore_is_visible_and_retryable() {
     });
     assert!(matches!(updater.state, State::Restored { .. }));
 }
-
-#[test]
-fn bridge_and_skipped_bridge_both_select_full_beta4_without_downgrades()
--> Result<(), Box<dyn std::error::Error>> {
-    let releases = [metadata("0.1.0-beta4")?, metadata("0.1.0-beta3.9")?];
-    for (current, incomplete, available) in [
-        ("0.1.0-beta3.9", true, true),
-        ("0.1.0-beta4", true, true),
-        ("0.1.0-beta4", false, false),
-        ("0.1.0-beta5", true, false),
-    ] {
-        let state = check_inventory(&mock(&releases)?, current, target, incomplete)?;
-        assert_eq!(matches!(state, State::Available(_)), available);
-        if let State::Available(release) = state {
-            assert_eq!(release.version.to_string(), "0.1.0-beta4");
-            assert!(release.name.ends_with("-v2.vtrbundle"));
-        }
-    }
-    assert!(matches!(
-        check_inventory(
-            &mock(&[metadata("0.1.0-beta3.9")?])?,
-            "0.1.0-beta3.9",
-            target,
-            true
-        )?,
-        State::Current
-    ));
-    let mut missing = metadata("0.1.0-beta4")?;
-    missing["assets"] = serde_json::json!([]);
-    assert!(check_inventory(&mock(&[missing])?, "0.1.0-beta4", target, true).is_err());
-    Ok(())
-}
