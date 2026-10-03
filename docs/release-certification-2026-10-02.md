@@ -9,11 +9,11 @@ The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
 reviewed in separate commits. The installed native bundle and helpers correspond
-to `fbf2ec72fbdaac1369d82bc32ea393b09ae60ff1`, including the startup guard at
+to `9f6f0d0eb7cea0dc49f5015105c66978daaac031`, including the startup guard at
 `70540cb02e7f1268efc141b9f6e72dead32f0142` and runtime notices at
 `290ce8836449345ea6df3e17d6875f2fe218681a`. Remote Rust 1.91.0, 1.99.0 and
 stable checks pass for that exact head. Its offline diagnostic Details page
-passed physical inspection. Complete host validation, ARMv7 packaging and
+and cause-first cancelled-update message passed physical inspection. Complete host validation, ARMv7 packaging and
 normal-user installation also passed. The final candidate is not yet established.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
 Raw logs, receipts, checksums and screenshots are retained locally under
@@ -104,12 +104,18 @@ payload directory. The newer refresh-message bundle has digest
 its normal-user installation, sustained software-launch focus, root integration
 readability and runtime/AppData ownership checks passed. This is a prepared
 candidate installation, not the pending clean public route.
-The currently installed diagnostic-details bundle has digest
+The earlier diagnostic-details bundle has digest
 `11b3199f34105ac8e50e8cde91754db955b97058c6e96954d61d2a759a2dd467`.
 It passed normal-user installation, a 23.21-second software-launch focus
 observation and runtime/AppData integrity checks. Debug's marker, both newer
 Notepad saves and the Places source approval retained their exact bytes and
 private ownership through the replacement.
+The current download-error bundle has digest
+`b9c7bf9367ec57bdaaf1fe1396ff29751638be5ebca248b8b3406c4ea65fd0de`.
+Normal-user installation under `umask 077`, runtime/AppData ownership checks and
+23.95 seconds of software-launch foreground observation passed. The original
+saved note remains private and unchanged. These are prepared candidate tests;
+the corrected public installation route and final-candidate reboot remain pending.
 
 Eleven actual reboots have completed so far: the initial published-beta boot,
 recovery from the development test harness's RAM-backed `/tmp` exhaustion, two
@@ -230,7 +236,44 @@ no physical cold power cycle has been performed.
   confirmed through the UI, with Cancel as the default and a private 0600 settings
   file. Cancelling the published Places 0.11.1 download left no receipt, payload
   files or Vitrallis-owned curl process and preserved Debug's data. The UI offered
-  Install again. Its complete installation/retry remains pending.
+  Install again. A subsequent retry failed with curl exit 28 while fetching a
+  pool-wall PNG; no receipt activated. A bounded direct probe of that exact
+  immutable file then passed with its expected size and SHA-256, and another
+  full public retry installed 0.11.1 successfully. All 198 payload files match
+  its receipt. Menu launch, Home/background, same-process resume and normal menu
+  Exit passed. The published baseline recreated settings and lightmap cache in
+  its payload; those known test-generated files were removed before testing the
+  prepared storage correction, honoring the owner's preference deletion request.
+- Download failures previously put the filename before the cause and did not
+  retain the full operation error in the private session log. The correction
+  puts the cause first, explains curl's transfer timeout and logs the complete
+  quoted error. The regression fails against the old ordering, verifies no
+  activation after failure/cancellation and verifies a successful retry. On the
+  physical corrected Shell, a cancelled Places update visibly reported its
+  cause and logged the full failed-file context. The previous 0.11.1 receipt,
+  all 198 payload files and a private Unicode-named AppData marker were unchanged.
+  This used a backed-up development catalog fixture pinned to reviewed Places
+  source `768abe2`; it does not certify a public catalog refresh or an abrupt
+  interruption during commit. The complete retry installed 0.11.2: all 201
+  device payload files match the new receipt, including binary SHA-256
+  `97f6607e95a63bc26aee5a2b3feb122010038d2ddd20893ecff6f776b168866d`.
+  The AppData marker is unchanged and there are no unreceipted payload files.
+  Updated-app launch and application-created state checks remain pending.
+- Firefly Field 0.3.1 installed from the public catalog, launched with canonical
+  AppData as its working directory, resumed the same process after Home and
+  exited normally through Escape. Its renderer reports hardware GLES2/Mali400,
+  480×272 and requested VSync. HUD snapshots showed 4 FPS at startup and 1 FPS
+  after resume, with a 43-second process sample at 40.5% average CPU and 45,100 KiB
+  RSS. These are observations, not a sustained benchmark; measurement and
+  investigation remain pending before performance acceptance. Update and
+  uninstall/reinstall coverage also remain pending.
+- A controlled physical-device Notepad save on an isolated 512 KiB tmpfs with
+  only 16 KiB free failed with ENOSPC. The original 64 KiB document, ownership
+  and private mode survived, and the staging file was cleaned. Removing the
+  owned filler allowed a successful retry through the same editor. This tests
+  real kernel I/O and the native UI, not NAND pressure or NAND durability. The
+  generic error dialog lacks save-specific context; its wording remains to be
+  improved.
 - Debug's actual GPU Pulse produced a rise and return to idle in the private
   Mali utilization trace. This verifies activity reporting; it does not certify
   physical tear-free presentation. Process checks distinguish the original
@@ -263,7 +306,7 @@ no physical cold power cycle has been performed.
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core Settings/launcher screenshots reviewed; remaining utilities, App Center and failure states pending |
 | Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic routes exercised; repeat/stress coverage pending |
-| Every catalog app lifecycle | Debug public install/launch/resume/exit and offline uninstall/reinstall passed; Places source trust passed; other app/update runs pending |
+| Every catalog app lifecycle | Debug public lifecycle and offline uninstall/reinstall passed; Places and Firefly public install/launch/resume/exit passed; prepared Places update cancellation preserves installed bytes/data; complete updates and remaining app runs pending |
 | Real data persistence | Host lifecycle passed; physical update/reboot/reinstall sequence pending |
 | Python runtime | Host tests passed; current device dependency/lifecycle checks pending |
 | Process lifecycle stress | Debug exits left no app processes or Vitrallis-service zombies; stock PocketHome zombies distinguished; sustained repetition pending |
@@ -271,12 +314,12 @@ no physical cold power cycle has been performed.
 | Hardware features | Display/GPU backend observed; radio/audio/backlight/battery/power acceptance incomplete |
 | Every setting persistence | Clock format and timeout survived development reboot; remaining matrix pending |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
-| Low NAND / ENOSPC | Host fault tests present; safe physical storage pressure pending |
+| Low NAND / ENOSPC | Controlled physical Notepad ENOSPC/recovery passed on isolated 512 KiB tmpfs; actual NAND pressure remains pending |
 | Shell update/rollback | Host recovery tests pass; actual candidate device update/rollback pending |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
-| Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and download cancellation inspected; other failures pending |
+| Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor and footer wraparound passed on device; remaining manual utility cases pending |
-| Performance | Development measurements recorded; exact-candidate measurements pending |
+| Performance | Development measurements recorded; Firefly HUD reports low FPS across startup/resume and needs sustained measurement/investigation; exact-candidate measurements pending |
 | Extended soak | 30-minute development session completed with intentional restart; exact-candidate soak pending |
 | Logs | Initial renderer/startup logs inspected; final audit pending |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
@@ -293,7 +336,7 @@ the approved 1.0.0 version and reviewed references: formatting, locked
 all-target/all-feature check, strict Clippy, workspace tests, Python tests,
 release binaries, SDL/native smokes and doc links. The latest runs include the
 editor/importer, private-root-umask, real-Lua focus and offline diagnostic
-regressions: 363 Rust tests on macOS, 364 on Linux, and 173 Python tests
+regressions: 364 Rust tests on macOS, 365 on Linux, and 173 Python tests
 (nine existing skips on macOS, eight on Linux), plus the native
 renderer suite (two tests, one existing skip).
 The ARMv7 release build and complete five-executable packaging/version checks
@@ -305,7 +348,9 @@ includes all, pedantic, nursery and cargo groups, with documented exceptions for
 two unavoidable upstream duplicate-crate pairs. Formatting and ARMv7 rebuild
 pass. Its 212-file staged package passes the Apps manifest validator, and its
 notices record all 39 locked ARMv7 dependencies and the matched Rust runtime.
-Physical package validation remains pending.
+The development-fixture 0.11.2 update verified all 201 installed device payload
+files and retained the private marker; application-created state checks remain
+pending.
 
 The startup hook's two Lua regression scenarios also passed inside the physical
 Awesome Lua 5.3 runtime, in an isolated mock environment. The device Python session
@@ -314,7 +359,7 @@ therefore exercised separately inside Awesome rather than silently omitted.
 An Arti QEMU probe initially crashed when the harness mixed the cross-toolchain
 loader with the multiarch runtime libraries. With the matching system loader/libc
 prefix, all five ARMv7 version probes and exact `c17280d`, `a4a3e8f` and
-`fbf2ec7` packaging passed. The
+`fbf2ec7` and `9f6f0d0` packaging passed. The
 same Arti bytes also passed their native device version probe. The failed mixed
 sysroot attempts remain in the evidence.
 
