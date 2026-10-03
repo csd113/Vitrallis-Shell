@@ -535,7 +535,7 @@ def uninstall(home, dry_run=False, purge=False):
     # Retaining this tiny lock prevents a waiting process from using an orphaned
     # inode concurrently with a new installation. It contains no personal data.
     print('Removed managed Vitrallis files. The original session remains available.')
-    print('Retained: apps/, app-center/ transactions, user documents, installation backups,')
+    print('Retained: Documents/Vitrallis/Apps and AppData, app-center/ transactions, installation backups,')
     print('unrecognized or edited files, custom XDG locations, and .vitrallis-update/lock.')
     if not purge:
         print('Preferences and session logs are retained; --purge removes only the four documented data files.')

@@ -101,8 +101,7 @@ its saved folder preference, and deleting a folder never uninstalls an app.
 
 Configure the catalog in App Center and explicitly trust any separate source
 repository. Refresh fetches metadata; selecting Install acquires, verifies, and
-stages that app. Packages install under `$XDG_DATA_HOME/vitrallis/apps/<id>`
-(default `~/.local/share/vitrallis/apps/<id>`). Manifests supply identity, name,
+stages that app. Packages install under `$HOME/Documents/Vitrallis/Apps/<id>`. Manifests supply identity, name,
 entry and permissions; receipts bind installed versions and file ownership to the
 publisher. Locally generated launchers live in the App Center state directory.
 Unmanaged files never become owned merely because Python source contains a version.

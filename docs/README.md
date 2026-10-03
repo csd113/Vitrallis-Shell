@@ -7,6 +7,7 @@
 | Find and manage third-party apps | [App Center](app-center.md) |
 | Device controls | [Settings](devices/pocketchip/settings.md) and [system status](devices/pocketchip/system-status.md) |
 | Settings persistence and storage | [Settings and storage](settings-storage.md) |
+| Application payloads and persistent data | [Application storage contract](application-storage.md) |
 | Native build updates | [Shell updates](shell-updates.md) |
 | Published artifacts and validation | [Releases](releases.md) |
 | Trust and reporting | [Trust model](security.md) and [security policy](../SECURITY.md) |

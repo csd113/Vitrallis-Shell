@@ -47,6 +47,20 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
     command.envs(&m.env);
     command.env("VITRALLIS_APP_ID", &app.id);
     command.env(
+        "VITRALLIS_APP_DATA_DIR",
+        vitrallis_native::paths::app_data(&vitrallis_native::home(), &app.id)
+            .map_err(|e| e.to_string())?,
+    );
+    if app.source == crate::app::AppSource::AppCenter {
+        command.env(
+            "VITRALLIS_APP_DIR",
+            vitrallis_native::paths::app_dir(&vitrallis_native::home(), &app.id)
+                .map_err(|e| e.to_string())?,
+        );
+    } else {
+        command.env_remove("VITRALLIS_APP_DIR");
+    }
+    command.env(
         "VITRALLIS_DOCUMENTS_DIR",
         vitrallis_native::paths::documents(&vitrallis_native::home(), &app.id)
             .map_err(|e| e.to_string())?,

@@ -566,7 +566,7 @@ fn launcher_customizations_pending_and_stale_check() -> Result<(), String> {
     install::install(&loc, &checked)?;
     let root = loc.root(&p);
     let launcher = loc.state.join("launchers").join(&p.id);
-    let managed_launcher = storage::read(&launcher, 1024)?.ok_or("launcher")?;
+    let managed_launcher = storage::read(&launcher, metadata::FILE_LIMIT)?.ok_or("launcher")?;
     assert!(root.join("main.py").is_file());
     let custom = FileData {
         bytes: b"#!/bin/sh\n# custom\n".to_vec(),
@@ -1245,7 +1245,7 @@ fn uninstall_removes_receipted_app_and_shortcuts_preserving_data_and_other_apps(
             mode: 0o600,
         },
     )?;
-    let other = loc.data.join("vitrallis/apps/org.example.other/main.py");
+    let other = loc.apps().join("org.example.other/main.py");
     storage::atomic(
         &other,
         &FileData {
@@ -1611,7 +1611,13 @@ fn tor_manifest_survives_install_discovery_and_launcher_ownership() -> Result<()
     );
     let launcher = std::fs::read_to_string(loc.state.join("launchers").join(&package.id))
         .map_err(|e| e.to_string())?;
-    assert!(launcher.starts_with("#!/bin/sh\nexec /usr/bin/bwrap "));
+    assert!(launcher.starts_with("#!/bin/sh\numask 077\n"));
+    assert!(
+        launcher
+            .lines()
+            .any(|line| line.starts_with("exec /usr/bin/bwrap "))
+    );
+    assert!(launcher.contains("export VITRALLIS_APP_DATA_DIR="));
     assert!(launcher.contains("'--unshare-net'"));
     assert!(!loc.root(&package).join("arti").exists());
     assert!(!loc.data.join("vitrallis/tor").exists());

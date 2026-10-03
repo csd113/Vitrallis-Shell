@@ -37,7 +37,7 @@ pinned releases with the Rust-version filter disabled. `cargo outdated
 upstream transitive constraint.
 
 Declared license expressions and the verbatim notice texts for these
-dependencies, the shared Arti executable and unresolved artwork provenance are
+dependencies, the shared Arti executable and recorded artwork provenance are
 in the [dependency license inventory](dependency-licenses.md) and
 [third-party notices](../THIRD_PARTY_NOTICES.md).
 

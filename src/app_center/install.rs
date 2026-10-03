@@ -189,6 +189,7 @@ pub fn prepare_with_modes(
     metadata::validate_bundle(&p, &files)?;
     validate_paths(&p)?;
     let root = loc.root(&p);
+    storage::private_data(&loc.app_data(&p.id)?, &loc.home)?;
     recover(loc, &p)?;
     let installed = label(loc, &p)?;
     let old_receipt = receipt(&root)?;
@@ -200,6 +201,7 @@ pub fn prepare_with_modes(
     } else {
         None
     };
+    storage::private_directory(&loc.app_data(&p.id)?, &loc.home)?;
     let mut writes = Vec::new();
     for (name, bytes) in &files {
         writes.push(transaction::plan(
@@ -398,13 +400,17 @@ fn support(
     let launch_path = loc.state.join("launchers").join(&p.id);
     let before = storage::read(&launch_path, metadata::FILE_LIMIT)?;
     let after = FileData {
-        bytes: crate::tor::wrap_launcher(
-            match runtime {
-                Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
-                None => super::native::launcher(&root.join(&p.entry))?,
-            },
-            tor,
-            &loc.data.join("vitrallis/tor"),
+        bytes: runtime::environment(
+            &crate::tor::wrap_launcher(
+                match runtime {
+                    Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
+                    None => super::native::launcher(&root.join(&p.entry))?,
+                },
+                tor,
+                &loc.data.join("vitrallis/tor"),
+            )?,
+            &loc.home,
+            &p.id,
         )?,
         mode: 0o755,
     };
@@ -423,8 +429,13 @@ fn support(
         let old_manifest = metadata::manifest(&manifest.bytes)?;
         let old_runtime = metadata::RuntimeKind::parse(&old_manifest)?;
         let old_tor = crate::tor::Requirement::parse(&old_manifest)?;
-        let wrap =
-            |bytes| crate::tor::wrap_launcher(bytes, old_tor, &loc.data.join("vitrallis/tor"));
+        let wrap = |bytes| {
+            runtime::environment(
+                &crate::tor::wrap_launcher(bytes, old_tor, &loc.data.join("vitrallis/tor"))?,
+                &loc.home,
+                &p.id,
+            )
+        };
         let managed_launcher = if old_runtime == metadata::RuntimeKind::Python {
             runtime::candidates(&root, &old_files)
                 .into_iter()

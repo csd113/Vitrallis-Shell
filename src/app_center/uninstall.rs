@@ -14,7 +14,7 @@ use std::{
 /// works for removed/custom repositories and never acquires a remote catalog.
 pub(super) fn local_package(loc: &Locations, id: &str) -> Result<metadata::Package, String> {
     metadata::identity(id)?;
-    let root = loc.data.join("vitrallis/apps").join(id);
+    let root = loc.apps().join(id);
     let receipt = install::receipt(&root)?.ok_or("No installed app receipt; uninstall refused")?;
     if receipt["id"] != id {
         return Err("Installed receipt ID differs; uninstall refused".into());

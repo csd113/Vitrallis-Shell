@@ -191,13 +191,18 @@ Rust packages declare precompiled binaries by target ABI and do not run Python o
 Cargo. See the [Rust package contract](app-development.md#precompiled-rust-packages)
 for manifests, binary checks, executable permissions and publisher prerequisites.
 
-Installed packages live at `$XDG_DATA_HOME/vitrallis/apps/<id>` (default
-`~/.local/share/vitrallis/apps/<id>`). Receipts, generated launchers, application
+Installed packages live at `$HOME/Documents/Vitrallis/Apps/<id>`. Receipts, generated launchers, application
 shortcuts and icons use this canonical installation. The managed launcher is
 regenerated from the current entry, runtime and source commit. A locally edited
 launcher blocks replacement and is preserved with a diagnostic. Custom desktop
 shortcuts remain user-owned. Unmanaged data and app-local virtual environments
-are retained; package code should keep user data outside its read-only installation.
+are retained. Persistent data belongs in `$HOME/Documents/Vitrallis/AppData/<id>`;
+updates, repair and ordinary uninstall preserve this directory. The generated
+launcher starts in AppData and exports `VITRALLIS_APP_ID`, `VITRALLIS_APP_DIR`,
+`VITRALLIS_APP_DATA_DIR` and `VITRALLIS_DOCUMENTS_DIR` (AppData/Documents).
+Package assets must be resolved relative to the installed entry or APP_DIR.
+New data directories are private (0700); existing unsafe paths are rejected
+before package mutation. Permission declarations do not confine app processes.
 
 Updates remove old receipt-owned files absent from the new inventory. Managed
 Python module caches are cleared before the commit; bytecode is regenerable

@@ -173,7 +173,7 @@ def main():
         shell.refresh()
         shell.install('Carousel', 'mediacarousel', '0.1.0')
         managed = next(app for app in shell.menu() if app['source'] == 'AppCenter')
-        app_root = home / '.local/share/vitrallis/apps' / managed['id']
+        app_root = home / 'Documents/Vitrallis/Apps' / managed['id']
         receipt = app_root / '.vitrallis-receipt.json'
         original_receipt = receipt.read_bytes()
         before_checks = remote_checks()

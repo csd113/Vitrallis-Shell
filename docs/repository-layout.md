@@ -6,7 +6,7 @@ responsibilities. A matching screen size does not establish device support.
 
 ```text
 LICENSE                       Project MIT terms (see THIRD_PARTY_NOTICES.md)
-THIRD_PARTY_NOTICES.md        Third-party terms, unresolved provenance and limits
+THIRD_PARTY_NOTICES.md        Third-party terms, artwork provenance and limits
 THIRD_PARTY_LICENSES.txt      Verbatim deduplicated dependency notice texts
 integrations/pocketchip/
   bootstrap.sh                Copy-and-paste prerequisite preparation
@@ -23,6 +23,7 @@ assets/native/                Original SVG sources and embedded 128px PNG icons
 scripts/
   package-shell-release.py    Five-executable bundle (Shell, Terminal, Notepad, Files, Arti), ARMv7 session helpers and checksums
   package-source.py           Complete Cargo workspace source archive
+  import-app-data.py          Explicit one-time saved-data import with preview and exclusive publication
   validate.sh                 Shared host validation
   build-armhf.sh              Host cross-build tooling for the target ABI
 src/

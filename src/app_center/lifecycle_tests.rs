@@ -38,6 +38,54 @@ fn launch(loc: &Locations, p: &Package) -> Result<String, String> {
 }
 
 #[test]
+fn persistent_data_survives_update_uninstall_and_reinstall() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let (package, mut files) = generic()?;
+    files.insert(
+        "main.py".into(),
+        b"import os,pathlib\np=pathlib.Path(os.environ['VITRALLIS_APP_DATA_DIR'])\nassert pathlib.Path.cwd()==p\nassert pathlib.Path(os.environ['VITRALLIS_APP_DIR']).is_dir()\n(p/'a saved note ! \\u00e9.txt').write_text('keep me',encoding='utf-8')\nprint(os.environ['VITRALLIS_APP_ID'])\n".to_vec(),
+    );
+    let package = inventory(package, &files);
+    install::install(
+        &loc,
+        &install::prepare(&loc, package.clone(), files.clone())?,
+    )?;
+    assert_eq!(launch(&loc, &package)?, format!("{}\n", package.id));
+    let saved = loc.app_data(&package.id)?.join("a saved note ! é.txt");
+    let (next, next_files) = upgraded(package, files, "start.py")?;
+    install::install(
+        &loc,
+        &install::prepare(&loc, next.clone(), next_files.clone())?,
+    )?;
+    assert_eq!(launch(&loc, &next)?, "new release\n");
+    uninstall::uninstall(&loc, &next)?;
+    assert!(!loc.root(&next).join("app.toml").exists());
+    assert_eq!(
+        std::fs::read_to_string(&saved).map_err(|e| e.to_string())?,
+        "keep me"
+    );
+    install::install(&loc, &install::prepare(&loc, next.clone(), next_files)?)?;
+    assert_eq!(launch(&loc, &next)?, "new release\n");
+    assert_eq!(
+        std::fs::read_to_string(&saved).map_err(|e| e.to_string())?,
+        "keep me"
+    );
+    storage::atomic(
+        &loc.root(&next).join(".installation-pending"),
+        &storage::FileData {
+            bytes: b"interrupted".to_vec(),
+            mode: 0o600,
+        },
+    )?;
+    let output = std::process::Command::new(loc.state.join("launchers").join(&next.id))
+        .output()
+        .map_err(|e| e.to_string())?;
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Installation incomplete"));
+    Ok(())
+}
+
+#[test]
 fn update_replaces_launcher_entry_removes_obsolete_files_and_launches_new_code()
 -> Result<(), String> {
     let (_scratch, loc) = locations()?;
@@ -382,5 +430,24 @@ fn presentation_refresh_budget_bounds_staged_bytes() -> Result<(), String> {
     cache::stage(&loc, &p, Some(&fetch), &mut staged, &mut budget);
     assert_eq!(staged.len(), 1);
     assert!(budget < cache::PRESENTATION_BUDGET);
+    Ok(())
+}
+
+#[test]
+#[cfg(unix)]
+fn unsafe_persistent_data_is_rejected_before_package_mutation() -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let (_scratch, loc) = locations()?;
+    let (package, files) = generic()?;
+    let data = loc.app_data(&package.id)?;
+    storage::directory(&data)?;
+    std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755))
+        .map_err(|e| e.to_string())?;
+    assert!(install::prepare(&loc, package.clone(), files.clone()).is_err());
+    assert!(!loc.root(&package).exists());
+    std::fs::remove_dir(&data).map_err(|e| e.to_string())?;
+    std::os::unix::fs::symlink(&loc.home, &data).map_err(|e| e.to_string())?;
+    assert!(install::prepare(&loc, package.clone(), files).is_err());
+    assert!(!loc.root(&package).exists());
     Ok(())
 }

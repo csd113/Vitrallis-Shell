@@ -288,6 +288,33 @@ pub fn launcher(runtime: &Runtime, entry: &Path, commit: &str) -> Result<Vec<u8>
     Ok(s.into_bytes())
 }
 
+/// Give desktop shortcuts and Shell launches the same persistent storage contract.
+pub fn environment(bytes: &[u8], home: &Path, id: &str) -> Result<Vec<u8>, String> {
+    use std::fmt::Write;
+    super::metadata::identity(id)?;
+    let payload = vitrallis_native::paths::app_dir(home, id).map_err(|e| e.to_string())?;
+    let data = vitrallis_native::paths::app_data(home, id).map_err(|e| e.to_string())?;
+    let documents = vitrallis_native::paths::documents(home, id).map_err(|e| e.to_string())?;
+    let script = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
+    let script = script
+        .strip_prefix("#!/bin/sh\n")
+        .ok_or("Invalid app launcher")?;
+    let mut output = String::from("#!/bin/sh\numask 077\n");
+    for (key, value) in [
+        ("VITRALLIS_APP_ID", Path::new(id)),
+        ("VITRALLIS_APP_DIR", payload.as_path()),
+        ("VITRALLIS_APP_DATA_DIR", data.as_path()),
+        ("VITRALLIS_DOCUMENTS_DIR", documents.as_path()),
+    ] {
+        let value = value.to_str().ok_or("App path must be UTF-8")?;
+        let _ = writeln!(output, "export {key}='{}'", value.replace('\'', "'\\''"));
+    }
+    output.push_str("if [ -e \"$VITRALLIS_APP_DIR/.installation-pending\" ] || [ -L \"$VITRALLIS_APP_DIR/.installation-pending\" ]; then printf '%s\\n' 'Installation incomplete; repair in App Center.' >&2; exit 1; fi\n");
+    output.push_str("cd \"$VITRALLIS_APP_DATA_DIR\" || { printf '%s\\n' 'App data unavailable; repair in App Center.' >&2; exit 1; }\n");
+    output.push_str(script);
+    Ok(output.into_bytes())
+}
+
 /// Compile Python syntax in the selected app runtime without importing or executing it.
 pub fn validate(runtime: &Runtime, files: &Files) -> Result<(), String> {
     let sources = files
@@ -368,6 +395,33 @@ fn compile_sources(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<()
 mod completion_tests {
     use super::*;
     use std::time::{Duration, Instant};
+    #[test]
+    fn launcher_environment_quotes_paths_and_does_not_depend_on_callers_directory()
+    -> Result<(), String> {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let home = scratch
+            .0
+            .canonicalize()
+            .map_err(|e| e.to_string())?
+            .join("owner's $files (space)");
+        let id = "io.test.environment";
+        let data = vitrallis_native::paths::app_data(&home, id).map_err(|e| e.to_string())?;
+        super::super::storage::private_directory(&data, &home)?;
+        let bytes = environment(b"#!/bin/sh\nprintf '%s\\n' \"$VITRALLIS_APP_ID\" \"$VITRALLIS_APP_DATA_DIR\" \"$PWD\"\n", &home, id)?;
+        let script = home.join("launch");
+        std::fs::write(&script, bytes).map_err(|e| e.to_string())?;
+        let output = std::process::Command::new("/bin/sh")
+            .arg(script)
+            .current_dir("/")
+            .output()
+            .map_err(|e| e.to_string())?;
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).map_err(|e| e.to_string())?,
+            format!("{id}\n{}\n{}\n", data.display(), data.display())
+        );
+        Ok(())
+    }
     #[test]
     fn dependency_chain_waits_for_real_completion_and_preserves_failure_output()
     -> Result<(), String> {
