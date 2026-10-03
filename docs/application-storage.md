@@ -6,7 +6,7 @@ hardcoded PocketCHIP username.
 
 | Content | Location | Owner and lifecycle |
 | --- | --- | --- |
-| App payload, private Python environment and installation receipt | `$HOME/Documents/Vitrallis/Apps/<id>/` | Desktop user; files replaced only through verified App Center transactions |
+| App payload, generated Python environment and installation receipt | `$HOME/Documents/Vitrallis/Apps/<id>/` | Desktop user; verified App Center transactions replace or remove owned files; custom `.venv` and unmanaged files remain |
 | Persistent settings, saves, media and app state | `$HOME/Documents/Vitrallis/AppData/<id>/` | Desktop user; new directories 0700; retained by repair, update and ordinary uninstall |
 | Default user documents | `AppData/<id>/Documents/` | Desktop user; native Notepad creates private directories after path validation |
 | Disposable app cache | `${XDG_CACHE_HOME:-$HOME/.cache}/<id>/` | Desktop user; app-specific capacity and cleanup policy |

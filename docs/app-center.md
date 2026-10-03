@@ -187,6 +187,11 @@ Catalog checks do not install dependencies. App Center does not run apt or
 publisher install scripts, and does not install Python dependencies globally.
 Permissions are requirements; applications are not sandboxed.
 
+Provisioning uses a private umask (077) and removes group/world-write permission
+from files copied into its private staging directory. Managed environments contain
+regular files and directories; the fixed `lib64 -> lib` alias created by 64-bit Linux
+venv is removed before publication, since Python uses `lib/` directly.
+
 Rust packages declare precompiled binaries by target ABI and do not run Python or
 Cargo. See the [Rust package contract](app-development.md#precompiled-rust-packages)
 for manifests, binary checks, executable permissions and publisher prerequisites.
@@ -195,8 +200,12 @@ Installed packages live at `$HOME/Documents/Vitrallis/Apps/<id>`. Receipts, gene
 shortcuts and icons use this canonical installation. The managed launcher is
 regenerated from the current entry, runtime and source commit. A locally edited
 launcher blocks replacement and is preserved with a diagnostic. Custom desktop
-shortcuts remain user-owned. Unmanaged data and app-local virtual environments
-are retained. Persistent data belongs in `$HOME/Documents/Vitrallis/AppData/<id>`;
+shortcuts remain user-owned. Unmanaged data and user-supplied `.venv` environments
+are retained. Ordinary uninstall removes Shell-generated files under
+`runtime/<requirements hash>` through the same recovery journal as the payload.
+Empty runtime directories remain available for interrupted-operation recovery;
+provisioning removes an entirely empty, validated generation before rebuilding.
+Persistent data belongs in `$HOME/Documents/Vitrallis/AppData/<id>`;
 updates, repair and ordinary uninstall preserve this directory. The generated
 launcher starts in AppData and exports `VITRALLIS_APP_ID`, `VITRALLIS_APP_DIR`,
 `VITRALLIS_APP_DATA_DIR` and `VITRALLIS_DOCUMENTS_DIR` (AppData/Documents).
@@ -238,13 +247,22 @@ Recovery restores a path only if it still matches the transaction's recorded
 output; later user changes are preserved. Journals and backups remain under
 `$XDG_DATA_HOME/vitrallis/app-center/transactions/`. Do not delete markers or journals
 to bypass a recovery failure. Resolve the reported conflict and repair the app.
+Generated-runtime removal backups are reclaimed after durable completion and
+checked again during subsequent recovery scans. Pending-operation backups and
+ordinary payload backups remain. A later edit to a runtime backup blocks its
+reclamation and is reported. Runtime removal is bounded to 64 MiB, 16 MiB per
+file, 4,096 filesystem entries and depth 32; the complete transaction allows
+2,056 files and 96 MiB of before/after images. Exceeding these limits refuses
+removal before changing the installed files.
+Locally edited payload/support files are bounded to 32 MiB for removal.
 
 After each mutation the worker refreshes the affected row's local status and the
 shell refreshes installed-app discovery independently of device-menu configuration.
 A broken PocketHome config therefore cannot prevent an otherwise valid new app
 from registering in the live Vitrallis menu. Refresh retains launcher selection
 by ID. Removal validates the receipt, refuses a running app, removes only owned
-package/support files and matching managed shortcuts, then updates the row/menu.
+package/support files, generated dependency files and matching managed shortcuts,
+then updates the row/menu.
 
 Catalogs are bounded to 8 MiB and 1,000 apps per source. Packages allow 256 files,
 2 MiB per file and 16 MiB total. Transfer hosts are fixed GitHub API/raw HTTPS

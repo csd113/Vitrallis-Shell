@@ -1,6 +1,6 @@
 //! Receipt-scoped uninstall; saved data remains and removals use the install journal.
 use super::{
-    install, metadata, running,
+    install, metadata, running, runtime_cleanup,
     storage::{self, FileData, Locations},
     transaction::{self, Write},
 };
@@ -75,7 +75,11 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), Str
             mode: 0o600,
         },
     )?;
-    transaction::commit(&journal, &writes, &marker)
+    transaction::commit(&journal, &writes, &marker)?;
+    transaction::discard_completed_removals(&journal, |path| {
+        runtime_cleanup::owned_file(&root, path)
+    })
+    .map_err(|e| format!("App uninstalled; runtime backup cleanup failed: {e}"))
 }
 pub(super) fn installed_entry(
     root: &Path,
@@ -125,11 +129,182 @@ fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
             paths.insert(path);
         }
     }
-    let mut writes = paths
-        .into_iter()
-        .map(transaction::remove)
-        .collect::<Result<Vec<_>, _>>()?;
+    let receipt_write = transaction::remove(root.join(".vitrallis-receipt.json"))?;
+    let mut bytes = receipt_write
+        .before
+        .as_ref()
+        .map_or(0, |data| data.bytes.len());
+    let mut writes = Vec::new();
+    for path in paths {
+        let write = transaction::remove(path)?;
+        bytes += write.before.as_ref().map_or(0, |data| data.bytes.len());
+        // Bound locally edited payloads before retaining all runtime images.
+        if bytes > 32 * 1024 * 1024 {
+            return Err("App payload exceeds removal bounds; no files were removed".into());
+        }
+        writes.push(write);
+    }
+    runtime_cleanup::plan(&root, &mut writes)?;
     // Keep ownership metadata until the remaining removals have succeeded.
-    writes.push(transaction::remove(root.join(".vitrallis-receipt.json"))?);
+    writes.push(receipt_write);
     Ok(writes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_center::tests::{generic, locations};
+
+    #[test]
+    fn generated_dependencies_are_journaled_and_custom_data_survives() -> Result<(), String> {
+        let (_scratch, loc) = locations()?;
+        let (package, files) = generic()?;
+        install::install(
+            &loc,
+            &install::prepare(&loc, package.clone(), files.clone())?,
+        )?;
+        let root = loc.root(&package);
+        let runtime = root
+            .join("runtime")
+            .join(storage::sha(&files["requirements.txt"]));
+        let executable = runtime.join("bin/python3");
+        let library = runtime.join("lib/site-packages/dependency.py");
+        // Real interpreter copies exceed the package's 2 MiB per-file limit.
+        let interpreter = FileData {
+            bytes: vec![42; 3 * 1024 * 1024],
+            mode: 0o755,
+        };
+        storage::atomic(&executable, &interpreter)?;
+        storage::atomic(
+            &library,
+            &FileData {
+                bytes: b"generated dependency".to_vec(),
+                mode: 0o600,
+            },
+        )?;
+        let saved = FileData {
+            bytes: b"user data".to_vec(),
+            mode: 0o600,
+        };
+        let retained = [
+            loc.app_data(&package.id)?.join("a note.txt"),
+            root.join(".venv/custom.txt"),
+            root.join("runtime/custom/user-note.txt"),
+            root.join("unmanaged.txt"),
+        ];
+        for path in &retained {
+            storage::atomic(path, &saved)?;
+        }
+        let writes = plan(&loc, &package)?;
+        assert_eq!(
+            writes.last().map(|w| &w.path),
+            Some(&root.join(".vitrallis-receipt.json"))
+        );
+        let journal = install::journal_root(&loc, &package).join("injected-failure");
+        assert!(
+            transaction::apply_with(&journal, &writes, |i| {
+                if writes[i].path == executable {
+                    Err("interrupted runtime removal".into())
+                } else {
+                    Ok(())
+                }
+            })
+            .is_err()
+        );
+        assert_eq!(
+            storage::read(&executable, metadata::BUNDLE_LIMIT)?,
+            Some(interpreter)
+        );
+        assert_eq!(install::label(&loc, &package)?, "0.1.0");
+        install::recover(&loc, &package)?;
+        uninstall(&loc, &package)?;
+        assert!(!executable.exists());
+        assert!(!library.exists());
+        assert!(!root.join(".vitrallis-receipt.json").exists());
+        let mut reclaimed = 0;
+        for entry in
+            std::fs::read_dir(install::journal_root(&loc, &package)).map_err(|e| e.to_string())?
+        {
+            let journal = entry.map_err(|e| e.to_string())?.path();
+            if let Some(completed) =
+                storage::read(&journal.join("completed.json"), metadata::CATALOG_LIMIT)?
+            {
+                let rows = metadata::json(&completed.bytes)?;
+                for (i, row) in rows
+                    .as_array()
+                    .ok_or("missing journal rows")?
+                    .iter()
+                    .enumerate()
+                {
+                    let path =
+                        std::path::PathBuf::from(row["path"].as_str().ok_or("missing path")?);
+                    if runtime_cleanup::owned_file(&root, &path) {
+                        assert!(!journal.join(format!("{i}.before")).exists());
+                        reclaimed += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(reclaimed, 2);
+        for path in &retained {
+            assert_eq!(storage::read(path, 100)?, Some(saved.clone()));
+        }
+        install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
+        assert_eq!(install::label(&loc, &package)?, "0.1.0");
+        for path in &retained {
+            assert_eq!(storage::read(path, 100)?, Some(saved.clone()));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn oversized_runtime_refuses_uninstall_without_changing_payload() -> Result<(), String> {
+        let (_scratch, loc) = locations()?;
+        let (package, files) = generic()?;
+        install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
+        let root = loc.root(&package);
+        let runtime = root.join("runtime").join("a".repeat(64));
+        storage::directory(&runtime)?;
+        let large =
+            std::fs::File::create(runtime.join("too-large.so")).map_err(|e| e.to_string())?;
+        large
+            .set_len(u64::try_from(metadata::BUNDLE_LIMIT).map_err(|e| e.to_string())? + 1)
+            .map_err(|e| e.to_string())?;
+        assert!(uninstall(&loc, &package).is_err());
+        assert_eq!(install::label(&loc, &package)?, "0.1.0");
+        assert!(root.join("main.py").exists());
+        assert!(!root.join(".installation-pending").exists());
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unsafe_runtime_links_refuse_uninstall_before_payload_mutation() -> Result<(), String> {
+        use std::os::unix::fs::symlink;
+        for hard_link in [false, true] {
+            let (_scratch, loc) = locations()?;
+            let (package, files) = generic()?;
+            install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
+            let root = loc.root(&package);
+            let runtime = root.join("runtime").join("a".repeat(64));
+            storage::directory(&runtime)?;
+            let external = loc.home.join("unrelated-note");
+            std::fs::write(&external, b"preserve unrelated data").map_err(|e| e.to_string())?;
+            let target = runtime.join("dependency");
+            if hard_link {
+                std::fs::hard_link(&external, &target).map_err(|e| e.to_string())?;
+            } else {
+                symlink(&external, &target).map_err(|e| e.to_string())?;
+            }
+            assert!(uninstall(&loc, &package).is_err());
+            assert_eq!(install::label(&loc, &package)?, "0.1.0");
+            assert!(root.join("main.py").is_file());
+            assert!(!root.join(".installation-pending").exists());
+            assert_eq!(
+                std::fs::read(&external).map_err(|e| e.to_string())?,
+                b"preserve unrelated data"
+            );
+        }
+        Ok(())
+    }
 }

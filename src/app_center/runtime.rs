@@ -70,7 +70,7 @@ pub(super) fn candidates(root: &Path, files: &Files) -> Vec<PathBuf> {
     .collect()
 }
 
-const PROVISION: &str = r"import os, pathlib, subprocess, sys, tempfile, venv
+const PROVISION: &str = r"import itertools, os, pathlib, stat, subprocess, sys, tempfile, venv
 root = pathlib.Path(sys.argv[2])
 requirements = sys.argv[3]
 validate = sys.argv[4]
@@ -80,6 +80,7 @@ environment = {k: v for k, v in os.environ.items() if not k.startswith(('PIP_', 
 environment.update(PIP_CONFIG_FILE=os.devnull, PYTHONNOUSERSITE='1')
 os.environ.clear()
 os.environ.update(environment)
+os.umask(0o077)
 # Reject pip options, paths and URLs before creating an environment.
 import re
 lines = [line.strip() for line in requirements.splitlines() if line.strip() and not line.lstrip().startswith('#')]
@@ -94,6 +95,17 @@ with tempfile.TemporaryDirectory(prefix='.pending-', dir=str(root.parent)) as st
  python = str(pathlib.Path(staging) / 'bin/python3')
  subprocess.run([python, '-I', '-c', validate, 'validate'] + lines, check=True, timeout=30, env=environment)
  subprocess.run([python, '-I', '-m', 'pip', '--isolated', 'install', '--disable-pip-version-check', '--no-input', 'packaging'] + lines, check=True, timeout=600, env=environment)
+ # venv adds this fixed alias on 64-bit Linux even with symlinks=False.
+ # The interpreter uses lib/ directly; managed storage forbids symlinks.
+ lib64 = pathlib.Path(staging) / 'lib64'
+ if lib64.is_symlink() and os.readlink(lib64) == 'lib': lib64.unlink()
+ # copy2 preserves modes from the base interpreter's activation templates;
+ # umask alone cannot prevent those templates from retaining group write.
+ for path in itertools.chain([pathlib.Path(staging)], pathlib.Path(staging).rglob('*')):
+  info = path.lstat()
+  if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)) or (stat.S_ISREG(info.st_mode) and info.st_nlink != 1):
+   raise RuntimeError('Unsafe generated runtime entry: '+str(path))
+  path.chmod(stat.S_IMODE(info.st_mode) & ~0o022)
  # Never publish an environment that pip claims succeeded but cannot satisfy
  # the same metadata/Tk checks used when selecting it for launch.
  subprocess.run([python, '-I', '-c', validate, sys.argv[1]] + lines, check=True, timeout=30, env=environment)
@@ -108,12 +120,13 @@ pub fn ensure(root: &Path, files: &Files) -> Result<Runtime, String> {
     let base = find(root, files, false)?;
     validate(&base, files)?;
     let target = managed(root, files);
-    // An existing managed environment is either healthy (handled by `detect`
-    // above) or damaged. Report that clearly instead of running the strict
-    // shared-storage permission check, which would reject the group-writable
-    // directories Python's venv creates under the device's shared umask 002.
-    if target.symlink_metadata().is_ok() {
-        return Err("App dependency environment is damaged; remove it before retrying".into());
+    // Uninstall journals the generated files and leaves their directories intact
+    // for recovery. Only an entirely empty, safe hierarchy may be discarded.
+    if target.symlink_metadata().is_ok()
+        && !super::runtime_cleanup::remove_empty(&target)
+            .map_err(|e| format!("App dependency environment is damaged: {e}"))?
+    {
+        return Err("App dependency environment is damaged; uninstall it before retrying".into());
     }
     super::storage::safe(&target)?;
     super::storage::directory(target.parent().ok_or("Missing runtime parent")?)?;

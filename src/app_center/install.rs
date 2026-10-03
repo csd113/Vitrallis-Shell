@@ -512,6 +512,9 @@ pub fn recover(loc: &Locations, p: &Package) -> Result<(), String> {
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         transaction::recover(&entry.path(), |path| allowed(loc, p, path))?;
+        transaction::discard_completed_removals(&entry.path(), |path| {
+            super::runtime_cleanup::owned_file(&loc.root(p), path)
+        })?;
     }
     Ok(())
 }

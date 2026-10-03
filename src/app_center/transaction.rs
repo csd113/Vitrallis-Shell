@@ -8,6 +8,8 @@ use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
 };
+pub(super) const WRITE_LIMIT: usize = 2056;
+const BYTE_LIMIT: usize = 96 * 1024 * 1024;
 #[derive(Debug, Clone)]
 pub struct Write {
     pub path: PathBuf,
@@ -48,6 +50,7 @@ fn value(data: Option<&FileData>) -> Value {
     )
 }
 fn record(journal: &Path, writes: &[Write]) -> Result<(), String> {
+    validate_bounds(writes)?;
     storage::directory(journal)?;
     let mut rows = Vec::new();
     for (i, w) in writes.iter().enumerate() {
@@ -66,6 +69,18 @@ fn record(journal: &Path, writes: &[Write]) -> Result<(), String> {
             mode: 0o600,
         },
     )
+}
+fn validate_bounds(writes: &[Write]) -> Result<(), String> {
+    let bytes = writes.iter().try_fold(0_usize, |bytes, write| {
+        [write.before.as_ref(), write.after.as_ref()]
+            .into_iter()
+            .flatten()
+            .try_fold(bytes, |bytes, data| bytes.checked_add(data.bytes.len()))
+    });
+    if writes.len() > WRITE_LIMIT || bytes.is_none_or(|bytes| bytes > BYTE_LIMIT) {
+        return Err("App transaction exceeds recovery bounds; no files were changed".into());
+    }
+    Ok(())
 }
 // Finalization is part of the transaction. A rolled-back update must remain
 // discoverable; only an unresolved rollback retains the incomplete marker.
@@ -96,7 +111,7 @@ pub fn commit(journal: &Path, writes: &[Write], marker: &Path) -> Result<(), Str
     Ok(())
 }
 #[cfg(test)]
-fn apply_with(
+pub(super) fn apply_with(
     journal: &Path,
     writes: &[Write],
     after_write: impl FnMut(usize) -> Result<(), String>,
@@ -184,10 +199,11 @@ pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, 
     let v = metadata::json(&file.bytes)?;
     let rows = v
         .as_array()
-        .filter(|a| a.len() <= 2056)
+        .filter(|a| a.len() <= WRITE_LIMIT)
         .ok_or("Invalid recovery journal")?;
     let mut writes = Vec::new();
     let mut seen = BTreeSet::new();
+    let mut byte_count = 0;
     for (i, row) in rows.iter().enumerate() {
         metadata::fields(row, "path before after")?;
         let path = PathBuf::from(metadata::text(&row["path"], 4096)?);
@@ -205,6 +221,14 @@ pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, 
         } else {
             Some(load_saved(journal, i, "after", &row["after"])?)
         };
+        for data in [before.as_ref(), after.as_ref()].into_iter().flatten() {
+            byte_count += data.bytes.len();
+            if byte_count > BYTE_LIMIT {
+                return Err(
+                    "App transaction exceeds recovery bounds; no files were changed".into(),
+                );
+            }
+        }
         writes.push(Write {
             path,
             before,
@@ -217,18 +241,110 @@ pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, 
     storage::sync(journal)?;
     Ok(true)
 }
+
+// Derived runtimes are backed up until completion is durable. They have no
+// user data to retain after success; payload backups keep their existing policy.
+// Repeat this after startup so a crash during reclamation cannot leak each venv.
+pub(super) fn discard_completed_removals(
+    journal: &Path,
+    disposable: impl Fn(&Path) -> bool,
+) -> Result<(), String> {
+    if storage::read(&journal.join("pending.json"), metadata::CATALOG_LIMIT)?.is_some() {
+        return Ok(());
+    }
+    let Some(file) = storage::read(&journal.join("completed.json"), metadata::CATALOG_LIMIT)?
+    else {
+        return Ok(());
+    };
+    let value = metadata::json(&file.bytes)?;
+    let rows = value
+        .as_array()
+        .filter(|rows| rows.len() <= WRITE_LIMIT)
+        .ok_or("Invalid completed journal")?;
+    let mut paths = Vec::new();
+    let mut bytes = 0;
+    for (i, row) in rows.iter().enumerate() {
+        metadata::fields(row, "path before after")?;
+        let target = PathBuf::from(metadata::text(&row["path"], 4096)?);
+        if !row["before"].is_null() && row["after"].is_null() && disposable(&target) {
+            let backup = journal.join(format!("{i}.before"));
+            if let Some(data) = storage::read(&backup, metadata::BUNDLE_LIMIT)? {
+                validate_saved(&data, &row["before"])?;
+                bytes += data.bytes.len();
+                if bytes > BYTE_LIMIT {
+                    return Err("Completed runtime backups exceed cleanup bounds".into());
+                }
+                paths.push((backup, &row["before"]));
+            }
+        }
+    }
+    storage::sync(journal)?;
+    for (path, expected) in paths {
+        if let Some(data) = storage::read(&path, metadata::BUNDLE_LIMIT)? {
+            validate_saved(&data, expected)?;
+            std::fs::remove_file(path).map_err(|e| e.to_string())?;
+        }
+    }
+    storage::sync(journal)
+}
 fn load_saved(journal: &Path, i: usize, kind: &str, v: &Value) -> Result<FileData, String> {
-    metadata::fields(v, "sha256 mode")?;
     let d = storage::read(&journal.join(format!("{i}.{kind}")), metadata::BUNDLE_LIMIT)?
         .ok_or("Missing recovery backup")?;
+    validate_saved(&d, v)?;
+    Ok(d)
+}
+fn validate_saved(d: &FileData, v: &Value) -> Result<(), String> {
+    metadata::fields(v, "sha256 mode")?;
     if v["sha256"] != storage::sha(&d.bytes) || v["mode"].as_u64() != Some(u64::from(d.mode)) {
         return Err("Corrupt recovery backup".into());
     }
-    Ok(d)
+    Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn runtime_reclamation_waits_for_completion_and_preserves_edited_backups() -> Result<(), String>
+    {
+        let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
+        let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
+        let runtime = root
+            .join("runtime")
+            .join("a".repeat(64))
+            .join("dependency.py");
+        let source = root.join("main.py");
+        let original = FileData {
+            bytes: b"owned code".to_vec(),
+            mode: 0o600,
+        };
+        storage::atomic(&runtime, &original)?;
+        storage::atomic(&source, &original)?;
+        let writes = [remove(runtime.clone())?, remove(source.clone())?];
+        let journal = root.join("journal");
+        record(&journal, &writes)?;
+        replace(&runtime, None)?;
+        discard_completed_removals(&journal, |path| path == runtime)?;
+        assert!(journal.join("0.before").exists());
+        assert!(recover(&journal, |path| path == runtime || path == source)?);
+        assert_eq!(storage::read(&runtime, 100)?, Some(original));
+        apply_with(&journal, &writes, |_| Ok(()))?;
+        let edited = FileData {
+            bytes: b"a later edit".to_vec(),
+            mode: 0o600,
+        };
+        storage::atomic(&journal.join("0.before"), &edited)?;
+        assert!(discard_completed_removals(&journal, |path| path == runtime).is_err());
+        assert_eq!(storage::read(&journal.join("0.before"), 100)?, Some(edited));
+        storage::atomic(
+            &journal.join("0.before"),
+            writes[0].before.as_ref().ok_or("missing before image")?,
+        )?;
+        discard_completed_removals(&journal, |path| path == runtime)?;
+        discard_completed_removals(&journal, |path| path == runtime)?;
+        assert!(!journal.join("0.before").exists());
+        assert!(journal.join("1.before").exists());
+        Ok(())
+    }
     #[test]
     fn finalization_failure_rolls_back_verified_files_and_commit_releases_marker()
     -> Result<(), String> {

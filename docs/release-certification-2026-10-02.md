@@ -464,6 +464,29 @@ no physical cold power cycle has been performed.
   Shell RSS after completion was 39,584 KiB, compared
   with 38,580 KiB in the preceding soak. One lifecycle is not evidence that
   repeated installs have bounded memory use.
+- A subsequent host-only correction includes Shell-generated dependency files
+  in the uninstall journal while retaining AppData, custom `.venv` environments
+  and unmanaged files. Runtime backups are reclaimed only after durable
+  completion; interrupted-operation backups remain recoverable. Empty runtime
+  directories remain for recovery and can be removed before reprovisioning.
+  Five new Rust regressions cover interruption/rollback, data retention,
+  oversized files, links, empty-directory reprovisioning and completed-backup
+  reclamation. The exact offline pip fixture also checks private staging under
+  shared umask 002. It exposed a group-writable copied activation template;
+  staging now normalizes those copied modes before publication.
+  Complete macOS and native Linux/aarch64 validation pass with 373/374 Rust
+  tests (9/12 existing ignores), 173 Python tests (9/10 environment skips),
+  two renderer tests (one existing skip), release builds and native smokes.
+  ARMv7 rebuilding, three native smokes and all seven package sidecars pass;
+  the prepared 26,826,084-byte bundle hash is
+  `4c4fa2aca954d2c4acb9a887b30e17b0df743b39c9805861147f01bdff9a0c50`.
+  An emulated amd64 container attempt failed three existing process launch/
+  identity tests; those unchanged tests pass in native Linux. The failed attempt
+  is retained, and native amd64 remote CI must also pass for the new commit.
+  This correction has not been installed or tested on PocketCHIP: the device
+  was handed to the existing Apps worker for its hardware audit. Dependency
+  cleanup, fresh reprovisioning, low-space/fault behavior and repeated-install
+  memory acceptance remain open until handback and physical retesting.
 - Wireless once reported “Wi-Fi change denied or unavailable” while the same
   screen and independent NetworkManager readback showed Wi-Fi enabled and
   connected. A clean UI off/on retry and six bounded direct radio changes pass;
