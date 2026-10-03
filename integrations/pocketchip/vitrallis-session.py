@@ -42,15 +42,30 @@ if not vitrallis_home_route then
             if index == 20 and field:match("^%d+$") then return field end
         end
     end
+    local function original_desktop(c)
+        return route.desktop_pid and c.pid == route.desktop_pid
+            and process_identity(c.pid) == route.desktop_start
+    end
     route.filter = function(c, context)
         if (context == "rules" or context == "ewmh") and route.shell and route.shell.valid
-            and route.desktop_pid and c.pid == route.desktop_pid
-            and process_identity(c.pid) == route.desktop_start then
+            and original_desktop(c) then
             return false
         end
     end
     awful.ewmh.add_activate_filter(route.filter, "rules")
     awful.ewmh.add_activate_filter(route.filter, "ewmh")
+    -- PocketHome can also take X11 focus directly, bypassing EWMH. Keep that
+    -- background desktop from displacing the current app, not just the shell.
+    route.focus = function(c)
+        if route.shell and route.shell.valid and original_desktop(c) then
+            local target = route.foreground
+            if not target or not target.valid or original_desktop(target) then target = route.shell end
+            client.focus = target; target:raise()
+        else
+            route.foreground = c
+        end
+    end
+    client.connect_signal("focus", route.focus)
     -- Window names can arrive after manage. Claim the launcher once when its
     -- actual client is ready; later title changes must not steal app focus.
     route.activate = function(c)
@@ -91,6 +106,7 @@ if vitrallis_home_route then
     local route = vitrallis_home_route
     client.disconnect_signal("manage", route.activate)
     client.disconnect_signal("property::name", route.activate)
+    client.disconnect_signal("focus", route.focus)
     local awful = require("awful")
     awful.ewmh.remove_activate_filter(route.filter, "rules")
     awful.ewmh.remove_activate_filter(route.filter, "ewmh")

@@ -72,6 +72,7 @@ local concurrent_key = {key = "F12", modifiers = {}}
 table.insert(keys, concurrent_key)
 ''' + '\n' + s.RESTORE_HOOK + r'''
 assert(callbacks.manage == nil and callbacks["property::name"] == nil)
+assert(callbacks.focus == nil)
 assert(filters.rules == nil and filters.ewmh == nil)
 assert(client.focus == previous and previous.raised == 1)
 assert(vitrallis_home_route == nil)
@@ -140,8 +141,13 @@ assert(client.focus == shell and vitrallis_home_route.previous == desktop)
 assert(filters.rules[2](desktop, "rules") == false)
 assert(filters.ewmh[2](desktop, "ewmh") == false)
 assert(filters.ewmh[2](desktop, "mouse.enter") == nil)
+callbacks.focus(shell)
+client.focus = desktop
+callbacks.focus(desktop)
+assert(client.focus == shell)
 local app = window("Notepad", "vitrallis-notepad", 101)
 client.focus = app
+callbacks.focus(app)
 assert(filters.ewmh[2](app, "ewmh") == nil)
 callbacks["property::name"](shell)
 assert(client.focus == app)
@@ -150,8 +156,16 @@ desktop.valid = false
 local dialog = window("Checking for updates", nil, 42)
 assert(filters.rules[2](dialog, "rules") == false)
 assert(filters.ewmh[2](dialog, "ewmh") == false)
+client.focus = dialog
+callbacks.focus(dialog)
+assert(client.focus == app)
 identity = "5678"
 assert(filters.ewmh[2](dialog, "ewmh") == nil)
+client.focus = dialog
+callbacks.focus(dialog)
+assert(client.focus == dialog)
+client.focus = app
+callbacks.focus(app)
 identity = "1234"; readable = false
 assert(filters.ewmh[2](dialog, "ewmh") == nil)
 readable = true; shell.valid = false
@@ -162,9 +176,14 @@ home_screen.client = remapped
 callbacks.manage(remapped)
 assert(vitrallis_home_route.previous == remapped)
 assert(client.focus == app)
+app.valid = false
+client.focus = remapped
+callbacks.focus(remapped)
+assert(client.focus == shell)
 ''' + '\n' + s.RESTORE_HOOK + r'''
 assert(client.focus == remapped and remapped.raised == 1)
 assert(vitrallis_home_route == nil and callbacks.manage == nil)
+assert(callbacks.focus == nil)
 assert(#filters.rules == 1 and filters.rules[1] == original_filter)
 assert(#filters.ewmh == 1 and filters.ewmh[1] == original_filter)
 '''

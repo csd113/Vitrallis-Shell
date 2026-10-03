@@ -383,9 +383,10 @@ While the launcher is active, temporary Awesome activation filters prevent
 PocketHome's delayed background update window from taking focus. The filters
 identify the original desktop through the existing session's client and its
 process start time, permit other applications to activate normally, and are
-removed when Vitrallis exits. A PocketHome window that arrives after the supervisor
-starts is also retained for desktop restoration. Two session logs are limited to
-128 KiB each.
+removed when Vitrallis exits. A focus handler also returns direct X11 focus
+requests from that desktop process to the active app or launcher. A PocketHome
+window that arrives after the supervisor starts is also retained for desktop
+restoration. Two session logs are limited to 128 KiB each.
 
 To stop from the installed helper:
 
