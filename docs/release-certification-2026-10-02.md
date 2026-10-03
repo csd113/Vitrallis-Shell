@@ -8,17 +8,17 @@ Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
 The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
-reviewed in separate commits. The installed native bundle and helpers correspond
-to `5c560670eaf4a775f2b563b1d9ec344cb4f73bba`, including the startup guard at
-`70540cb02e7f1268efc141b9f6e72dead32f0142` and runtime notices at
-`290ce8836449345ea6df3e17d6875f2fe218681a`. Remote Rust 1.91.0, 1.99.0 and
-stable checks pass for that exact head. Its offline diagnostic Details page
-and cause-first cancelled-update message passed physical inspection. The
-save-specific ENOSPC dialog and retry also passed on hardware, including a
-NAND-backed isolated volume. Actual UBIFS low-space tests and the repaired
-timezone return passed within the scopes recorded below. Complete host
-validation, ARMv7 packaging and normal-user installation also passed. The final
-candidate is not yet established.
+reviewed in separate commits. The installed native bundle now corresponds to
+production code `dba70dab7b4df480e398e178ab0636892cd5b306`, bundle
+`ea6fc653952fc591ff9602ee2b740a873e1c8e6d6aec94a799b862a2081013bd`.
+The test-repair commit `4878c9ec6cbf2bbeef41503808dd6225654c2039` changes only
+one isolated test and this ledger; its production code/helpers are unchanged,
+and all six remote Rust 1.91.0/1.99.0/stable jobs pass. The 380 default workspace
+tests and four explicit graphics opt-ins pass on native PocketCHIP. Candidate
+installation and actual Settings Restore/relaunch in both directions preserve
+all saved data. Earlier physical storage, utility, offline and startup evidence
+is recorded below with its corresponding revisions. The final release candidate
+and clean corrected public installation are not yet established.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
@@ -757,6 +757,44 @@ no physical cold power cycle has been performed.
   all 36 files and 26 directory modes against that baseline. This includes the
   Apps audit's intentionally corrupt Music fixture; its 0664 mode is preserved.
 
+- The reviewed `dba70da` ARM bundle was installed through the normal-user
+  prepared helper route after the native suite passed. Its five executable
+  hashes/modes and all helper receipt hashes match the prepared assets. This
+  is a candidate installation, not a clean public README installation. The
+  test-repair commit `4878c9e` changes only the FIFO test and this ledger;
+  production code, helpers, dependency locks and renderer references match
+  `dba70da`. All six Rust 1.91.0/1.99.0/stable jobs pass for `4878c9e` in
+  PR run 37159837660 and push run 37159834592.
+  Four existing graphical opt-ins were explicitly run on real PocketCHIP X11:
+  accelerated readback/presentation, fullscreen dimensions, accelerated atlas
+  refresh and hardware/software scene comparison. All four pass; this does not
+  certify physical scanout/tearing acceptance. The started Shell uses native
+  480×272 GLES2, Mesa Mali400 hardware, requested SDL VSync and the supervised
+  Present compositor without rendering fallback.
+  Actual Settings Restore was exercised from the candidate to the retained
+  `5c56067` build and back. Default Cancel kept both pointers unchanged. An
+  initial screenshot inspection exceeded the 15-second confirmation deadline;
+  that safe expiry is retained separately. A batch of repeated Enter events
+  left the confirmation open, so the completed Cancel check used separate
+  keyboard events within 3.62 seconds. Each confirmed Restore exchanged the
+  two pointers, reported success and required explicit Relaunch. Both relaunches
+  executed the expected hash-verified generation and returned to one focused
+  480×272 launcher. The same supervised native PID and Linux boot remained;
+  these are two process relaunches, not two device reboots. Final verification
+  checks both complete five-executable generations and unchanged contents,
+  ownership and modes for all 36 saved/config files and 26 data directories.
+  The candidate is active again, the earlier build is retained, and no pending
+  installation remains. Official download/update, interruption faults and the
+  exact clean public route remain open. A native 30.002-second endpoint sample
+  of the returned candidate records 0.70% main-process CPU and unchanged
+  38,752 KiB RSS. The lighter observer costs 0.032% while collecting endpoints,
+  1.16% for the complete sampler child including interpreter startup, and
+  2.74% including the Python driver through its result. SSH CPU and Shell
+  descendants are excluded; both interpreter startups are included in the
+  latter observer figure. No whole-process scan or UI operation occurs during
+  the sample. This is observer calibration and a short idle sample, not an app
+  benchmark or final stability soak.
+
 ## Gate ledger
 
 | Gate | Current result and remaining work |
@@ -778,7 +816,7 @@ no physical cold power cycle has been performed.
 | Every setting persistence | Clock format and timeout survived development reboot; timezone save/return and restored values pass; remaining full persistence matrix pending |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
 | Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; full app/Shell update faults and durability pending |
-| Shell update/rollback | Host recovery tests pass; actual candidate device update/rollback pending |
+| Shell update/rollback | Prepared candidate activation and actual Settings Restore/relaunch in both directions pass with all saved data unchanged; official download/update and interruption faults pending |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on device; remaining manual utility cases pending |
@@ -788,7 +826,7 @@ no physical cold power cycle has been performed.
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
 | Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
 | License/repository consistency | Artwork, both selected Arti graphs, Rust runtime notices and exact prepared legal companions reconciled; final published artifact verification pending |
-| Canonical release builds | Shell full host gate and exact-code ARMv7/x86-64 prepared packages pass; final tagged workflow and exact final-state checks pending |
+| Canonical release builds | Full host gates, exact-code ARMv7/x86-64 prepared packages, 380 default native PocketCHIP tests and four explicit graphics opt-ins pass; final tagged workflow and exact final-state checks pending |
 | Exact clean candidate | Final revision not established; reviewed focus/native state has matching CI and physical evidence; no final tag/release |
 | Final physical smoke | Not run |
 
