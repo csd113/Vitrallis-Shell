@@ -12,6 +12,8 @@ Install Rust through rustup, SDL2 development libraries, and pkg-config on your
 support Rust 1.91. On Debian/Ubuntu the native development packages are
 `libsdl2-dev` and `pkg-config`; `python3-tk`, `python3-venv` and
 `python3-packaging` support runtime inspection and offline dependency tests.
+An available Lua interpreter (`lua5.3` on Debian/Ubuntu, `lua` in Homebrew) runs
+the Awesome window-readiness and routing regression; CI installs it explicitly.
 On macOS, Homebrew's `sdl2` and `pkg-config` provide the native libraries.
 
 ```sh

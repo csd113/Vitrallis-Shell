@@ -285,7 +285,7 @@ cp ''' + shlex.quote(str(DEVICE / 'bootstrap.py')) + ''' "$output"
         for _ in range(2):
             result = self.run_line(self.single_command)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(self.fixture.awesome.read_bytes(), original + fixture.m.STARTUP.encode())
+            self.assertEqual(self.fixture.awesome.read_bytes(), original.replace(b'awful.spawn.with_shell("pocket-home")', fixture.m.startup_block('awful.spawn.with_shell("pocket-home")').encode()))
             for log in ('entry-download', 'outer-download'):
                 self.assertFalse(Path((self.home / log).read_text()).exists())
         result = self.run_line(self.uninstall_line)
@@ -349,9 +349,9 @@ def readme_driver():
         with patch.object(installer, 'preflight'), patch.object(installer, 'require_stopped_session'), \
                 patch.object(installer, 'setup_platform'), patch.object(installer, 'validate_startup'), \
                 patch.object(installer, 'verify_versions') as probe:
-            if args[5:] != ['--make-default']:
-                raise AssertionError('bootstrap must enable the default desktop')
-            installer.install(Path(args[2]), Path(args[1]).parent, Path.home(), args[4], make_default=True)
+            if len(args) != 5 or args[3] != '--expected-version':
+                raise AssertionError('bootstrap must use the current desktop installer')
+            installer.install(Path(args[2]), Path(args[1]).parent, Path.home(), args[4])
             self_expected = probe.call_args.args[1]
             if self_expected != '1.2.3-beta.2':
                 raise AssertionError('release tag was not passed to the installer')

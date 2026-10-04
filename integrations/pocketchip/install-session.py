@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Install a verified PocketCHIP bundle, optionally making it the default desktop."""
+"""Install a verified PocketCHIP bundle as the desktop in place of PocketHome."""
 import fcntl
 import argparse
 import ctypes
@@ -27,7 +27,7 @@ if sys.version_info < (3, 8):
 sys.dont_write_bytecode = True
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
-    from uninstall import AWESOME, STARTUP, BINARIES, HELPERS, MAGIC, atomic, file_digest, make_directories, pointer, read_file, safe, validate_receipt
+    from uninstall import AWESOME, POCKETHOME_COMMAND, BINARIES, HELPERS, MAGIC, atomic, file_digest, make_directories, pointer, read_file, safe, startup_block, startup_replacement, validate_receipt
 except ImportError as error:
     raise SystemExit('Keep uninstall.py beside install-session.py: ' + str(error)) from error
 
@@ -224,17 +224,24 @@ def load_inputs(source, home):
 
 
 def startup_config(home):
-    """Only extend an existing safe Awesome configuration; never replace it."""
+    """Replace only the existing PocketHome launch; retain the rest of Awesome."""
     path = home / AWESOME
     original = read_file(path)
     mode = stat.S_IMODE(path.stat().st_mode)
-    block = STARTUP.encode()
-    if original.count(block) == 1 and original.count(b'Vitrallis startup') == 2:
-        return path, original, original, mode
+    pattern = re.compile(rb'(?m)^[ \t]*(?P<command>' +
+                         POCKETHOME_COMMAND.pattern.encode() + rb')[ \t]*\r?$')
     if b'Vitrallis startup' in original:
-        raise ValueError('Edited or duplicate Vitrallis startup block; review ' + str(path))
-    # Include the separator in the managed block so removal restores exact bytes.
-    return path, original, original + block, mode
+        block, _ = startup_replacement(original)
+        if pattern.search(original.replace(block, b'', 1)) is not None:
+            raise ValueError('PocketHome launch remains beside the Vitrallis startup block')
+        return path, original, original, mode
+    matches = list(pattern.finditer(original))
+    if len(matches) != 1:
+        raise ValueError('Expected one standalone PocketHome launch in ' + str(path))
+    match = matches[0]
+    block = startup_block(match['command'].decode('ascii')).encode()
+    content = original[:match.start('command')] + block + original[match.end('command'):]
+    return path, original, content, mode
 
 
 def validate_startup(startup, directory):
@@ -244,10 +251,10 @@ def validate_startup(startup, directory):
                    stdin=subprocess.DEVNULL, timeout=5, check=True)
 
 
-def install(bundle, source, home, expected_version=None, make_default=False):
+def install(bundle, source, home, expected_version=None):
     preflight()
     inputs = load_inputs(source, home)
-    startup = startup_config(home) if make_default else None
+    startup = startup_config(home)
     target = home / '.local/share/vitrallis'
     safe(home / '.local/share/vitrallis-backups/.preflight')
     make_directories(target)
@@ -275,8 +282,7 @@ def install(bundle, source, home, expected_version=None, make_default=False):
             generation.mkdir(mode=0o755)
             digest = extract_bundle(bundle, generation)
             verify_versions(generation, expected_version)
-            if startup is not None:
-                validate_startup(startup, Path(temporary))
+            validate_startup(startup, Path(temporary))
             setup_platform(source)
             install_locked(generation, digest, home, inputs, startup)
 
@@ -335,7 +341,7 @@ def tor_defaults(home, writes):
     return directories
 
 
-def install_locked(generation, digest, home, inputs, startup=None):
+def install_locked(generation, digest, home, inputs, startup):
     target = home / '.local/share/vitrallis'
     helpers = inputs
     generations = target / 'generations'
@@ -358,11 +364,10 @@ def install_locked(generation, digest, home, inputs, startup=None):
             '[Desktop Entry]\nType=Application\nName=Vitrallis\nExec="' + str(launch) +
             '"\nTerminal=false\nCategories=System;\n').encode(), 0o644),
     }
-    if startup is not None:
-        path, original, content, mode = startup
-        if read_file(path) != original or stat.S_IMODE(path.stat().st_mode) != mode:
-            raise ValueError('Awesome configuration changed during installation; retry')
-        writes[path] = (content, mode)
+    path, original, content, mode = startup
+    if read_file(path) != original or stat.S_IMODE(path.stat().st_mode) != mode:
+        raise ValueError('Awesome configuration changed during installation; retry')
+    writes[path] = (content, mode)
     tor_directories = tor_defaults(home, writes)
     receipt_path = target / 'installed.json'
     safe(receipt_path)
@@ -474,10 +479,7 @@ def install_locked(generation, digest, home, inputs, startup=None):
     print('Installed:', target)
     print('Backups:', backup)
     print('Launch:', launch)
-    if startup is not None:
-        print('Vitrallis is the default desktop at your next login. Exit Vitrallis returns to PocketHome.')
-    else:
-        print('Run the launch command above to open Vitrallis.')
+    print('Vitrallis replaces PocketHome at your next login. Uninstall restores PocketHome startup.')
     print('Native bundle SHA256:', digest)
     print('Offline uninstall: python3 "' + str(target / 'uninstall.py') + '"')
 
@@ -486,10 +488,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('bundle', type=Path)
     parser.add_argument('--expected-version')
-    parser.add_argument('--make-default', action='store_true', help='Start Vitrallis after the existing Awesome desktop at login')
     args = parser.parse_args()
     try:
-        install(args.bundle, Path(__file__).resolve().parent, Path.home(), args.expected_version, args.make_default)
+        install(args.bundle, Path(__file__).resolve().parent, Path.home(), args.expected_version)
     except (OSError, ValueError, TypeError, SyntaxError, subprocess.SubprocessError) as error:
         print('Install failed: ' + str(error), file=sys.stderr)
         sys.exit(1)

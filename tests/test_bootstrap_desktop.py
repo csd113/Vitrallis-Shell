@@ -15,19 +15,30 @@ spec.loader.exec_module(b)
 spec = importlib.util.spec_from_file_location('startup_block', ROOT / 'integrations/pocketchip/uninstall.py')
 u = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(u)
+spec = importlib.util.spec_from_file_location('desktop_installer', ROOT / 'integrations/pocketchip/install-session.py')
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
 ENABLED = os.environ.get('VITRALLIS_DESKTOP_FIXTURE') == '1' and Path('/.dockerenv').exists()
 
 
 @unittest.skipUnless(ENABLED, 'requires explicit disposable Awesome/X11 simulator')
 class DesktopReadiness(unittest.TestCase):
-    def test_real_awesome_login_starts_default_once_and_retains_existing_startup(self):
+    def test_real_awesome_login_replaces_pockethome_once_and_retains_other_startup(self):
         with tempfile.TemporaryDirectory(prefix='vitrallis-default-desktop-') as temporary:
             root = Path(temporary)
             env = dict(os.environ, DISPLAY=':98', HOME=str(root))
-            config = root / 'rc.lua'
+            config = root / m.AWESOME
+            config.parent.mkdir(parents=True)
             original = Path('/etc/xdg/awesome/rc.lua').read_bytes()
             config.write_bytes(original + b'\nlocal original = io.open(os.getenv("HOME") .. "/original-started", "w"); original:close()\n'
-                               + u.STARTUP.encode())
+                               b'launch_home_screen = function()\n    awful.spawn.with_shell("pocket-home")\nend\nlaunch_home_screen()\n')
+            config.write_bytes(m.startup_config(root)[2])
+            commands = root / 'bin'
+            commands.mkdir()
+            old_home = commands / 'pocket-home'
+            old_home.write_text('#!/bin/sh\nprintf "started\\n" >> "$HOME/pockethome-started"\n')
+            old_home.chmod(0o700)
+            env['PATH'] = str(commands) + ':' + env['PATH']
             launch = root / '.local/share/vitrallis/launch'
             launch.parent.mkdir(parents=True)
             launch.write_text('#!/bin/sh\nprintf "launched\\n" >> "$HOME/default-started"\n')
@@ -47,6 +58,7 @@ class DesktopReadiness(unittest.TestCase):
                 self.assertEqual((root / 'default-started').read_text(), 'launched\n')
                 time.sleep(1)
                 self.assertEqual((root / 'default-started').read_text(), 'launched\n')
+                self.assertFalse((root / 'pockethome-started').exists())
             finally:
                 for process in reversed(processes):
                     process.terminate()

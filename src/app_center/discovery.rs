@@ -56,7 +56,7 @@ pub(super) fn manifests(
     loc: &Locations,
     keep_going: impl Fn() -> bool,
 ) -> Result<Vec<Result<InstalledManifest, String>>, String> {
-    let root = loc.data.join("vitrallis/apps");
+    let root = loc.apps();
     storage::safe(&root)?;
     let entries = match std::fs::read_dir(&root) {
         Ok(entries) => entries,
@@ -178,8 +178,8 @@ mod tests {
         };
         let mut catalog = Catalog::default();
         installed(&mut catalog, &loc)?;
-        assert!(catalog.apps.is_empty());
-        let root = loc.data.join("vitrallis/apps/io.vitrallis.hello");
+        assert_eq!(catalog.apps.len(), 0);
+        let root = loc.apps().join("io.vitrallis.hello");
         for (name, bytes) in [
             (
                 "app.toml",
@@ -228,7 +228,7 @@ mod integration_tests {
         install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
         let mut catalog = Catalog::default();
         installed(&mut catalog, &loc)?;
-        assert!(catalog.diagnostics.is_empty());
+        assert_eq!(catalog.diagnostics, Vec::<String>::new());
         assert_eq!(catalog.apps.len(), 1);
         let app = &catalog.apps[0];
         assert_eq!(app.id, package.id);

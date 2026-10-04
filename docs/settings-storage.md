@@ -27,26 +27,24 @@ For each installed app, the scanner measures:
 
 - Installed files listed in its local receipt.
 - Private runtimes inside `runtime` or `.venv`.
-- Python caches in `.vitrallis-bytecode` and `__pycache__`, plus the app's XDG cache.
-- User documents under `$HOME/documents/<stable-app-id>/`.
-- Internal settings/state under the app's XDG config/data roots, other installation
+- Python caches in `__pycache__`, plus the app's XDG cache.
+- User documents under `$HOME/Documents/Vitrallis/AppData/<stable-app-id>/Documents/`.
+- Internal settings/state under the app's AppData root, other installation
   files and transaction backups. Managed launchers and verified desktop entries
   are attributed to application files.
 
 Bundled Terminal, Notepad and Files appear alongside installed packages. Notepad
 uses its canonical documents directory for new saves; explicitly selected paths
-remain under the user's control. The launcher exports `VITRALLIS_APP_ID` and
-`VITRALLIS_DOCUMENTS_DIR` for applications that create documents. These variables
+remain under the user's control. The launcher exports `VITRALLIS_APP_ID`, `VITRALLIS_APP_DIR`,
+`VITRALLIS_APP_DATA_DIR` and `VITRALLIS_DOCUMENTS_DIR` for managed packages.
+Bundled utilities receive app identity and data/document locations. These variables
 do not redirect XDG configuration or caches, nor override an application's
 explicit output path.
 
-Python Carousel (`io.vitrallis.mediacarousel`) and Carousel-Rust
-(`io.vitrallis.carouselrust`) use the existing shared library beneath
-`$XDG_DATA_HOME/io.vitrallis.mediacarousel/` (default `~/.local/share`). Its `media`
-and `uploads` directories are one user-data allocation. They are neither copied
-nor moved for accounting. Both variants' shared settings/cache roots are also
-counted once. The first installed variant in stable ID order receives the shared
-allocation; both details pages identify it as shared.
+Carousel (`io.vitrallis.mediacarousel`) keeps settings and library metadata in
+its AppData directory, with `media` and `uploads` classified as user data.
+Its disposable XDG cache is measured separately. AppData retained after uninstall
+appears in **Retained app data**; it is not attributed to a replacement package.
 
 An app without a valid receipt still appears, but its classification is marked
 incomplete. Missing manifests are treated like App Center discovery: leftover

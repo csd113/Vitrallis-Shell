@@ -7,9 +7,7 @@ prerelease builds receive newer published prereleases as well as stable releases
 Stable builds receive stable releases. Drafts are always excluded. The highest
 eligible semantic version wins regardless of publication order: beta.10 is newer
 than beta.2, and a stable 0.1.0 is newer than 0.1.0-beta.10. Equal versions,
-downgrades, and changes only to build metadata are not installed, except for the
-bounded beta3.9/beta4 four-executable completion bridge described under
-[Bundle format](#bundle-format).
+downgrades, and changes only to build metadata are not installed.
 No eligible published release, inaccessible/private releases, malformed metadata,
 missing builds, and network errors produce a useful failure instead of claiming
 that the shell is current. No GitHub token is read or sent.
@@ -80,7 +78,9 @@ No privilege escalation or release-provided destination is accepted.
 Installer and updater share `.vitrallis-update/lock`. The updater streams the
 bounded download there, verifies whole-bundle SHA-256 and exact length, extracts
 only the five fixed binary names into a private generation, checks each digest
-and ELF target, and runs each bounded `--version` probe. All versions must match.
+and ELF target, and runs each bounded `--version` probe. The four Vitrallis
+executables must match the release version; Arti must report its independently
+pinned version.
 There are no archive paths, compression, executable install hooks or optional
 missing companion files. Download and temporary generation cleanup runs on
 failure and the next locked attempt after interruption.
@@ -190,10 +190,9 @@ Terminal, Notepad, Files, Arti. Each record contains an unsigned 64-bit little-e
 size, 32 raw SHA-256 bytes, then that executable's bytes. Each executable is
 64 bytes–64 MiB; truncation, bad hashes, wrong target and trailing bytes fail.
 The maximum total is 320 MiB plus 216 header bytes. Names never come from input.
-Every incoming update requires all five files; there is no raw-executable reader
-or general migration path. A version-gated bridge lets only the two published
-prereleases 0.1.0-beta3.9 and 0.1.0-beta4 complete a four-executable update, and
-it is scheduled for removal once those builds age out. Install the current complete
+Every installed generation and incoming update requires all five files; there is
+no raw-executable reader or four-executable transition path. The obsolete
+beta3.9/beta4 bridge has been removed. Install the current complete
 bundle with the current installer when replacing an obsolete pre-release layout;
 equal versions do not become self-updates.
 

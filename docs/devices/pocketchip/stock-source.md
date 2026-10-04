@@ -44,18 +44,19 @@ upstream code, icons, fonts or other artwork is copied into Vitrallis.
 
 Adding an item to `~/.pocket-home/config.json` cannot register Vitrallis with stock
 PocketHome. The current installer therefore leaves both launcher configs untouched.
-It installs an opt-in desktop shortcut and the user-local `launch` command. Start
-that command from stock Terminal in the existing graphical session. Desktop menus
-that consume `.desktop` files can also show the shortcut; stock PocketHome does not.
-No root menu edit or replacement launcher is necessary.
+It installs a desktop shortcut and user-local `launch` command, and replaces
+exactly one recognized standalone PocketHome launch in the existing Awesome
+configuration. Startup and the existing Home function launch Vitrallis instead
+of running a second desktop. The replaced command is recorded in the managed
+block; uninstall restores it without overwriting surrounding edits. Missing,
+ambiguous or edited launch blocks fail safely. No root menu or PocketHome binary
+is changed.
 
-Home routing uses Awesome 4's root keys and client APIs, without assuming a global
-`focus_home_screen` or `launch_home_screen` function. It saves the previously focused
-window, temporarily replaces the unmodified XF86PowerOff binding, and restores only
-its own changes. Exiting the shell or stopping its owned unit restores routing and
-raises the saved window if it still exists. Systemd ExecStopPost repeats restoration
-safely on supervisor failure. Physical key delivery and the target's display-manager
-and systemd integration still require fresh hardware validation.
+The running Shell temporarily replaces the unmodified XF86PowerOff binding to
+return from apps. Exit restores its owned bindings and any previously focused
+unrelated window. Normal Awesome activation handles focus; there are no
+PocketHome focus-stealing filters because PocketHome is not launched in the
+installed session. SSH and serial login remain recovery routes.
 
 ## Discovery identity
 

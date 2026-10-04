@@ -3,6 +3,7 @@ import importlib.util
 import os
 from pathlib import Path
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -25,6 +26,39 @@ DTS = b'''/dts-v1/;
 
 
 class Trees(unittest.TestCase):
+    def test_private_install_umask_keeps_public_status_readable_and_private_files_private(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state, reader = root / 'state', root / 'reader'
+            previous = os.umask(0o077)
+            try:
+                with patch.object(m, 'safe'):
+                    m.public_directory(state)
+                    m.public_directory(reader)
+                    m.atomic(state / 'gpu-status.json', b'{"reboot_required":true}\n')
+                    m.atomic(state / 'user.json', b'{"uid":1000}', 0o600)
+                    m.atomic(reader / 'trace_pipe', b'', 0o600)
+                    # Reprovisioning corrects only these dedicated owned paths.
+                    state.chmod(0o700)
+                    m.public_directory(state)
+            finally:
+                os.umask(previous)
+            self.assertEqual(stat.S_IMODE(state.stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE(reader.stat().st_mode), 0o755)
+            self.assertEqual(stat.S_IMODE((state / 'gpu-status.json').stat().st_mode), 0o644)
+            self.assertEqual(stat.S_IMODE((state / 'user.json').stat().st_mode), 0o600)
+            self.assertEqual(stat.S_IMODE((reader / 'trace_pipe').stat().st_mode), 0o600)
+
+    def test_public_directory_refuses_unsafe_paths_before_changing_permissions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / 'existing'
+            target.mkdir(mode=0o700)
+            with patch.object(m, 'safe', side_effect=ValueError('unsafe root path')):
+                with self.assertRaisesRegex(ValueError, 'unsafe'):
+                    m.public_directory(target)
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o700)
+            self.assertEqual(list(target.iterdir()), [])
+
     def test_malformed_tree_fails_closed(self):
         for data in (b'', b'\0' * 100, b'\xd0\x0d\xfe\xed' + b'\xff' * 96):
             with self.assertRaises(ValueError): m.properties(data)

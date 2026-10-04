@@ -36,8 +36,11 @@ runtime behavior, so its appearance alone is not evidence of stale execution.
   process before installing and launching the new entry.
 - Python can accept old bytecode after a same-size source replacement, including
   unchecked-hash caches and interpreter-wide cache locations. Generated launchers
-  now use a commit-specific cache namespace and disable bytecode writes; updates
-  transactionally remove caches for managed modules. An execution regression runs
+  disable bytecode writes and clear inherited cache prefixes; updates remove
+  derived caches for managed modules before replacing their source. Hash-based
+  caches are always validated, including unchecked producer caches. The former
+  commit-specific namespace was removed after the 2026-10-03 import-cost audit;
+  installed library caches are reused. An execution regression runs
   old code, creates stale bytecode, updates, and verifies new output on macOS and
   Docker Linux. This is an additional stale-code risk, not a proven cause on the
   original device.

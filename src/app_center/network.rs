@@ -80,6 +80,12 @@ impl Fetch for Curl {
         let status = child.wait().map_err(|e| e.to_string())?;
         let bytes = result?;
         if !status.success() {
+            // curl's exit code 28 means the transfer deadline was reached.
+            if status.code() == Some(28) {
+                return Err(format!(
+                    "Download timed out; check connection and retry\ncurl: {status}"
+                ));
+            }
             return Err(format!(
                 "GitHub request failed ({status}); check connection/rate limit"
             ));
@@ -248,17 +254,16 @@ pub fn download(
         let bytes = fetch
             .fetch_progress(&url, row.size, &mut |received| {
                 let received = downloaded + received;
-                let percent = if total == 0 {
-                    100
-                } else {
-                    received.saturating_mul(100) / total
-                };
+                let percent = received
+                    .saturating_mul(100)
+                    .checked_div(total)
+                    .unwrap_or(100);
                 progress(format!(
                     "Downloading: {received} / {total} bytes ({percent}%)\n{}",
                     p.name
                 ))
             })
-            .map_err(|e| format!("Download failed for {}: {e}", row.path))?;
+            .map_err(|e| format!("{e}\nDownload failed for {}", row.path))?;
         if bytes.len() != row.size || super::storage::sha(&bytes) != row.sha256 {
             return Err(format!(
                 "Package invalid: SHA-256/size mismatch: {}",

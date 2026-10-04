@@ -110,6 +110,8 @@ class SourcePackage(unittest.TestCase):
                 'integrations/pocketchip/uninstall.py',
                 'CONTRIBUTING.md', 'SECURITY.md', 'docs/images/shell-480x272.png',
                 'scripts/check-doc-links.py', 'assets/PROVENANCE.md',
+                'assets/PROVENANCE.sha256', 'docs/application-storage.md',
+                'scripts/import-app-data.py', 'tests/test_app_data_import.py',
                 'integrations/pocketchip/run-session.sh',
                 'docs/devices/pocketchip.md', 'docs/repository-layout.md',
                 'src/layout.rs', 'src/renderer.rs', 'src/renderer/system.rs',

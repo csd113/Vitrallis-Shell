@@ -115,7 +115,6 @@ pub(super) fn validate_owned_path(name: &str) -> Result<(), String> {
                 | ".installation-pending"
                 | ".venv"
                 | "runtime"
-                | ".vitrallis-bytecode"
                 | "__pycache__"
         )
     }) {
@@ -189,6 +188,7 @@ pub fn prepare_with_modes(
     metadata::validate_bundle(&p, &files)?;
     validate_paths(&p)?;
     let root = loc.root(&p);
+    storage::private_data(&loc.app_data(&p.id)?, &loc.home)?;
     recover(loc, &p)?;
     let installed = label(loc, &p)?;
     let old_receipt = receipt(&root)?;
@@ -200,6 +200,7 @@ pub fn prepare_with_modes(
     } else {
         None
     };
+    storage::private_directory(&loc.app_data(&p.id)?, &loc.home)?;
     let mut writes = Vec::new();
     for (name, bytes) in &files {
         writes.push(transaction::plan(
@@ -398,22 +399,22 @@ fn support(
     let launch_path = loc.state.join("launchers").join(&p.id);
     let before = storage::read(&launch_path, metadata::FILE_LIMIT)?;
     let after = FileData {
-        bytes: crate::tor::wrap_launcher(
-            match runtime {
-                Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry), &p.commit)?,
-                None => super::native::launcher(&root.join(&p.entry))?,
-            },
-            tor,
-            &loc.data.join("vitrallis/tor"),
+        bytes: runtime::environment(
+            &crate::tor::wrap_launcher(
+                match runtime {
+                    Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry))?,
+                    None => super::native::launcher(&root.join(&p.entry))?,
+                },
+                tor,
+                &loc.data.join("vitrallis/tor"),
+            )?,
+            &loc.home,
+            &p.id,
         )?,
         mode: 0o755,
     };
     if let Some(old) = &before {
         let old_entry = super::uninstall::installed_entry(&root, p)?;
-        let saved = receipt(&root)?;
-        let old_commit = saved
-            .as_ref()
-            .map_or(Ok(p.commit.as_str()), |r| metadata::text(&r["commit"], 40))?;
         let mut old_files = Files::new();
         if let Some(requirements) = storage::read(&root.join("requirements.txt"), 65536)? {
             old_files.insert("requirements.txt".into(), requirements.bytes);
@@ -423,14 +424,17 @@ fn support(
         let old_manifest = metadata::manifest(&manifest.bytes)?;
         let old_runtime = metadata::RuntimeKind::parse(&old_manifest)?;
         let old_tor = crate::tor::Requirement::parse(&old_manifest)?;
-        let wrap =
-            |bytes| crate::tor::wrap_launcher(bytes, old_tor, &loc.data.join("vitrallis/tor"));
+        let wrap = |bytes| {
+            runtime::environment(
+                &crate::tor::wrap_launcher(bytes, old_tor, &loc.data.join("vitrallis/tor"))?,
+                &loc.home,
+                &p.id,
+            )
+        };
         let managed_launcher = if old_runtime == metadata::RuntimeKind::Python {
             runtime::candidates(&root, &old_files)
                 .into_iter()
-                .map(|program| {
-                    runtime::launcher(&Runtime { program }, &old_entry, old_commit).and_then(wrap)
-                })
+                .map(|program| runtime::launcher(&Runtime { program }, &old_entry).and_then(wrap))
                 .collect::<Result<Vec<_>, _>>()?
                 .contains(&old.bytes)
         } else {
@@ -501,6 +505,9 @@ pub fn recover(loc: &Locations, p: &Package) -> Result<(), String> {
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         transaction::recover(&entry.path(), |path| allowed(loc, p, path))?;
+        transaction::discard_finished_removals(&entry.path(), |path| {
+            super::runtime_cleanup::owned_file(&loc.root(p), path)
+        })?;
     }
     Ok(())
 }
@@ -516,7 +523,7 @@ pub fn install(loc: &Locations, checked: &Planned) -> Result<(), String> {
         .prepared
         .as_ref()
         .ok_or("No verified update available")?;
-    if prepared.created_at.elapsed() > Duration::from_secs(15 * 60) {
+    if prepared.created_at.elapsed() > Duration::from_mins(15) {
         return Err("Installation plan expired; retry installation".into());
     }
     metadata::validate_bundle(&checked.package, &prepared.files)?;

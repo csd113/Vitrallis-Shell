@@ -49,8 +49,12 @@ fn report(cancel: &AtomicBool) -> Result<Report, String> {
         size
     }));
     categories.push((
+        "Retained application files",
+        scanner.measure(&loc.apps(), true),
+    ));
+    categories.push((
         "Retained app data",
-        scanner.measure(&loc.data.join("vitrallis/apps"), true),
+        scanner.measure(&loc.home.join("Documents/Vitrallis/AppData"), true),
     ));
     categories.push(("Manager state / backups", scanner.measure(&loc.state, true)));
     categories.push((

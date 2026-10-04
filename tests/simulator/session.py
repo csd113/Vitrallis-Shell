@@ -99,6 +99,7 @@ return "stock key installed"
         wait_for(lambda: windows('Vitrallis'), 'supervised shell')
         wait_for(lambda: (BASE / 'session.log').exists() and 'event=ready' in (BASE / 'session.log').read_text(), 'supervised boot handoff')
         shell = windows('Vitrallis')[-1]
+        wait_for(lambda: active() == shell, 'automatic supervised launcher focus')
         (OUT / 'session-windows.txt').write_text(run('xwininfo', '-root', '-tree'))
         run('import', '-window', 'root', str(OUT / 'session-before.png'))
         session.awesome('''

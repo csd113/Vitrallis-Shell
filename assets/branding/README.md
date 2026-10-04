@@ -47,12 +47,11 @@ reference. The runtime does not call that tool. The prompts requested:
 The final packing uses nearest-neighbor sampling. Small exports apply a hard
 alpha cutoff; no runtime resampling or glow is used at tiny sizes.
 
-The supplied logo sheet, boot storyboard and cave scene were provided without a
-recorded creator, supplier or license; the originals are not in this repository.
-`source/*.png` and `../boot/scene.png` are image-tool derivatives of that
-material, and the `crystal-*` and `../boot/{clean,subtle,cyan,full}.png` files
-are regenerated from it. None of these files is covered by the project's MIT
-grant until a dated permission statement or a replacement is recorded.
+On 2026-10-02 the project owner confirmed that the logo sheet, boot storyboard
+and cave references were generated with ChatGPT at their request and that they
+own the references. The project MIT grant includes these outputs, the masters
+and their derivatives. The original reference sheets and exact image model
+version were not retained; the preparation prompts above remain the record.
 
 See [artwork provenance](../PROVENANCE.md) and
 [licensing and third-party notices](../../THIRD_PARTY_NOTICES.md) before redistribution.

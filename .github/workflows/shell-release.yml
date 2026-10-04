@@ -8,7 +8,9 @@ jobs:
   shell:
     runs-on: ubuntu-24.04
     # Debian 12 establishes the release ABI contract, independent of runner libc.
-    container: rust:1.91.1-bookworm
+    container: rust:1.98.1-bookworm
+    env:
+      RUSTUP_TOOLCHAIN: "1.99.0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -16,8 +18,8 @@ jobs:
       - name: Build prerequisites
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libsdl2-dev pkg-config python3 python3-tk python3-venv python3-packaging gh
-          rustup component add rustfmt clippy
+          apt-get install -y --no-install-recommends libsdl2-dev pkg-config python3 python3-tk python3-venv python3-packaging lua5.3 gh
+          rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy
           # The mounted checkout is owned by the host runner, not container root.
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Validate shell
@@ -28,14 +30,11 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          transition=
-          if [ "$RELEASE_TAG" = v0.1.0-beta4 ]; then transition=--transition-bundle; fi
           python3 scripts/package-shell-release.py \
             --bin-dir target/release \
             --target x86_64-unknown-linux-gnu \
             --output target/shell-release \
-            --tag "$RELEASE_TAG" $transition
-          if [ "$RELEASE_TAG" = v0.1.0-beta4 ]; then export VITRALLIS_TEST_FOUR_FILE_SOURCE=1; fi
+            --tag "$RELEASE_TAG"
           VITRALLIS_TEST_UPDATE_BUNDLE="$PWD/target/shell-release/vitrallis-x86_64-unknown-linux-gnu-glibc2.36-v2.vtrbundle" \
           VITRALLIS_TEST_UPDATE_VERSION="${RELEASE_TAG#v}" \
             cargo test --locked -p vitrallis-shell release_bundle_upgrade_probe -- --nocapture
@@ -57,12 +56,10 @@ jobs:
           for app in vitrallis-terminal vitrallis-notepad vitrallis-files; do
             SDL_VIDEODRIVER=dummy qemu-arm "target/armv7-unknown-linux-gnueabihf/release/$app" --size 480x272 --smoke-test
           done
-          transition=
-          if [ "$RELEASE_TAG" = v0.1.0-beta4 ]; then transition=--transition-bundle; fi
           python3 scripts/package-shell-release.py \
             --bin-dir target/armv7-unknown-linux-gnueabihf/release \
             --target armv7-unknown-linux-gnueabihf --runner /usr/bin/qemu-arm \
-            --output target/arm-shell-release --tag "$RELEASE_TAG" $transition
+            --output target/arm-shell-release --tag "$RELEASE_TAG"
       - name: Verify release legal notices
         run: |
           # Notices are staged with the canonical x86_64 payload and are

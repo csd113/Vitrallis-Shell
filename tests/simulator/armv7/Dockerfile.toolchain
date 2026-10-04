@@ -2,7 +2,10 @@
 # (armv7-unknown-linux-gnueabihf, glibc 2.36, SDL2 2.26.5+). This stage runs on
 # the build host architecture, exactly like the release workflow; it produces
 # ARM binaries but never executes the target platform's GUI stack itself.
-FROM rust:1.91.1-bookworm
+# Bootstrap from the published Debian 12 image; install the exact release compiler.
+FROM rust:1.98.1-bookworm
+RUN rustup toolchain install 1.99.0 --profile minimal --component rustfmt --component clippy \
+    && rustup default 1.99.0
 RUN dpkg --add-architecture armhf \
     && apt-get update \
     && apt-get install -y --no-install-recommends \

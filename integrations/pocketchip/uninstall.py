@@ -134,19 +134,34 @@ BASE = Path('.local/share/vitrallis')
 DESKTOP = Path('.local/share/applications/vitrallis.desktop')
 AUTOSTART = Path('.config/autostart/vitrallis.desktop')
 AWESOME = Path('.config/awesome/rc.lua')
-STARTUP = """
--- BEGIN Vitrallis startup
-require('gears').timer.start_new(5, function()
-    require('awful').spawn({os.getenv('HOME') .. '/.local/share/vitrallis/launch'}, false)
-    return false
-end)
--- END Vitrallis startup
-"""
+POCKETHOME_COMMAND = re.compile(
+    r"""awful\.spawn(?:\.with_shell)?\((?P<quote>['"])pocket-home(?P=quote)(?:,[ \t]*false)?\)""")
+STARTUP = """-- BEGIN Vitrallis startup
+-- Replaces: @POCKETHOME_COMMAND@
+require('awful').spawn({os.getenv('HOME') .. '/.local/share/vitrallis/launch'}, false)
+-- END Vitrallis startup"""
 PURGE = (BASE / 'session.log', BASE / 'session.log.1',
          Path('.config/vitrallis/screen-timeout'), Path('.config/vitrallis/app-center.json'))
 HEX = re.compile(r'[0-9a-f]{64}')
 INSTALL_STAGE = re.compile(r'install-[a-z0-9_]{8}')
 MAX_BUNDLE = 320 * 1024 * 1024 + 216
+
+
+def startup_block(command):
+    if not isinstance(command, str) or POCKETHOME_COMMAND.fullmatch(command) is None:
+        raise ValueError('Unrecognized PocketHome launch command')
+    return STARTUP.replace('@POCKETHOME_COMMAND@', command)
+
+
+def startup_replacement(content):
+    pattern = re.escape(STARTUP.encode()).replace(
+        re.escape(b'@POCKETHOME_COMMAND@'), rb'(?P<command>[^\r\n]{1,256})')
+    matches = list(re.finditer(pattern, content))
+    if len(matches) != 1 or content.count(b'Vitrallis startup') != 2:
+        raise ValueError('Edited or duplicate Vitrallis startup block')
+    command = matches[0]['command'].decode('ascii')
+    block = startup_block(command).encode()
+    return block, command.encode()
 
 
 def exists(path):
@@ -256,13 +271,16 @@ def plan(home, purge=False):
     awesome = home / AWESOME
     if exists(awesome):
         original = read_file(awesome)
-        block = STARTUP.encode()
-        if original.count(block) == 1:
-            expected = {'sha256': hashlib.sha256(original).hexdigest(),
-                        'mode': stat.S_IMODE(awesome.stat().st_mode)}
-            add(awesome, original.replace(block, b'', 1), expected)
-        elif b'Vitrallis startup' in original:
-            print('Preserving edited startup block:', awesome)
+        if b'Vitrallis startup' in original:
+            try:
+                block, command = startup_replacement(original)
+            except (ValueError, UnicodeError):
+                print('Preserving edited startup block:', awesome)
+                block = None
+            if block is not None:
+                expected = {'sha256': hashlib.sha256(original).hexdigest(),
+                            'mode': stat.S_IMODE(awesome.stat().st_mode)}
+                add(awesome, original.replace(block, command, 1), expected)
     generations = target / 'generations'
     safe(generations / '.path-check')
     if generations.exists():
@@ -535,7 +553,7 @@ def uninstall(home, dry_run=False, purge=False):
     # Retaining this tiny lock prevents a waiting process from using an orphaned
     # inode concurrently with a new installation. It contains no personal data.
     print('Removed managed Vitrallis files. The original session remains available.')
-    print('Retained: apps/, app-center/ transactions, user documents, installation backups,')
+    print('Retained: Documents/Vitrallis/Apps and AppData, app-center/ transactions, installation backups,')
     print('unrecognized or edited files, custom XDG locations, and .vitrallis-update/lock.')
     if not purge:
         print('Preferences and session logs are retained; --purge removes only the four documented data files.')

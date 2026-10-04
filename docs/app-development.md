@@ -101,8 +101,7 @@ its saved folder preference, and deleting a folder never uninstalls an app.
 
 Configure the catalog in App Center and explicitly trust any separate source
 repository. Refresh fetches metadata; selecting Install acquires, verifies, and
-stages that app. Packages install under `$XDG_DATA_HOME/vitrallis/apps/<id>`
-(default `~/.local/share/vitrallis/apps/<id>`). Manifests supply identity, name,
+stages that app. Packages install under `$HOME/Documents/Vitrallis/Apps/<id>`. Manifests supply identity, name,
 entry and permissions; receipts bind installed versions and file ownership to the
 publisher. Locally generated launchers live in the App Center state directory.
 Unmanaged files never become owned merely because Python source contains a version.
@@ -128,8 +127,9 @@ The read-only PocketHome importer exposes existing OS applications while suppres
 verified stock equivalents of the three native utilities. It is a boundary with the independent device
 image, not the Vitrallis package API. `--app-config` and `--assets` allow explicit
 inspection of an exported device menu; the desktop default discovers manifest
-packages without loading PocketHome configuration. The original desktop remains the
-supervised device session's recovery destination.
+packages without loading PocketHome configuration. Installation replaces the
+PocketHome launch command within Awesome; PocketHome does not run behind
+Vitrallis. Uninstall restores the original command, preserving surrounding edits.
 
 Build and install the shell using [device setup](devices/pocketchip.md).
 `integrations/pocketchip/install-session.py` and its adjacent `vitrallis-session.py` are the

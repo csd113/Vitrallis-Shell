@@ -383,15 +383,21 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
             Ok(Some(status)) => {
                 eprintln!("level=info event=app_exited status={status:?}");
                 self.state.sync_states(self.child);
-                refresh_utility(self.state, self.worker, self.child.exited_active);
-                let raise = app_exited(self.state, status, self.child.exited_active);
+                // Focus can return before the next exit poll clears the child.
+                // Match the completed utility rather than relying on foreground
+                // ownership that the intervening focus event may have released.
+                let return_settings =
+                    completed_settings_utility(self.state, self.child.exited_id.as_deref());
+                let active = self.child.exited_active || return_settings;
+                refresh_utility(self.state, self.worker, active);
+                let raise = app_exited(self.state, status, active);
                 let catalog_changed =
                     refresh_exit_catalog(self.sdl, self.config, self.state, self.pointer);
                 if catalog_changed {
                     self.textures.refresh(self.creator, self.state);
                 }
                 self.last_wait_error = None;
-                if self.child.exited_active {
+                if active {
                     self.accept_after = Instant::now();
                 }
                 raise_after_exit(self.canvas, self.platform, raise);
@@ -591,11 +597,10 @@ fn open_native(
     layout: &Layout,
     state: &mut Launcher,
     icons: &[Option<Texture<'_>>],
-    child: &mut ProcessSet,
+    child: &mut impl Processes,
 ) -> Result<bool, String> {
-    if state.phase != Phase::Ready {
-        return Ok(false);
-    }
+    // Files requests an editor while it still owns the foreground. The broker
+    // defers requests during pending actions and dialogs, but Running is safe.
     match crate::native::requested(broker, state) {
         Ok(Some(index)) => {
             render(
@@ -814,6 +819,22 @@ fn refresh_launch(state: &mut Launcher, child: &mut impl Processes) -> bool {
     }
 }
 
+fn completed_settings_utility(state: &Launcher, exited_id: Option<&str>) -> bool {
+    use crate::settings::NetworkState;
+    matches!(
+        (state.settings.network, exited_id),
+        (NetworkState::Open, Some("vitrallis-network-manager"))
+            | (
+                NetworkState::CalibrationOpen,
+                Some("vitrallis-touch-calibration")
+            )
+            | (
+                NetworkState::TimezoneOpen,
+                Some("vitrallis-timezone-authentication")
+            )
+    )
+}
+
 fn refresh_utility(
     state: &mut Launcher,
     worker: &mut Option<crate::platform::system::Worker>,
@@ -839,20 +860,16 @@ fn app_exited(state: &mut Launcher, status: std::process::ExitStatus, active: bo
             format!("APP EXITED: {status}")
         });
     }
-    if active && state.settings.network == crate::settings::NetworkState::Open {
+    let return_page = match state.settings.network {
+        crate::settings::NetworkState::Open => Some(crate::settings::Page::Home),
+        crate::settings::NetworkState::CalibrationOpen => Some(crate::settings::Page::Device),
+        crate::settings::NetworkState::TimezoneOpen => Some(crate::settings::Page::DateTime),
+        _ => None,
+    };
+    if active && let Some(page) = return_page {
         state.settings.network = crate::settings::NetworkState::Idle;
         state.settings.show();
-    }
-    if active
-        && matches!(
-            state.settings.network,
-            crate::settings::NetworkState::CalibrationOpen
-                | crate::settings::NetworkState::TimezoneOpen
-        )
-    {
-        state.settings.network = crate::settings::NetworkState::Idle;
-        state.settings.show();
-        state.settings.page(crate::settings::Page::Device);
+        state.settings.page(page);
     }
     raise
 }
@@ -1381,6 +1398,84 @@ mod tests {
     use super::*;
     use sdl2::mouse::MouseButton;
     #[test]
+    fn foreground_files_request_opens_notepad_without_returning_home()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use crate::app::{AppEntry, AppManifest, AppSource};
+        use std::os::unix::{ffi::OsStrExt, net::UnixDatagram};
+
+        #[derive(Default)]
+        struct Capture(Option<AppEntry>);
+        impl Processes for Capture {
+            fn start(&mut self, app: &AppEntry) -> Result<(), String> {
+                self.0 = Some(app.clone());
+                Ok(())
+            }
+            fn poll(&mut self) -> Result<Option<std::process::ExitStatus>, String> {
+                Ok(None)
+            }
+        }
+
+        let _lock = crate::test_support::sdl_lock();
+        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        let sdl = sdl2::init()?;
+        let video = sdl.video()?;
+        let raw = video
+            .window("Native request regression", 480, 272)
+            .hidden()
+            .build()?
+            .into_canvas()
+            .software()
+            .build()?;
+        let creator = raw.texture_creator();
+        let mut canvas = Screen::new(raw, &creator)?;
+        let layout = Layout::home(480, 272)?;
+        let scratch = crate::test_support::Scratch::new()?;
+        let note = scratch.0.join("a saved note ! é.txt");
+        std::fs::write(&note, "saved text\n")?;
+        let note = note.canonicalize()?;
+        let app = AppEntry {
+            id: "io.vitrallis.notepad".into(),
+            source: AppSource::Native,
+            name: "Notepad".into(),
+            icon: None,
+            unavailable: None,
+            manifest: AppManifest {
+                entry: "/bin/true".into(),
+                ..AppManifest::default()
+            },
+        };
+        let mut state = Launcher::new(vec![app], 3, 6)?;
+        let broker = crate::native::broker(&mut state)?;
+        let sender = UnixDatagram::unbound()?;
+        sender.send_to(note.as_os_str().as_bytes(), &broker.path)?;
+        state.phase = Phase::Running;
+        let mut child = Capture::default();
+        state.settings.open = true;
+        assert!(!open_native(
+            &broker,
+            &mut canvas,
+            &layout,
+            &mut state,
+            &[],
+            &mut child
+        )?);
+        assert!(child.0.is_none());
+        state.settings.open = false;
+        assert!(open_native(
+            &broker,
+            &mut canvas,
+            &layout,
+            &mut state,
+            &[],
+            &mut child
+        )?);
+        let launched = child.0.ok_or("Notepad was not dispatched")?;
+        assert_eq!(launched.id, "io.vitrallis.notepad");
+        assert_eq!(launched.manifest.args, ["--".into(), note.into_os_string()]);
+        assert_eq!(state.phase, Phase::Launching);
+        Ok(())
+    }
+    #[test]
     #[ignore = "opt-in real idle-loop measurement; takes four seconds"]
     fn idle_loop_stops_after_startup() -> Result<(), String> {
         measure_idle_loop(false)?;
@@ -1565,10 +1660,9 @@ mod tests {
         state.sync_states(&child);
         assert_eq!(state.phase, Phase::Ready);
         assert_eq!(state.app_state(&id), AppState::RunningBackground);
-        assert!(
-            child
-                .background_policy(&crate::preferences::Policy::default(), Instant::now())
-                .is_empty()
+        assert_eq!(
+            child.background_policy(&crate::preferences::Policy::default(), Instant::now()),
+            Vec::<String>::new()
         );
         assert_eq!(child.state(&id), AppState::RunningBackground);
         // Resuming focuses the existing process instead of starting another.
@@ -1764,6 +1858,85 @@ mod tests {
         assert!(state.error.is_none());
         assert!(state.opening.is_none());
         assert_eq!(state.phase, Phase::Ready);
+        Ok(())
+    }
+    #[test]
+    fn settings_utility_return_survives_focus_gained_before_exit_poll() -> Result<(), String> {
+        use crate::settings::{NetworkState, Page};
+        use std::os::unix::process::ExitStatusExt;
+
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        for (network, id, page) in [
+            (NetworkState::Open, "vitrallis-network-manager", Page::Home),
+            (
+                NetworkState::CalibrationOpen,
+                "vitrallis-touch-calibration",
+                Page::Device,
+            ),
+            (
+                NetworkState::TimezoneOpen,
+                "vitrallis-timezone-authentication",
+                Page::DateTime,
+            ),
+        ] {
+            let mut state = Launcher::new(apps.clone(), 3, 6)?;
+            state.launched("Utility");
+            state.settings.network = network;
+            let mut pointer = PointerInput::default();
+            let mut accept_after = Instant::now();
+            window_focus(
+                &Event::Window {
+                    timestamp: 0,
+                    window_id: 1,
+                    win_event: WindowEvent::FocusGained,
+                },
+                &mut state,
+                &mut pointer,
+                &mut accept_after,
+            );
+            assert_eq!(state.phase, Phase::Ready);
+            assert!(!completed_settings_utility(&state, None));
+            assert!(!completed_settings_utility(&state, Some("another-app")));
+            assert!(completed_settings_utility(&state, Some(id)));
+            assert!(!app_exited(
+                &mut state,
+                std::process::ExitStatus::from_raw(0),
+                true,
+            ));
+            assert!(state.settings.open);
+            assert_eq!(state.settings.page, page);
+            assert!(!completed_settings_utility(&state, Some(id)));
+        }
+        Ok(())
+    }
+    #[test]
+    fn utility_exit_returns_to_its_settings_page_only_while_active() -> Result<(), String> {
+        use crate::settings::{NetworkState, Page};
+        use std::os::unix::process::ExitStatusExt;
+
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        for (network, page) in [
+            (NetworkState::Open, Page::Home),
+            (NetworkState::CalibrationOpen, Page::Device),
+            (NetworkState::TimezoneOpen, Page::DateTime),
+        ] {
+            for active in [false, true] {
+                let mut state = Launcher::new(apps.clone(), 3, 6)?;
+                state.launched("Utility");
+                state.settings.network = network;
+                assert_eq!(
+                    app_exited(&mut state, std::process::ExitStatus::from_raw(0), active),
+                    active
+                );
+                assert_eq!(state.settings.open, active);
+                if active {
+                    assert_eq!(state.settings.page, page);
+                    assert_eq!(state.settings.network, NetworkState::Idle);
+                } else {
+                    assert_eq!(state.settings.network, network);
+                }
+            }
+        }
         Ok(())
     }
     #[test]

@@ -1,4 +1,4 @@
-# Dependency license inventory — 2026-09-24
+# Dependency license inventory — 2026-10-02
 
 Generated from the checked-in workspace lockfile and the pinned upstream Arti
 crate's lock, plus locally cached registry crate metadata and notice files. Includes optional, build and other-target dependencies;
@@ -8,6 +8,8 @@ refer to verbatim deduplicated texts in `../THIRD_PARTY_LICENSES.txt`.
 
 Also includes the separately installed Arti 2.6.0 crate and its upstream Cargo.lock.
 The Shell workspace lock alone does not cover Arti or its bundled native code.
+The separate [Rust binary runtime inventory](rust-runtime-licenses.md) covers
+the matching Rust 1.99.0 standard library and compiler intrinsics.
 `MISSING` rows outside the pinned Arti feature graph are optional, build-only or
 other-target crates that the shipped executable does not link; any `MISSING` row
 inside that graph must still be resolved before a binary release is cleared
@@ -20,8 +22,8 @@ inside that graph must still be resolved before a binary release is cleared
 | aho-corasick | 1.1.5 | Unlicense OR MIT | 01c266bced4a434d, 0f96a83840e146e4, 7e12e5df4bae12cb |
 | amplify | 4.9.0 | MIT | b657a3cfbfc77ab8 |
 | amplify_derive | 4.0.1 | Apache-2.0 | a7173d3ff287d45c |
-| amplify_num | 0.5.4 | Apache-2.0 | MISSING |
-| amplify_syn | 2.0.1 | Apache-2.0 | MISSING |
+| amplify_num | 0.5.4 | Apache-2.0 | a6cba85bc92e0cff |
+| amplify_syn | 2.0.1 | Apache-2.0 | a7173d3ff287d45c |
 | android_system_properties | 0.1.5 | MIT/Apache-2.0 | 216486f29671a426, 80f275e90d799911 |
 | anstream | 1.0.0 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
 | anstyle | 1.0.14 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
@@ -36,7 +38,7 @@ inside that graph must still be resolved before a binary release is cleared
 | ascii | 1.1.0 | Apache-2.0 OR MIT | fabba0cb7d00a4b3, 7e4b8a17b118d3d7 |
 | asn1-rs | 0.7.2 | MIT OR Apache-2.0 | a60eea8175145316, a5c61b93b6ee1d10 |
 | asn1-rs-derive | 0.6.0 | MIT OR Apache-2.0 | a60eea8175145316, a5c61b93b6ee1d10 |
-| asn1-rs-impl | 0.2.0 | MIT/Apache-2.0 | MISSING |
+| asn1-rs-impl | 0.2.0 | MIT/Apache-2.0 | a5c61b93b6ee1d10 |
 | assert_matches | 1.5.0 | MIT/Apache-2.0 | a60eea8175145316, d4c1ce21c702ac8f |
 | async-channel | 1.9.0 | Apache-2.0 OR MIT | a60eea8175145316, 23f18e03dc49df91 |
 | async-channel | 2.5.0 | Apache-2.0 OR MIT | a60eea8175145316, 23f18e03dc49df91 |
@@ -81,7 +83,7 @@ inside that graph must still be resolved before a binary release is cleared
 | bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | e3ba223bb1423f0a, 9df9ba60a11af705, 84b34dd7608f7fb9 |
 | byteorder | 1.5.0 | Unlicense OR MIT | 01c266bced4a434d, 0f96a83840e146e4, 7e12e5df4bae12cb |
 | bytes | 1.12.1 | MIT | 45f522cacecb1023 |
-| caret | 0.10.1 | MIT OR Apache-2.0 | MISSING |
+| caret | 0.10.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | cc | 1.4.0 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | cfg-if | 1.0.4 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
@@ -105,7 +107,7 @@ inside that graph must still be resolved before a binary release is cleared
 | const-oid | 0.10.2 | Apache-2.0 OR MIT | a9040321c3712d8f, 73b9dc2e79c73089 |
 | const-oid | 0.9.6 | Apache-2.0 OR MIT | a9040321c3712d8f, bada9e7ed8dc00d6 |
 | convert_case | 0.10.0 | MIT | aed7b1758e35afa0 |
-| cookie-factory | 0.3.3 | MIT | MISSING |
+| cookie-factory | 0.3.3 | MIT | d09216dc1ea5f273 |
 | core-foundation | 0.10.1 | MIT OR Apache-2.0 | a60eea8175145316, 62065228e42caebc |
 | core-foundation-sys | 0.8.7 | MIT OR Apache-2.0 | a60eea8175145316, 62065228e42caebc |
 | cpubits | 0.1.1 | MIT OR Apache-2.0 | a9040321c3712d8f, 003736bc98408b53 |
@@ -141,7 +143,7 @@ inside that graph must still be resolved before a binary release is cleared
 | der_derive | 0.7.3 | Apache-2.0 OR MIT | a9040321c3712d8f, bada9e7ed8dc00d6 |
 | deranged | 0.5.8 | MIT OR Apache-2.0 | edd65bdd88957a20, 231c837c45eb53f1 |
 | derive-deftly | 1.11.5 | MIT | 8ca14a71ccb997fc |
-| derive-deftly-macros | 1.11.5 | MIT | MISSING |
+| derive-deftly-macros | 1.11.5 | MIT | 8ca14a71ccb997fc |
 | derive_arbitrary | 1.4.2 | MIT OR Apache-2.0 | a60eea8175145316, 15656cc11a8331f2 |
 | derive_builder_core_fork_arti | 0.11.2 | MIT/Apache-2.0 | c6596eb7be8581c1, 8c9612877aacfa1b |
 | derive_builder_fork_arti | 0.11.2 | MIT/Apache-2.0 | c6596eb7be8581c1, 8c9612877aacfa1b |
@@ -197,7 +199,7 @@ inside that graph must still be resolved before a binary release is cleared
 | foldhash | 0.2.0 | Zlib | b1181a40b2a7b25c |
 | font8x8 | 0.3.1 | MIT | 47d9e9e9a4c54af1 |
 | form_urlencoded | 1.2.2 | MIT OR Apache-2.0 | a60eea8175145316, 20c7855c364d57ea |
-| fs-mistrust | 0.15.1 | MIT OR Apache-2.0 | MISSING |
+| fs-mistrust | 0.15.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | fs_extra | 1.3.0 | MIT | 251ea8ccb1205ce5 |
 | fslock-guard | 0.8.2 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | funty | 2.0.0 | MIT | f790cc576999f599 |
@@ -331,7 +333,7 @@ inside that graph must still be resolved before a binary release is cleared
 | objc2-io-kit | 0.3.2 | Zlib OR Apache-2.0 OR MIT | MISSING |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | a60eea8175145316, 23f18e03dc49df91 |
 | once_cell_polyfill | 1.70.2 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
-| oneshot-fused-workaround | 0.7.1 | MIT OR Apache-2.0 | MISSING |
+| oneshot-fused-workaround | 0.7.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | openssl-probe | 0.2.1 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | option-ext | 0.2.0 | MPL-2.0 | 66a3107d5ad6a058 |
 | ordered-float | 2.10.1 | MIT | f7715d38a3fa1b4a |
@@ -367,7 +369,7 @@ inside that graph must still be resolved before a binary release is cleared
 | powerfmt | 0.2.0 | MIT OR Apache-2.0 | 155420c6403d4e0f, 070dbc7dda03a292 |
 | ppv-lite86 | 0.2.21 | MIT OR Apache-2.0 | 0218327e7a480793, 4cada0bd02ea3692 |
 | primeorder | 0.13.6 | Apache-2.0 OR MIT | a9040321c3712d8f, 233b95ccbf90dc67 |
-| priority-queue | 2.7.0 | LGPL-3.0-or-later OR MPL-2.0 | MISSING |
+| priority-queue | 2.7.0 | LGPL-3.0-or-later OR MPL-2.0 | c73cc0c27b0f24d5 |
 | proc-macro-crate | 3.5.0 | MIT OR Apache-2.0 | 8ada45cd9f843acf, 23f18e03dc49df91 |
 | proc-macro-error-attr3 | 3.1.0 | MIT OR Apache-2.0 | 6fd0f3522047150c, 544b3aed1fd723d0 |
 | proc-macro-error3 | 3.1.0 | MIT OR Apache-2.0 | 9e7dc31602dced02, 4d6bf8cef395998b |
@@ -398,7 +400,7 @@ inside that graph must still be resolved before a binary release is cleared
 | regex-syntax | 0.8.11 | MIT OR Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03, 74db5baf44a41b10 |
 | reqwest | 0.13.4 | MIT OR Apache-2.0 | 751963a8b88c0e3a, dd87e27dfbaa888c |
 | reseeding_rng | 0.10.7 | Apache-2.0 | c71d239df91726fc |
-| retry-error | 0.13.1 | MIT OR Apache-2.0 | MISSING |
+| retry-error | 0.13.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | rfc6979 | 0.4.0 | Apache-2.0 OR MIT | 78779d420019e6b4, bdebaf9156a298f8 |
 | ring | 0.17.14 | Apache-2.0 AND ISC | b3d734001a94efff, 005fc765ddc5115d, f025ccfb7dfb6bdf, a60eea8175145316, 6ee2ed6c77710de9, 9eacbcb81be66084 |
 | rlimit | 0.11.0 | MIT | c7dc98fff98de123 |
@@ -408,11 +410,12 @@ inside that graph must still be resolved before a binary release is cleared
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 | a60eea8175145316, c9a75f18b9ab2927 |
 | rusticata-macros | 4.1.0 | MIT/Apache-2.0 | a60eea8175145316, a5c61b93b6ee1d10 |
 | rustix | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 377c2e7c53250cc5, a60eea8175145316, 268872b9816f90fd, 23f18e03dc49df91 |
+| rustix-linux-procfs | 0.1.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 23f18e03dc49df91, d415a86ccfd79412 |
 | rustls | 0.23.43 | Apache-2.0 OR ISC OR MIT | a60eea8175145316, 7cfafc877eccc46c, 709e3175b4212f7b |
 | rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 | 45fd05c4865e7c35, 9117d922e6671255 |
 | rustls-webpki | 0.103.13 | ISC | 5b698ca13897be3a |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
-| safelog | 0.9.1 | MIT OR Apache-2.0 | MISSING |
+| safelog | 0.9.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | same-file | 1.0.6 | Unlicense/MIT | 01c266bced4a434d, cb3c929a05e6cbc9, 7e12e5df4bae12cb |
 | sanitize-filename | 0.6.0 | MIT | a249b5a876d5dd10 |
 | saturating-time | 0.4.0 | MIT OR Apache-2.0 | c71d239df91726fc, b5a44cc0b356a4dc |
@@ -455,7 +458,7 @@ inside that graph must still be resolved before a binary release is cleared
 | siphasher | 1.0.3 | MIT/Apache-2.0 | c962ee4d1d05ddc1 |
 | slab | 0.4.12 | MIT | 8ce0830173fdac60 |
 | slotmap | 1.1.1 | Zlib | 6cec81441b2ab2b5 |
-| slotmap-careful | 0.8.1 | MIT OR Apache-2.0 | MISSING |
+| slotmap-careful | 0.8.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | smallvec | 1.15.2 | MIT OR Apache-2.0 | a60eea8175145316, 0b28172679e0009b |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | spin | 0.9.9 | MIT | 6ac8711fb340c62c |
@@ -582,7 +585,7 @@ inside that graph must still be resolved before a binary release is cleared
 | version-compare | 0.1.1 | MIT | cedfcc7ace1639ad |
 | version_check | 0.9.5 | MIT/Apache-2.0 | a60eea8175145316, b7e650f3fce5c532 |
 | visibility | 0.1.1 | Zlib OR MIT OR Apache-2.0 | b72b2d40a984de67, 50d26cd90660ea5d, b405b5dbae5d4473, 23f99ac423f5950b |
-| void | 1.0.2 | MIT | MISSING |
+| void | 1.0.2 | MIT | cdc52ff9219a75ec |
 | vt100 | 0.16.2 | MIT | 53a04b0a11073f3d |
 | vte | 0.15.0 | Apache-2.0 OR MIT | 62c7a1e35f564068, e4c9b06fa850cb9b |
 | walkdir | 2.5.0 | Unlicense/MIT | 01c266bced4a434d, 0f96a83840e146e4, 7e12e5df4bae12cb |
@@ -596,7 +599,7 @@ inside that graph must still be resolved before a binary release is cleared
 | wasm-bindgen-shared | 0.2.126 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | weak-table | 0.4.0 | MIT | c33c7d26bc415a90 |
 | web-time | 1.1.0 | MIT OR Apache-2.0 | 54a744942eb3fa63, f428305bbf2e70fb |
-| web-time-compat | 0.2.1 | MIT OR Apache-2.0 | MISSING |
+| web-time-compat | 0.2.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | winapi | 0.3.9 | MIT/Apache-2.0 | b40930bbcf80744c, ce7bc3499fee93d5 |
 | winapi-i686-pc-windows-gnu | 0.4.0 | MIT/Apache-2.0 | MISSING |
 | winapi-util | 0.1.11 | Unlicense OR MIT | 01c266bced4a434d, cb3c929a05e6cbc9, 7e12e5df4bae12cb |
@@ -660,10 +663,11 @@ inside that graph must still be resolved before a binary release is cleared
 
 ## Missing evidence
 
-- amplify_num 0.5.4 (no license text in cached crate)
-- amplify_syn 2.0.1 (no license text in cached crate)
+Resolved rows with retained Text IDs have been removed from this list. The
+remaining entries include optional, build-only and other-target source records;
+this list alone does not identify components linked into a shipped binary.
+
 - arti-rpcserver 0.46.0 (source unavailable)
-- asn1-rs-impl 0.2.0 (no license text in cached crate)
 - assert_cmd 2.2.2 (source unavailable)
 - async-ctrlc 1.2.0 (source unavailable)
 - async-fs 2.2.0 (source unavailable)
@@ -672,16 +676,13 @@ inside that graph must still be resolved before a binary release is cleared
 - base16ct 1.0.0 (source unavailable)
 - bincode 1.3.3 (source unavailable)
 - block2 0.6.2 (no license text in cached crate)
-- caret 0.10.1 (no license text in cached crate)
 - console-api 0.9.0 (source unavailable)
 - console-subscriber 0.5.0 (source unavailable)
 - const-hex 1.19.1 (source unavailable)
 - content_inspector 0.2.4 (source unavailable)
-- cookie-factory 0.3.3 (no license text in cached crate)
 - critical-section 1.2.0 (source unavailable)
 - crossbeam-deque 0.8.7 (source unavailable)
 - crossbeam-epoch 0.9.20 (source unavailable)
-- derive-deftly-macros 1.11.5 (no license text in cached crate)
 - difflib 0.4.0 (source unavailable)
 - dispatch2 0.3.1 (no license text in cached crate)
 - dynasm 5.1.0 (no license text in cached crate)
@@ -692,7 +693,6 @@ inside that graph must still be resolved before a binary release is cleared
 - evmap 11.0.0 (source unavailable)
 - foreign-types 0.3.2 (source unavailable)
 - foreign-types-shared 0.1.1 (source unavailable)
-- fs-mistrust 0.15.1 (no license text in cached crate)
 - futures-await-test 0.3.0 (no license text in cached crate)
 - futures-await-test-macro 0.3.0 (no license text in cached crate)
 - generator 0.8.9 (source unavailable)
@@ -717,7 +717,6 @@ inside that graph must still be resolved before a binary release is cleared
 - objc2-core-foundation 0.3.2 (no license text in cached crate)
 - objc2-encode 4.1.0 (no license text in cached crate)
 - objc2-io-kit 0.3.2 (no license text in cached crate)
-- oneshot-fused-workaround 0.7.1 (no license text in cached crate)
 - openssl 0.10.81 (source unavailable)
 - openssl-macros 0.1.1 (source unavailable)
 - openssl-src 300.6.1+3.6.3 (source unavailable)
@@ -734,7 +733,6 @@ inside that graph must still be resolved before a binary release is cleared
 - predicates 3.1.4 (source unavailable)
 - predicates-core 1.0.10 (source unavailable)
 - predicates-tree 1.0.13 (source unavailable)
-- priority-queue 2.7.0 (no license text in cached crate)
 - proptest 1.11.0 (source unavailable)
 - prost 0.14.4 (source unavailable)
 - prost-derive 0.14.4 (source unavailable)
@@ -749,15 +747,11 @@ inside that graph must still be resolved before a binary release is cleared
 - raw-cpuid 11.6.0 (source unavailable)
 - rayon 1.12.0 (source unavailable)
 - rayon-core 1.13.0 (source unavailable)
-- retry-error 0.13.1 (no license text in cached crate)
 - rsqlite-vfs 0.1.1 (no license text in cached crate)
-- rustix-linux-procfs 0.1.1 (source unavailable)
-- safelog 0.9.1 (no license text in cached crate)
 - sha256 1.6.0 (source unavailable)
 - shlex 1.3.0 (source unavailable)
 - similar 3.1.1 (source unavailable)
 - sketches-ddsketch 0.3.1 (source unavailable)
-- slotmap-careful 0.8.1 (no license text in cached crate)
 - smol 2.0.2 (source unavailable)
 - snapbox 1.2.2 (source unavailable)
 - snapbox-macros 1.1.0 (source unavailable)
@@ -785,11 +779,9 @@ inside that graph must still be resolved before a binary release is cleared
 - unarray 0.1.4 (source unavailable)
 - valuable 0.1.1 (no license text in cached crate)
 - value-bag 1.13.2 (source unavailable)
-- void 1.0.2 (no license text in cached crate)
 - wait-timeout 0.2.1 (source unavailable)
 - wasm-bindgen-futures 0.4.76 (source unavailable)
 - web-sys 0.3.103 (source unavailable)
-- web-time-compat 0.2.1 (no license text in cached crate)
 - winapi-i686-pc-windows-gnu 0.4.0 (no license text in cached crate)
 - winapi-x86_64-pc-windows-gnu 0.4.0 (no license text in cached crate)
 - windows-sys 0.45.0 (source unavailable)
@@ -808,4 +800,5 @@ revision before distributing a binary containing those components. This inventor
 does not certify existing binaries or replace target-specific distribution review.
 
 Additional verified upstream MIT text: [arti, exact source revision](https://gitlab.torproject.org/tpo/core/arti/-/raw/a71097fdf7b141b56d1eb3709628ee38d232c9d1/LICENSE-MIT).
-Matched using registry `.cargo_vcs_info.json`; other missing records remain open.
+Matched using registry `.cargo_vcs_info.json`; the remaining records listed above
+remain open for any future build that incorporates them.

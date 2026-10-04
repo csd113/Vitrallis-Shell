@@ -71,6 +71,9 @@ def install(username):
         if not directory.exists():
             secure(directory.parent, True)
             directory.mkdir(mode=0o755)
+            # The public installer uses umask 077. This newly created root-owned
+            # directory must still allow the desktop user to execute its helper.
+            directory.chmod(0o755)
         secure(directory, True)
     with tempfile.NamedTemporaryFile(prefix='.carousel-check-', dir=sudoers.parent) as check:
         check.write(rules); check.flush()
