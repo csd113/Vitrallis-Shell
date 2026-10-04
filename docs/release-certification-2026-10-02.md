@@ -845,6 +845,65 @@ no physical cold power cycle has been performed.
   receipts. Cold startup, physical motion/tearing/input acceptance and the other
   newly published app fixes remain open.
 
+- Music 0.1.0 was removed through App Center and current public 0.1.1 installed
+  from `ad32a6755ced427e6206c6e2b13b88cb891799da`. All eleven published files,
+  receipt hashes and current launcher flags verify. The exact source and tests
+  were independently staged into private normal-user NAND scratch directories;
+  all eleven production files match the public inventory. All 26 native tests
+  pass without skips in 100.658 seconds, including both Linux parent-death tests,
+  the empty-command-line startup-pause guard, real format decoding, GUI, metadata
+  and storage checks. These tests use dummy or null audio where specified; they
+  do not establish audible output. Quiet managed warm focus takes 5.28 seconds,
+  followed by a usable five-track library. This measures window focus/title,
+  not first usable frame or cold startup.
+  Actual managed FLAC, MP3, OGG and WAV selections show their correct metadata
+  and owned FFplay inputs; each verified fixture opens the device's ALSA playback
+  node. Corrupt media shows a readable error. Keyboard pause/resume, forward and
+  backward seek, volume 65→60→65, playlist advance and Home/return are exercised.
+  Returning to Shell preserves the paused OGG decoder and reopening Music focuses
+  the same app and decoder identities. Some earlier filenames say MP3, but the
+  captured process/input and screen prove automatic playlist advance had reached
+  OGG before that Home check. Original repeat/volume/selected-track preferences
+  are restored through the UI. Normal Exit leaves none of thirteen identified
+  app/probe/decoder identities or matching Music processes. All 36 saved/config
+  files, 26 directory modes and seven unrelated receipts remain unchanged after
+  removal, installation, native tests and managed playback.
+  A rapid Next sequence shows Working and a media error; later independent probes
+  and individual format openings pass, but the earlier error's cause remains
+  unresolved and the rapid-switch gate is not cleared. Two readiness observations
+  fail on disappearing or temporarily inaccessible child FDs during replacement;
+  the private observer now tolerates these transitions while checking start ticks.
+  These failed observations are retained separately. Audible physical output,
+  remaining input acceptance and cold startup remain open.
+
+- Current Monitor 0.4.1 integration first exercises refusal of an obsolete
+  pre-release launcher. The update reports that the launcher differs; complete
+  payload/integration, saved/config and unrelated receipt inventories remain
+  unchanged. The old generated cache-prefix launcher is retained as evidence.
+  Normal App Center removal/reinstallation then removes all owned files and
+  verifies all eighteen files at public source `21774cfa`, a current launcher
+  and unchanged saved data. This is recreation, not a successful 0.4.0→0.4.1
+  update. Native execution of the exact published tests reaches the real EGL
+  check successfully, but fails a requested 640-pixel resize under Awesome's
+  480-pixel tiling rule and later aborts with `Tcl_AsyncDelete: async handler
+  deleted by the wrong thread`. Both failures are retained.
+  An isolated Apps fix removes the dashboard/Tk reference from the background
+  metrics worker, passing only the collector, result queue and acceptance event.
+  A deterministic delayed-collection regression proves the closed dashboard is
+  retained by the published worker, then released by the corrected worker while
+  collection remains active. Its old-code run fails and corrected run passes.
+  The resize fixture uses an unmanaged Tk window; all original geometry and text
+  assertions remain. All 77 corrected native tests pass without exclusions in
+  47.085 seconds, including real EGL and Linux FIFO checks; the Mac GUI suite
+  runs 77 tests with two existing platform exclusions. The first host Linux GUI
+  command cannot run because its container lacks `xvfb-run`; this is retained as
+  an environment limitation, not counted as a test pass. All 25 tested source/test
+  files match the isolated Apps worktree, and all 36 saved/config files, 26
+  directory modes and seven unrelated receipts remain unchanged. The device
+  still has published Monitor 0.4.1; release preparation for the correction needs
+  fresh version authorization. Managed correction/Pulse and GPU accuracy remain
+  open.
+
 ## Gate ledger
 
 | Gate | Current result and remaining work |
@@ -857,7 +916,7 @@ no physical cold power cycle has been performed.
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core Settings/launcher screenshots reviewed; remaining utilities, App Center and failure states pending |
 | Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic navigation, held-key filtering and control changes exercised; physical Fn-key and remaining stress coverage pending |
-| Every catalog app lifecycle | Earlier eight-app audit retained data; current Shell verifies Carousel runtime removal/reprovision, public 0.4.4 update and changing VP8/VP9 frames; newest Music/Monitor/Firefly integration, cold startup and physical acceptance pending |
+| Every catalog app lifecycle | Earlier eight-app audit retained data; current Shell verifies Carousel runtime removal/reprovision, public 0.4.4 update and changing VP8/VP9 frames, plus Music 0.1.1 native tests and managed formats/cleanup; Monitor native crash correction is validated in isolated source but unreleased; managed correction/Firefly, rapid Music switching, cold startup and physical acceptance pending |
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
 | Python runtime | Carousel native managed removal/reprovision reclaims all derived runtime backups, preserves AppData and generates the current launcher; qualified warm startup measured; other apps and cold startup pending |
 | Process lifecycle stress | Debug exits left no app processes or Vitrallis-service zombies; stock PocketHome zombies distinguished; sustained repetition pending |
