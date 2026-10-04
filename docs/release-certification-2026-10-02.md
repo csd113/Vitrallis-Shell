@@ -29,12 +29,84 @@ completed, but those reboot checks did not inspect actual X11 keyboard focus.
 Replacement startup and renewed owner physical cold-power/input/display
 acceptance pass. Corrected public installation, repeat execution, reboot and
 native utility smoke now pass. Reinstall rollback-pointer preservation fails
-in published 1.0.0; its correction, official update/interruption and final
-public-path smoke remain open. No stable release is declared.
+in published 1.0.0 and passes in published 1.0.1; renewed clean public
+installation, official update/interruption and final physical smoke remain open.
+No stable release is declared.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) is merged,
 and 1.0.0 is published as a certification prerelease.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
+
+## Authorized 1.0.1 recovery correction
+
+The owner approved Shell 1.0.1 after the published 1.0.0 reinstall recovery defect
+was reproduced. Reinstalling an active bundle now retains the distinct previous
+generation. The regression test fails against the published installer and passes
+with the correction; all 42 installer tests pass. No Rust production behavior,
+package format or dependency changes accompany this correction.
+[PR #6](https://github.com/csd113/Vitrallis-Shell/pull/6) is merged at
+`24a646f2461780b2e9ad45b3797973e48afb46fc`. The annotated `v1.0.1` tag identifies
+reviewed source `b2ff6d48be33b0a70c373d56d1a8c2f354501db2`; its tree equals the
+merge tree. All six Rust 1.91.0/1.99.0/stable review checks pass.
+[The exact tagged workflow](https://github.com/csd113/Vitrallis-Shell/actions/runs/37184116931)
+passes canonical validation, ARMv7 and x86-64 builds, utility probes, packaging
+and legal notice checks. The exact tagged device checks pass; 1.0.1 is published
+as a certification prerelease at 2026-10-04T07:19:36Z. All 19 asset IDs, sizes and digests are
+unchanged by publication. Stable readiness is not declared.
+
+All 19 draft assets match GitHub sizes/digests; eight checksum sidecars and all
+six helper/three legal files verify against the tagged source. Both bundles have
+five verified ELF members and no trailing data. ARMv7 bundle SHA-256 is
+`1ee6c8e5e4cd7184a27ce8668f252ab40ac8a339f30ba9e96e55f746910dc0e6`;
+x86-64 bundle SHA-256 is
+`3f4a8c74c40e61d998cf832ead89a3c2794f53d96e1d0f32d45aa4221134a804`.
+Prepared installation of the exact ARMv7 bytes and all matching helpers on the
+physical device passes. Repeating the installation retains published 1.0.0
+bundle `5ad2944b…` as the distinct previous generation. All five executables
+have the expected version, hashes and `chip:chip` ownership with mode 0755;
+installed helpers are mode 0644. All 93 tracked saved entries and all eight
+original settings remain unchanged. These prepared checks do not substitute
+for the public README installation route after publication.
+
+The exact tagged Shell graphics self-test and three utility hardware smokes
+pass with Mali400, VSync and no fallback. At 480×272, strict software/hardware
+pixel equality is **FAIL** on 73 Terminal, 41 Notepad and 90 Files pixels, each
+by at most one colour level. Hardware and automatic readbacks match exactly;
+no assertion or visual baseline is weakened. A software reboot reaches
+current-session Ready in 187.112 seconds, boot
+`8d15742a-e23a-4530-aaf2-55600aa096c0`, native PID 1114. At 0, 15 and 30 seconds,
+actual X11 focus agrees with the same fullscreen 480×272 Shell window, with no
+PocketHome process/window or owned zombie. All 93 retained entries and original
+eight settings match afterward. This is software reboot evidence; physical cold
+acceptance of these bytes is still required.
+
+Full canonical validation of version 1.0.1 passes on macOS and native Linux:
+formatting, strict Clippy, workspace check/tests, release builds and software
+SDL smokes. macOS runs 378 Rust tests; native Linux runs 380. Python discovery
+runs 178 cases, with nine macOS and eight Linux explicit environment exclusions.
+The two actual Awesome/X11 fixtures also pass in a separate session-bus run.
+Initial disposable Linux harness failures (hidden Cargo binary, then missing Git
+metadata) and the fixture run without its required session bus are retained;
+corrected harness runs pass without weakening assertions.
+
+Before installing 1.0.1, four real-device configuration fault cases passed on
+the prior 1.0.0 native bundle: missing, malformed, partial and mode-000 files for
+preferences, screen timeout and Tor policy. Each reaches the focused 480×272
+launcher with no PocketHome process/window or owned zombie. Nonmissing invalid
+bytes/modes remain unchanged; missing Tor policy creates the documented private
+default. Each case restores the original files and relaunches successfully.
+All 93 tracked saved entries and eight original settings match afterward.
+This is prior-native-build fault evidence, not a claim that the 1.0.1 executable
+was used for these cases.
+
+Evidence: `recovery-v1.0.1-artifacts-manifest.json`,
+`recovery-v1.0.1-device-install-proof.json`,
+`settings-persistence-after-v101-install.json`,
+`recovery-v1.0.1-canonical-summary.json`,
+`recovery-v1.0.1-tag-workflow-final.json`,
+`recovery-v1.0.1-pr-merged.json`, `configuration-faults-device-proof.json`,
+`retained-state-after-configuration-faults.json` and
+`settings-persistence-after-configuration-faults.json`.
 
 ## Shell certification scope
 
@@ -47,8 +119,8 @@ investigation are retained follow-ups; none is evidence of an unresolved Shell
 defect. The owner authorized Monitor 0.4.2; that app release is deferred while
 Shell owns the device.
 
-The remaining Shell critical path is the reinstall rollback-pointer correction,
-the official update/interruption route and final public-path smoke. The clean
+The remaining Shell critical path is renewed 1.0.1 clean public installation,
+the official update/interruption route and final physical smoke. The clean
 public README install, repeat execution, reboot and published artifact
 verification pass as recorded below. Earlier final-production
 activity-soak checks pass. The replacement startup is installed, with renewed
@@ -1377,7 +1449,7 @@ normal session processes. All 93 tracked retained entries still match.
 | Repository/device baseline | Passed baseline inventory; complete component review continues |
 | App filesystem contract | Implemented and host-tested; complete physical app lifecycle pending |
 | Filesystem/permissions | Fresh root directory modes repaired and normal-user runtime integrity passed; app and physical fault matrix pending |
-| Complete clean public installation | Fully clean Beta2 FAILED on root status permissions. Published 1.0.0 README install, repeat execution, reboot and native utility smoke pass from an absent core root with exact artifacts, ownership and saved configuration. Its distinct previous-generation regression FAILS; the correction needs a fresh release. |
+| Complete clean public installation | Fully clean Beta2 FAILED on root status permissions. Published 1.0.0 README install, repeat execution, reboot and native utility smoke pass from an absent core root with exact artifacts, ownership and saved configuration. Its distinct previous-generation regression FAILS; the published 1.0.1 correction passes exact tagged prepared installation/repeat/reboot checks. Renewed clean public installation is running. |
 | Installer failure cases | Canonical fixtures pass; physical fault matrix pending |
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core launcher, Settings, native utilities and App Center list/Details/transient states inspected on final production; final public-path smoke remains pending. |
@@ -1388,10 +1460,10 @@ normal session processes. All 93 tracked retained entries still match.
 | Process lifecycle stress | Final activity soak has no service-owned zombies in 61 samples; two complete native-utility cycles return to the same Shell, and all nine identified utility PIDs are gone. Repeated-install memory behavior is not inferred. |
 | Repeated startup | Original physical cold boot FAILED keyboard navigation. Replacement startup passes prepared software reboots and renewed owner physical cold boot. The exact tagged rebuild and its clean public installation each pass a software reboot with current-session readiness, no PocketHome and sustained actual X11 focus. Owner cold-power acceptance of rebuilt bytes is not inferred. |
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
-| Every setting persistence | Eight changed controls survive re-entry, Shell restart, tagged-bundle installation and reboot, then restore the exact baseline. Radio, malformed/missing configuration and remaining permission fault cases are separately qualified/pending. |
+| Every setting persistence | Eight changed controls survive re-entry, Shell restart, tagged-bundle installation and reboot, then restore the exact baseline. Missing, malformed, partial and unreadable configuration cases pass on the prior 1.0.0 native build, with original bytes/modes restored. Radio and hardware qualifications remain separate. |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
 | Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; full app/Shell update faults and durability pending |
-| Shell update/rollback | Prepared activation and Settings Restore/relaunch in both directions pass with saved data unchanged. Published reinstall loses the distinct previous pointer; the focused correction passes its regression, full host validation and actual device installer test with saved data intact. Fresh publication, official download/update and interruption faults remain pending. |
+| Shell update/rollback | Prepared activation and Settings Restore/relaunch in both directions pass with saved data unchanged. Published reinstall loses the distinct previous pointer; the focused correction passes its regression, full host validation and actual device installer test with saved data intact. The authorized 1.0.1 certification prerelease is published; exact tagged repeat install retains distinct 1.0.0. Renewed public installation, official download/update and interruption faults remain pending. |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on prepared builds. The exact public installation additionally passes all three utility launch/keyboard/normal-exit smokes with no remaining utility process and all 93 tracked entries unchanged. |
