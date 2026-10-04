@@ -8,9 +8,11 @@ Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
 The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
-reviewed in separate commits. The installed native bundle now corresponds to
-production code `dba70dab7b4df480e398e178ab0636892cd5b306`, bundle
-`ea6fc653952fc591ff9602ee2b740a873e1c8e6d6aec94a799b862a2081013bd`.
+reviewed in separate commits. The installed release candidate is now built from
+`a57b107830b802372afe72fcb584386f1c3f6abd`, ARMv7 bundle
+`07f299b4f3f35198f1ac556aedb476a6c5801983b4eff8253a944ef7d0f843ea`.
+The earlier native production code was `dba70dab7b4df480e398e178ab0636892cd5b306`,
+bundle `ea6fc653952fc591ff9602ee2b740a873e1c8e6d6aec94a799b862a2081013bd`.
 The test-repair commit `4878c9ec6cbf2bbeef41503808dd6225654c2039` changes only
 one isolated test and this ledger; its production code/helpers are unchanged,
 and all six remote Rust 1.91.0/1.99.0/stable jobs pass. The 380 default workspace
@@ -22,8 +24,9 @@ candidate was `ed62b2cb7af23e1804abb85a65b69b1167af507a`; the owner's subsequent
 physical cold boot exposed a keyboard startup failure and supersedes that
 candidate. Three software reboot observations and the 30-minute activity soak
 completed, but those reboot checks did not inspect actual X11 keyboard focus.
-Corrected startup, public installation/update and physical cold-power acceptance
-remain open; no stable release is declared.
+Replacement startup and renewed owner physical cold-power/input/display
+acceptance pass. Corrected public installation/update and final public-path
+smoke remain open; no stable release is declared.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
@@ -40,11 +43,11 @@ defect. The owner authorized Monitor 0.4.2; that app release is deferred while
 Shell owns the device.
 
 The remaining Shell critical path is the corrected clean public README install
-and second install, the official update/interruption route, physical cold-power
-acceptance, final public-path smoke and published artifact verification. Final
-production activity-soak and current-boot log checks pass. Keyboard delivery
-after boot is blocked by the failure below until the replacement startup is
-installed and exercised again.
+and second install, the official update/interruption route, final public-path
+smoke and published artifact verification. Earlier final-production
+activity-soak checks pass. The replacement startup is installed, with renewed
+owner cold-power/input/display acceptance and a software reboot of the newly
+rebuilt candidate passing as recorded below.
 Prepared local installation is not a substitute for the public route. No final
 stable release or readiness declaration is authorized by this scope correction.
 
@@ -58,7 +61,8 @@ ran. Awesome reported the Vitrallis client focused, but `XGetInputFocus` returne
 the hidden PocketHome window. The previous foreground checks therefore do not
 certify keyboard delivery. Manual focus resets restored delivery temporarily;
 both immediate and deferred focus-hook experiments failed three out of three
-reproductions and were removed. Physical cold-boot keyboard acceptance is **FAIL**.
+reproductions and were removed. Original physical cold-boot keyboard acceptance
+is **FAIL**; renewed acceptance of the replacement startup is recorded below.
 
 The owner explicitly requires PocketHome not to run when Vitrallis is installed.
 The repair replaces the recognized PocketHome launch in the existing Awesome
@@ -87,13 +91,19 @@ Notepad and Settings, and Home returns to Shell while retaining Notepad's same
 PID. Resuming Notepad and normal clean close pass. Notepad owns actual X11 focus
 while foreground. Its first proof expected an incorrect window title; the
 retained data and corrected proof use actual title, PID, executable and class.
-Fresh physical cold-start keyboard/touch/display acceptance remains pending.
-The old draft release remains unpublished and is not the repaired candidate.
+The owner then performed another full power-off/on and reported: keyboard and
+touch work, the display looks good, and the device boots directly into Vitrallis.
+Read-only inspection of boot `2d609fb9-3c9f-4d65-a5f9-d24aa0b4c61e` confirms
+current-session Ready, one Shell PID 912, no PocketHome process/window or
+service-owned zombies, and actual X11 focus on the 480×272 Shell window.
+Renewed physical cold-start keyboard/touch/obvious-display acceptance is **PASS**
+for bundle `ea6fc653…` and startup helpers from `a57b107830b802372afe72fcb584386f1c3f6abd`.
+The old draft assets are superseded by the repaired candidate recorded below.
 Keyboard selection and activation of Exit Vitrallis remove every owned process
 and window without starting PocketHome. The restored original Home binding
 then starts a new ready Shell (PID 4004), with matching actual X11 focus and no
-PocketHome process/window. UI automation is paused at that launcher for the
-owner's new cold-power/input/display test.
+PocketHome process/window. UI automation was paused for the owner's
+cold-power/input/display test and resumed after the successful report.
 
 Full `sh scripts/validate.sh` passes on macOS and native Linux AArch64, including
 required formatting, strict Clippy, workspace tests, release builds, smokes,
@@ -120,6 +130,83 @@ Evidence: `keyboard-cold-boot-x-input-before.json`,
 `pockethome-replacement-after-exit.json`,
 `pockethome-replacement-after-home-relaunch.json` and the
 `pockethome-replacement-canonical-*-v2.log` records.
+The renewed physical report and read-only observations are retained in
+`pockethome-replacement-owner-cold-acceptance.json` and
+`pockethome-replacement-owner-cold-boot-inspection.json`.
+
+## Rebuilt startup-repair candidate
+
+Source `a57b107830b802372afe72fcb584386f1c3f6abd` has all six Rust
+1.91.0/1.99.0/stable jobs passing in the
+[PR workflow](https://github.com/csd113/Vitrallis-Shell/actions/runs/37176307013)
+and [push workflow](https://github.com/csd113/Vitrallis-Shell/actions/runs/37176304262).
+Locked all-feature release builds and five executable version probes per
+architecture pass for ARMv7 and x86-64. ARMv7 bundle SHA-256 is
+`07f299b4f3f35198f1ac556aedb476a6c5801983b4eff8253a944ef7d0f843ea`;
+x86-64 is `7f1a3e4bdb9246a9b054daaa3afe558471c26cac0a05bc735abe88ac29dcc535`.
+The highest referenced glibc symbol is 2.34 in both architectures, within the
+declared 2.36 floor. Exact ARM emulation and native x86-64 Shell/utility smokes
+pass at 480×272 and 800×480. Native Rust source, assets and dependency inputs
+are unchanged from the prior candidate, but the four freshly built native
+ELFs have different bytes; those new bytes were installed and tested rather
+than assumed equivalent. Arti remains byte-identical.
+
+The repeated installer retains the replacement Awesome configuration exactly.
+Software reboot `49f85831-6020-428f-bd2b-b99de95115a1` reaches current-session
+Ready with Shell PID 1062. At 0, 15 and 30 seconds, the exact new generation
+retains one Shell identity, no PocketHome process/window or service-owned
+zombies, and actual X11 focus on its fullscreen 480×272 window. The 185.68-second
+request-to-observation interval includes OS boot and USB/SSH availability; it
+is not Shell-only launch latency. All five installed executable hashes,
+lengths, chip ownership and 0755 modes match the new bundle. All 57 recorded
+AppData entries, five config entries, 21 checked Firefly payload entries, three
+app-integration entries and seven unrelated receipts remain unchanged.
+The earlier manual physical cold test applies to the same repaired integration
+with bundle `ea6fc653…`; the fresh bundle's automated software reboot is
+recorded separately.
+
+Keyboard navigation opens and closes Notepad and Settings on the fresh build.
+Notepad's actual X11 focus matches its native window. Terminal executes `pwd`
+and `id -un` through the physical device's PTY, reporting `/home/chip` and
+`chip`; HISTFILE is unset before the diagnostic commands. Its normal exit/Close
+flow returns to Shell. Files opens the normal home directory, keyboard selection
+reaches its Close button, and activation returns to the same Shell PID. Final
+inspection finds only the supervisor, compositor and Shell in the owned unit,
+no utility processes or zombies, no PocketHome process/window, and actual X11
+focus on the launcher. All 93 baseline entries again match bytes, owners and
+modes. The current-session log has no unexpected failure or hardware fallback;
+four warnings concern the same missing stock `surf` command.
+Initial Terminal and Files captures were still the launcher during startup.
+Two header comparisons and a foreground guard rejected unready/changed screens
+before sending input; subsequent painted controls and window identity were
+checked. Those retained observer failures are not completed UI checks.
+
+Shell's exact native `--graphics-test` passes on Mali400 with acceleration,
+backbuffering and VSync. All three utilities pass their supported hardware
+`--smoke-test` and 480×272 screenshot readbacks; automatic and hardware images
+match exactly. Strict software-versus-hardware screenshot equality is **FAIL**:
+73 Terminal, 46 Notepad and 92 Files pixels differ by at most one colour level
+out of 255, with total absolute channel errors 116, 83 and 171 respectively.
+The screenshots were inspected and retain the same visible layout and text.
+This is recorded as a small backend colour-quantization limitation, not exact
+software parity. No repository test assertion or production rendering was
+changed. Initial observer attempts expected the wrong Shell diagnostic format
+and passed the unsupported `--graphics-test` option to Terminal; those failures
+are retained separately from the valid hardware probes.
+
+Evidence: `pockethome-replacement-a57-ci-jobs-proof.json`, the
+`pockethome-replacement-*-abi-proof.json` and exact-architecture smoke logs,
+`pockethome-replacement-final-build-install.log`,
+`pockethome-replacement-final-build-reboot.json`,
+`pockethome-replacement-final-executable-proof.json`,
+`pockethome-replacement-final-persistence-proof.json`,
+`pockethome-replacement-final-notepad-focus.json`,
+`pockethome-replacement-final-terminal-focus.json`,
+`pockethome-replacement-final-native-ui-proof.json`,
+`pockethome-replacement-final-ui-data-log-proof.json`,
+`pockethome-replacement-final-native-graphics-v2.log`,
+`pockethome-replacement-final-native-utility-graphics-v2.log` and
+`pockethome-replacement-final-native-pixel-comparison.json`.
 
 ## Device and installation
 
@@ -1085,18 +1172,30 @@ software observations do not establish keyboard delivery or physical display acc
 
 ## Reviewed release draft
 
-The superseded 1.0.0 candidate is staged as an unpublished GitHub draft and
-prerelease at `ed62b2cb7af23e1804abb85a65b69b1167af507a` (same production bytes as
-`dba70da`). All 19 assets have unique names, matching SHA-256 sidecars, matching
-checkout helpers/legal notices, and uploaded GitHub SHA-256 digests and sizes.
-ARMv7 bundle SHA-256 is `ea6fc653952fc591ff9602ee2b740a873e1c8e6d6aec94a799b862a2081013bd`;
-x86-64 is `635497dbb46b188fab812b7f1bbb8787b9c314e3f3b755ceed142de162260c86`.
-The public installer and official updater exclude drafts. The owner has been
-asked to authorize publication as a certification prerelease to permit those
-public-path checks; no publication approval has yet been received. This draft
-is not a stable release or a readiness declaration. Its pending publication
-question concerns the old candidate and must be replaced with the repaired
-candidate after startup validation; no new publication is authorized.
+The 1.0.0 certification candidate is staged as an unpublished GitHub draft and
+prerelease at `a57b107830b802372afe72fcb584386f1c3f6abd`, replacing the
+superseded `ed62b2cb7af23e1804abb85a65b69b1167af507a` assets. All 19 assets have
+unique names, eight matching SHA-256 sidecars, matching committed helpers/legal
+notices, and uploaded GitHub SHA-256 digests and sizes. The exact bundle hashes
+and physical verification are recorded above. Metadata, release notes and the
+19-asset verification are retained in
+`pockethome-replacement-draft-final-api.json`,
+`pockethome-replacement-draft-final-proof.json` and
+`pockethome-replacement-assets-manifest-v2.json`.
+All 19 freshly downloaded draft files also match the manifest's hashes and
+lengths (`pockethome-replacement-draft-download-proof.json`). The public
+installer and official updater exclude drafts. Public `main` still passes the
+removed `--make-default` option from bootstrap to the installer; its Python
+entry point must be updated through the reviewed PR before exposing these
+replacement helpers. The public shell entry script is already byte-identical.
+The public-main comparison is retained in
+`pockethome-replacement-public-main-bootstrap.py` and
+`pockethome-replacement-public-main-bootstrap.sh`.
+Publication as a certification prerelease and merging the reviewed entry-point
+changes require owner approval; none has yet been received. This draft
+is not a stable release or a readiness declaration. The old publication question
+concerns the superseded candidate; a revised exact-candidate approval is still
+required before publication.
 
 ## Gate ledger
 
@@ -1109,12 +1208,12 @@ candidate after startup validation; no new publication is authorized.
 | Installer failure cases | Canonical fixtures pass; physical fault matrix pending |
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core launcher, Settings, native utilities and App Center list/Details/transient states inspected on final production; final public-path smoke remains pending. |
-| Keyboard/touch | Original cold-boot navigation FAILED with actual X11 focus on hidden PocketHome; touch worked. Replacement startup passes two reboot focus checks and visible synthetic launcher/Notepad/Settings/Home input. Renewed physical acceptance pending. |
+| Keyboard/touch | Original cold-boot navigation FAILED with actual X11 focus on hidden PocketHome. Replacement startup passes two reboot focus checks, visible synthetic launcher/Notepad/Settings/Home input and renewed owner physical cold-boot keyboard/touch acceptance. Final public-path smoke remains pending. |
 | App Center lifecycle/data preservation | Eight-app lifecycle evidence is retained; current Shell additionally passes Carousel removal/reprovision/public update, Music removal/install/launch/cleanup, Monitor refusal/remove/install and Firefly missing-launcher recovery/public update with saved data unchanged. App internals are deferred to Apps. |
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
 | Python runtime | Native Carousel removal/reprovision reclaims derived runtime backups, preserves AppData and generates the current launcher; current Music, Monitor and Firefly generated launchers verify against public packages. Additional app performance work is deferred. |
 | Process lifecycle stress | Final activity soak has no service-owned zombies in 61 samples; two complete native-utility cycles return to the same Shell, and all nine identified utility PIDs are gone. Repeated-install memory behavior is not inferred. |
-| Repeated startup | Original physical cold boot FAILED keyboard navigation. Replacement startup passes two software reboots with current-session Ready, no PocketHome process/window and matching actual X11 focus. Renewed physical cold-power acceptance pending. |
+| Repeated startup | Original physical cold boot FAILED keyboard navigation. Replacement startup passes two software reboots, renewed owner physical cold boot and a third software reboot of the fresh exact ARM bundle, with readiness, no PocketHome process/window and matching actual X11 focus. Public-path checks remain pending. |
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
 | Every setting persistence | Clock format and timeout survived development reboot; timezone save/return and restored values pass; remaining full persistence matrix pending |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
@@ -1129,8 +1228,8 @@ candidate after startup validation; no new publication is authorized.
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
 | Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
 | License/repository consistency | Artwork, both Arti graphs and Rust runtime notices are reconciled; all 19 draft asset sizes/GitHub SHA-256 digests and exact legal/helper bytes verify. Published public-route verification remains pending. |
-| Canonical release builds | Full host gates, exact-code ARMv7/x86-64 prepared packages, 380 default native PocketCHIP tests and four explicit graphics opt-ins pass; final tagged workflow and exact final-state checks pending |
-| Exact clean candidate | Prepared source ed62b2c has all six exact-head CI jobs passing and unchanged production bytes matching the tested bundle. Documentation records the subsequent scope/startup/soak evidence; no final tag/stable release exists. |
+| Canonical release builds | Full Mac/Linux host gates, exact a57b107 ARMv7/x86-64 release packages, six exact-source CI jobs, device hardware smokes/readbacks and earlier 380 native tests/four graphics opt-ins pass. Exact hardware/software screenshot equality fails only by the recorded one-channel-level colour difference; assertions remain unchanged. Final public-path checks remain pending. |
+| Exact clean candidate | Prepared source a57b107 has six passing exact-source CI jobs and rebuilt bundle bytes verified on device and in the unpublished 19-asset draft. A subsequent ledger-only commit does not change runtime/package inputs. No final tag/stable release exists; exact public installation/update remains open. |
 | Final physical smoke | Not run |
 
 ## Validation recorded so far
