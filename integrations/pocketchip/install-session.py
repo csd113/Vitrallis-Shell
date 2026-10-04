@@ -489,9 +489,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('bundle', type=Path)
     parser.add_argument('--expected-version')
-    args = parser.parse_args()
     try:
+        args = parser.parse_args()
         install(args.bundle, Path(__file__).resolve().parent, Path.home(), args.expected_version)
+    except KeyboardInterrupt:
+        print('Vitrallis setup cancelled. Run setup again to check or finish installation.', file=sys.stderr)
+        sys.exit(130)
     except (OSError, ValueError, TypeError, SyntaxError, subprocess.SubprocessError) as error:
         print('Install failed: ' + str(error), file=sys.stderr)
         sys.exit(1)

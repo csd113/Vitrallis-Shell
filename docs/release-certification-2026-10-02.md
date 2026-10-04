@@ -8,7 +8,10 @@ Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
 The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
-reviewed in separate commits. The published release candidate is built from
+reviewed in separate commits. The current public candidate is 1.0.1 from
+`b2ff6d48be33b0a70c373d56d1a8c2f354501db2`, ARMv7 bundle
+`1ee6c8e5e4cd7184a27ce8668f252ab40ac8a339f30ba9e96e55f746910dc0e6`.
+The earlier published 1.0.0 candidate is built from
 `a57b107830b802372afe72fcb584386f1c3f6abd`, ARMv7 bundle
 `5ad2944b47f3152032c87ab87e2f4bb3466bc2bd841815a4176fdecd6938b615`.
 The earlier prepared build from that source was
@@ -30,7 +33,16 @@ Replacement startup and renewed owner physical cold-power/input/display
 acceptance pass. Corrected public installation, repeat execution, reboot and
 native utility smoke now pass. Reinstall rollback-pointer preservation fails
 in published 1.0.0 and passes in published 1.0.1; renewed clean public
-installation, official update/interruption and final physical smoke remain open.
+installation and repeat execution now pass for 1.0.1. A later relaunch stress
+cycle leaves a persistent owned zombie. The prepared correction passes a real
+held-query relaunch from normal production source, but remains unpublished.
+Activation interruption and recovery pass with the source qualifications below.
+Actual low-NAND public Shell update and fixture cleanup pass with the stated
+existing-generation qualification. The authorized exact public 1.0.2 candidate
+and final physical smoke remain open. Controlled brightness persistence passes
+with the qualification below.
+The owner explicitly authorized Shell 1.0.2 on 2026-10-04. Its exact build,
+public installation and final physical acceptance remain required.
 No stable release is declared.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) is merged,
 and 1.0.0 is published as a certification prerelease.
@@ -108,6 +120,460 @@ Evidence: `recovery-v1.0.1-artifacts-manifest.json`,
 `retained-state-after-configuration-faults.json` and
 `settings-persistence-after-configuration-faults.json`.
 
+## Fully clean public 1.0.1 installation and cancellation UX
+
+The normal 1.0.1 uninstaller removes all three installed generations and restores
+the exact original Awesome configuration (`507e5205…`). All 93 tracked saved
+entries remain unchanged. A certification-only guarded cleanup then archives
+and removes the exact Vitrallis-owned root GPU/media integration, restores both
+original board trees (`0132f7fa…`) and retains saved App Center/Tor state outside
+the absent core root. Reboot `fdf7515b-865e-4c56-bfd4-4e434a7722a4` reaches the
+stock PocketHome desktop with no Vitrallis-owned process, no installed core root,
+matching actual X11 focus and no live Vitrallis GPU OPP. Stock readiness takes
+176.711 seconds. The first cleanup observer incorrectly required a rotated log
+that was absent; it stopped after a successful normal uninstall. The corrected
+continuation verifies the exact four retained children before further mutation.
+The original failed observer and all cleanup/backup logs remain retained.
+
+The exact public README command is fetched anonymously on this clean device,
+SHA-256 `cd8e4d9be5f8ad70c7aee90ac056cc76d1569f379e957f01d4a78659f11e48ee`.
+Anonymous 1.0.1 release metadata verifies all 19 asset IDs/sizes/digests. The
+unmodified command selects published 1.0.1 and succeeds, including fresh root
+GPU/media provisioning and the expected reboot request while PocketHome is
+active. All five native versions/hashes/0755 modes and five installed helpers,
+0700 core/generation directories, 0600 lock/receipt, one exact startup replacement
+and retained configuration verify. Saved App Center/Tor state is restored without
+replacing any public core artifact. All 93 saved entries match again.
+A completed repeat of the same public command also succeeds and preserves an
+absent previous pointer, all public core checks and all 93 saved entries.
+Public-install reboot `60a5ecb5-1a66-478e-b2df-72ffc0762d38` reaches Ready in
+186.179 seconds with native PID 1071. At 0, 15 and 30 seconds, the same fullscreen
+480×272 window owns actual X11 focus, with no PocketHome process/window or owned
+zombie. All 93 tracked retained entries still match. Final critical-function
+smoke is continuing.
+
+The original-eight-settings verifier fails afterward on brightness only: live
+brightness is 1/10 instead of 10/10. The OS backlight service reports loading a
+saved zero and clamping it to one. This clean sequence includes an intervening
+stock PocketHome session; the reset is not yet attributed to Shell. The failed
+capture is retained. Restoring 100% through the actual Settings slider returns
+all eight original settings to their exact baseline. A controlled Shell-only
+reboot passes without that stock interval: boot
+`2fa3e6d0-30d2-46b1-885e-e817413e034f`, Ready in 187.458 seconds, PID 1086,
+the same actual X11 focus at three samples, no PocketHome or owned zombie,
+brightness and OS saved brightness both 10/10, all eight original settings and
+all 93 tracked saved entries unchanged. The failed clean-sequence observation
+remains qualified; this controlled result does not prove what wrote its zero.
+The launcher has all
+17 expected entries across three pages; the initially suspected missing entries
+are visible on the middle page, including the working System Settings tile.
+
+Public 1.0.1 native utility smoke also passes: Terminal accepts keyboard input,
+prints `/home/chip` and reaps its interactive shell; its visible Close control
+then exits the window. Notepad saves `public 1.0.1 smoke.txt` with the expected
+26 bytes, mode 0600 and `chip:chip` ownership. Files enters Documents with arrow
+keys/Enter and returns to the home directory with Escape. Both Close controls
+return to the original focused Shell; all four identified utility/PTY PIDs are
+gone, with no owned zombie. All eight original settings and all 93 original
+retained entries still match. The new note is additional real update-test data.
+The genuine Settings update check reports that no stable release is published
+yet, matching the existing stable-only policy of native version 1.0.1. Official
+OTA failure tests will use a genuine published beta native baseline, which
+accepts the published certification prerelease, with current integration helpers.
+
+The first repeat was started before the verification/retained-state restoration
+observer finished and was cancelled during download to end overlapping work.
+No installed pointer, receipt or saved entry changes, and the subsequent retry
+passes. This exposes a real failure-UX defect: published bootstrap cancellation
+prints a Python `KeyboardInterrupt` traceback. A focused prepared correction
+catches that interruption, prints a short instruction to rerun setup and exits
+130. Its CLI regression fails against published code and passes with the fix;
+all 15 bootstrap cases and full Mac/Linux canonical validation pass (179 Python
+cases, plus unchanged Rust/build gates). An actual prepared-helper public bundle
+download is interrupted at 110,592 bytes on the PocketCHIP: exit 130, short
+message, no traceback, no curl process or temporary payload, unchanged installed
+pointers/receipt and all 93 saved entries. The correction is not in published
+1.0.1. Separate authorization for a fresh version is pending; published assets
+remain immutable.
+
+Evidence: `recovery-v1.0.1-public-clean-v2.log`,
+`recovery-v1.0.1-stock-reboot.json`, `recovery-v1.0.1-public-readme-proof.json`,
+`recovery-v1.0.1-public-first-verification.json`,
+`recovery-v1.0.1-public-repeat-verification.json`,
+`recovery-v1.0.1-public-repeat-interrupted-download.log`,
+`recovery-v1.0.1-public-repeat-retry-install.log`,
+`retained-state-after-v101-public-repeat-retry.json`,
+`recovery-v1.0.1-public-installed-reboot.json`,
+`retained-state-after-v101-public-reboot.json`,
+`settings-persistence-after-v101-public-reboot.json`,
+`settings-persistence-after-v101-public-brightness-restore.json`,
+`brightness-controlled-v101-reboot.json`, `brightness-controlled-v101-os-state.json`,
+`settings-persistence-after-v101-controlled-reboot.json`,
+`v101-public-utility-smoke-state.json`,
+`retained-state-after-v101-public-utility-smoke.json`,
+`settings-persistence-after-v101-public-utility-smoke.json`,
+`bootstrap-cancellation-regression-red.log`,
+`bootstrap-cancellation-device-proof.json` and
+`bootstrap-cancellation-canonical-summary.json`.
+
+## Official update and interruption evidence
+
+Published native version 1.0.1 retains its stable-only release policy: its real
+Settings check reports that no stable release is published yet. To exercise
+official prerelease downloads without changing metadata or executable versions,
+the device uses the genuine published five-member `v1.0.0-beta-2` ARM bundle
+`0f3c5ab0…` with current 1.0.1 integration helpers. All five baseline member
+hashes and version probes match their public assets. This is a prepared update
+baseline, not an installation through the obsolete beta installer or an app
+lifecycle test of that older native build.
+
+The actual Settings Check action offers public 1.0.1, and its Install
+confirmation visibly defaults to Cancel. Three targeted failures pass:
+
+- Interrupt the verified owned curl at 77,824 downloaded bytes: readable
+  interruption error, no activation, complete staging cleanup and curl exit.
+- Pause that verified curl, corrupt byte zero of its private staging payload
+  and resume: actual SHA-256 rejection before activation, complete cleanup.
+- Kill only the verified owned Shell while Arti extraction is partial at
+  147,520 bytes: current and previous remain unchanged, and actual session
+  relaunch reaches the healthy beta with sustained real X11 focus.
+
+After each failure, the installed receipt, new public-build note and all 93
+original tracked saved entries remain unchanged. The extraction interruption
+leaves staging as expected after process death. The beta's subsequent Check
+cleans it through that release's older completion probe; current 1.0.1 instead
+opens and cleans staging when installation begins. This source difference is
+explicitly qualified. No completion bridge is added to current code.
+
+The ensuing genuine public retry completes in 112.062 seconds, verifies all five
+1.0.1 member hashes/versions/0755 modes and unchanged matching helpers, activates
+`1ee6c8e…`, retains beta `0f3c5ab0…` as previous and removes staging. The already
+present verified target generation is reused after comparing all staged bytes.
+Actual Relaunch executes public 1.0.1 in PID 9510 and reaches the focused 480×272
+launcher with no PocketHome or owned zombie. Saved data remains unchanged.
+Settings Restore then activates the beta, retains 1.0.1 as previous and relaunches
+successfully with the same data/focus checks. The reverse Restore/relaunch also
+passes: public 1.0.1 is active again, with beta retained as previous. Both
+confirmations visibly default to Cancel. All 93 original saved entries, the new
+note and all eight original settings match after this round trip. The device is
+left at the focused public 1.0.1 launcher in PID 9510, with no PocketHome or owned
+zombie.
+These observations precede the additional relaunch failure below.
+Activation-window interruption and final candidate hardware acceptance remain
+separate gates.
+
+Two observer failures are retained: a placeholder substitution initially corrupts
+a Python identifier and stops before device execution; the corrected observer
+compiles locally before dispatch. A later observer incorrectly expects staging
+still to exist after the beta Check; its failure is retained, the source explains
+the earlier cleanup, and the retry observer instead requires a clean initial
+stage, observes a new private download and verifies the completed public result.
+
+Evidence: `official-update-beta-2-baseline-proof.json`,
+`official-update-interrupt-download-proof.json`,
+`official-update-corrupt-download-proof.json`,
+`official-update-interrupt-extraction-proof.json`,
+`official-update-after-extraction-recovery-state.json`,
+`official-update-success-proof.json`,
+`official-update-relaunched-v101-state.json`,
+`official-update-restore-to-beta2-pointers.json`,
+`official-update-relaunched-beta2-state.json`,
+`official-update-restore-to-v101-pointers.json`,
+`official-update-final-v101-state.json`,
+`retained-state-after-official-public-update.json`,
+`retained-state-after-official-rollback-to-beta2.json`,
+`retained-state-after-official-rollback-round-trip.json` and
+`settings-persistence-after-official-rollback-round-trip.json`.
+
+### Subsequent relaunch failure and pressure-fixture cleanup
+
+A later actual Restore/relaunch from public 1.0.1 to the genuine beta baseline,
+while the owned NAND pressure fixture is being prepared, leaves `ip` PID 18270
+as a persistent zombie under Shell PID 9510. Direct PID inspection confirms
+state `Z`, parent 9510 and process start ticks 306165, rather than relying on a
+filtered process-name listing. The failure remains present more than eleven
+minutes later. Earlier passing samples remain valid observations, but do not
+clear this later process-lifecycle failure.
+
+Published 1.0.1 replaces the multithreaded Shell through `Command::exec` without
+first joining its background system workers. `Worker.pending` covers control
+requests only; the separate periodic status worker can still own an `ip` child.
+This supplies the cause corrected in the prepared source below. The OTA
+activation observer has not been started; the subsequent installer cancellation
+test does not substitute for that separate update path.
+
+The live UBIFS fixture is stopped through its owned stop marker, and its guarded
+cleanup removes the filler, readiness file and stop marker. It reports
+1,232,613,376 free bytes afterward, versus 1,244,553,216 before preparation.
+The interrupted preparation had not reached its 112 MiB target and is not a
+low-space Shell-update pass. Its intentional `InterruptedError` is in the
+certification harness log, not the product. At that cleanup, the native baseline is
+the beta, with public 1.0.1 retained as previous and current integration helpers.
+
+Evidence: `activation-relaunched-beta2-state.json`,
+`relaunch-persistent-zombie-before-pressure-cleanup.json` and
+`shell-update-pressure-fixture.log`.
+
+### Prepared relaunch and cancellation corrections
+
+The worker-lifetime defect is corrected in `f20cc01`: before replacing Shell,
+a dedicated cleanup thread disconnects and joins the system workers and stops
+and joins Tor supervision. The launcher keeps presenting frames while cleanup
+runs. Cleanup or exec failure refuses replacement and restores services for an
+explicit retry. The transient Updates view displays the operation without
+inactive navigation/action buttons or key hints. Existing app/control blocking
+and safe Install/Restore confirmation defaults remain in effect.
+
+The regression holds a real status subprocess while no control is pending,
+checks that preparation returns promptly without exec, and releases and reaps
+the child before allowing replacement. Updater coverage checks pending cleanup,
+refusal on failure and explicit retry. The waiting view is inspected at 480×272;
+automated rendering verifies that the action/footer area is empty at all four
+supported fixture sizes. Existing visual references are unchanged.
+
+A prepared device trial holds the exact owned `nmcli radio wifi` process through
+a verified pidfd. The cleanup thread appears while the child is stopped and
+Shell still executes the prior generation. Exec occurs only after the child's
+PID is gone, preserving Shell PID 8905 and start ticks 680053. This first trial
+starts from a private diagnostic build differing only in Restore-availability
+logging, and executes the uninstrumented prepared bundle `da11916e…`; it is not
+an exact public-candidate pass. Subsequent inspection confirms the focused
+480×272 launcher, no PocketHome, no owned zombie, all 93 original saved entries
+and all eight original settings unchanged. The first readiness observer lost
+Ready from its 4 KiB log tail after later query messages grew; the corrected
+observer uses the complete latest renderer-initialization segment and passes.
+
+An initial visual interpretation incorrectly reports a missing Restore footer.
+Enlarging the retained 480×272 capture confirms the Restore label was present.
+The exact 120×22 footer crop from the normal prepared and diagnostic captures
+has identical RGB SHA-256 `7cf722a5302da96378dfa16d8303844f197fc040aa0f38f08c4b97974abe4abd`.
+The read-only ARM structural probe and private runtime logging also validate the
+retained beta and the visible Restore control. This is a corrected observer
+mistake, not a product defect or a new compatibility requirement. Original
+captures and diagnostic evidence remain retained. A clean uninstrumented source
+archive rebuild produces exactly the same bundle `656c0850…`. Diagnostic logging
+exists only in a private fixture. The following relaunch starts from those normal
+prepared bytes, with no diagnostic logging.
+
+The production-source trial starts with bundle `656c0850…` and Shell PID 31813,
+start ticks 1133893, then uses the actual Settings Restore confirmation and
+Relaunch action to select the genuine published beta. The verified owned
+`nmcli radio wifi` child, PID 903/start ticks 1159943, is held through its pidfd.
+The cleanup thread appears and exec remains deferred while that child is stopped;
+its PID is gone before exec completes. Shell retains its PID/start ticks across
+replacement, and the receipt and new note remain unchanged. The observed trial
+takes 14.519 seconds including the held query. The focused 480×272 beta launcher
+then has no PocketHome or owned zombie; all 93 original saved entries and eight
+original settings still match. This verifies production-source cleanup, with the
+genuine beta serving only as a replacement baseline, not a newly certified app
+runtime or an exact public-candidate pass.
+
+A normal session stop and unmodified prepared installation return the device to
+`656c0850…`, with the genuine beta retained as previous. All five native bytes
+and 0755 modes verify, the new note is unchanged and no repair marker remains.
+Native PID 2894 reaches the focused 480×272 launcher on the same boot, with no
+PocketHome or owned zombie. All 93 original saved entries and eight original
+settings match again. The old beta's unfixed in-place relaunch is not used for
+this return.
+
+`e905401` catches setup cancellation in both public bootstrap and local installer
+CLIs, exits 130 and gives a short rerun instruction. All 44 installer regressions
+pass, including rollback of both pointers and the original receipt after an
+interruption following current publication, then successful repair/retry with
+private user data unchanged. Published 1.0.1 remains immutable and still contains
+the earlier cancellation UX and relaunch defect.
+
+On the real PocketCHIP's UBIFS filesystem, the unmodified prepared installer is
+interrupted by a real SIGINT immediately after publishing current and before
+removing its repair marker. A deterministic trace checkpoint selects that narrow
+window. The genuine public beta is used as the replacement payload. Exit 130 and
+the short cancellation instruction pass with no traceback; both original
+pointers, original receipt and helper bytes/owners/modes are restored, the repair
+marker remains, and the public-build note is unchanged. An ordinary retry
+successfully activates the beta and removes the repair
+marker; normal prepared installation then restores `656c0850…` with the genuine
+beta retained as previous. All five native hashes/versions/0755 modes, all five
+helper hashes/0644 modes and the retained beta inventory pass. Native PID 22453
+reaches the focused 480×272 launcher with no PocketHome or owned zombie. All 93
+original saved entries and eight original settings still match.
+
+The first trace harness omitted its local callback return, missed the checkpoint
+and completed an ordinary installation; it is not counted as interruption
+coverage. A subsequent SSH harness inherited a consumed heredoc as stdin and
+could not deliver its sudo password. It is cancelled before installer execution
+and replaced with a file-backed SSH driver. Both harness failures are retained;
+neither is hidden as a product pass.
+
+The complete final prepared-source `sh scripts/validate.sh` passes on macOS and
+native Linux: formatting, workspace check, strict Clippy, 380/382 passing Rust
+tests with 9/12 explicit opt-ins/platform exclusions, 181 Python cases with 9/8
+exclusions, release builds, renderer fixtures, software smokes, script checks and
+59 Markdown files. ARMv7 release packaging also passes. The current prepared
+bundle including the waiting view is `656c0850…`, still internally version 1.0.1;
+it is an unpublished fixture. The reviewed changes are in
+[draft PR #8](https://github.com/csd113/Vitrallis-Shell/pull/8). All six push/review
+Rust 1.91.0, 1.99.0 and stable jobs pass for exact source
+`e90540123b37c9ed4376576121ae7b8fe4755004`. Separate release version authorization,
+exact tagged candidate/public-route checks and final physical acceptance remain
+required.
+
+Evidence: `relaunch-held-probe-to-prepared-proof.json`,
+`relaunch-held-returned-prepared-v2-state.json`,
+`retained-state-after-held-relaunch-prepared.json`,
+`settings-persistence-after-held-relaunch-prepared.json`,
+`relaunch-held-production-to-beta-proof.json`,
+`relaunch-production-retest-beta-ready-state.json`,
+`retained-state-after-production-held-relaunch.json`,
+`settings-persistence-after-production-held-relaunch.json`,
+`relaunch-production-held-return-install-proof.json`,
+`relaunch-production-held-returned-prepared-state.json`,
+`retained-state-after-production-held-return.json`,
+`settings-persistence-after-production-held-return.json`,
+`relaunch-final-canonical-summary.json`, `relaunch-final-artifacts-proof.json`,
+`installer-cancellation-after-activation-device-v2-proof.json`,
+`installer-cancellation-after-activation-device-v2-retry-proof.json`,
+`relaunch-final-install-v2-proof.json`, `relaunch-final-prepared-installed-state.json`,
+`retained-state-after-final-prepared-cancellation-retry.json`,
+`settings-persistence-after-final-prepared-cancellation-retry.json`,
+`relaunch-review-ci-e905401.json`,
+`installer-cancellation-after-activation-device-original-hook-missed.log`,
+`relaunch-final-canonical-macos-v4.log`, `relaunch-final-canonical-linux-v4.log`,
+`relaunch-final-prepared-arm-build-v3.log`,
+`relaunch-final-ui-qa/relaunch-wait/updates-480x272.png`,
+`relaunch-final-updates-beta-previous.png`,
+`relaunch-final-updates-beta-previous-restore-footer-zoom.png`,
+`restore-footer-visibility-correction-proof.json`,
+`restore-availability-probe.log` and `restore-beta-runtime-ui-renderer.log`.
+
+## OTA activation interruption and normal public retry
+
+The actual beta Settings updater downloads genuine public 1.0.1. An inotify
+observer catches publication of `previous`; a verified pidfd stops only native
+Shell PID 5468/start ticks 1250435 before `current` switches, then sends SIGKILL.
+All five new destination files have already passed their public hashes, sizes,
+ownership and executable modes. The active beta stays complete and unchanged,
+while `previous` temporarily names that same beta; the original prepared
+rollback generation remains on disk. The private download and staged generation
+remain after process death. The installed receipt and real note are unchanged.
+This is process-interruption coverage on actual UBIFS, not physical power-loss
+coverage.
+
+Normal session launch reaches the focused 480×272 beta launcher in PID 9327 on
+boot `2fa3e6d0-30d2-46b1-885e-e817413e034f`, with no PocketHome or owned zombie.
+All 93 original saved entries and eight original settings still match. The
+subsequent genuine Check removes the stale stage through the beta's older
+completion probe. An ordinary public retry observes a new private download,
+reuses the already verified 1.0.1 destination, completes in 112.586 seconds,
+retains beta as previous and removes all staging. All five public hashes,
+versions, owners and 0755 modes pass; prepared helpers and receipt stay unchanged.
+A normal session stop/launch runs public 1.0.1 in PID 11058 with focused readiness,
+no PocketHome or owned zombie, and all saved entries/settings still unchanged.
+The unfixed beta in-place relaunch is not used for this recovery.
+
+The complete-generation activation and pointer-publication functions, and
+bundle extraction source, are byte-identical between this published baseline
+and current source. The beta's obsolete inventory bridge and prerelease selection
+are explicitly qualified; no bridge or test-only update path is added to current
+production. This is genuine public OTA fault/retry evidence, not a fresh exact
+public-candidate certification.
+
+The first observer times out without any update activation. Its 15-second
+confirmation expires during separate UI/screenshot operations; that attempt is
+not a product failure or an interruption pass. Batched input confirms the next
+actual update, and the corrected observer proves the narrow activation window.
+A readiness observer initially names a nonexistent private manifest; the normal
+session launch has already succeeded. The corrected manifest observation passes.
+Both observer failures remain retained.
+
+The published 1.0.1 notes now disclose the persistent relaunch zombie and setup
+cancellation traceback, with a link to prepared PR #8. All 19 numeric REST asset
+IDs, sizes and digests still match the original release manifest. An initial
+asset observer compares opaque GraphQL IDs with numeric REST IDs and fails;
+using the matching REST representation confirms immutability.
+
+Evidence: `official-update-activation-v2.log`,
+`official-update-activation-v3-proof.json`,
+`ota-activation-source-comparison.json`,
+`ota-activation-v3-recovered-state.json`,
+`retained-state-after-ota-activation-interruption.json`,
+`settings-persistence-after-ota-activation-interruption.json`,
+`official-update-activation-retry-proof.json`,
+`ota-activation-retry-public-ready-state.json`,
+`retained-state-after-ota-activation-public-retry.json`,
+`settings-persistence-after-ota-activation-public-retry.json`,
+`relaunch-review-ci-bc84d36.json` and
+`published-v101-relaunch-disclosure-proof.json`.
+
+## Actual low-NAND Shell update and fixture cleanup
+
+An owned, private incompressible filler on the real `ubi0:rootfs` UBIFS reaches
+112 MiB free without crossing its 48 MiB reserve. Filling takes 1609.900 seconds;
+the kernel reports one writeback stall over 120 seconds for the fixture Python
+process. The fixture continues making progress and finishes. This warning is
+retained as hardware storage behavior, not suppressed or counted as a Shell
+crash.
+
+From the genuine published beta with prepared helpers, actual Settings installs
+public 1.0.1 in 96.977 seconds. The observer verifies the filler inode, size,
+owner and mode throughout 4053 samples: initial free space is 117,432,320 bytes,
+minimum is 85,315,584 bytes, and final is 115,740,672 bytes. A new private download
+is observed; all five public executable hashes, sizes, versions and 0755 modes
+pass. Beta becomes previous, staging is removed, prepared helpers and receipt
+stay unchanged, and the real note is unchanged. The already verified target
+generation is reused; this does not certify extraction of a new generation
+under pressure or physical power-loss durability. Activation/extraction code
+matches current source as recorded above; the beta selection/bridge differences
+remain qualified.
+
+A guarded stop marker lets the same fixture clean up normally. The filler,
+readiness record and stop marker disappear, its process exits, and free space
+returns to 1,118,363,648 bytes. Normal launch of public 1.0.1 reaches actual X11
+focus at 480×272 in PID 20239 with no PocketHome or owned zombie. All 93 tracked
+entries and eight original settings match. The ordinary prepared installer
+then restores corrected bundle `656c0850…`, retaining public 1.0.1 as previous.
+PID 21103 reaches focused readiness; all saved entries/settings still match.
+
+Earlier UI harness attempts either expired the 15-second confirmation or sent
+input from the wrong screen. The latter queued Tor startup; stopping the verified
+session cleared it before retry. The successful Restore baseline uses three
+separate input calls within the confirmation window and verifies actual pointers.
+Two commands initially treated the host UI helper as a remote file and failed
+without performing input. These attempts do not count as update passes.
+
+Evidence: `official-update-low-nand-proof.json`,
+`shell-update-pressure-detached.log`, `low-nand-fill-kernel-authenticated.log`,
+`low-nand-pressure-cleanup-proof.json`, `low-space-three-call-restore-proof.json`,
+`low-nand-public-ready-state.json`, `retained-state-after-low-nand-public-update.json`,
+`settings-persistence-after-low-nand-public-update.json`,
+`low-nand-final-prepared-return-install-proof.json`,
+`low-nand-final-prepared-return-state.json`,
+`retained-state-after-low-nand-final-prepared-return.json` and
+`settings-persistence-after-low-nand-final-prepared-return.json`.
+
+## Authorized 1.0.2 prepared validation
+
+The owner explicitly authorized Shell 1.0.2 on 2026-10-04. Source
+`656abc2cb2f48617fc938d14a99659c5c8a7ecfe` includes the relaunch and cancellation
+corrections and the authorized workspace version. Complete `sh scripts/validate.sh`
+passes on macOS and native Linux: formatting, locked workspace checks, strict
+Clippy, 380/382 Rust tests, 181 Python discovery cases, release builds, renderer
+and SDL smokes, script checks and all 59 local Markdown files. Mac Python has
+nine explicit exclusions; this Linux container has eleven, including three
+Lua execution tests because its interpreter is absent. Mac and exact-source CI
+cover those Lua tests. The Linux harness initially hides Cargo with a cache
+mount, then lacks rustfmt/Clippy; correcting the mount and installing the standard
+toolchain components allows the unchanged source to pass. Failed harness logs
+are retained. No assertion is weakened.
+
+All six exact-source Rust 1.91.0/1.99.0/stable push/review jobs pass. The ARMv7
+release build and five-member packaging/version checks pass, producing prepared
+bundle `7cc156ce150a58f012080de775c33b5aba0eedd4ee49ebe8d24b1d12e5a61ce2`.
+This is prepared validation; exact tagged release assets, clean public installation
+and final owner physical acceptance remain required.
+Evidence: `v102-authorization.json`, `v102-canonical-summary.json`,
+`v102-review-ci-final.json`, `v102-prepared-artifacts-proof.json` and
+`v102-prepared-arm-build.log`.
+
 ## Shell certification scope
 
 On 2026-10-03 the owner clarified that Shell release readiness takes priority.
@@ -119,10 +585,13 @@ investigation are retained follow-ups; none is evidence of an unresolved Shell
 defect. The owner authorized Monitor 0.4.2; that app release is deferred while
 Shell owns the device.
 
-The remaining Shell critical path is renewed 1.0.1 clean public installation,
-the official update/interruption route and final physical smoke. The clean
-public README install, repeat execution, reboot and published artifact
-verification pass as recorded below. Earlier final-production
+The remaining Shell critical path is the exact tagged/public 1.0.2 candidate
+and final physical smoke. Actual UBIFS activation interruption, normal public
+retry and the low-NAND update pass with the qualifications above. The prepared relaunch correction passes a production-source held-query
+trial; exact tagged/public-candidate verification remains required.
+Controlled brightness persistence passes with the qualification above. The clean
+public 1.0.1 README install, repeat execution, reboot and published artifact
+verification pass as recorded above. Earlier final-production
 activity-soak checks pass. The replacement startup is installed, with renewed
 owner cold-power/input/display acceptance and a software reboot of the newly
 rebuilt candidate passing as recorded below.
@@ -1449,21 +1918,21 @@ normal session processes. All 93 tracked retained entries still match.
 | Repository/device baseline | Passed baseline inventory; complete component review continues |
 | App filesystem contract | Implemented and host-tested; complete physical app lifecycle pending |
 | Filesystem/permissions | Fresh root directory modes repaired and normal-user runtime integrity passed; app and physical fault matrix pending |
-| Complete clean public installation | Fully clean Beta2 FAILED on root status permissions. Published 1.0.0 README install, repeat execution, reboot and native utility smoke pass from an absent core root with exact artifacts, ownership and saved configuration. Its distinct previous-generation regression FAILS; the published 1.0.1 correction passes exact tagged prepared installation/repeat/reboot checks. Renewed clean public installation is running. |
-| Installer failure cases | Canonical fixtures pass; physical fault matrix pending |
+| Complete clean public installation | Fully clean public 1.0.1 README installation, completed repeat, all public core hashes/modes, saved state and reboot pass. Earlier Beta2 provisioning and 1.0.0 reinstall failures remain retained and corrected. Final candidate smoke remains open. |
+| Installer failure cases | Canonical fixtures pass. Prepared bootstrap download cancellation and real installer SIGINT after current publication pass on device, with rollback, readable exit 130 and successful retry. Remaining physical faults and exact public-candidate checks stay open. |
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core launcher, Settings, native utilities and App Center list/Details/transient states inspected on final production; final public-path smoke remains pending. |
 | Keyboard/touch | Original cold-boot navigation FAILED with actual X11 focus on hidden PocketHome. Replacement startup passes two reboot focus checks, visible synthetic launcher/Notepad/Settings/Home input and renewed owner physical cold-boot keyboard/touch acceptance. Final public-path smoke remains pending. |
 | App Center lifecycle/data preservation | Eight-app lifecycle evidence is retained; current Shell additionally passes Carousel removal/reprovision/public update, Music removal/install/launch/cleanup, Monitor refusal/remove/install and Firefly missing-launcher recovery/public update with saved data unchanged. App internals are deferred to Apps. |
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
 | Python runtime | Native Carousel removal/reprovision reclaims derived runtime backups, preserves AppData and generates the current launcher; current Music, Monitor and Firefly generated launchers verify against public packages. Additional app performance work is deferred. |
-| Process lifecycle stress | Final activity soak has no service-owned zombies in 61 samples; two complete native-utility cycles return to the same Shell, and all nine identified utility PIDs are gone. Repeated-install memory behavior is not inferred. |
+| Process lifecycle stress | Public 1.0.1 Restore/relaunch exposes a persistent owned `ip` zombie. The prepared correction passes host regressions and a device held-query trial starting from normal production source, with exec deferred until exact child reaping, focused readiness and saved state unchanged. Exact public-candidate verification remains open. |
 | Repeated startup | Original physical cold boot FAILED keyboard navigation. Replacement startup passes prepared software reboots and renewed owner physical cold boot. The exact tagged rebuild and its clean public installation each pass a software reboot with current-session readiness, no PocketHome and sustained actual X11 focus. Owner cold-power acceptance of rebuilt bytes is not inferred. |
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
-| Every setting persistence | Eight changed controls survive re-entry, Shell restart, tagged-bundle installation and reboot, then restore the exact baseline. Missing, malformed, partial and unreadable configuration cases pass on the prior 1.0.0 native build, with original bytes/modes restored. Radio and hardware qualifications remain separate. |
+| Every setting persistence | Eight original controls pass the controlled public 1.0.1 reboot, utility smoke and official update/rollback round trip. The clean sequence with an intervening stock desktop resets brightness to 1/10; the retained failure is qualified separately, and the controlled reboot saves/restores 10/10. Prior 1.0.0 configuration-fault cases pass. |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
-| Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; full app/Shell update faults and durability pending |
-| Shell update/rollback | Prepared activation and Settings Restore/relaunch in both directions pass with saved data unchanged. Published reinstall loses the distinct previous pointer; the focused correction passes its regression, full host validation and actual device installer test with saved data intact. The authorized 1.0.1 certification prerelease is published; exact tagged repeat install retains distinct 1.0.0. Renewed public installation, official download/update and interruption faults remain pending. |
+| Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; actual public Shell update passes at 112 MiB initial/81 MiB minimum free with an existing verified target; fixture cleanup passes; new-generation low-space extraction and physical power-loss durability are not inferred |
+| Shell update/rollback | Genuine published beta baseline with current helpers passes real public 1.0.1 update, interrupted download, checksum rejection, partial extraction interruption, recovery, public retry and actual Settings Restore/relaunch in both directions. Saved data/settings match. Actual UBIFS activation-window interruption, normal startup and public retry pass with the stated beta-source qualifications. Low-space public update passes with the existing-generation qualification. The authorized 1.0.2 corrections still require exact tagged/public-candidate checks. |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on prepared builds. The exact public installation additionally passes all three utility launch/keyboard/normal-exit smokes with no remaining utility process and all 93 tracked entries unchanged. |
@@ -1471,10 +1940,10 @@ normal session processes. All 93 tracked retained entries still match.
 | Extended soak | Final-production 1800.09-second activity soak passes all 61 identity/boot/generation/zombie samples, with restored preferences and unchanged saved data. Earlier revision-specific runs and failed harness observations remain retained. |
 | Logs | Final current-boot review has no panic/fatal/error, renderer fallback, compositor exit or present failure. Ten repeated warnings concern the stock Get Help entry lacking surf. |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
-| Public owner documentation | Exact public 1.0.0 entry and repeat execution pass; source helpers match main/tag. README terminology is being updated to the certification prerelease; recovery/fault qualification continues. |
+| Public owner documentation | Exact clean public 1.0.1 README command and completed repeat pass; published/tagged helpers and artifacts match. Certification terminology and current evidence are recorded; final fault/hardware qualifications continue. |
 | License/repository consistency | Artwork, both Arti graphs and Rust notices are reconciled; all 19 tagged/published asset sizes/digests and exact legal/helper bytes verify, including anonymous release metadata and exact public installation on the device. |
-| Canonical release builds | Full Mac/Linux host gates, exact a57b107 ARMv7/x86-64 release packages, six exact-source CI jobs, device hardware smokes/readbacks and earlier 380 native tests/four graphics opt-ins pass. Exact hardware/software screenshot equality fails only by the recorded one-channel-level colour difference; assertions remain unchanged. Final public-path checks remain pending. |
-| Exact clean candidate | Tagged source a57b107 has six passing exact-source CI jobs and a passing tagged release workflow. Rebuilt bytes verify on device and in the published 19-asset certification prerelease; exact public install/update work continues. No stable readiness is declared. |
+| Canonical release builds | Prepared source e905401 passes complete Mac/Linux validation (380/382 Rust tests, 181 Python cases), ARMv7 packaging and six exact-source push/review CI jobs. Earlier exact tagged 1.0.1 builds/device smokes pass. Strict hardware/software screenshot equality fails only by the recorded one-channel-level colour difference; assertions remain unchanged. Final public-candidate checks remain open. |
+| Exact clean candidate | Public candidate 1.0.1 is tagged source b2ff6d4 with six passing exact-source review jobs and successful tagged release workflow. All 19 assets and installed five-member ARM bundle verify. Prepared relaunch/cancellation corrections need a fresh authorized exact tagged/public candidate and final physical acceptance. |
 | Final physical smoke | Not run |
 
 ## Validation recorded so far

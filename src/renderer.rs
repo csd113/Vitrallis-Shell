@@ -1337,6 +1337,41 @@ mod system_tests {
             canvas,
             &output.join(format!("update-installed-{w}x{h}.bmp")),
         )?;
+        state.settings.updater.request_relaunch();
+        assert!(
+            state
+                .settings
+                .updater
+                .relaunch_if_requested(false, || Ok(false))
+        );
+        render(canvas, layout, state, textures)?;
+        // Relaunch holds input only while children finish. Its waiting view
+        // must not expose actions or key hints that cannot be activated.
+        let controls = crate::settings::PanelLayout::new(layout);
+        let pixels = canvas.read_pixels(
+            Some(rect(Rect {
+                x: 0,
+                y: controls.confirmation[0].y,
+                w: i32::try_from(w).map_err(|e| e.to_string())?,
+                h: i32::try_from(h).map_err(|e| e.to_string())? - controls.confirmation[0].y,
+            })?),
+            PixelFormatEnum::RGB24,
+        )?;
+        let background = [
+            theme::BACKGROUND.r,
+            theme::BACKGROUND.g,
+            theme::BACKGROUND.b,
+        ];
+        let (pixels, remainder) = pixels.as_chunks::<3>();
+        assert_eq!(remainder, &[] as &[u8]);
+        assert!(pixels.iter().all(|pixel| *pixel == background));
+        let waiting = output.join("relaunch-wait");
+        std::fs::create_dir_all(&waiting).map_err(|e| e.to_string())?;
+        screenshot(canvas, &waiting.join(format!("updates-{w}x{h}.bmp")))?;
+        // Later QA samples should not retain this committed relaunch fixture.
+        let installed = std::mem::take(&mut state.settings.updater.state);
+        state.settings.updater = crate::updater::Updater::default();
+        state.settings.updater.state = installed;
         Ok(())
     }
 

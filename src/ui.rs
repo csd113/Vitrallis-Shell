@@ -14,6 +14,7 @@ use sdl2::{
     video::WindowContext,
 };
 use std::time::{Duration, Instant};
+mod relaunch;
 
 /// Restore persisted shell preferences while keeping diagnostics in the log.
 fn restore_shell_preferences(state: &mut Launcher) {
@@ -175,6 +176,7 @@ struct Heartbeat<'c, 's, 't, P: Platform> {
     last_wait_error: Option<String>,
     next_poll: Instant,
     deadline: Instant,
+    relaunch: relaunch::Services,
 }
 
 fn event_loop(
@@ -226,6 +228,7 @@ fn event_loop(
         last_wait_error: None,
         next_poll: Instant::now(),
         deadline: Instant::now() + Duration::from_secs(10),
+        relaunch: relaunch::Services::default(),
     };
     loop {
         match heartbeat.step()? {
@@ -277,6 +280,10 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
 
     /// Re-derives everything the catalogue, workers and shell state changed.
     fn refresh_derived(&mut self) -> Result<(), String> {
+        if self.relaunch.active() {
+            self.dirty |= self.refresh_relaunch();
+            return Ok(());
+        }
         self.dirty |= refresh_system(self.worker, &mut self.state.settings);
         if refresh_app_center(self.sdl, self.config, self.state, &mut self.dirty)? {
             self.textures.refresh(self.creator, self.state);
@@ -299,7 +306,30 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
             self.textures,
             self.child,
         )?;
+        self.dirty |= self.refresh_relaunch();
         Ok(())
+    }
+
+    fn refresh_relaunch(&mut self) -> bool {
+        let blocked =
+            self.state.app_center.busy || self.child.has_children() || self.state.settings.pending;
+        let dirty = self
+            .state
+            .settings
+            .updater
+            .relaunch_if_requested(blocked, || {
+                self.relaunch.prepare(self.worker, &mut self.child.tor)
+            });
+        // Successful exec never returns. If preparation or exec failed, restore
+        // the services so Settings and app launching remain usable for a retry.
+        if self.relaunch.completed() {
+            self.relaunch.reset();
+            *self.worker = system_worker(self.platform, self.state);
+            if let Err(error) = self.child.tor.initialize() {
+                self.state.settings.message = error;
+            }
+        }
+        dirty
     }
 
     /// Applies one SDL event. Input suppression and the shared
@@ -345,6 +375,14 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
             self.child.stop_focus_retry();
         }
         self.dirty |= window_focus(&event, self.state, self.pointer, &mut self.accept_after);
+        if self.relaunch.active() {
+            // Continue window events and presentation while cleanup runs, but
+            // prevent another launch/control from creating a new process owner.
+            self.pointer.clear();
+            self.desktop_input.clear();
+            self.state.settings.clear_pointer();
+            return Ok(Flow::Continue);
+        }
         if Instant::now() >= self.accept_after {
             let (consumed, changed) =
                 desktop_event(&event, self.layout, self.state, self.desktop_input);
@@ -670,12 +708,10 @@ fn refresh_shell(state: &mut Launcher, child: &mut ProcessSet) -> bool {
         | refresh_timezone(state, child)
         | refresh_focus(child, state);
     // Restore deliberately waits for a quiescent session: no owned apps, App
-    // Center mutation or pending system operation. Both actions take effect on
-    // relaunch, so they share the same gate.
+    // Center mutation or pending system operation. Relaunch additionally drains
+    // background services through Heartbeat before replacing the process.
     let blocked = state.app_center.busy || child.has_children() || state.settings.pending;
-    state.settings.updater.relaunch_if_requested(blocked)
-        | state.settings.updater.restore_if_requested(blocked)
-        | dirty
+    state.settings.updater.restore_if_requested(blocked) | dirty
 }
 
 fn refresh_timezone(state: &mut Launcher, child: &mut ProcessSet) -> bool {

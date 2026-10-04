@@ -504,9 +504,11 @@ fn sizes_and_progress_use_decimal_megabytes() -> Result<(), String> {
 fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
     let mut updater = Updater::default();
     updater.request_relaunch();
-    assert!(!updater.relaunch_with(false, |_| {
-        unreachable!("relaunch must be refused before the executable is installed")
-    }));
+    assert!(!updater.relaunch_with(
+        false,
+        || Ok(true),
+        |_| { unreachable!("relaunch must be refused before the executable is installed") }
+    ));
     updater.state = State::Installed {
         version: Version::new(1, 2, 3),
         durable: true,
@@ -515,30 +517,80 @@ fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
             sha256: [0; 32],
         },
     };
-    assert!(!updater.relaunch_with(false, |_| {
-        unreachable!("relaunch must be refused without an explicit request")
-    }));
+    assert!(!updater.relaunch_with(
+        false,
+        || Ok(true),
+        |_| { unreachable!("relaunch must be refused without an explicit request") }
+    ));
     updater.request_relaunch();
-    assert!(updater.relaunch_with(true, |_| {
-        unreachable!("relaunch must be refused while an operation is in progress")
-    }));
+    assert!(updater.relaunch_with(
+        true,
+        || unreachable!("blocked relaunch must leave the services running"),
+        |_| { unreachable!("relaunch must be refused while an operation is in progress") }
+    ));
     assert!(updater.detail().contains("Close running apps"));
     updater.request_relaunch();
-    assert!(updater.relaunch_with(false, |target| {
-        assert_eq!(
-            target.executable,
-            std::path::Path::new("/installed/vitrallis")
-        );
-        Err("exec failed".into())
-    }));
+    assert!(updater.relaunch_with(
+        false,
+        || Ok(true),
+        |target| {
+            assert_eq!(
+                target.executable,
+                std::path::Path::new("/installed/vitrallis")
+            );
+            Err("exec failed".into())
+        }
+    ));
     assert_eq!(updater.detail(), "exec failed");
     assert!(matches!(updater.state, State::Installed { .. }));
-    assert!(!updater.relaunch_with(false, |_| {
-        unreachable!("a failed relaunch must not be attempted twice")
-    }));
+    assert!(!updater.relaunch_with(
+        false,
+        || Ok(true),
+        |_| { unreachable!("a failed relaunch must not be attempted twice") }
+    ));
     updater.request_relaunch();
-    assert!(updater.relaunch_with(false, |_| Ok(())));
+    assert!(updater.relaunch_with(false, || Ok(true), |_| Ok(())));
     assert!(updater.relaunch_error.is_none());
+}
+
+#[test]
+fn relaunch_waits_for_service_cleanup_and_refuses_preparation_failure() {
+    let mut updater = Updater {
+        state: State::Installed {
+            version: Version::new(1, 2, 3),
+            durable: true,
+            relaunch: Relaunch {
+                executable: "/installed/vitrallis".into(),
+                sha256: [0; 32],
+            },
+        },
+        ..Updater::default()
+    };
+    updater.request_relaunch();
+    for changed in [true, false] {
+        assert_eq!(
+            updater.relaunch_with(
+                false,
+                || Ok(false),
+                |_| { unreachable!("exec must wait for service children to be reaped") }
+            ),
+            changed
+        );
+        assert!(updater.relaunch_pending());
+        assert!(updater.detail().contains("Finishing system operations"));
+    }
+    assert!(updater.relaunch_with(
+        false,
+        || Err("cleanup failed".into()),
+        |_| unreachable!("failed preparation must refuse exec")
+    ));
+    assert!(!updater.relaunch_pending());
+    assert_eq!(updater.detail(), "cleanup failed");
+    assert!(matches!(updater.state, State::Installed { .. }));
+    updater.request_relaunch();
+    assert!(updater.relaunch_with(false, || Ok(true), |_| Ok(())));
+    assert!(updater.relaunch_error.is_none());
+    assert!(!updater.relaunch_requested);
 }
 
 #[test]
@@ -613,14 +665,18 @@ fn restored_state_offers_the_same_guarded_relaunch_as_an_update() {
     assert!(updater.detail().contains("Relaunch required"));
     assert!(updater.detail().contains("Previous shell build restored"));
     updater.request_relaunch();
-    assert!(updater.relaunch_with(false, |target| {
-        assert_eq!(
-            target.executable,
-            std::path::Path::new("/restored/vitrallis")
-        );
-        assert_eq!(target.sha256, [7; 32]);
-        Ok(())
-    }));
+    assert!(updater.relaunch_with(
+        false,
+        || Ok(true),
+        |target| {
+            assert_eq!(
+                target.executable,
+                std::path::Path::new("/restored/vitrallis")
+            );
+            assert_eq!(target.sha256, [7; 32]);
+            Ok(())
+        }
+    ));
     assert!(updater.relaunch_error.is_none());
     // Checking for updates waits until the restored build is running.
     updater.check();
