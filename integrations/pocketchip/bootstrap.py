@@ -349,6 +349,9 @@ def main():
 if __name__ == '__main__':
     try:
         main()
+    except KeyboardInterrupt:
+        print('Vitrallis setup cancelled. Run setup again to check or finish installation.', file=sys.stderr)
+        sys.exit(130)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as error:
         print('Vitrallis setup failed: ' + str(error), file=sys.stderr)
         sys.exit(1)

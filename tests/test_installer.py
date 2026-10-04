@@ -73,6 +73,41 @@ class Installer(unittest.TestCase):
             self.install()
         setup.assert_called_once_with(self.source)
 
+    def test_cli_keyboard_interrupt_is_short_and_preserves_user_files(self):
+        driver = '''import runpy, sys
+from unittest.mock import patch
+script, phase = sys.argv[1:3]
+sys.argv = [script, 'unused-bundle']
+if phase == 'arguments':
+    with patch('argparse.ArgumentParser.parse_args', side_effect=KeyboardInterrupt):
+        runpy.run_path(script, run_name='__main__')
+else:
+    def interrupt(frame, event, arg):
+        if event == 'call' and frame.f_code.co_filename == script and frame.f_code.co_name == 'install':
+            sys.settrace(None)
+            raise KeyboardInterrupt
+    sys.settrace(interrupt)
+    runpy.run_path(script, run_name='__main__')
+'''
+        saved = self.home / 'saved note.txt'
+        saved.write_bytes(b'Keep user content.\n')
+        before = {p.relative_to(self.home): p.read_bytes()
+                  for p in self.home.rglob('*') if p.is_file()}
+        for phase in ('arguments', 'install'):
+            with self.subTest(phase=phase):
+                result = subprocess.run(
+                    [sys.executable, '-I', '-c', driver,
+                     str(DEVICE / 'install-session.py'), phase],
+                    cwd=self.home, env=dict(os.environ, HOME=str(self.home)),
+                    capture_output=True, text=True, check=False, timeout=15)
+                self.assertEqual(result.returncode, 130, result.stderr)
+                self.assertIn('Vitrallis setup cancelled.', result.stderr)
+                self.assertIn('Run setup again', result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertNotIn('KeyboardInterrupt', result.stderr)
+                self.assertEqual({p.relative_to(self.home): p.read_bytes()
+                                  for p in self.home.rglob('*') if p.is_file()}, before)
+
     def default_install(self):
         with patch.object(m, 'verify_versions'), patch.object(m, 'validate_startup'):
             m.install(self.binary, self.source, self.home)
@@ -450,6 +485,42 @@ end
         self.assertTrue((self.target / '.installation-pending').exists())
         self.install()
         self.assertNotEqual(os.readlink(self.target / 'current'), old)
+
+    def test_keyboard_interrupt_after_activation_restores_pointers_receipt_and_user_data(self):
+        self.install()
+        for suffix in (b'second generation', b'interrupted generation'):
+            changed = self.payload + suffix
+            self.binary.write_bytes(m.MAGIC + b''.join(
+                struct.pack('<Q', len(changed)) + hashlib.sha256(changed).digest() + changed
+                for _ in m.BINARIES))
+            if suffix == b'second generation':
+                self.install()
+        saved = self.home / 'Documents/Vitrallis/AppData/io.vitrallis.notepad/Documents/saved note.txt'
+        saved.parent.mkdir(parents=True)
+        saved.write_bytes(b'Keep user content.\n')
+        saved.chmod(0o600)
+        before = {name: os.readlink(self.target / name) for name in ('current', 'previous')}
+        receipt = (self.target / 'installed.json').read_bytes()
+        real = m.atomic_pointer
+        interrupted = []
+        def publish(path, value):
+            real(path, value)
+            if path == self.target / 'current' and not interrupted:
+                interrupted.append(True)
+                raise KeyboardInterrupt
+        with patch.object(m, 'atomic_pointer', side_effect=publish):
+            with self.assertRaises(KeyboardInterrupt):
+                self.install()
+        self.assertEqual({name: os.readlink(self.target / name) for name in before}, before)
+        self.assertEqual((self.target / 'installed.json').read_bytes(), receipt)
+        self.assertEqual(saved.read_bytes(), b'Keep user content.\n')
+        self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+        self.assertTrue((self.target / '.installation-pending').exists())
+        self.install()
+        self.assertNotEqual(os.readlink(self.target / 'current'), before['current'])
+        self.assertEqual(os.readlink(self.target / 'previous'), before['current'])
+        self.assertFalse((self.target / '.installation-pending').exists())
+        self.assertEqual(saved.read_bytes(), b'Keep user content.\n')
 
     def test_bounded_version_probes_reject_mixed_versions_and_output_floods(self):
         generation = self.source / 'probes'

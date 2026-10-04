@@ -76,6 +76,27 @@ class Bootstrap(unittest.TestCase):
         with patch.object(b, 'fetch', side_effect=self.fetch):
             return b.download_release(self.value, self.root)
 
+    def test_cli_keyboard_interrupt_is_short_and_preserves_user_files(self):
+        driver = '''import runpy, sys
+from unittest.mock import patch
+script = sys.argv[1]
+sys.argv = [script]
+with patch('argparse.ArgumentParser.parse_args', side_effect=KeyboardInterrupt):
+    runpy.run_path(script, run_name='__main__')
+'''
+        saved = self.root / 'saved note.txt'
+        saved.write_bytes(b'Keep this user content.\n')
+        result = subprocess.run([sys.executable, '-I', '-c', driver,
+                                 str(DEVICE / 'bootstrap.py')], cwd=self.root,
+                                capture_output=True, text=True, check=False)
+        self.assertEqual(result.returncode, 130, result.stderr)
+        self.assertIn('Vitrallis setup cancelled.', result.stderr)
+        self.assertIn('Run setup again', result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertNotIn('KeyboardInterrupt', result.stderr)
+        self.assertEqual(saved.read_bytes(), b'Keep this user content.\n')
+        self.assertEqual(list(self.root.iterdir()), [saved])
+
     def test_same_release_helpers_and_complete_checksums(self):
         result = self.download()
         self.assertEqual(result.read_bytes(), self.data[b.BUNDLE])
