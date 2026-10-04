@@ -47,6 +47,20 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
     command.envs(&m.env);
     command.env("VITRALLIS_APP_ID", &app.id);
     command.env(
+        "VITRALLIS_APP_DATA_DIR",
+        vitrallis_native::paths::app_data(&vitrallis_native::home(), &app.id)
+            .map_err(|e| e.to_string())?,
+    );
+    if app.source == crate::app::AppSource::AppCenter {
+        command.env(
+            "VITRALLIS_APP_DIR",
+            vitrallis_native::paths::app_dir(&vitrallis_native::home(), &app.id)
+                .map_err(|e| e.to_string())?,
+        );
+    } else {
+        command.env_remove("VITRALLIS_APP_DIR");
+    }
+    command.env(
         "VITRALLIS_DOCUMENTS_DIR",
         vitrallis_native::paths::documents(&vitrallis_native::home(), &app.id)
             .map_err(|e| e.to_string())?,
@@ -144,6 +158,8 @@ pub struct ProcessSet<P = NativeProcess> {
     tor_pending: Option<(AppEntry, Instant)>,
     active: Option<String>,
     pub exited_active: bool,
+    /// Identity of the last reaped member, retained even after foreground return.
+    pub(crate) exited_id: Option<String>,
     resume: Option<Resume>,
     pending: Option<PendingStart<P>>,
     /// Outcome of a start that completed without a worker (resume/instant start).
@@ -631,6 +647,7 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
                 if self.exited_active {
                     self.active = None;
                 }
+                self.exited_id = Some(id);
                 return Ok(Some(status));
             }
         }
@@ -1206,10 +1223,12 @@ mod tests {
         processes.members[1].1.exited = true;
         assert!(processes.poll()?.is_some());
         assert!(!processes.exited_active);
+        assert_eq!(processes.exited_id.as_deref(), Some("second"));
         assert_eq!(processes.running_ids(), ["test"]);
         processes.members[0].1.exited = true;
         assert!(processes.poll()?.is_some());
         assert!(processes.exited_active);
+        assert_eq!(processes.exited_id.as_deref(), Some("test"));
         assert!(!processes.has_children());
         Ok(())
     }
@@ -1432,7 +1451,10 @@ mod tests {
             ..Default::default()
         };
         // Becoming the foreground Shell again never terminates anything.
-        assert!(processes.background_policy(&policy, now).is_empty());
+        assert_eq!(
+            processes.background_policy(&policy, now),
+            Vec::<String>::new()
+        );
         assert_eq!(processes.members[0].1.close_requests, 0);
         processes.background_policy(&policy, now + Duration::from_secs(59));
         assert!(!processes.background_requested("test"));
@@ -1445,7 +1467,7 @@ mod tests {
         // An app that ignores the request is stopped only after the grace period,
         // so a save-to-disk has time to finish.
         let stopped = processes.background_policy(&policy, now + Duration::from_secs(60 + 29));
-        assert!(stopped.is_empty());
+        assert_eq!(stopped, Vec::<String>::new());
         assert_eq!(processes.members.len(), 1);
         let stopped =
             processes.background_policy(&policy, now + Duration::from_secs(60) + BACKGROUND_GRACE);
@@ -1469,10 +1491,9 @@ mod tests {
         let now = Instant::now();
         let policy = crate::preferences::Policy::default();
         for seconds in [0_u64, 600, 86_400] {
-            assert!(
-                processes
-                    .background_policy(&policy, now + Duration::from_secs(seconds))
-                    .is_empty()
+            assert_eq!(
+                processes.background_policy(&policy, now + Duration::from_secs(seconds)),
+                Vec::<String>::new()
             );
         }
         assert_eq!(processes.members[0].1.close_requests, 0);

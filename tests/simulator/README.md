@@ -1,7 +1,7 @@
 # App Center Docker simulator
 
 Run from the Vitrallis-Shell checkout. Docker is the only host prerequisite.
-The image contains Rust 1.91.1, SDL2, Python/Tk, Xvfb, Openbox, Awesome, D-Bus and xdotool.
+The image contains Rust 1.99.0, SDL2, Python/Tk, Xvfb, Openbox, Awesome, D-Bus and xdotool.
 
 ```sh
 docker build -t vitrallis-app-center-simulator -f tests/simulator/Dockerfile .

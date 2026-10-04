@@ -76,7 +76,7 @@ Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Cata
 
 Start with the [documentation index](docs/README.md), [device guide](docs/devices/pocketchip.md), or [app developer guide](docs/app-development.md).
 
-Host development uses the pinned Rust 1.91.1 toolchain (minimum 1.91), SDL2 development libraries, and pkg-config:
+Host development uses the pinned Rust 1.99.0 toolchain (minimum 1.91), SDL2 development libraries, and pkg-config. CI also validates latest stable; release pins advance after the complete validation gates pass, including ARMv7 cross-builds. See [compiler policy](docs/dependencies.md).
 
 ```sh
 cargo build --workspace --locked
@@ -87,7 +87,7 @@ cargo build --workspace --release --locked
 
 The workspace build includes all native utilities. The validation script runs formatting, strict Clippy, Rust/Python tests, release builds and SDL smoke checks; [validation guidance](docs/validation.md) covers visual checks and Linux simulators. [Contributor guidance](CONTRIBUTING.md) covers setup, focused changes, validation, and pull requests. Please use the [bug and feature forms](https://github.com/csd113/Vitrallis-Shell/issues/new/choose) for feedback and the [security reporting policy](SECURITY.md) for security concerns.
 
-**License:** project-owned code and documentation use [MIT](LICENSE). Third-party terms and unresolved artwork rights are listed in [third-party notices](THIRD_PARTY_NOTICES.md); MIT does not relicense those items.
+**License:** project-owned code and documentation use [MIT](LICENSE). Third-party terms and artwork provenance are listed in [third-party notices](THIRD_PARTY_NOTICES.md); MIT does not relicense those items.
 
 ## Uninstall
 
@@ -97,6 +97,6 @@ The workspace build includes all native utilities. The validation script runs fo
 python3 "$HOME/.local/share/vitrallis/uninstall.py"
 ```
 
-Add `--dry-run` to inspect first. Add `--purge` to also remove the default Vitrallis preferences and session logs; deletion requires typing `PURGE`. Purge still keeps third-party apps, saves, App Center transaction backups, installation backups, user documents, system packages, and the original desktop. Custom XDG locations and edited or unrecognized files are preserved. Matching shortcuts and the exact managed startup block are removed without restoring entire configuration files.
+Add `--dry-run` to inspect first. Add `--purge` to also remove the default Vitrallis preferences and session logs; deletion requires typing `PURGE`. Purge still keeps `~/Documents/Vitrallis/Apps` and `AppData`, saves, App Center transaction backups, installation backups, user documents, system packages, and the original desktop. Custom XDG locations and edited or unrecognized files are preserved. Matching shortcuts and the exact managed startup block are removed without restoring entire configuration files.
 
 A tiny update lock remains for safe concurrency. After successful removal the uninstaller itself is gone; running the line again reports a missing script and changes nothing. For interrupted or partial installs, retained paths, and the local recovery command, see [offline removal and recovery](docs/devices/pocketchip.md#offline-removal-and-recovery).

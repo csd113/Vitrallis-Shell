@@ -94,8 +94,9 @@ impl Manager {
                 };
                 None
             }
-            Input::Key(Keycode::Left | Keycode::Right, _) if self.footer.is_some() => {
-                self.footer = Some((self.footer.unwrap_or(0) + 1) % 4);
+            Input::Key(key @ (Keycode::Left | Keycode::Right), _) if self.footer.is_some() => {
+                let step = if key == Keycode::Right { 1 } else { 3 };
+                self.footer = Some((self.footer.unwrap_or(0) + step) % 4);
                 None
             }
             Input::Key(Keycode::Up, _) => {
@@ -528,6 +529,17 @@ mod tests {
         })?;
         manager.operation(&mut ui, 4)?;
         assert!(path.exists());
+        for (key, selected) in [
+            (Keycode::F6, 0),
+            (Keycode::Left, 3),
+            (Keycode::Left, 2),
+            (Keycode::Right, 3),
+            (Keycode::Right, 0),
+        ] {
+            assert!(!manager.input(&mut ui, &Input::Key(key, Mod::NOMOD))?);
+            assert_eq!(manager.footer, Some(selected));
+        }
+        manager.footer = None;
         for i in 0..4 {
             manager.input(&mut ui, &Input::Key(Keycode::Tab, Mod::NOMOD))?;
             assert_eq!(manager.footer, Some(i));

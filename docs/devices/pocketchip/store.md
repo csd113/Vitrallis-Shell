@@ -8,8 +8,7 @@ Software Updates.
 
 Separately distributed App Center applications follow the current manifest v1 and catalog v1 contract. Package
 files and icons are fetched only when an app is selected for installation. These
-packages use `$XDG_DATA_HOME/vitrallis/apps/<id>` (default
-`~/.local/share/vitrallis/apps/<id>`) and a generated launcher. Every application
+packages use `$HOME/Documents/Vitrallis/Apps/<id>` and a generated launcher. Every application
 uses the same canonical directory, icon, live Vitrallis menu registration and
 declared runtime; there is no separate per-application special case.
 

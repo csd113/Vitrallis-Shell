@@ -93,29 +93,11 @@ impl Installation {
             .iter()
             .map(|name| {
                 let path = generation.join(name);
-                let metadata = match fs::symlink_metadata(&path) {
-                    Ok(metadata) => metadata,
-                    // beta3.9 and beta4 explicitly bridge the published four-file
-                    // format. All incoming updates still require all five files.
-                    Err(error)
-                        if name == &"arti"
-                            && error.kind() == io::ErrorKind::NotFound
-                            && matches!(
-                                crate::updater::VERSION,
-                                "0.1.0-beta3.9" | "0.1.0-beta4"
-                            ) =>
-                    {
-                        return Ok(None);
-                    }
-                    Err(error) => return Err(error),
-                };
+                let metadata = fs::symlink_metadata(&path)?;
                 safe_file(&metadata, original.uid(), true)?;
-                Ok(Some((path, metadata)))
+                Ok((path, metadata))
             })
-            .collect::<io::Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect();
+            .collect::<io::Result<Vec<_>>>()?;
         let stage = root.join(".vitrallis-update");
         match fs::DirBuilder::new().mode(0o700).create(&stage) {
             Ok(()) => File::open(&root)?.sync_all()?,
@@ -158,9 +140,6 @@ impl Installation {
             .mode(0o600)
             .open(self.stage.join("download"))
             .map_err(|e| format!("Create bundle staging file: {e}"))
-    }
-    pub const fn needs_completion(&self) -> bool {
-        self.originals.len() != bundle::BINARIES.len()
     }
     pub fn ready(
         &mut self,
@@ -244,15 +223,6 @@ impl Installation {
             let current = fs::symlink_metadata(path)?;
             if !vitrallis_native::files::same_snapshot(before, &current) {
                 return Err(io::Error::other("Installed binaries changed during update"));
-            }
-        }
-        if self.needs_completion() {
-            let arti = self.target.with_file_name("arti");
-            if !matches!(fs::symlink_metadata(arti), Err(error) if error.kind() == io::ErrorKind::NotFound)
-            {
-                return Err(io::Error::other(
-                    "Installed inventory changed during update",
-                ));
             }
         }
         Ok(())

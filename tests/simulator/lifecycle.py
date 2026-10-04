@@ -136,7 +136,7 @@ class Shell:
             self.click(220, 84)
 
     def root(self, slug):
-        return self.home / '.local/share/vitrallis/apps' / ('io.vitrallis.' + slug)
+        return self.home / 'Documents/Vitrallis/Apps' / ('io.vitrallis.' + slug)
 
     def version(self, slug):
         root = self.root(slug)

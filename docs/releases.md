@@ -1,5 +1,59 @@
 # Release validation and assets
 
+## 1.0.0 — preparation
+
+The owner authorized this version on 2026-10-02. Certification is still in
+progress; this entry does not declare the release ready or published.
+
+Managed packages now live in `Documents/Vitrallis/Apps/<id>` and persistent
+state in private `Documents/Vitrallis/AppData/<id>` directories. Launchers
+provide explicit data/package paths, use a private umask and start in AppData.
+Updates and normal uninstall preserve user data. See the
+[application storage contract](application-storage.md).
+
+An explicit saved-data import tool previews selected old files, validates them
+and publishes private AppData without overwriting an existing destination.
+Sources remain available until their imported data has been checked. Files can
+open Notepad while Files is still in the foreground; native requests continue
+to wait while another launch or Shell dialog is pending.
+Files' footer now follows the direction of the Left and Right keys.
+
+Screen-timeout persistence now validates paths before writing, creates private
+directories and syncs the renamed preference. A storage sync failure reports
+uncertain reboot persistence while keeping the committed timer and saved value
+consistent. Artwork provenance records the owner's ChatGPT generation and MIT
+redistribution confirmation, with a per-file digest inventory.
+
+The public installer's private umask no longer makes root-owned GPU status
+unreadable by the desktop user. Dedicated status/telemetry directories retain
+their required traversal permissions, private account files stay private, and
+new multimedia-helper directories remain usable by the desktop account.
+The supervised session also selects the launcher when its real window becomes
+ready, including a window whose title arrives after creation, and removes its
+temporary focus hooks on exit. Later title changes do not interrupt apps.
+
+App Center reports an incomplete refresh when a repository or catalog entry
+fails, while keeping cached packages available for offline management. A
+successful retry removes the error entries and reports completion. Diagnostic
+Details show the failure reason and recovery step instead of placeholder app
+versions and download sizes. Failed downloads show their cause before the file
+path, and transfer timeouts suggest checking the connection and retrying. Full
+operation errors are recorded in the private session log.
+Notepad's save errors identify the failed action and suggest freeing disk space
+or choosing a writable folder when those conditions cause the failure.
+
+The obsolete beta3.9/beta4 four-executable update bridge has been removed.
+Installed generations and release bundles require all five executables, including
+Arti. Equal versions remain current. Replace obsolete pre-release layouts with
+the current installer.
+
+Python app launchers reuse installed library bytecode while disabling cache
+writes and always validating hash-based caches. Managed module caches are removed
+before source replacement, and inherited cache prefixes are cleared. The former
+per-release cache namespace forced repeated library compilation and has been
+removed. Recreate obsolete pre-release app installations with the current Shell;
+persistent AppData remains separate, and custom launchers are protected.
+
 ## 1.0.0-beta-2
 
 This beta polishes the existing PocketCHIP-sized interface and keeps the shared
@@ -75,9 +129,10 @@ Release packaging now validates and stages `LICENSE`, `THIRD_PARTY_NOTICES.md`
 and `THIRD_PARTY_LICENSES.txt` once in each release payload, beside the
 architecture bundles, so released payloads carry the required legal
 companions. The per-file artwork record in
-[artwork provenance](../assets/PROVENANCE.md) separates project-owned icons
-from the artwork whose redistribution basis is still unresolved; those assets
-remain outside any claim that the whole binary is MIT-cleared.
+[artwork provenance](../assets/PROVENANCE.md) records the artwork and its redistribution basis. The project owner confirmed
+on 2026-10-02 that the referenced artwork was generated with ChatGPT at their
+request and is covered by the project MIT grant. Earlier published notices
+remain historical release bytes.
 
 The App Center no longer holds its cross-process storage lock across catalog
 and bundle-download network work. Catalog refreshes fetch metadata and
@@ -219,17 +274,18 @@ sidecar. beta4 therefore has 20 assets. beta3.9 has the original 16-asset invent
 The matching beta4 bootstrap uses the complete v2 bundle directly.
 
 Native OTA updates switch the binary generation and preserve installed session
-helpers and user configuration. The narrowly scoped four-file transition exists
-only for the published beta3.9/beta4 upgrade and is scheduled for removal once
-those builds age out; older standalone layouts
-remain outside the managed updater contract. See [upgrade details](beta4-upgrade.md).
+helpers and user configuration. The narrowly scoped four-file transition was
+specific to the published beta3.9/beta4 upgrade and has been removed from current
+source. Current installed generations and bundles require all five executables;
+older standalone layouts remain outside the managed updater contract. See the
+[historical upgrade record](beta4-upgrade.md).
 
 ## Release gates
 
-The tag workflow builds on Debian 12 with Rust 1.91.1 and runs
+The tag workflow builds on Debian 12 with Rust 1.99.0 and runs
 `sh scripts/validate.sh`: formatting, locked workspace check, strict Clippy,
 complete Rust/Python tests, native release build, SDL smoke checks and
-repository/documentation validation. Separate host CI also validates Rust 1.91.0.
+repository/documentation validation. Separate host CI also validates Rust 1.91.0 and latest stable.
 
 Packaging checks each executable's target and version: the four Vitrallis binaries
 match the workspace version; Arti independently reports 2.6.0. ARMv7

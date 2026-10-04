@@ -20,6 +20,12 @@ spec.loader.exec_module(requirements)
 
 
 class RuntimeTests(unittest.TestCase):
+    def setUp(self):
+        # The embedded helper normally runs in a child process. These tests exec
+        # it directly, so restore the parent's umask after exercising shared 002.
+        previous_umask = os.umask(0o002)
+        self.addCleanup(os.umask, previous_umask)
+
     def test_policy_rejects_unsupported_and_inactive_extras(self):
         for line in ['--target=/tmp/unsafe', 'Pillow @ https://example.com/a.whl',
                      './local', 'Pillow[extra]', 'Pillow[extra]; python_version < "1"',
@@ -106,6 +112,10 @@ class RuntimeTests(unittest.TestCase):
             self.assertFalse((directory / 'escaped').exists())
             self.assertFalse(list(directory.glob('.pending-*')))
             self.assertEqual(calls[-1][4], 'plain')
+            self.assertEqual(root.stat().st_mode & 0o777, 0o700)
+            for path in root.rglob('*'):
+                self.assertFalse(path.is_symlink(), path)
+                self.assertEqual(path.stat().st_mode & 0o022, 0, path)
             # An incompatible system version must instead be shadowed locally.
             upgraded = directory / 'upgraded'
             with patch.object(venv.EnvBuilder, 'create', create), patch('subprocess.run', run), patch.dict(os.environ), patch.object(sys, 'argv', ['installer', 'plain', str(upgraded), 'heavy>=12,<13', VALIDATE]):

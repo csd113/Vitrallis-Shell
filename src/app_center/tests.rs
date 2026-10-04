@@ -495,6 +495,56 @@ fn branch_resolution_complete_inventory_and_partial_failures() -> Result<(), Str
     Ok(())
 }
 #[test]
+fn failed_download_prioritizes_the_cause_and_leaves_installation_unchanged() -> Result<(), String> {
+    struct FailedAsset<'a> {
+        inner: &'a FixtureFetch,
+        url: String,
+        error: &'a str,
+    }
+    impl network::Fetch for FailedAsset<'_> {
+        fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
+            if url == self.url {
+                Err(self.error.into())
+            } else {
+                self.inner.fetch(url, limit)
+            }
+        }
+    }
+    let (_scratch, loc) = locations()?;
+    let (mut package, mut files) = generic()?;
+    let path = "assets/environment/pool/textures/lights/pool_light_wall_01.png";
+    files.insert(path.into(), fixture_icon()?);
+    package = inventory(package, &files);
+    let inner = transport(&package, &files)?;
+    let sources = test_sources(&package);
+    let row = install::check(&loc, package.clone())?;
+    for cause in [
+        "Download timed out; check connection and retry",
+        "Cancelled",
+    ] {
+        let fetch = FailedAsset {
+            inner: &inner,
+            url: payload_url(&package, path),
+            error: cause,
+        };
+        let error = selected_install(&loc, &sources, &row, &fetch)
+            .err()
+            .ok_or("expected download failure")?;
+        assert_eq!(error.lines().next(), Some(cause));
+        assert!(error.contains(path));
+        assert!(!loc.root(&package).exists());
+        assert_eq!(install::label(&loc, &package)?, "not installed");
+        drop(storage::Lock::take(&loc.state)?);
+    }
+    selected_install(&loc, &sources, &row, &inner)?;
+    assert_eq!(install::label(&loc, &package)?, "0.1.0");
+    assert_eq!(
+        std::fs::read(loc.root(&package).join(path)).map_err(|e| e.to_string())?,
+        files[path]
+    );
+    Ok(())
+}
+#[test]
 fn install_update_repair_origin_and_local_edit_protections() -> Result<(), String> {
     let (_scratch, loc) = locations()?;
     let (p, mut files) = generic()?;
@@ -566,7 +616,7 @@ fn launcher_customizations_pending_and_stale_check() -> Result<(), String> {
     install::install(&loc, &checked)?;
     let root = loc.root(&p);
     let launcher = loc.state.join("launchers").join(&p.id);
-    let managed_launcher = storage::read(&launcher, 1024)?.ok_or("launcher")?;
+    let managed_launcher = storage::read(&launcher, metadata::FILE_LIMIT)?.ok_or("launcher")?;
     assert!(root.join("main.py").is_file());
     let custom = FileData {
         bytes: b"#!/bin/sh\n# custom\n".to_vec(),
@@ -719,7 +769,7 @@ fn running_app_identity_is_rechecked_and_only_exact_script_is_closed() -> Result
     stale.start.push_str("changed");
     native.terminate(&script, &stale)?;
     assert!(child.0.try_wait().map_err(|e| e.to_string())?.is_none());
-    assert!(native.list(&loc.home.join("other.py"))?.is_empty());
+    assert_eq!(native.list(&loc.home.join("other.py"))?.len(), 0);
     running::close(
         &native,
         &script,
@@ -1245,7 +1295,7 @@ fn uninstall_removes_receipted_app_and_shortcuts_preserving_data_and_other_apps(
             mode: 0o600,
         },
     )?;
-    let other = loc.data.join("vitrallis/apps/org.example.other/main.py");
+    let other = loc.apps().join("org.example.other/main.py");
     storage::atomic(
         &other,
         &FileData {
@@ -1611,7 +1661,13 @@ fn tor_manifest_survives_install_discovery_and_launcher_ownership() -> Result<()
     );
     let launcher = std::fs::read_to_string(loc.state.join("launchers").join(&package.id))
         .map_err(|e| e.to_string())?;
-    assert!(launcher.starts_with("#!/bin/sh\nexec /usr/bin/bwrap "));
+    assert!(launcher.starts_with("#!/bin/sh\numask 077\n"));
+    assert!(
+        launcher
+            .lines()
+            .any(|line| line.starts_with("exec /usr/bin/bwrap "))
+    );
+    assert!(launcher.contains("export VITRALLIS_APP_DATA_DIR="));
     assert!(launcher.contains("'--unshare-net'"));
     assert!(!loc.root(&package).join("arti").exists());
     assert!(!loc.data.join("vitrallis/tor").exists());
@@ -1647,6 +1703,50 @@ fn run_service(
             _ => None,
         })
         .collect()
+}
+
+#[test]
+fn failed_refresh_reports_errors_preserves_cache_and_recovers() -> Result<(), String> {
+    for cached in [false, true] {
+        let (_scratch, loc) = locations()?;
+        let (package, files) = default_package()?;
+        let online = transport(&package, &files)?;
+        let mut offline = transport(&package, &files)?;
+        offline.responses.clear();
+        let (updates, receive) = mpsc::channel();
+        let mut rows = Vec::new();
+        if cached {
+            refresh_catalog(&loc, &online, &mut rows, &updates)?;
+        }
+        let snapshot = loc.state.join("catalogs").join(format!(
+            "{}.json",
+            storage::sha(package.origin.as_str().as_bytes())
+        ));
+        let before = storage::read(&snapshot, metadata::CATALOG_LIMIT)?;
+        let (_, message) = refresh_catalog(&loc, &offline, &mut rows, &updates)?;
+        assert_eq!(
+            message,
+            "Refresh incomplete. Cached apps kept; see error entries."
+        );
+        assert_eq!(storage::read(&snapshot, metadata::CATALOG_LIMIT)?, before);
+        assert_eq!(rows.len(), usize::from(cached) + 1);
+        assert!(rows.iter().any(|row| {
+            row.package.entry.is_empty() && row.status.contains("Repository unavailable")
+        }));
+        if cached {
+            assert!(rows.iter().any(|row| row.package.key() == package.key()));
+        }
+        let (_, message) = refresh_catalog(&loc, &online, &mut rows, &updates)?;
+        assert_eq!(message, "Refresh complete: 1 entries. Select an app.");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].package.key(), package.key());
+        assert!(rows[0].ready);
+        drop(updates);
+        assert!(receive.into_iter().any(|update| {
+            matches!(update, Update::Rows(rows) if rows.iter().any(|row| row.package.entry.is_empty()))
+        }));
+    }
+    Ok(())
 }
 
 /// Records whether the storage lock could be taken from inside every request.

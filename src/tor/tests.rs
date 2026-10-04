@@ -170,16 +170,16 @@ fn required_launch_waits_for_readiness_and_fails_closed_while_preferred_can_cont
                 continue;
             }
             assert!(drain(&mut processes)?.is_none());
-            assert!(processes.running_ids().is_empty());
+            assert_eq!(processes.running_ids(), Vec::<String>::new());
             let result = processes.poll_focus();
             if matches!(state, State::Disabled | State::Error)
                 && requirement == Requirement::Required
             {
                 assert!(result.is_err());
-                assert!(processes.running_ids().is_empty());
+                assert_eq!(processes.running_ids(), Vec::<String>::new());
             } else if state == State::Bootstrapping {
                 assert_eq!(result?, None);
-                assert!(processes.running_ids().is_empty());
+                assert_eq!(processes.running_ids(), Vec::<String>::new());
                 *processes.tor.snapshot.lock().map_err(|e| e.to_string())? = Snapshot {
                     state: State::Connected,
                     ..Snapshot::default()

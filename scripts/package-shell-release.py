@@ -77,7 +77,7 @@ def release_notices():
     return notices
 
 
-def package(directory, target, output, tag, runner=None, transition=False):
+def package(directory, target, output, tag, runner=None):
     metadata = json.loads(subprocess.check_output(
         ['cargo', 'metadata', '--no-deps', '--locked', '--format-version', '1'], cwd=ROOT))
     version = next(p['version'] for p in metadata['packages'] if p['name'] == 'vitrallis-shell')
@@ -85,8 +85,6 @@ def package(directory, target, output, tag, runner=None, transition=False):
         raise ValueError('Release tag must equal v plus the Cargo workspace version')
     if output.exists() or output.is_symlink():
         raise ValueError('Output directory already exists; refusing to overwrite release artifacts')
-    if transition and version != '0.1.0-beta4':
-        raise ValueError('The four-file transition bundle is only authorized for beta4')
     notices = release_notices()
     entries = inventory(directory, target, version, runner)
     name = 'vitrallis-' + target + '-glibc2.36-v2.vtrbundle'
@@ -96,10 +94,6 @@ def package(directory, target, output, tag, runner=None, transition=False):
         stage = Path(temporary) / 'artifacts'
         stage.mkdir()
         write_bundle(stage, name, entries)
-        if transition:
-            # Old updaters require exactly four entries and probe beta4 versions.
-            # On relaunch beta4 offers the complete v2 bundle, even at equal version.
-            write_bundle(stage, name.replace('-v2.vtrbundle', '.vtrbundle'), entries[:4])
         if target == 'armv7-unknown-linux-gnueabihf':
             for helper in SESSION_HELPERS:
                 source = ROOT / 'integrations/pocketchip' / helper
@@ -147,10 +141,9 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--tag', required=True)
     parser.add_argument('--runner', type=Path, help='Local emulator for cross-built executables')
-    parser.add_argument('--transition-bundle', action='store_true', help='beta4 only: also publish the four-file OTA entry point')
     args = parser.parse_args()
     try:
-        package(args.bin_dir, args.target, args.output, args.tag, args.runner, args.transition_bundle)
+        package(args.bin_dir, args.target, args.output, args.tag, args.runner)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         parser.exit(1, f'Vitrallis release packaging failed: {error}\n')
 

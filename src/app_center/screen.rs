@@ -296,10 +296,7 @@ impl Center {
     }
     pub fn poll(&mut self) -> bool {
         let mut changed = false;
-        loop {
-            let Some(worker) = &self.worker else {
-                break;
-            };
+        while let Some(worker) = &self.worker {
             let update = match worker.receive.try_recv() {
                 Ok(update) => update,
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
@@ -585,7 +582,7 @@ impl Center {
         Some((RowState::Unavailable, "UNAVAILABLE".into()))
     }
     /// First line of the last failure for this entry, for the primary UI. The
-    /// full backend error stays in the log and in `detail_fields`.
+    /// full backend error stays in the private session log.
     pub fn failure_summary(&self, index: usize) -> Option<String> {
         let row = self.rows.get(index)?;
         let error = self.errors.get(&row.package.key())?;
@@ -597,6 +594,15 @@ impl Center {
         let Some(row) = self.chosen_row() else {
             return Vec::new();
         };
+        if row.package.entry.is_empty() {
+            return vec![
+                ("Source".into(), row.package.origin.as_str().into()),
+                (
+                    "Next step".into(),
+                    "Check source or connection; then Refresh.".into(),
+                ),
+            ];
+        }
         let mut fields = vec![(
             "Version".into(),
             format!("{}   Installed: {}", row.package.version, row.installed),
@@ -636,8 +642,13 @@ impl Center {
     }
     /// The full description shown under the name on the details page.
     pub fn detail_description(&self) -> String {
-        self.chosen_row()
-            .map_or_else(String::new, |row| row.package.description.clone())
+        self.chosen_row().map_or_else(String::new, |row| {
+            if row.package.entry.is_empty() {
+                row.status.clone()
+            } else {
+                row.package.description.clone()
+            }
+        })
     }
     fn primary(&self) -> (Target, &'static str) {
         if self.busy && self.download_cancel.is_some() {
@@ -1741,6 +1752,38 @@ mod tests {
         center.targets(layout)[center.selected].0
     }
     #[test]
+    fn diagnostic_details_show_the_error_and_recovery_instead_of_placeholder_metadata()
+    -> Result<(), String> {
+        for error in [
+            "Repository unavailable; cached apps kept. Check connection/rate limit",
+            "Catalog entry has an invalid package path",
+        ] {
+            let mut center = center()?;
+            let origin = center.rows[0].package.origin.clone();
+            let diagnostic = super::super::source_error(&origin, error);
+            center.rows = vec![Row::from(&diagnostic)];
+            center.chosen = Some(diagnostic.package.key());
+            center.page(Page::Details);
+            assert_eq!(center.detail_description(), error);
+            assert_eq!(
+                center.detail_fields(),
+                [
+                    ("Source".into(), origin.as_str().into()),
+                    (
+                        "Next step".into(),
+                        "Check source or connection; then Refresh.".into(),
+                    ),
+                ]
+            );
+            assert!(!center.enabled(&Target::Install));
+            assert!(!center.enabled(&Target::Uninstall));
+            let layout = Layout::home(480, 272)?;
+            tap(&mut center, Target::Cancel, &layout)?;
+            assert_eq!(center.page, Page::Apps);
+        }
+        Ok(())
+    }
+    #[test]
     fn directional_navigation_follows_rows_and_bypasses_long_lists() -> Result<(), String> {
         for (w, h) in [(480, 272), (800, 480)] {
             let layout = Layout::home(w, h)?;
@@ -2029,7 +2072,7 @@ mod tests {
                     center.event(&key(Keycode::Down), &layout);
                     center.event(&key(Keycode::Space), &layout);
                 }
-                assert!(center.chosen.as_ref() == Some(&current));
+                assert_eq!(center.chosen.as_ref(), Some(&current));
                 // The chosen entry is marked by its own highlight, not a label prefix.
                 assert!(center.row_chosen(&Target::Row(0)));
                 assert_eq!(center.targets_count(), center.visible_rows().len());
@@ -2335,7 +2378,7 @@ mod tests {
                     .into_iter()
                     .filter(|(target, _, _)| matches!(target, Target::Row(_)))
                     .collect();
-                assert!(!rows.is_empty());
+                assert_ne!(rows.len(), 0);
                 assert!(rows.len() <= capacity);
                 for (_, _, bounds) in rows {
                     assert!(bounds.y >= geometry.list_top);
@@ -2471,11 +2514,11 @@ mod tests {
         assert_eq!(center.chosen.iter().count(), 1);
         center.toggle(1);
         center.answer(false);
-        assert!(center.chosen.as_ref() == Some(&center.rows[0].package.key()));
+        assert_eq!(center.chosen.as_ref(), Some(&center.rows[0].package.key()));
         center.toggle(1);
         center.answer(true);
         assert_eq!(center.chosen.iter().count(), 1);
-        assert!(center.chosen.as_ref() == Some(&center.rows[1].package.key()));
+        assert_eq!(center.chosen.as_ref(), Some(&center.rows[1].package.key()));
         let (send, receive) = std::sync::mpsc::channel();
         let (_updates, queue) = std::sync::mpsc::channel();
         center.worker = Some(Worker {
@@ -2607,7 +2650,7 @@ mod browsing_tests {
                 center.confirmation = Some(confirmation);
                 assert_eq!(center.page_kind(), PageKind::Text);
                 assert_eq!(center.detail_start(), 0);
-                assert!(!center.lines(56).is_empty());
+                assert_ne!(center.lines(56), Vec::<String>::new());
                 let targets = center.targets(&layout);
                 assert_eq!(targets.len(), 2);
                 assert_eq!(targets[center.selected].0, Target::Confirm(false));

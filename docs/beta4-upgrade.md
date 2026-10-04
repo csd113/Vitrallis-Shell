@@ -1,10 +1,10 @@
 # beta4 release and upgrade paths (published 2026-09; historical)
 
-This record describes the published beta3.9/beta4 artifacts and the bounded
-four-executable bridge the current source still keeps for those two releases.
-New installations use the current complete five-executable v2 bundle; this is
-history, not a migration contract for later builds. The bridge is version-gated
-and scheduled for removal once those builds age out.
+This record describes the published beta3.9/beta4 artifacts and their former
+four-executable bridge. The current updater, installer and release packager
+require complete five-executable v2 bundles; the obsolete bridge has been removed.
+Use the current installer to replace an obsolete pre-release layout. The steps
+below record the historical behavior of those builds.
 
 ## Why beta3.9 exists
 
@@ -20,10 +20,10 @@ through the bridge. beta4 therefore also supplies a four-executable entry point
 under the original artifact filename. Its four binaries are real beta4 builds;
 no release or executable version is misrepresented.
 
-## Updating an existing installation
+## Historical update path
 
-Use **Settings → Software Updates** and the normal Check, Install and Relaunch
-controls. The installation confirmation still defaults to Cancel.
+Those builds used **Settings → Software Updates** and the normal Check, Install
+and Relaunch controls. The installation confirmation defaulted to Cancel.
 
 - From beta3.9: install beta4's full v2 bundle and relaunch. Arti is included.
 - From an older managed build after beta4 is published: install beta4 and relaunch,
@@ -57,19 +57,20 @@ beta3.9 retains the original four-executable artifact names. beta4 publishes:
 
 New beta4 installations use the matching bootstrap and v2 bundle directly.
 Arti remains a standalone shared executable, never a library linked into Shell.
-The extra entry point is restricted to beta4 packaging; it is not a general
-legacy format or an automatically generated fallback for future releases.
+The extra entry point was restricted to beta4 packaging. Current packaging emits
+only the complete v2 bundle.
 Existing session helpers continue to launch the atomic current pointer; OTA
 retains those helpers and user configuration. Older offline uninstallers may
 conservatively retain five-file generation directories as unknown content.
 
-## Verification
+## Historical verification
 
-Release gates include strict formatting/Clippy, Rust and Python suites, packaging
-inventory/checksum tests and actual release-bundle update probes. Regression tests
-cover four-file to five-file switching, same-version completion, complete builds
-remaining current, independent Arti version validation, unsafe/missing companions,
-concurrent inventory changes and refusal to downgrade.
+Those releases' gates included strict formatting/Clippy, Rust and Python suites,
+packaging inventory/checksum tests and actual release-bundle update probes.
+Their regressions covered four-file to five-file switching and same-version
+completion. Current regressions retain complete-inventory, independent Arti
+version, unsafe/missing companion, concurrent-change and no-downgrade checks;
+the retired packaging option is refused before artifacts are written.
 
 The [Tor validation report](tor-validation.md) records service, isolation,
 simulator and PocketCHIP UI checks performed before release versioning.

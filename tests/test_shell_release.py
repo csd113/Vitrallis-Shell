@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -40,11 +42,11 @@ class ShellRelease(unittest.TestCase):
     def package(self, target='x86_64-unknown-linux-gnu', tag='v1.2.3', runner=None):
         RELEASE.package(self.binaries, target, self.output, tag, runner)
 
-    def contents(self, name, binaries=None):
+    def contents(self, name):
         payload = (self.output / name).read_bytes()
         self.assertTrue(payload.startswith(RELEASE.MAGIC))
         offset = len(RELEASE.MAGIC)
-        for binary in binaries or RELEASE.BINARIES:
+        for binary in RELEASE.BINARIES:
             size = struct.unpack_from('<Q', payload, offset)[0]
             digest = payload[offset + 8:offset + 40]
             content = payload[offset + 40:offset + 40 + size]
@@ -70,16 +72,6 @@ class ShellRelease(unittest.TestCase):
         self.assertEqual(self.check.call_count, 6)
         for i, binary in enumerate(RELEASE.BINARIES, 1):
             self.assertEqual(self.check.call_args_list[i].args[0], [str((self.binaries / binary).resolve()), '--version'])
-
-    def test_beta4_entry_point_preserves_old_inventory_and_full_v2(self):
-        self.version('0.1.0-beta4')
-        RELEASE.package(self.binaries, 'x86_64-unknown-linux-gnu', self.output,
-                        'v0.1.0-beta4', transition=True)
-        old = 'vitrallis-x86_64-unknown-linux-gnu-glibc2.36.vtrbundle'
-        full = old.replace('.vtrbundle', '-v2.vtrbundle')
-        self.contents(old, RELEASE.BINARIES[:4])
-        self.contents(full)
-        self.assertEqual(len(list(self.output.iterdir())), 4 + len(RELEASE.NOTICES))
 
     def test_every_payload_validates_notices_but_only_the_canonical_one_stages_them(self):
         self.data = bytearray(84)
@@ -138,10 +130,14 @@ class ShellRelease(unittest.TestCase):
                 self.package()
         self.assertFalse(self.output.exists())
 
-    def test_transition_is_not_silently_reused_for_future_releases(self):
-        with self.assertRaisesRegex(ValueError, 'only authorized'):
-            RELEASE.package(self.binaries, 'x86_64-unknown-linux-gnu', self.output,
-                            'v1.2.3', transition=True)
+    def test_retired_transition_option_is_refused_before_packaging(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / 'scripts/package-shell-release.py'),
+             '--bin-dir', str(self.binaries), '--target', 'x86_64-unknown-linux-gnu',
+             '--output', str(self.output), '--tag', 'v1.2.3', '--transition-bundle'],
+            capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('unrecognized arguments: --transition-bundle', result.stderr)
         self.assertFalse(self.output.exists())
 
     def test_missing_companion_prevents_artifact_publication(self):

@@ -787,7 +787,7 @@ mod tests {
         // The default policy path is unavailable under a test HOME, so the page
         // reports the failure instead of silently discarding the change.
         if settings.policy.ampm == before {
-            assert!(!settings.message.is_empty());
+            assert_ne!(settings.message, "");
         }
     }
 }

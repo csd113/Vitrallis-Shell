@@ -95,7 +95,8 @@ if '-c' not in sys.argv:
         # Avoid importing filesystem/JSON modules for simple responses under QEMU;
         # the existing watchdog and every command/assertion remain unchanged.
         names = {node.id for node in ast.walk(ast.parse(code)) if isinstance(node, ast.Name)}
-        header = '#!' + sys.executable + '\nimport os, sys\n'
+        # The mocks use only the standard library, so skip site initialization.
+        header = '#!' + sys.executable + ' -S\nimport os, sys\n'
         if 'json' in names:
             header += 'import json\n'
         if names & {'root', 'Path'}:

@@ -112,8 +112,6 @@ pub fn installed(
     Ok((apps, issue))
 }
 
-// Both Carousel frontends deliberately use this existing shared media library.
-// Scanner claims each physical root once, including when only one variant exists.
 const CAROUSEL: &str = "io.vitrallis.mediacarousel";
 fn user_locations(
     loc: &Locations,
@@ -123,27 +121,16 @@ fn user_locations(
 ) -> Result<(), String> {
     let documents = vitrallis_native::paths::documents(&loc.home, id).map_err(|e| e.to_string())?;
     parts[3].add(&scanner.measure(&documents, true));
-    let shared = if matches!(
-        id,
-        "io.vitrallis.mediacarousel" | "io.vitrallis.carouselrust"
-    ) {
-        CAROUSEL
-    } else {
-        id
-    };
-    let data = loc.data.join(shared);
-    if shared == CAROUSEL {
+    let data = loc.app_data(id)?;
+    if id == CAROUSEL {
         for directory in ["media", "uploads"] {
             parts[3].add(&scanner.measure(&data.join(directory), true));
         }
     }
     parts[4].add(&scanner.measure(&data, true));
-    if let Some(config) = loc.sources.parent().and_then(std::path::Path::parent) {
-        parts[4].add(&scanner.measure(&config.join(shared), true));
-    }
     let cache =
         std::env::var_os("XDG_CACHE_HOME").map_or_else(|| loc.home.join(".cache"), PathBuf::from);
-    parts[2].add(&scanner.measure(&cache.join(shared), true));
+    parts[2].add(&scanner.measure(&cache.join(id), true));
     Ok(())
 }
 
@@ -168,10 +155,7 @@ pub fn native(loc: &Locations, scanner: &mut Scanner<'_>) -> Result<Vec<AppUsage
 }
 
 fn category(path: &std::path::Path, owned: &BTreeSet<String>) -> usize {
-    if path
-        .components()
-        .any(|c| c.as_os_str() == ".vitrallis-bytecode" || c.as_os_str() == "__pycache__")
-    {
+    if path.components().any(|c| c.as_os_str() == "__pycache__") {
         2
     } else if path.starts_with("runtime") || path.starts_with(".venv") {
         1
@@ -248,7 +232,7 @@ mod tests {
     use std::{fs, sync::atomic::AtomicBool};
 
     fn installed_fixture(loc: &Locations, id: &str, rust: bool) -> Result<(), String> {
-        let root = loc.data.join("vitrallis/apps").join(id);
+        let root = loc.apps().join(id);
         let runtime = if rust {
             "runtime = \"rust\"\n[binaries]\nx86_64-unknown-linux-gnu = \"bin/app\"\n"
         } else {
@@ -264,7 +248,7 @@ mod tests {
                 b"application".as_slice(),
             ),
             ("runtime/venv/lib/package", b"private runtime".as_slice()),
-            (".vitrallis-bytecode/cache", b"bytecode".as_slice()),
+            ("__pycache__/cache.pyc", b"bytecode".as_slice()),
             ("config/preferences", b"user preferences".as_slice()),
             (
                 "icon.png",
@@ -324,8 +308,7 @@ mod tests {
                     .all(|(i, part)| i == 3 || part.bytes > 0)
             );
             let mut independent = Scanner::new(&cancel);
-            let root_size =
-                independent.measure(&loc.data.join("vitrallis/apps").join(&app.id), false);
+            let root_size = independent.measure(&loc.apps().join(&app.id), false);
             let launcher_size =
                 independent.measure(&loc.state.join("launchers").join(&app.id), false);
             assert_eq!(app.total.bytes, root_size.bytes + launcher_size.bytes);
@@ -340,16 +323,16 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn documents_cache_and_shared_carousel_media_are_separate_and_counted_once()
-    -> Result<(), String> {
+    fn documents_cache_and_app_data_are_separate_and_counted_once() -> Result<(), String> {
         let (_scratch, loc) = super::super::tests::locations()?;
-        for (id, rust) in [(CAROUSEL, false), ("io.vitrallis.carouselrust", true)] {
+        for (id, rust) in [(CAROUSEL, false), ("io.test.other", true)] {
             installed_fixture(&loc, id, rust)?;
-            let directory = loc.home.join("documents").join(id);
+            let directory =
+                vitrallis_native::paths::documents(&loc.home, id).map_err(|e| e.to_string())?;
             super::super::storage::directory(&directory)?;
             fs::write(directory.join("saved.txt"), vec![7; 8192]).map_err(|e| e.to_string())?;
         }
-        let media = loc.data.join(CAROUSEL).join("media");
+        let media = loc.app_data(CAROUSEL)?.join("media");
         super::super::storage::directory(&media)?;
         fs::write(media.join("shared.mp4"), vec![8; 16384]).map_err(|e| e.to_string())?;
         let cancel = AtomicBool::new(false);
@@ -359,8 +342,11 @@ mod tests {
         let actual = aggregate(apps.iter().map(|app| &app.parts[3]));
         let mut independent = Scanner::new(&cancel);
         let mut expected = independent.measure(&media, true);
-        for id in [CAROUSEL, "io.vitrallis.carouselrust"] {
-            expected.add(&independent.measure(&loc.home.join("documents").join(id), true));
+        for id in [CAROUSEL, "io.test.other"] {
+            expected.add(&independent.measure(
+                &vitrallis_native::paths::documents(&loc.home, id).map_err(|e| e.to_string())?,
+                true,
+            ));
         }
         assert_eq!(actual, expected);
         assert_eq!(scanner.measure(&media, true).bytes, 0);
@@ -377,7 +363,7 @@ mod tests {
         let (apps, issue) = installed(&loc, &mut Scanner::new(&cancel))?;
         assert!(apps.is_empty() && issue.is_none());
         installed_fixture(&loc, "io.test.python", false)?;
-        let root = loc.data.join("vitrallis/apps/io.test.python");
+        let root = loc.apps().join("io.test.python");
         fs::remove_file(root.join(".vitrallis-receipt.json")).map_err(|e| e.to_string())?;
         fs::remove_file(root.join("main.py")).map_err(|e| e.to_string())?;
         let (apps, _) = installed(&loc, &mut Scanner::new(&cancel))?;

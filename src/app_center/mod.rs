@@ -8,6 +8,7 @@ mod native;
 mod network;
 mod running;
 mod runtime;
+mod runtime_cleanup;
 mod screen;
 mod sources;
 pub mod storage;
@@ -216,6 +217,9 @@ fn finish_storage_operation(
     result: Result<String, String>,
     changed: bool,
 ) {
+    if let Err(error) = &result {
+        eprintln!("level=warn event=app_center_operation error={error:?}");
+    }
     if changed {
         STORAGE_REVISION.fetch_add(1, Ordering::Relaxed);
     }
@@ -305,7 +309,9 @@ fn refresh_catalog(
         return Err("Source settings changed; Refresh again".into());
     }
     *rows = cache::store_documents(loc, &sources, fetched, rows);
-    let success = if rows.is_empty() {
+    let success = if rows.iter().any(|row| row.package.entry.is_empty()) {
+        "Refresh incomplete. Cached apps kept; see error entries.".into()
+    } else if rows.is_empty() {
         "Refresh finished: repositories contain no apps".into()
     } else {
         format!("Refresh complete: {} entries. Select an app.", rows.len())

@@ -263,6 +263,19 @@ fn incomplete_inventory_and_unsafe_arti_are_rejected() -> Result<(), Box<dyn std
 }
 
 #[test]
+fn every_missing_companion_is_refused_before_staging() -> Result<(), Box<dyn std::error::Error>> {
+    for name in bundle::BINARIES {
+        let (scratch, target) = fixture()?;
+        let current = fs::read_link(scratch.0.join("current"))?;
+        fs::remove_file(target.with_file_name(name))?;
+        assert!(Installation::open(&target).is_err(), "{name}");
+        assert_eq!(fs::read_link(scratch.0.join("current"))?, current);
+        assert!(!scratch.0.join(".vitrallis-update").exists());
+    }
+    Ok(())
+}
+
+#[test]
 fn arti_version_is_independent_and_other_companions_remain_exact() -> Result<(), semver::Error> {
     let version = semver::Version::parse("0.1.0-beta4")?;
     assert!(version_matches(
@@ -304,9 +317,6 @@ fn release_bundle_upgrade_probe() -> Result<(), Box<dyn std::error::Error>> {
     };
     let version = semver::Version::parse(&std::env::var("VITRALLIS_TEST_UPDATE_VERSION")?)?;
     let (scratch, target) = fixture()?;
-    if std::env::var_os("VITRALLIS_TEST_FOUR_FILE_SOURCE").is_some() {
-        fs::remove_file(target.with_file_name("arti"))?;
-    }
     let mut installation = Installation::open(&target)?;
     let mut payload = installation.payload()?;
     let mut source = File::open(bundle_path)?;
@@ -409,8 +419,7 @@ fn restore_activates_the_validated_previous_generation() -> Result<(), Box<dyn s
     assert!(fixture.retains_both());
     drop(installation);
     // The restored generation is now the active, openable installation.
-    let reopened = Installation::open(&fixture.previous_target())?;
-    assert!(!reopened.needs_completion());
+    Installation::open(&fixture.previous_target())?;
     Ok(())
 }
 
