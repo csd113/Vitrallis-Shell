@@ -8,7 +8,7 @@ Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
 The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
-reviewed in separate commits. The current public candidate is 1.0.1 from
+reviewed in separate commits. The previous public candidate is 1.0.1 from
 `b2ff6d48be33b0a70c373d56d1a8c2f354501db2`, ARMv7 bundle
 `1ee6c8e5e4cd7184a27ce8668f252ab40ac8a339f30ba9e96e55f746910dc0e6`.
 The earlier published 1.0.0 candidate is built from
@@ -504,6 +504,43 @@ Evidence: `official-update-activation-v2.log`,
 `relaunch-review-ci-bc84d36.json` and
 `published-v101-relaunch-disclosure-proof.json`.
 
+## Exact tagged 1.0.2 certification prerelease
+
+[PR #8](https://github.com/csd113/Vitrallis-Shell/pull/8) is merged at
+`eaa11aa52d2c6858d4c79977c3fa595ec42b7f19`. Its tree equals reviewed/tagged
+source `6f0a155b53d84c68423e2240f57127e463cf0980`, which has all six successful
+Rust 1.91.0/1.99.0/stable push/review jobs. The
+[exact tagged workflow](https://github.com/csd113/Vitrallis-Shell/actions/runs/37230948676)
+passes full validation, x86-64/ARMv7 builds, utility probes, packaging and legal
+notice checks. All 19 assets match GitHub IDs/sizes/digests; eight checksum
+sidecars, six helpers and three legal files match tagged source. Both bundles
+have five verified ELF members and no trailing data. ARM bundle SHA-256 is
+`1052c7a2c6617c6d4c1ed8131b662f6457b5289dc12eac5cc955d5f3c2d07a24`.
+
+Actual installation and repeat installation of the exact tagged ARM bytes and
+helpers pass on PocketCHIP, retaining prepared `656c0850…` as the distinct
+previous generation and all 93 tracked saved entries. All five executable hashes,
+versions, owners and 0755 modes pass; installed helpers match with 0644 modes.
+All eight original settings match. Native Shell hardware graphics self-test and
+Terminal/Notepad/Files hardware smokes pass on Mali400 at 480×272, with VSync
+and no fallback. PID 28070 owns actual X11 focus on the fullscreen launcher,
+with no PocketHome or owned zombie, before and after the graphics probes.
+
+The release is published as a certification prerelease at 2026-10-04T20:26:52Z.
+All 19 asset IDs/sizes/digests remain unchanged by publication. Clean public
+README installation and final physical acceptance remain required; stable
+readiness is not declared. The first asset observer uses a draft tag REST lookup
+which returns 404; verification through the authenticated numeric release ID
+succeeds. This is an observer correction, not a product failure.
+
+Evidence: `v102-pr-merged.json`, `v102-candidate-identity.json`,
+`v102-review-ci-ledger-head-v4.json`, `v102-tag-workflow-final.json`,
+`v102-artifacts-manifest.json`, `v102-publication-proof.json`,
+`v102-device-install-proof.json`, `v102-tagged-installed-ready-state.json`,
+`settings-persistence-v102-tagged-installed.json`,
+`v102-native-graphics-proof.json`, `v102-after-native-graphics-state.json` and
+`v102-draft-tag-lookup-failure.json`.
+
 ## Actual low-NAND Shell update and fixture cleanup
 
 An owned, private incompressible filler on the real `ubi0:rootfs` UBIFS reaches
@@ -519,9 +556,12 @@ owner and mode throughout 4053 samples: initial free space is 117,432,320 bytes,
 minimum is 85,315,584 bytes, and final is 115,740,672 bytes. A new private download
 is observed; all five public executable hashes, sizes, versions and 0755 modes
 pass. Beta becomes previous, staging is removed, prepared helpers and receipt
-stay unchanged, and the real note is unchanged. The already verified target
-generation is reused; this does not certify extraction of a new generation
-under pressure or physical power-loss durability. Activation/extraction code
+stay unchanged, and the real note is unchanged. The already verified final target
+generation is reused after mandatory complete new staging extraction, sync and
+five version probes. The ready function is byte-identical to current tagged
+source, as recorded in `low-nand-staging-source-proof.json`. The absent-final-
+destination rename branch under pressure and physical power-loss durability
+are not inferred. Activation/extraction code
 matches current source as recorded above; the beta selection/bridge differences
 remain qualified.
 
@@ -587,8 +627,10 @@ Shell owns the device.
 
 The remaining Shell critical path is the exact tagged/public 1.0.2 candidate
 and final physical smoke. Actual UBIFS activation interruption, normal public
-retry and the low-NAND update pass with the qualifications above. The prepared relaunch correction passes a production-source held-query
-trial; exact tagged/public-candidate verification remains required.
+retry and the low-NAND update pass with the qualifications above. The relaunch
+correction passes a production-source held-query trial, and exact tagged 1.0.2
+installation, repeat and hardware smokes pass. Clean public-candidate
+installation and final owner acceptance remain required.
 Controlled brightness persistence passes with the qualification above. The clean
 public 1.0.1 README install, repeat execution, reboot and published artifact
 verification pass as recorded above. Earlier final-production

@@ -1,14 +1,23 @@
 # Release validation and assets
 
-## 1.0.2 — authorized candidate in preparation
+## 1.0.2 — certification prerelease
 
-The owner authorized Shell 1.0.2 on 2026-10-04. This candidate joins owned
-background system queries and Tor work before relaunching, keeps the waiting
-view responsive, and hides inactive actions until preparation finishes. Setup
-cancellation exits with a short recovery message instead of a Python traceback.
-The regression tests and prepared production device checks pass. Exact 1.0.2
-validation, public installation and final physical acceptance are pending;
-release readiness is not declared.
+The owner authorized Shell 1.0.2 on 2026-10-04. The
+[certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.2)
+is published from tagged source `6f0a155b53d84c68423e2240f57127e463cf0980`.
+It joins owned background system queries and Tor work before relaunching, keeps
+the waiting view responsive, and hides inactive actions until preparation
+finishes. Setup cancellation exits with a short recovery message instead of a
+Python traceback.
+
+Mac/Linux canonical validation and all six exact-source review checks pass.
+The exact tagged workflow builds both platforms, and all 19 assets verify against
+GitHub sizes/digests and tagged helper/legal bytes. Prepared installation and
+repeat installation of the exact ARM bundle pass on PocketCHIP, preserving all
+93 saved entries and eight settings. Mali400 graphics self-test and three utility
+hardware smokes pass with VSync and no fallback; the 480×272 launcher owns actual
+keyboard focus, with no PocketHome or owned zombie. Clean public installation and
+final physical acceptance are pending; stable release readiness is not declared.
 
 ## 1.0.1 — certification prerelease
 
