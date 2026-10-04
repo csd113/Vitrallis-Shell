@@ -23,6 +23,10 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 in progress; stable release readiness has not been declared.
 This release preserves the previous build when reinstalling; see the
 [certification record](docs/release-certification-2026-10-02.md#authorized-101-recovery-correction).
+Later certification found that Restore/relaunch can leave a background system
+query unreaped, and cancelling setup can print a Python traceback. The fixes in
+[PR #8](https://github.com/csd113/Vitrallis-Shell/pull/8) pass prepared-build tests
+but are not included in published 1.0.1.
 Install the complete bundle containing the shell, Terminal, Notepad,
 Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported

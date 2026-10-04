@@ -1,5 +1,15 @@
 # Release validation and assets
 
+## 1.0.2 — authorized candidate in preparation
+
+The owner authorized Shell 1.0.2 on 2026-10-04. This candidate joins owned
+background system queries and Tor work before relaunching, keeps the waiting
+view responsive, and hides inactive actions until preparation finishes. Setup
+cancellation exits with a short recovery message instead of a Python traceback.
+The regression tests and prepared production device checks pass. Exact 1.0.2
+validation, public installation and final physical acceptance are pending;
+release readiness is not declared.
+
 ## 1.0.1 — certification prerelease
 
 The owner authorized this fresh recovery correction release on 2026-10-04 UTC.
@@ -14,8 +24,19 @@ on the PocketCHIP, retaining 1.0.0 as the previous build and all 93 saved entrie
 Native hardware graphics smokes and a software reboot with sustained actual
 keyboard focus pass. Strict software/hardware readback equality differs by one
 colour level on a small number of pixels; this remains explicitly qualified.
-Renewed clean public installation, official update/interruption and final
-physical smoke checks continue. Stable release readiness is not declared.
+Fully clean public README installation, repeat execution, software reboot and
+native utility smoke pass. Official public update, interrupted download,
+checksum rejection, extraction interruption and Restore/relaunch round trips
+also pass, with their revision-specific qualifications in the
+[certification record](release-certification-2026-10-02.md).
+
+A later Restore/relaunch exposes a persistent unreaped background system query.
+Published setup also prints a Python traceback when cancelled. The prepared
+corrections in [PR #8](https://github.com/csd113/Vitrallis-Shell/pull/8) pass host
+and device tests but are not included in this immutable release. Activation
+interruption and recovery pass with the qualifications recorded in the
+certification record. Low-storage and exact new-candidate physical checks
+continue. Stable release readiness is not declared.
 
 ## 1.0.0 — certification prerelease
 

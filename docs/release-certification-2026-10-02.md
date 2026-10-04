@@ -36,9 +36,12 @@ in published 1.0.0 and passes in published 1.0.1; renewed clean public
 installation and repeat execution now pass for 1.0.1. A later relaunch stress
 cycle leaves a persistent owned zombie. The prepared correction passes a real
 held-query relaunch from normal production source, but remains unpublished.
-Activation interruption, low-space Shell updates, a fresh authorized public
-candidate and final physical smoke remain open. Controlled brightness persistence
+Activation interruption and recovery pass with the source qualifications below.
+Low-space Shell updates, the authorized 1.0.2 candidate and final physical smoke
+remain open. Controlled brightness persistence
 passes with the qualification below.
+The owner explicitly authorized Shell 1.0.2 on 2026-10-04. Its exact build,
+public installation and final physical acceptance remain required.
 No stable release is declared.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) is merged,
 and 1.0.0 is published as a certification prerelease.
@@ -441,6 +444,65 @@ Evidence: `relaunch-held-probe-to-prepared-proof.json`,
 `restore-footer-visibility-correction-proof.json`,
 `restore-availability-probe.log` and `restore-beta-runtime-ui-renderer.log`.
 
+## OTA activation interruption and normal public retry
+
+The actual beta Settings updater downloads genuine public 1.0.1. An inotify
+observer catches publication of `previous`; a verified pidfd stops only native
+Shell PID 5468/start ticks 1250435 before `current` switches, then sends SIGKILL.
+All five new destination files have already passed their public hashes, sizes,
+ownership and executable modes. The active beta stays complete and unchanged,
+while `previous` temporarily names that same beta; the original prepared
+rollback generation remains on disk. The private download and staged generation
+remain after process death. The installed receipt and real note are unchanged.
+This is process-interruption coverage on actual UBIFS, not physical power-loss
+coverage.
+
+Normal session launch reaches the focused 480×272 beta launcher in PID 9327 on
+boot `2fa3e6d0-30d2-46b1-885e-e817413e034f`, with no PocketHome or owned zombie.
+All 93 original saved entries and eight original settings still match. The
+subsequent genuine Check removes the stale stage through the beta's older
+completion probe. An ordinary public retry observes a new private download,
+reuses the already verified 1.0.1 destination, completes in 112.586 seconds,
+retains beta as previous and removes all staging. All five public hashes,
+versions, owners and 0755 modes pass; prepared helpers and receipt stay unchanged.
+A normal session stop/launch runs public 1.0.1 in PID 11058 with focused readiness,
+no PocketHome or owned zombie, and all saved entries/settings still unchanged.
+The unfixed beta in-place relaunch is not used for this recovery.
+
+The complete-generation activation and pointer-publication functions, and
+bundle extraction source, are byte-identical between this published baseline
+and current source. The beta's obsolete inventory bridge and prerelease selection
+are explicitly qualified; no bridge or test-only update path is added to current
+production. This is genuine public OTA fault/retry evidence, not a fresh exact
+public-candidate certification.
+
+The first observer times out without any update activation. Its 15-second
+confirmation expires during separate UI/screenshot operations; that attempt is
+not a product failure or an interruption pass. Batched input confirms the next
+actual update, and the corrected observer proves the narrow activation window.
+A readiness observer initially names a nonexistent private manifest; the normal
+session launch has already succeeded. The corrected manifest observation passes.
+Both observer failures remain retained.
+
+The published 1.0.1 notes now disclose the persistent relaunch zombie and setup
+cancellation traceback, with a link to prepared PR #8. All 19 numeric REST asset
+IDs, sizes and digests still match the original release manifest. An initial
+asset observer compares opaque GraphQL IDs with numeric REST IDs and fails;
+using the matching REST representation confirms immutability.
+
+Evidence: `official-update-activation-v2.log`,
+`official-update-activation-v3-proof.json`,
+`ota-activation-source-comparison.json`,
+`ota-activation-v3-recovered-state.json`,
+`retained-state-after-ota-activation-interruption.json`,
+`settings-persistence-after-ota-activation-interruption.json`,
+`official-update-activation-retry-proof.json`,
+`ota-activation-retry-public-ready-state.json`,
+`retained-state-after-ota-activation-public-retry.json`,
+`settings-persistence-after-ota-activation-public-retry.json`,
+`relaunch-review-ci-bc84d36.json` and
+`published-v101-relaunch-disclosure-proof.json`.
+
 ## Shell certification scope
 
 On 2026-10-03 the owner clarified that Shell release readiness takes priority.
@@ -452,9 +514,10 @@ investigation are retained follow-ups; none is evidence of an unresolved Shell
 defect. The owner authorized Monitor 0.4.2; that app release is deferred while
 Shell owns the device.
 
-The remaining Shell critical path is OTA activation interruption, low-space
-Shell updates, a fresh authorized exact public candidate and final physical
-smoke. The prepared relaunch correction passes a production-source held-query
+The remaining Shell critical path is low-space Shell updates, a fresh
+authorized exact public candidate and final physical smoke. The actual UBIFS
+activation interruption and normal public retry pass with the qualifications
+above. The prepared relaunch correction passes a production-source held-query
 trial; exact tagged/public-candidate verification remains required.
 Controlled brightness persistence passes with the qualification above. The clean
 public 1.0.1 README install, repeat execution, reboot and published artifact
@@ -1799,7 +1862,7 @@ normal session processes. All 93 tracked retained entries still match.
 | Every setting persistence | Eight original controls pass the controlled public 1.0.1 reboot, utility smoke and official update/rollback round trip. The clean sequence with an intervening stock desktop resets brightness to 1/10; the retained failure is qualified separately, and the controlled reboot saves/restores 10/10. Prior 1.0.0 configuration-fault cases pass. |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
 | Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; full app/Shell update faults and durability pending |
-| Shell update/rollback | Genuine published beta baseline with current helpers passes real public 1.0.1 update, interrupted download, checksum rejection, partial extraction interruption, recovery, public retry and actual Settings Restore/relaunch in both directions. Saved data/settings match. Activation-window and low-space update checks remain open; prepared bootstrap cancellation correction needs a fresh authorized release. |
+| Shell update/rollback | Genuine published beta baseline with current helpers passes real public 1.0.1 update, interrupted download, checksum rejection, partial extraction interruption, recovery, public retry and actual Settings Restore/relaunch in both directions. Saved data/settings match. Actual UBIFS activation-window interruption, normal startup and public retry pass with the stated beta-source qualifications. Low-space update and fresh exact public-candidate checks remain open; prepared relaunch/cancellation corrections need a fresh authorized release. |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on prepared builds. The exact public installation additionally passes all three utility launch/keyboard/normal-exit smokes with no remaining utility process and all 93 tracked entries unchanged. |
