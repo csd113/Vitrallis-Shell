@@ -1,6 +1,7 @@
 # Public-release certification — 2026-10-02
 
-**NOT RELEASE READY. Certification is in progress, continuing into 2026-10-04 UTC.** This record distinguishes
+**NOT RELEASE READY. Public 1.0.2 has an app-exit keyboard-focus blocker; the
+prepared correction passes Mac/Linux and physical-device regression checks.** This record distinguishes
 published beta testing from development testing and will be updated as the
 remaining gates are exercised. The owner authorized preparation of Shell 1.0.0,
 Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
@@ -527,8 +528,35 @@ and no fallback. PID 28070 owns actual X11 focus on the fullscreen launcher,
 with no PocketHome or owned zombie, before and after the graphics probes.
 
 The release is published as a certification prerelease at 2026-10-04T20:26:52Z.
-All 19 asset IDs/sizes/digests remain unchanged by publication. Clean public
-README installation and final physical acceptance remain required; stable
+All 19 asset IDs/sizes/digests remain unchanged by publication. The normal
+uninstaller and guarded removal of owned root integration leave the core root
+and all eight owned root paths absent. Stock reboot
+`8a0973f7-1162-4296-bec1-3dcaa4a2f448` reaches PocketHome in 176.914 seconds,
+with no Vitrallis process or core integration. Anonymous device metadata verifies
+all 19 public assets. The exact unmodified README command succeeds from this
+fully clean state and on completed repeat execution, including fresh GPU/media
+provisioning and its required reboot. All five executable versions/hashes/modes,
+five installed helpers, private core directories/receipts and saved config match.
+Restoring only retained App Center/Tor state preserves the freshly installed
+public core; all 93 original saved entries still match.
+
+Public-install reboot `6427f918-0efa-4099-aff1-b1b833a57cc5` reaches Ready in
+185.640 seconds, PID 1083. Three observations at 0, 15 and 30 seconds confirm
+480×272 fullscreen, sustained actual X11 focus, no PocketHome and no owned zombie.
+Terminal accepts `pwd`, reports `/home/chip`, reaps its PTY and closes normally.
+Notepad saves the new 26-byte `public 1.0.2 smoke.txt` with mode 0600 and
+`chip:chip` ownership; the earlier note's hash is unchanged. Files enters `bin`
+and returns to `/home/chip` with Escape, then closes through its keyboard footer.
+The intervening stock session again leaves OS-saved backlight brightness zero,
+clamped to 1/10 at startup. This repeats the separately qualified stock-interval
+observation; Shell config bytes and other controls are preserved.
+
+Final navigation automation accidentally launches Bitcoin while changing pages.
+After its verified owned Python process receives normal SIGTERM, Settings remains
+visible and Awesome considers Shell selected, but actual X11 input focus is
+**zero**. Keyboard activation fails while touch still works. A 60-second readiness
+observer fails; this is a real app-exit input blocker in public 1.0.2. The remaining
+owner cold-power check is postponed until that correction is released. Stable
 readiness is not declared. The first asset observer uses a draft tag REST lookup
 which returns 404; verification through the authenticated numeric release ID
 succeeds. This is an observer correction, not a product failure.
@@ -540,6 +568,58 @@ Evidence: `v102-pr-merged.json`, `v102-candidate-identity.json`,
 `settings-persistence-v102-tagged-installed.json`,
 `v102-native-graphics-proof.json`, `v102-after-native-graphics-state.json` and
 `v102-draft-tag-lookup-failure.json`.
+
+## App-exit keyboard focus correction
+
+Public 1.0.2 reaches the focused launcher after its clean public reboot, but its
+final Python app-exit test exposes another input transition defect. A FocusGained
+transition can mark Shell ready and clear foreground process ownership before
+the completed app is reaped. The subsequent exit skips the existing guarded focus
+repair, leaving Awesome's selected Shell client different from actual X input
+focus. Touch remains usable; keyboard activation does not.
+
+The correction keeps window raising conditional on the existing active-app policy,
+but runs the existing guarded X focus repair on every app exit. The guard preserves
+another selected app. No dependency, version, installation helper or data-format
+change is made. The real Awesome/X11 regression reproduces cached Shell selection
+with actual X focus zero after Home/background return: the old build times out;
+the corrected build restores keyboard focus and preserves another app's focus.
+Existing native launch, Home, resume, close and crash-recovery cases also pass.
+
+Full `sh scripts/validate.sh` passes again on macOS/Linux: formatting, checks,
+strict Clippy, 380/382 Rust tests, 181 Python cases (nine/eight exclusions),
+release builds, renderer/SDL smokes and documentation checks. ARMv7 build and
+five-member packaging pass. Initial disposable fixture runs lack Pillow; installing
+its test runtime allows the unchanged regression to run. One packaging probe uses
+an incompatible QEMU loader and segfaults on the unchanged published Arti executable;
+using the matching system loader and Cortex-A7 model passes all five probes.
+These failed harness attempts remain retained.
+
+Prepared bundle `f9db32028969f4a18e770a7270f23231d676e564fbfb43767321d88cdd1354cb`
+is installed through the normal installer, retaining immutable public 1.0.2 as
+previous. This bundle still reports workspace version 1.0.2 and is explicitly
+**unpublished correction evidence**, not the published asset. Its five binary
+hashes/versions/owners/modes pass. On device, a real Calculator Tk window is
+launched, returned Home and backgrounded while Settings is open. X focus is then
+set to None while Awesome still selects Shell; a normal WM close of that owned
+Calculator window restores actual Shell keyboard focus automatically in 1.132
+seconds. Calculator is reaped, keyboard Enter opens Display & Sound, and Escape
+returns to the launcher. All eight settings and 93 saved entries match; no
+PocketHome or owned zombie remains. Final public corrected candidate and owner
+cold-power acceptance remain required. No fresh release version is authorized yet.
+
+Evidence: `exit-focus-validation-summary.json`,
+`exit-focus-regression-baseline-v3.log`,
+`exit-focus-final-x11-artifacts/stock-session.json`,
+`exit-focus-prepared-manifest.json`, `exit-focus-device-install-proof.json`,
+`exit-focus-device-regression-proof.json`, `exit-focus-post-regression-state.json`,
+`settings-persistence-exit-focus-post-regression.json`,
+`retained-state-exit-focus-post-regression.json`,
+`v102-public-clean-proof.json`, `v102-stock-reboot.json`,
+`v102-public-readme-proof.json`, `v102-public-first-verification.json`,
+`v102-public-repeat-verification.json`, `v102-public-installed-reboot.json`,
+`v102-public-notes-proof.json`, `v102-accidental-app-focus-state.json` and
+`v102-stock-interval-brightness.log`.
 
 ## Actual low-NAND Shell update and fixture cleanup
 

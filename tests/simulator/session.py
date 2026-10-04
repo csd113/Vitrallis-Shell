@@ -3,6 +3,7 @@
 Run under dbus-run-session. The supervisor runs directly because the container
 has no systemd user manager; unit ownership/stop commands have separate fixtures.
 """
+import ctypes
 import importlib.util
 import json
 import os
@@ -38,6 +39,30 @@ def focus(window):
 
 def active():
     return run('xdotool', 'getactivewindow')
+
+
+def input_focus(clear=False):
+    x = ctypes.CDLL('libX11.so.6')
+    x.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x.XOpenDisplay.restype = ctypes.c_void_p
+    x.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    x.XGetInputFocus.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong),
+                               ctypes.POINTER(ctypes.c_int)]
+    x.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    x.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    display = x.XOpenDisplay(None)
+    if not display:
+        raise RuntimeError('X input-focus display unavailable')
+    try:
+        if clear:
+            x.XSetInputFocus(display, 0, 0, 0)
+            x.XSync(display, 0)
+        window = ctypes.c_ulong()
+        revert = ctypes.c_int()
+        x.XGetInputFocus(display, ctypes.byref(window), ctypes.byref(revert))
+        return window.value
+    finally:
+        x.XCloseDisplay(display)
 
 
 def key(*keys):
@@ -160,6 +185,29 @@ return "concurrent key added"
             recovered = windows(name)[-1]
             session.awesome(f'for _, c in ipairs(client.get()) do if c.window == {int(recovered)} then c:kill() end end; return "close requested"')
             wait_for(lambda: not windows(name), name + ' recovery close')
+        # Awesome can retain the Shell as its selected client while X focus
+        # reverts to None. Home already released foreground process ownership;
+        # its later exit must still repair real keyboard focus.
+        for destination in (shell, original):
+            focus(shell)
+            run('xdotool', 'mousemove', '--window', shell, '235', '82', 'click', '1')
+            wait_for(lambda: windows('Notepad'), 'focus-regression Notepad launch')
+            native = windows('Notepad')[-1]
+            focus(native)
+            key('XF86PowerOff')
+            wait_for(lambda: input_focus() == int(shell), 'focus-regression Home return')
+            if destination == shell:
+                assert input_focus(clear=True) == 0
+                assert active() == shell, 'cached active client must differ from actual X focus'
+            else:
+                focus(original)
+                assert input_focus() == int(original)
+            exits = (BASE / 'session.log').read_text().count('event=app_exited ')
+            os.kill(int(run('xdotool', 'getwindowpid', native)), 15)
+            wait_for(lambda: not windows('Notepad'), 'background Notepad exit')
+            wait_for(lambda: (BASE / 'session.log').read_text().count('event=app_exited ') > exits,
+                     'background exit reaped by Shell')
+            wait_for(lambda: input_focus() == int(destination), 'exit repairs or preserves X input focus')
         focus(shell)
         run('import', '-window', shell, str(OUT / 'stock-session-menu.png'))
         session.awesome(f'for _, c in ipairs(client.get()) do if c.window == {int(shell)} then c:kill() end end; return \"close requested\"')
@@ -198,6 +246,8 @@ return "keys restored"
         (OUT / 'stock-session.json').write_text(json.dumps({
             'native_crash_recovery': ['Terminal', 'Notepad', 'Files'],
             'native_launch_home_resume_close': ['Terminal', 'Notepad', 'Files'],
+            'background_exit_repairs_x_input_focus': True,
+            'background_exit_preserves_other_app_focus': True,
             'original_focus_and_keys_restored': True,
             'concurrent_binding_preserved': True,
             'stock_config_unchanged': True,

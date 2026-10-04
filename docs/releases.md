@@ -16,8 +16,12 @@ GitHub sizes/digests and tagged helper/legal bytes. Prepared installation and
 repeat installation of the exact ARM bundle pass on PocketCHIP, preserving all
 93 saved entries and eight settings. Mali400 graphics self-test and three utility
 hardware smokes pass with VSync and no fallback; the 480×272 launcher owns actual
-keyboard focus, with no PocketHome or owned zombie. Clean public installation and
-final physical acceptance are pending; stable release readiness is not declared.
+keyboard focus, with no PocketHome or owned zombie. Fully clean public README
+installation, completed repeat execution, saved-config checks and software reboot
+pass. A later Python app-exit check leaves actual X keyboard focus unset while
+Settings is visible. The prepared correction passes canonical validation and a
+real-device regression, but is unpublished. Final physical acceptance is postponed
+until the correction is released; stable readiness is not declared.
 
 ## 1.0.1 — certification prerelease
 

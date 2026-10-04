@@ -467,8 +467,12 @@ fn present_frame(
 }
 
 fn raise_after_exit(canvas: &mut Screen, platform: &impl Platform, raise: bool) {
-    if raise && platform.raise_after_exit() {
-        canvas.window_mut().raise();
+    if platform.raise_after_exit() {
+        if raise {
+            canvas.window_mut().raise();
+        }
+        // FocusGained can clear foreground ownership before the exit poll.
+        // Repair X input focus even then; the repair keeps another app focused.
         crate::platform::restore_shell_focus();
     }
 }

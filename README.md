@@ -22,8 +22,9 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 **[Vitrallis Shell 1.0.2 certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.2).** Release certification is
 in progress; stable release readiness has not been declared.
 This release fixes background-process cleanup on relaunch and reports cancelled
-setup with a short recovery message. See the
-[certification record](docs/release-certification-2026-10-02.md#authorized-102-prepared-validation).
+setup with a short recovery message. A final app-exit check found keyboard focus
+loss; its correction is under review. See the
+[certification record](docs/release-certification-2026-10-02.md#app-exit-keyboard-focus-correction).
 Install the complete bundle containing the shell, Terminal, Notepad,
 Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
