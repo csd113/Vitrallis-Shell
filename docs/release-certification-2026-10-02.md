@@ -17,11 +17,32 @@ and all six remote Rust 1.91.0/1.99.0/stable jobs pass. The 380 default workspac
 tests and four explicit graphics opt-ins pass on native PocketCHIP. Candidate
 installation and actual Settings Restore/relaunch in both directions preserve
 all saved data. Earlier physical storage, utility, offline and startup evidence
-is recorded below with its corresponding revisions. The final release candidate
-and clean corrected public installation are not yet established.
+is recorded below with its corresponding revisions. The reviewed prepared
+candidate is `ed62b2cb7af23e1804abb85a65b69b1167af507a`.
+Three final-production software reboots and the 30-minute activity soak pass.
+Corrected public installation/update and physical cold-power acceptance remain
+open; no stable release is declared.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
+
+## Shell certification scope
+
+On 2026-10-03 the owner clarified that Shell release readiness takes priority.
+App Center certification covers Shell installation, update, launch, process
+lifecycle, recovery and saved-data preservation. Further app-internal functional,
+GPU-accuracy and performance work belongs to the separately authorized Apps audit.
+Music rapid switching, Monitor's Tk shutdown correction and Firefly frame-rate
+investigation are retained follow-ups; none is evidence of an unresolved Shell
+defect. The owner authorized Monitor 0.4.2; that app release is deferred while
+Shell owns the device.
+
+The remaining Shell critical path is the corrected clean public README install
+and second install, the official update/interruption route, physical cold-power
+acceptance, final public-path smoke and published artifact verification. Final
+production software reboot, activity-soak and current-boot log checks now pass.
+Prepared local installation is not a substitute for the public route. No final
+stable release or readiness declaration is authorized by this scope correction.
 
 ## Device and installation
 
@@ -900,9 +921,103 @@ no physical cold power cycle has been performed.
   an environment limitation, not counted as a test pass. All 25 tested source/test
   files match the isolated Apps worktree, and all 36 saved/config files, 26
   directory modes and seven unrelated receipts remain unchanged. The device
-  still has published Monitor 0.4.1; release preparation for the correction needs
-  fresh version authorization. Managed correction/Pulse and GPU accuracy remain
-  open.
+  still has published Monitor 0.4.1. The owner authorized correction release
+  0.4.2; preparation/publication and managed correction/Pulse/GPU-accuracy checks
+  are deferred to the Apps follow-up.
+
+- Firefly's generated launcher was moved into a private verified backup to
+  inject a missing-launcher fault without changing payload or saved data. Actual
+  App Center Update recovered the launcher and installed current public 0.3.2;
+  all 18 published package files, receipt and current launch flags verify.
+  Managed launch reached a focused 480×272 window, and normal Escape exit was
+  reaped by Shell with no remaining identified app process. All 36 saved/config
+  files, 26 directory modes and seven unrelated receipts remained unchanged.
+  The separate Firefly frame-rate/CPU evidence is retained for the Apps audit.
+
+## Final production startup and soak
+
+Three recorded software reboots of bundle `ea6fc653…` reach the automatic native
+launcher, retain one PID/start-time/executable identity during each observation,
+and keep the focused fullscreen 480×272 window at 0, 15 and 30 seconds. No
+service-owned zombies appear in those observations. The boot IDs are
+`6cf3cbc2-9468-46fc-b8e9-882618a7f9de`,
+`2c34efb0-bb6d-474a-be08-f1668f14e526` and
+`3ac1fab8-f720-4e9c-a0c4-3c496116959e`. All five executable hashes, lengths,
+ownership and modes still match the reviewed bundle; saved/config bytes and
+modes, Firefly payload/integration and unrelated receipts match the baseline.
+These are software reboots, not physical cold-power acceptance. SSH reachability
+and readiness observations include OS/USB transport time and are not Shell-only
+startup latency.
+
+A malformed initial sudo argument never requests a reboot and is retained as a
+harness failure. Another reboot observation stops at a check comparing complete
+process rows, including changing scheduler state; its exact failed row was not
+recorded, so the immediate cause is not established. The corrected observer
+records each row and compares PID/start-time/executable while preserving its
+focus and no-zombie assertions. Two additional real reboots then pass, producing
+the three complete records above. No production change or exclusion is involved.
+
+The final activity soak completes in 1800.09 seconds with 61 samples on the last
+boot. The first-to-last counter interval is 1799.93 seconds; sampler setup/final
+sync accounts for the remaining interval. Boot, generation and Shell identity
+remain unchanged, with no service-owned zombies. Main-process CPU averages 1.02%
+of one core. RSS rises from 36,872 KiB as screens first load to 38,492 KiB, then
+stays exactly 38,492 KiB in every sample of the final twelve minutes. Minimum
+available memory is 259,380 KiB. The sampler itself uses 0.265% of one core;
+interpreter startup, SSH, UI automation and other observers are excluded from
+that observer figure. Session log size grows from 17,495 to 49,561 bytes within
+its bound. The current-boot log has no panic/fatal/error, hardware fallback,
+compositor exit or present failure. Ten discovery warnings identify the same
+stock Get Help entry whose `surf` command is absent; that existing external-app
+limitation remains visible and is not hidden. Terminal executes `pwd` as chip
+and exits with status zero; its test session unsets HISTFILE before exit.
+Notepad's clean document and close behavior pass. Files' Tab/Left selection
+visibly reaches Close and normal activation returns to Shell. An earlier
+synthetic F6 sequence did not select the
+footer and is retained; no physical F6 acceptance is inferred. Subsequent native
+utility cycles require matching first-painted controls before sending input.
+The synthetic Power sequence also reaches App Center rather than the intended
+Settings page; those screenshots are excluded as Settings evidence. Actual
+Settings opens correctly through its launcher tile. An incomplete utility cycle
+then checks only the shared window title while App Center remains open; a later
+harness rejects a valid launcher because selection changes its text colour.
+Both are retained harness failures. Subsequent utility cycles validate the
+painted launcher glyphs independently of selection colour before acting. Two
+complete utility cycles record Terminal, Notepad and Files at 480×272, each
+returning to the same Shell PID. App Center Details also opens normally and
+Escape returns through the list to the launcher.
+Actual Date & Time changes 12→24→12 by keyboard, with restored preferences
+byte-identical and private chip-owned mode 0600. App Center finishes loading all
+eight public entries and displays their installed versions; transient
+loading/cancellation captures are retained as such, rather than mistaken for
+completed catalog screens.
+Final inventory again matches all saved/config bytes and modes, Firefly payload/
+integration and unrelated receipts. All nine identified utility PIDs are gone.
+The owner reported that physical shutdown was normal and power-on was in progress.
+UI automation remains paused for the cold-start/display test; automatic-start
+and physical display acceptance have not yet been reported.
+Read-only SSH confirms the new boot `ec128189-6679-45c6-9411-8490119e4101`,
+automatic native ready at 480×272, one Shell process and no service-owned zombies.
+All five executable hashes/sizes/ownership/modes and saved/config bytes/modes,
+Firefly payload/integration and unrelated receipts remain unchanged. The new
+boot log confirms accelerated Mali400 without fallback and has no panic/error,
+compositor exit or present failure; its sole warning is the existing missing
+`surf` entry. The first log matcher incorrectly classified `fallback=false` as
+a failure; its retained result is corrected to check `fallback=true`. These
+software observations do not establish the owner's physical display acceptance.
+
+## Reviewed release draft
+
+The authorized 1.0.0 candidate is staged as an unpublished GitHub draft and
+prerelease at `ed62b2cb7af23e1804abb85a65b69b1167af507a` (same production bytes as
+`dba70da`). All 19 assets have unique names, matching SHA-256 sidecars, matching
+checkout helpers/legal notices, and uploaded GitHub SHA-256 digests and sizes.
+ARMv7 bundle SHA-256 is `ea6fc653952fc591ff9602ee2b740a873e1c8e6d6aec94a799b862a2081013bd`;
+x86-64 is `635497dbb46b188fab812b7f1bbb8787b9c314e3f3b755ceed142de162260c86`.
+The public installer and official updater exclude drafts. The owner has been
+asked to authorize publication as a certification prerelease to permit those
+public-path checks; no publication approval has yet been received. This draft
+is not a stable release or a readiness declaration.
 
 ## Gate ledger
 
@@ -914,13 +1029,13 @@ no physical cold power cycle has been performed.
 | Complete clean public installation | Fully clean published Beta2 FAILED on root status permissions; matching corrected candidate installed; public corrected route pending |
 | Installer failure cases | Canonical fixtures pass; physical fault matrix pending |
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
-| 480×272 UI | Core Settings/launcher screenshots reviewed; remaining utilities, App Center and failure states pending |
+| 480×272 UI | Core launcher, Settings, native utilities and App Center list/Details/transient states inspected on final production; final public-path smoke remains pending. |
 | Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic navigation, held-key filtering and control changes exercised; physical Fn-key and remaining stress coverage pending |
-| Every catalog app lifecycle | Earlier eight-app audit retained data; current Shell verifies Carousel runtime removal/reprovision, public 0.4.4 update and changing VP8/VP9 frames, plus Music 0.1.1 native tests and managed formats/cleanup; Monitor native crash correction is validated in isolated source but unreleased; managed correction/Firefly, rapid Music switching, cold startup and physical acceptance pending |
+| App Center lifecycle/data preservation | Eight-app lifecycle evidence is retained; current Shell additionally passes Carousel removal/reprovision/public update, Music removal/install/launch/cleanup, Monitor refusal/remove/install and Firefly missing-launcher recovery/public update with saved data unchanged. App internals are deferred to Apps. |
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
-| Python runtime | Carousel native managed removal/reprovision reclaims all derived runtime backups, preserves AppData and generates the current launcher; qualified warm startup measured; other apps and cold startup pending |
-| Process lifecycle stress | Debug exits left no app processes or Vitrallis-service zombies; stock PocketHome zombies distinguished; sustained repetition pending |
-| Repeated startup | Delayed original-desktop focus grab repaired; three reboots passed sustained idle focus, including the current offline build; exact final build and cold-power checks pending |
+| Python runtime | Native Carousel removal/reprovision reclaims derived runtime backups, preserves AppData and generates the current launcher; current Music, Monitor and Firefly generated launchers verify against public packages. Additional app performance work is deferred. |
+| Process lifecycle stress | Final activity soak has no service-owned zombies in 61 samples; two complete native-utility cycles return to the same Shell, and all nine identified utility PIDs are gone. Repeated-install memory behavior is not inferred. |
+| Repeated startup | Three recorded final-production software reboots pass automatic startup, identity and sustained focus. After owner-reported normal shutdown/power-on, SSH confirms a new boot, native ready and unchanged executable/data integrity. Physical display acceptance remains pending. |
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
 | Every setting persistence | Clock format and timeout survived development reboot; timezone save/return and restored values pass; remaining full persistence matrix pending |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
@@ -929,14 +1044,14 @@ no physical cold power cycle has been performed.
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on device; remaining manual utility cases pending |
-| Performance | Firefly packing comparison and Carousel startup/import profile recorded; final managed performance, launch-delay investigation and repeated-install memory checks pending |
-| Extended soak | Exact bce0d86, ae343ad and 5c56067 continuous 30-minute runs passed identity/boot/process checks; activity failures retained separately; repeated-install memory behavior and final-revision soak remain pending |
-| Logs | Initial renderer/startup logs inspected; final audit pending |
+| Shell performance | Final 1800.09-second activity soak averages 1.02% main-process CPU; RSS stabilizes at 38,492 KiB for the last twelve minutes. Earlier short idle/calibration evidence is retained; app-internal performance is deferred. |
+| Extended soak | Final-production 1800.09-second activity soak passes all 61 identity/boot/generation/zombie samples, with restored preferences and unchanged saved data. Earlier revision-specific runs and failed harness observations remain retained. |
+| Logs | Final current-boot review has no panic/fatal/error, renderer fallback, compositor exit or present failure. Ten repeated warnings concern the stock Get Help entry lacking surf. |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
 | Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
-| License/repository consistency | Artwork, both selected Arti graphs, Rust runtime notices and exact prepared legal companions reconciled; final published artifact verification pending |
+| License/repository consistency | Artwork, both Arti graphs and Rust runtime notices are reconciled; all 19 draft asset sizes/GitHub SHA-256 digests and exact legal/helper bytes verify. Published public-route verification remains pending. |
 | Canonical release builds | Full host gates, exact-code ARMv7/x86-64 prepared packages, 380 default native PocketCHIP tests and four explicit graphics opt-ins pass; final tagged workflow and exact final-state checks pending |
-| Exact clean candidate | Final revision not established; reviewed focus/native state has matching CI and physical evidence; no final tag/release |
+| Exact clean candidate | Prepared source ed62b2c has all six exact-head CI jobs passing and unchanged production bytes matching the tested bundle. Documentation records the subsequent scope/startup/soak evidence; no final tag/stable release exists. |
 | Final physical smoke | Not run |
 
 ## Validation recorded so far
