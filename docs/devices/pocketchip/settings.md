@@ -34,8 +34,10 @@ readback. Changes do not freeze input or start another poller. Repeated activati
 is suppressed while Applying. A failed or mismatched readback never reports Saved.
 The shell does not force radios on at startup or maintain another radio preference;
 OS service policy determines persistence. Turning a radio off disconnects its links.
-The new switches have automated mock/input/render coverage; physical radio
-transitions still need validation on the target image.
+The switches have automated mock/input/render coverage. Wi-Fi off/on and
+connection readback were exercised on the Debian 13 certification device. That
+image has no Bluetooth controller; Bluetooth hardware acceptance remains
+unavailable. See the [current certification record](../../release-certification-2026-10-02.md).
 
 ## Persistence, permissions and recovery
 
@@ -56,4 +58,6 @@ recovery](../pocketchip.md).
 
 ## Validation scope
 
-The [historical settings qualification](history/device-validation.md#settings-qualification--september-10-2026) records the beta.1 device observations. Native utilities and installer/removal were physically exercised on Debian 13 at 480×272 on 2026-09-12 ([USB record](validation-usb-session.md)); this checkout's later changes have host and fixture evidence only.
+The [historical settings qualification](history/device-validation.md#settings-qualification--september-10-2026) records the beta.1 observations, and the [USB record](validation-usb-session.md) records the September native-utility/installer checks.
+
+The [current certification record](../../release-certification-2026-10-02.md#published-certification-prerelease) covers the exact tagged 1.0.0 ARM bundle on Debian 13 at 480×272. Brightness, volume, clock format, timezone, background timeout, keep-running policy, screen timeout and Tor mode survive leaving/re-entering Settings, Shell restart, tagged-bundle installation and reboot. Original values and private configuration bytes/ownership/modes are restored. Timezone authentication returns normally to Date & Time, and the owner accepted physical keyboard/touch navigation after the repaired integration's cold start. Missing/malformed configuration, permission faults and the complete public update/recovery matrix remain separately qualified or pending; this is not a stable release-readiness claim.

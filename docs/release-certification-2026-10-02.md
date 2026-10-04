@@ -1,6 +1,6 @@
 # Public-release certification — 2026-10-02
 
-**NOT RELEASE READY. Certification is in progress, continuing into 2026-10-03.** This record distinguishes
+**NOT RELEASE READY. Certification is in progress, continuing into 2026-10-04 UTC.** This record distinguishes
 published beta testing from development testing and will be updated as the
 remaining gates are exercised. The owner authorized preparation of Shell 1.0.0,
 Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
@@ -8,8 +8,10 @@ Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
 The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
-reviewed in separate commits. The installed release candidate is now built from
+reviewed in separate commits. The published release candidate is built from
 `a57b107830b802372afe72fcb584386f1c3f6abd`, ARMv7 bundle
+`5ad2944b47f3152032c87ab87e2f4bb3466bc2bd841815a4176fdecd6938b615`.
+The earlier prepared build from that source was
 `07f299b4f3f35198f1ac556aedb476a6c5801983b4eff8253a944ef7d0f843ea`.
 The earlier native production code was `dba70dab7b4df480e398e178ab0636892cd5b306`,
 bundle `ea6fc653952fc591ff9602ee2b740a873e1c8e6d6aec94a799b862a2081013bd`.
@@ -25,9 +27,12 @@ physical cold boot exposed a keyboard startup failure and supersedes that
 candidate. Three software reboot observations and the 30-minute activity soak
 completed, but those reboot checks did not inspect actual X11 keyboard focus.
 Replacement startup and renewed owner physical cold-power/input/display
-acceptance pass. Corrected public installation/update and final public-path
-smoke remain open; no stable release is declared.
-[Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
+acceptance pass. Corrected public installation, repeat execution, reboot and
+native utility smoke now pass. Reinstall rollback-pointer preservation fails
+in published 1.0.0; its correction, official update/interruption and final
+public-path smoke remain open. No stable release is declared.
+[Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) is merged,
+and 1.0.0 is published as a certification prerelease.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
 
@@ -42,9 +47,10 @@ investigation are retained follow-ups; none is evidence of an unresolved Shell
 defect. The owner authorized Monitor 0.4.2; that app release is deferred while
 Shell owns the device.
 
-The remaining Shell critical path is the corrected clean public README install
-and second install, the official update/interruption route, final public-path
-smoke and published artifact verification. Earlier final-production
+The remaining Shell critical path is the reinstall rollback-pointer correction,
+the official update/interruption route and final public-path smoke. The clean
+public README install, repeat execution, reboot and published artifact
+verification pass as recorded below. Earlier final-production
 activity-soak checks pass. The replacement startup is installed, with renewed
 owner cold-power/input/display acceptance and a software reboot of the newly
 rebuilt candidate passing as recorded below.
@@ -1170,32 +1176,199 @@ compositor exit or present failure; its sole warning is the existing missing
 a failure; its retained result is corrected to check `fallback=true`. These
 software observations do not establish keyboard delivery or physical display acceptance.
 
-## Reviewed release draft
+## Published certification prerelease
 
-The 1.0.0 certification candidate is staged as an unpublished GitHub draft and
-prerelease at `a57b107830b802372afe72fcb584386f1c3f6abd`, replacing the
-superseded `ed62b2cb7af23e1804abb85a65b69b1167af507a` assets. All 19 assets have
-unique names, eight matching SHA-256 sidecars, matching committed helpers/legal
-notices, and uploaded GitHub SHA-256 digests and sizes. The exact bundle hashes
-and physical verification are recorded above. Metadata, release notes and the
-19-asset verification are retained in
-`pockethome-replacement-draft-final-api.json`,
-`pockethome-replacement-draft-final-proof.json` and
-`pockethome-replacement-assets-manifest-v2.json`.
-All 19 freshly downloaded draft files also match the manifest's hashes and
-lengths (`pockethome-replacement-draft-download-proof.json`). The public
-installer and official updater exclude drafts. Public `main` still passes the
-removed `--make-default` option from bootstrap to the installer; its Python
-entry point must be updated through the reviewed PR before exposing these
-replacement helpers. The public shell entry script is already byte-identical.
-The public-main comparison is retained in
-`pockethome-replacement-public-main-bootstrap.py` and
-`pockethome-replacement-public-main-bootstrap.sh`.
-Publication as a certification prerelease and merging the reviewed entry-point
-changes require owner approval; none has yet been received. This draft
-is not a stable release or a readiness declaration. The old publication question
-concerns the superseded candidate; a revised exact-candidate approval is still
-required before publication.
+The owner authorized merging PR #5 and publishing source
+`a57b107830b802372afe72fcb584386f1c3f6abd` as a certification prerelease after
+its tagged workflow and exact device checks passed. PR #5 merged at
+`246e99056a4159e76c1197ee788230d5c82a16d4`; annotated tag `v1.0.0` points to
+that reviewed source. [Tagged workflow 37178822016](https://github.com/csd113/Vitrallis-Shell/actions/runs/37178822016)
+passes canonical validation, both release builds, ARMv7 probes and packaging.
+[The certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.0)
+was published on 2026-10-04 at 05:45:30 UTC. This is not a stable release or a
+release-readiness declaration.
+
+The tagged workflow rebuilt both native bundles; those bytes supersede the
+prepared bundles recorded above. ARMv7 SHA-256 is
+`5ad2944b47f3152032c87ab87e2f4bb3466bc2bd841815a4176fdecd6938b615` and
+x86-64 SHA-256 is
+`0f7d214d265b47cf6408c329412663cd5fcc5d2a799dd2353fb5c64bbbd3e878`.
+All 19 freshly downloaded artifacts have unique names, eight matching checksum
+sidecars, matching committed helper/legal files, and matching GitHub sizes and
+SHA-256 digests. The physical PocketCHIP anonymously reads the published release
+metadata and verifies that same inventory. `tagged-release-artifacts-manifest.json`,
+`tagged-release-workflow-proof.json`, `tagged-release-published-api.json` and
+`public-device-release-api.json` retain these checks.
+
+All five tagged ARM executables pass actual device version, length, SHA-256,
+chip-owned mode 0755 checks, including the rebuilt Arti 2.6.0. The Shell graphics
+self-test and the three native utility hardware smokes/readbacks pass on Mali400
+with VSync and no fallback. Strict software/hardware pixel equality remains
+FAILED: 73 Terminal, 47 Notepad and 93 Files pixels differ, each by at most one
+channel level. Hardware and automatic output match exactly. The native images
+were inspected; production rendering and repository assertions remain unchanged.
+Evidence is in `tagged-native-executables-graphics.log`,
+`tagged-native-utility-graphics.log` and `tagged-native-pixel-comparison.json`.
+
+The exact tagged bundle passes software reboot
+`3c2b5ab2-19e1-4986-a37c-2a3ffefa5617`, reaching current-session native readiness
+in 186.431 seconds. At 0/15/30 seconds after readiness, actual X11 input focus
+matches Shell PID 1077, the same 480×272 fullscreen window remains focused,
+PocketHome has no process/window and no service-owned zombie exists. The owner
+physical cold-start acceptance above used this same repaired startup integration
+with the prior native bundle; it is not represented as a physical cold-start
+observation of the rebuilt binaries. See `tagged-native-reboot.json`.
+
+Brightness 100→90%, volume 90→80% (amixer 57→50), 12→24-hour clock,
+America/Vancouver→America/Whitehorse, background timeout Never→five minutes,
+Notepad keep-running Off→On, screen timeout 30→10 minutes and Tor
+On-demand→Disabled all survive leaving/re-entering Settings, Shell restart,
+tagged-bundle installation and device reboot. Backlight and volume use the
+existing OS restoration services. Original values are restored through the UI;
+configuration bytes, private chip-owned modes, hardware readbacks and timezone
+match the saved baseline. All 93 tracked data/config/app/integration entries
+remain unchanged. `settings-persistence-*.json`,
+`settings-restoration-v2-*.png` and `retained-state-restored-after-tagged-reboot.json`
+retain the observations.
+
+An unguarded restoration sequence reaches unrelated launcher tiles; its images
+are excluded as Settings evidence. The corrected sequence checks each painted
+page before acting. An immediate timezone read precedes asynchronous completion,
+and a later readiness assertion inspects only the last 4096 log bytes after
+activity has pushed the ready line out of that tail. Both retained harness
+failures are corrected with observed completion and the complete current-session
+log segment; actual timezone save/return and exact restored values pass.
+
+The public `main` bootstrap now matches the repaired helpers and no longer passes
+the removed `--make-default` flag. The PocketCHIP anonymously fetches the public
+README; its exact command SHA-256 is
+`cd8e4d9be5f8ad70c7aee90ac056cc76d1569f379e957f01d4a78659f11e48ee`.
+Normal offline uninstall removes all three retained generations, core helpers,
+launch shortcut and managed startup, restoring the original Awesome file hash
+`507e520527681703f3747831d8c428bbdf49c12890ffe78ba45fc3960920200e`.
+All 93 tracked retained entries still match. Retained runtime state is temporarily
+isolated in the private certification directory to make the complete core root
+absent before the public installer, while saved preferences, Apps and AppData
+remain in place. The original PocketHome desktop is started for this clean test.
+The exact README command succeeds from that absent runtime root and selects
+the public `v1.0.0` assets. Repeating it also succeeds with the same native
+hashes, matching source helpers, unchanged configuration and a single startup
+block. Both runs pass five native version probes and private chip-owned runtime
+directory checks; all 90 tracked entries outside the temporarily isolated App
+Center integration remain unchanged. The public command's umask 077 creates
+user-owned runtime/generation directories as 0700, rather than the 0755 assumed
+by the initial private inspector; corrected checks use the actual secure
+public-command contract. The unrelated root-owned platform status permissions
+remain separately checked by provisioning. Retained App Center and Tor state
+are restored after these install checks, without replacing any public core
+artifact. `public-clean-readme-install.log`, `public-repeat-readme-install.log`,
+`public-install-first-v2.json`, `public-install-repeat.json` and
+`public-retained-state-restore-proof.json` retain the evidence.
+
+The fresh install has no previous generation. Repeating the published installer
+creates a previous pointer equal to current; the distinct retained-generation
+case fails the regression recorded below.
+
+The publicly installed native bundle passes software reboot
+`7b88c948-e00a-4585-8b99-dafb39158dd2`, reaching current-session readiness in
+185.085 seconds including OS/USB/SSH time. Shell PID 1072 retains actual X11
+focus and its fullscreen 480×272 window at 0, 15 and 30 seconds. PocketHome has
+no process/window and no service-owned zombie appears. All 93 tracked retained
+entries and original eight settings still match. The first observer fails before
+requesting a reboot because the fresh installation has not yet created its first
+session log. The corrected observer reads the pre-reboot boot ID directly;
+post-reboot readiness still requires the new session log and actual native
+window. Both records are retained.
+
+On that exact public installation, Terminal accepts `exit` and its keyboard
+Close returns to Shell. Notepad accepts a short note, defaults to Cancel on dirty
+exit, retains the text after Cancel, then discards only on selected Discard.
+Files opens the real home directory; Tab/Left visibly selects Close and Enter
+returns normally. All three utilities exit, leaving the original Shell PID,
+three supervised processes, no zombies/PocketHome and actual X11 focus on the
+launcher. All 93 tracked retained entries remain unchanged. This clears the
+public native-utility smoke, not the complete final device smoke or official
+update/interruption gates. Evidence: `public-installed-reboot.json`,
+`public-installed-reboot-v2.log`, `settings-persistence-after-public-reboot.json`,
+`public-installed-native-smoke-state.json`, `public-installed-*.png` and
+`retained-state-after-public-native-smoke.json`.
+
+## Reinstall rollback-pointer regression
+
+The published installer sets `previous` to the active generation even when
+reinstalling that same bundle. After A→B→reinstall B, both pointers select B,
+so the normal previous-generation recovery choice A is lost although its files
+remain. This is a release blocker. A new regression installs two distinct valid
+current-format bundles and checks that reinstalling B preserves A. It fails on
+the published source and passes after a focused condition skips the previous
+pointer write when old and new current pointers are equal. No version, native
+rendering, package format or compatibility path changes are included.
+
+All 42 installer tests pass with the correction. Full `sh scripts/validate.sh`
+passes on macOS and native Linux AArch64, including formatting, strict Clippy,
+workspace tests, Python tests, release builds, native smokes, syntax and 59-file
+Markdown link validation. Mac records 378 passing Rust tests with nine explicit
+opt-in/platform exclusions and 178 Python cases with nine exclusions. Linux
+records 380 passing Rust tests with twelve explicit opt-ins and 178 Python cases
+with eight exclusions; the separate renderer suite passes its software case and
+retains the accelerated opt-in exclusion on both hosts. Device graphics evidence
+above remains separately qualified.
+
+Both opt-in real Awesome/X11 fixtures also pass separately in the disposable
+Linux image, verifying one Vitrallis startup without PocketHome and the visible
+window's real PID/parent. An initial invocation omits the documented
+`dbus-run-session` entry point and fails desktop availability. Repeating with
+that actual session bus passes both unchanged tests. Evidence:
+`reinstall-previous-desktop-fixtures-linux.log` and its `-v2.log` correction.
+
+The first Linux container mount hides its Cargo executable and stops before
+validation. The second copy omits `.git`; Cargo then includes generated Python
+caches, correctly failing the archive-content assertion. A complete read-only
+checkout copied to a disposable workspace passes the original assertion and
+full canonical sequence. These harness failures and the original failing
+regression remain retained in `reinstall-previous-*.log`. The local correction
+is not part of the immutable published 1.0.0 assets. After the concrete correction
+passed host and device tests, the owner approved a fresh release on 2026-10-04 UTC.
+That authorization is applied to Shell 1.0.1 for this correction, including
+review/merge and conditional certification prerelease publication after CI and
+exact tagged device gates. It does not authorize later version bumps or a stable
+readiness declaration. Full Mac/Linux canonical validation passes again on the
+1.0.1 versioned source, with unchanged test counts and all four native version
+probes reporting 1.0.1. The lockfile changes only the five workspace package
+versions; dependencies are unchanged. Evidence:
+`recovery-v1.0.1-canonical-macos.log`, `recovery-v1.0.1-canonical-linux.log`,
+`recovery-v1.0.1-canonical-summary.json` and
+`reinstall-previous-owner-release-authorization.json`. Exact CI, tagged artifacts
+and renewed public installation remain required.
+
+The real PocketCHIP reproduces the published defect using genuine five-member
+ARM bundles from source `a57b107`: public rebuild `5ad2944b…` (A) and the
+earlier healthy prepared rebuild `07f299b4…` (B), both reporting 1.0.0. Actual
+published-helper A→B installation retains A; reinstalling B replaces previous
+with B and fails distinct-generation recovery. The corrected helper then
+activates A, activates B and reinstalls B; previous remains A. These are actual
+normal-user installer executions with native version probes and authenticated
+platform provisioning. All 93 tracked data/config/app/integration entries match
+after every phase. This is prepared regression verification using the published
+helper bytes, not an official public OTA update or a new clean public install.
+The correction is committed separately as `305107d`; its installer hash is
+`256ea3ee636bef22b8a255a41a0968f1b53cdab7e1e2b97fb596b98846756213`.
+The public prerelease notes now disclose the defect; all 19 asset IDs, sizes and
+digests remain unchanged.
+
+The final sixth installer execution restores public native bundle A while
+retaining B as previous. The corrected installer helper remains installed as a
+prepared correction, so this final state is explicitly different from a wholly
+published installation. The session relaunch reaches Ready with Shell PID 10068,
+the same boot, actual X11 focus on the fullscreen 480×272 launcher, no PocketHome
+and no service-owned zombies. An initial observer expects exactly three owned
+processes during a transient `bluetoothctl` query and fails; that specific query
+PID is independently verified gone, and the later state has exactly the three
+normal session processes. All 93 tracked retained entries still match.
+`reinstall-previous-device-proof.json`, the six phase logs,
+`reinstall-previous-device-relaunched-during-radio-query.json`,
+`reinstall-previous-device-relaunched-state.json` and
+`retained-state-after-reinstall-previous-device.json` retain the proof.
 
 ## Gate ledger
 
@@ -1204,7 +1377,7 @@ required before publication.
 | Repository/device baseline | Passed baseline inventory; complete component review continues |
 | App filesystem contract | Implemented and host-tested; complete physical app lifecycle pending |
 | Filesystem/permissions | Fresh root directory modes repaired and normal-user runtime integrity passed; app and physical fault matrix pending |
-| Complete clean public installation | Fully clean published Beta2 FAILED on root status permissions; matching corrected candidate installed; public corrected route pending |
+| Complete clean public installation | Fully clean Beta2 FAILED on root status permissions. Published 1.0.0 README install, repeat execution, reboot and native utility smoke pass from an absent core root with exact artifacts, ownership and saved configuration. Its distinct previous-generation regression FAILS; the correction needs a fresh release. |
 | Installer failure cases | Canonical fixtures pass; physical fault matrix pending |
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core launcher, Settings, native utilities and App Center list/Details/transient states inspected on final production; final public-path smoke remains pending. |
@@ -1213,23 +1386,23 @@ required before publication.
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
 | Python runtime | Native Carousel removal/reprovision reclaims derived runtime backups, preserves AppData and generates the current launcher; current Music, Monitor and Firefly generated launchers verify against public packages. Additional app performance work is deferred. |
 | Process lifecycle stress | Final activity soak has no service-owned zombies in 61 samples; two complete native-utility cycles return to the same Shell, and all nine identified utility PIDs are gone. Repeated-install memory behavior is not inferred. |
-| Repeated startup | Original physical cold boot FAILED keyboard navigation. Replacement startup passes two software reboots, renewed owner physical cold boot and a third software reboot of the fresh exact ARM bundle, with readiness, no PocketHome process/window and matching actual X11 focus. Public-path checks remain pending. |
+| Repeated startup | Original physical cold boot FAILED keyboard navigation. Replacement startup passes prepared software reboots and renewed owner physical cold boot. The exact tagged rebuild and its clean public installation each pass a software reboot with current-session readiness, no PocketHome and sustained actual X11 focus. Owner cold-power acceptance of rebuilt bytes is not inferred. |
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
-| Every setting persistence | Clock format and timeout survived development reboot; timezone save/return and restored values pass; remaining full persistence matrix pending |
+| Every setting persistence | Eight changed controls survive re-entry, Shell restart, tagged-bundle installation and reboot, then restore the exact baseline. Radio, malformed/missing configuration and remaining permission fault cases are separately qualified/pending. |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
 | Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; full app/Shell update faults and durability pending |
-| Shell update/rollback | Prepared candidate activation and actual Settings Restore/relaunch in both directions pass with all saved data unchanged; official download/update and interruption faults pending |
+| Shell update/rollback | Prepared activation and Settings Restore/relaunch in both directions pass with saved data unchanged. Published reinstall loses the distinct previous pointer; the focused correction passes its regression, full host validation and actual device installer test with saved data intact. Fresh publication, official download/update and interruption faults remain pending. |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
-| Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on device; remaining manual utility cases pending |
+| Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on prepared builds. The exact public installation additionally passes all three utility launch/keyboard/normal-exit smokes with no remaining utility process and all 93 tracked entries unchanged. |
 | Shell performance | Final 1800.09-second activity soak averages 1.02% main-process CPU; RSS stabilizes at 38,492 KiB for the last twelve minutes. Earlier short idle/calibration evidence is retained; app-internal performance is deferred. |
 | Extended soak | Final-production 1800.09-second activity soak passes all 61 identity/boot/generation/zombie samples, with restored preferences and unchanged saved data. Earlier revision-specific runs and failed harness observations remain retained. |
 | Logs | Final current-boot review has no panic/fatal/error, renderer fallback, compositor exit or present failure. Ten repeated warnings concern the stock Get Help entry lacking surf. |
 | Code/documentation hygiene | Storage/provenance docs updated; final sweep pending |
-| Public owner documentation | Exact fully clean Beta2 entry FAILED; corrected public candidate entry must be retested |
-| License/repository consistency | Artwork, both Arti graphs and Rust runtime notices are reconciled; all 19 draft asset sizes/GitHub SHA-256 digests and exact legal/helper bytes verify. Published public-route verification remains pending. |
+| Public owner documentation | Exact public 1.0.0 entry and repeat execution pass; source helpers match main/tag. README terminology is being updated to the certification prerelease; recovery/fault qualification continues. |
+| License/repository consistency | Artwork, both Arti graphs and Rust notices are reconciled; all 19 tagged/published asset sizes/digests and exact legal/helper bytes verify, including anonymous release metadata and exact public installation on the device. |
 | Canonical release builds | Full Mac/Linux host gates, exact a57b107 ARMv7/x86-64 release packages, six exact-source CI jobs, device hardware smokes/readbacks and earlier 380 native tests/four graphics opt-ins pass. Exact hardware/software screenshot equality fails only by the recorded one-channel-level colour difference; assertions remain unchanged. Final public-path checks remain pending. |
-| Exact clean candidate | Prepared source a57b107 has six passing exact-source CI jobs and rebuilt bundle bytes verified on device and in the unpublished 19-asset draft. A subsequent ledger-only commit does not change runtime/package inputs. No final tag/stable release exists; exact public installation/update remains open. |
+| Exact clean candidate | Tagged source a57b107 has six passing exact-source CI jobs and a passing tagged release workflow. Rebuilt bytes verify on device and in the published 19-asset certification prerelease; exact public install/update work continues. No stable readiness is declared. |
 | Final physical smoke | Not run |
 
 ## Validation recorded so far

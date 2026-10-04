@@ -447,7 +447,8 @@ def install_locked(generation, digest, home, inputs, startup):
             atomic(path, content, mode)
         if pointer(current_link) != old_pointer:
             raise ValueError('Active build changed during installation')
-        if old_pointer is not None:
+        # Reinstalling the active bundle must retain the existing rollback choice.
+        if old_pointer is not None and old_pointer != new_pointer:
             atomic_pointer(target / 'previous', old_pointer)
         atomic_pointer(current_link, new_pointer)
         marker.unlink()

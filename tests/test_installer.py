@@ -92,6 +92,23 @@ class Installer(unittest.TestCase):
         self.assertIn(original, originals)
         self.assertEqual(self.config.read_text(), json.dumps(self.original))
 
+    def test_reinstall_preserves_the_distinct_previous_generation(self):
+        self.default_install()
+        previous = os.readlink(self.target / 'current')
+        payload = bytearray(self.payload)
+        payload[-1] ^= 1
+        self.binary.write_bytes(m.MAGIC + b''.join(
+            struct.pack('<Q', len(payload)) + hashlib.sha256(payload).digest() + payload
+            for _ in m.BINARIES))
+        self.default_install()
+        current = os.readlink(self.target / 'current')
+        self.assertNotEqual(current, previous)
+        self.assertEqual(os.readlink(self.target / 'previous'), previous)
+
+        self.default_install()
+        self.assertEqual(os.readlink(self.target / 'current'), current)
+        self.assertEqual(os.readlink(self.target / 'previous'), previous)
+
     def test_startup_and_home_launch_only_vitrallis_until_uninstalled(self):
         lua = shutil.which('lua') or shutil.which('lua5.3') or shutil.which('luajit')
         if lua is None:

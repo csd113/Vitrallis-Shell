@@ -1,9 +1,30 @@
 # Release validation and assets
 
-## 1.0.0 — preparation
+## 1.0.1 — preparation
 
-The owner authorized this version on 2026-10-02. Certification is still in
-progress; this entry does not declare the release ready or published.
+The owner authorized the fresh recovery correction release on 2026-10-04 UTC.
+The installer now preserves a distinct previous generation when reinstalling the
+active bundle. The published-code regression fails, while the correction passes
+all 42 installer tests, full Mac/Linux validation and real PocketCHIP installation
+with genuine ARM bundles and unchanged saved data. Full Mac/Linux canonical
+validation also passes after the authorized 1.0.1 manifest/lockfile preparation.
+CI, tagged artifact checks and renewed public installation remain required before
+certification prerelease publication. Stable release readiness is not declared.
+
+## 1.0.0 — certification prerelease
+
+The owner authorized this version on 2026-10-02 and subsequently authorized
+publication of the [certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.0).
+It was published on 2026-10-04 from tagged source
+`a57b107830b802372afe72fcb584386f1c3f6abd`. The exact public README command,
+repeat installation and software reboot pass on the physical PocketCHIP.
+Certification is still in progress; stable release readiness is not declared.
+
+The published installer has a confirmed recovery defect: reinstalling the active
+bundle after changing generations replaces the saved previous-generation pointer
+with the active generation. The correction is prepared for authorized 1.0.1;
+the published 1.0.0 assets remain unchanged. See the
+[certification record](release-certification-2026-10-02.md#reinstall-rollback-pointer-regression).
 
 Managed packages now live in `Documents/Vitrallis/Apps/<id>` and persistent
 state in private `Documents/Vitrallis/AppData/<id>` directories. Launchers
