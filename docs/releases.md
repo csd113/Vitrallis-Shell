@@ -1,15 +1,21 @@
 # Release validation and assets
 
-## 1.0.1 — preparation
+## 1.0.1 — certification prerelease
 
-The owner authorized the fresh recovery correction release on 2026-10-04 UTC.
-The installer now preserves a distinct previous generation when reinstalling the
+The owner authorized this fresh recovery correction release on 2026-10-04 UTC.
+The [certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.1)
+is published from tagged source `b2ff6d48be33b0a70c373d56d1a8c2f354501db2`.
+The installer preserves a distinct previous generation when reinstalling the
 active bundle. The published-code regression fails, while the correction passes
-all 42 installer tests, full Mac/Linux validation and real PocketCHIP installation
-with genuine ARM bundles and unchanged saved data. Full Mac/Linux canonical
-validation also passes after the authorized 1.0.1 manifest/lockfile preparation.
-CI, tagged artifact checks and renewed public installation remain required before
-certification prerelease publication. Stable release readiness is not declared.
+all 42 installer tests, full Mac/Linux canonical validation and all six review
+CI jobs. The exact tagged workflow builds both platforms; all 19 assets verify.
+Prepared installation and repeat installation of the tagged ARMv7 bundle pass
+on the PocketCHIP, retaining 1.0.0 as the previous build and all 93 saved entries.
+Native hardware graphics smokes and a software reboot with sustained actual
+keyboard focus pass. Strict software/hardware readback equality differs by one
+colour level on a small number of pixels; this remains explicitly qualified.
+Renewed clean public installation, official update/interruption and final
+physical smoke checks continue. Stable release readiness is not declared.
 
 ## 1.0.0 — certification prerelease
 
@@ -22,7 +28,7 @@ Certification is still in progress; stable release readiness is not declared.
 
 The published installer has a confirmed recovery defect: reinstalling the active
 bundle after changing generations replaces the saved previous-generation pointer
-with the active generation. The correction is prepared for authorized 1.0.1;
+with the active generation. The correction is published in authorized 1.0.1;
 the published 1.0.0 assets remain unchanged. See the
 [certification record](release-certification-2026-10-02.md#reinstall-rollback-pointer-regression).
 
