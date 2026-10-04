@@ -37,9 +37,10 @@ installation and repeat execution now pass for 1.0.1. A later relaunch stress
 cycle leaves a persistent owned zombie. The prepared correction passes a real
 held-query relaunch from normal production source, but remains unpublished.
 Activation interruption and recovery pass with the source qualifications below.
-Low-space Shell updates, the authorized 1.0.2 candidate and final physical smoke
-remain open. Controlled brightness persistence
-passes with the qualification below.
+Actual low-NAND public Shell update and fixture cleanup pass with the stated
+existing-generation qualification. The authorized exact public 1.0.2 candidate
+and final physical smoke remain open. Controlled brightness persistence passes
+with the qualification below.
 The owner explicitly authorized Shell 1.0.2 on 2026-10-04. Its exact build,
 public installation and final physical acceptance remain required.
 No stable release is declared.
@@ -503,6 +504,76 @@ Evidence: `official-update-activation-v2.log`,
 `relaunch-review-ci-bc84d36.json` and
 `published-v101-relaunch-disclosure-proof.json`.
 
+## Actual low-NAND Shell update and fixture cleanup
+
+An owned, private incompressible filler on the real `ubi0:rootfs` UBIFS reaches
+112 MiB free without crossing its 48 MiB reserve. Filling takes 1609.900 seconds;
+the kernel reports one writeback stall over 120 seconds for the fixture Python
+process. The fixture continues making progress and finishes. This warning is
+retained as hardware storage behavior, not suppressed or counted as a Shell
+crash.
+
+From the genuine published beta with prepared helpers, actual Settings installs
+public 1.0.1 in 96.977 seconds. The observer verifies the filler inode, size,
+owner and mode throughout 4053 samples: initial free space is 117,432,320 bytes,
+minimum is 85,315,584 bytes, and final is 115,740,672 bytes. A new private download
+is observed; all five public executable hashes, sizes, versions and 0755 modes
+pass. Beta becomes previous, staging is removed, prepared helpers and receipt
+stay unchanged, and the real note is unchanged. The already verified target
+generation is reused; this does not certify extraction of a new generation
+under pressure or physical power-loss durability. Activation/extraction code
+matches current source as recorded above; the beta selection/bridge differences
+remain qualified.
+
+A guarded stop marker lets the same fixture clean up normally. The filler,
+readiness record and stop marker disappear, its process exits, and free space
+returns to 1,118,363,648 bytes. Normal launch of public 1.0.1 reaches actual X11
+focus at 480×272 in PID 20239 with no PocketHome or owned zombie. All 93 tracked
+entries and eight original settings match. The ordinary prepared installer
+then restores corrected bundle `656c0850…`, retaining public 1.0.1 as previous.
+PID 21103 reaches focused readiness; all saved entries/settings still match.
+
+Earlier UI harness attempts either expired the 15-second confirmation or sent
+input from the wrong screen. The latter queued Tor startup; stopping the verified
+session cleared it before retry. The successful Restore baseline uses three
+separate input calls within the confirmation window and verifies actual pointers.
+Two commands initially treated the host UI helper as a remote file and failed
+without performing input. These attempts do not count as update passes.
+
+Evidence: `official-update-low-nand-proof.json`,
+`shell-update-pressure-detached.log`, `low-nand-fill-kernel-authenticated.log`,
+`low-nand-pressure-cleanup-proof.json`, `low-space-three-call-restore-proof.json`,
+`low-nand-public-ready-state.json`, `retained-state-after-low-nand-public-update.json`,
+`settings-persistence-after-low-nand-public-update.json`,
+`low-nand-final-prepared-return-install-proof.json`,
+`low-nand-final-prepared-return-state.json`,
+`retained-state-after-low-nand-final-prepared-return.json` and
+`settings-persistence-after-low-nand-final-prepared-return.json`.
+
+## Authorized 1.0.2 prepared validation
+
+The owner explicitly authorized Shell 1.0.2 on 2026-10-04. Source
+`656abc2cb2f48617fc938d14a99659c5c8a7ecfe` includes the relaunch and cancellation
+corrections and the authorized workspace version. Complete `sh scripts/validate.sh`
+passes on macOS and native Linux: formatting, locked workspace checks, strict
+Clippy, 380/382 Rust tests, 181 Python discovery cases, release builds, renderer
+and SDL smokes, script checks and all 59 local Markdown files. Mac Python has
+nine explicit exclusions; this Linux container has eleven, including three
+Lua execution tests because its interpreter is absent. Mac and exact-source CI
+cover those Lua tests. The Linux harness initially hides Cargo with a cache
+mount, then lacks rustfmt/Clippy; correcting the mount and installing the standard
+toolchain components allows the unchanged source to pass. Failed harness logs
+are retained. No assertion is weakened.
+
+All six exact-source Rust 1.91.0/1.99.0/stable push/review jobs pass. The ARMv7
+release build and five-member packaging/version checks pass, producing prepared
+bundle `7cc156ce150a58f012080de775c33b5aba0eedd4ee49ebe8d24b1d12e5a61ce2`.
+This is prepared validation; exact tagged release assets, clean public installation
+and final owner physical acceptance remain required.
+Evidence: `v102-authorization.json`, `v102-canonical-summary.json`,
+`v102-review-ci-final.json`, `v102-prepared-artifacts-proof.json` and
+`v102-prepared-arm-build.log`.
+
 ## Shell certification scope
 
 On 2026-10-03 the owner clarified that Shell release readiness takes priority.
@@ -514,10 +585,9 @@ investigation are retained follow-ups; none is evidence of an unresolved Shell
 defect. The owner authorized Monitor 0.4.2; that app release is deferred while
 Shell owns the device.
 
-The remaining Shell critical path is low-space Shell updates, a fresh
-authorized exact public candidate and final physical smoke. The actual UBIFS
-activation interruption and normal public retry pass with the qualifications
-above. The prepared relaunch correction passes a production-source held-query
+The remaining Shell critical path is the exact tagged/public 1.0.2 candidate
+and final physical smoke. Actual UBIFS activation interruption, normal public
+retry and the low-NAND update pass with the qualifications above. The prepared relaunch correction passes a production-source held-query
 trial; exact tagged/public-candidate verification remains required.
 Controlled brightness persistence passes with the qualification above. The clean
 public 1.0.1 README install, repeat execution, reboot and published artifact
@@ -1861,8 +1931,8 @@ normal session processes. All 93 tracked retained entries still match.
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
 | Every setting persistence | Eight original controls pass the controlled public 1.0.1 reboot, utility smoke and official update/rollback round trip. The clean sequence with an intervening stock desktop resets brightness to 1/10; the retained failure is qualified separately, and the controlled reboot saves/restores 10/10. Prior 1.0.0 configuration-fault cases pass. |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |
-| Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; full app/Shell update faults and durability pending |
-| Shell update/rollback | Genuine published beta baseline with current helpers passes real public 1.0.1 update, interrupted download, checksum rejection, partial extraction interruption, recovery, public retry and actual Settings Restore/relaunch in both directions. Saved data/settings match. Actual UBIFS activation-window interruption, normal startup and public retry pass with the stated beta-source qualifications. Low-space update and fresh exact public-candidate checks remain open; prepared relaunch/cancellation corrections need a fresh authorized release. |
+| Low NAND / ENOSPC | Actual UBIFS 64 MiB pressure passed bootstrap preflight rejection, config save and 64 KiB Notepad save; Carousel install completed near 113 MiB free; isolated NAND-backed ext2 ENOSPC/retry passed and all fixtures cleaned; actual public Shell update passes at 112 MiB initial/81 MiB minimum free with an existing verified target; fixture cleanup passes; new-generation low-space extraction and physical power-loss durability are not inferred |
+| Shell update/rollback | Genuine published beta baseline with current helpers passes real public 1.0.1 update, interrupted download, checksum rejection, partial extraction interruption, recovery, public retry and actual Settings Restore/relaunch in both directions. Saved data/settings match. Actual UBIFS activation-window interruption, normal startup and public retry pass with the stated beta-source qualifications. Low-space public update passes with the existing-generation qualification. The authorized 1.0.2 corrections still require exact tagged/public-candidate checks. |
 | Security/trust boundaries | Concrete path guards repaired; complete audit/fault matrix pending |
 | Failure UX | Safe uninstall/trust confirmations, corrected offline refresh/Details and cause-first cancelled update inspected; full operation error retained in private log; other failures pending |
 | Files/Terminal/Notepad | Real note save/read, direct editor, footer wraparound, long-note save, Find and dirty Cancel/Discard passed on prepared builds. The exact public installation additionally passes all three utility launch/keyboard/normal-exit smokes with no remaining utility process and all 93 tracked entries unchanged. |
