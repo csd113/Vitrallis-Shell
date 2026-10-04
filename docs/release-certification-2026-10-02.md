@@ -18,10 +18,12 @@ tests and four explicit graphics opt-ins pass on native PocketCHIP. Candidate
 installation and actual Settings Restore/relaunch in both directions preserve
 all saved data. Earlier physical storage, utility, offline and startup evidence
 is recorded below with its corresponding revisions. The reviewed prepared
-candidate is `ed62b2cb7af23e1804abb85a65b69b1167af507a`.
-Three final-production software reboots and the 30-minute activity soak pass.
-Corrected public installation/update and physical cold-power acceptance remain
-open; no stable release is declared.
+candidate was `ed62b2cb7af23e1804abb85a65b69b1167af507a`; the owner's subsequent
+physical cold boot exposed a keyboard startup failure and supersedes that
+candidate. Three software reboot observations and the 30-minute activity soak
+completed, but those reboot checks did not inspect actual X11 keyboard focus.
+Corrected startup, public installation/update and physical cold-power acceptance
+remain open; no stable release is declared.
 [Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) remains a draft.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
@@ -40,9 +42,84 @@ Shell owns the device.
 The remaining Shell critical path is the corrected clean public README install
 and second install, the official update/interruption route, physical cold-power
 acceptance, final public-path smoke and published artifact verification. Final
-production software reboot, activity-soak and current-boot log checks now pass.
+production activity-soak and current-boot log checks pass. Keyboard delivery
+after boot is blocked by the failure below until the replacement startup is
+installed and exercised again.
 Prepared local installation is not a substitute for the public route. No final
 stable release or readiness declaration is authorized by this scope correction.
+
+## Cold-boot keyboard failure and PocketHome replacement
+
+The owner performed a normal physical shutdown and power-on, then reported that
+touch navigation worked but keyboard navigation did not. Boot
+`ec128189-6679-45c6-9411-8490119e4101` reached the 480×272 Vitrallis launcher
+(native PID 909, window 10485773), while PocketHome PID 845/window 6291466 also
+ran. Awesome reported the Vitrallis client focused, but `XGetInputFocus` returned
+the hidden PocketHome window. The previous foreground checks therefore do not
+certify keyboard delivery. Manual focus resets restored delivery temporarily;
+both immediate and deferred focus-hook experiments failed three out of three
+reproductions and were removed. Physical cold-boot keyboard acceptance is **FAIL**.
+
+The owner explicitly requires PocketHome not to run when Vitrallis is installed.
+The repair replaces the recognized PocketHome launch in the existing Awesome
+configuration with Vitrallis, removes the competing-desktop focus guards and
+restores the exact original command on uninstall. First installation defers
+launch until reboot if PocketHome is still running in the current login;
+the runtime refuses to launch alongside that desktop. No PocketHome binary or
+unrelated OS configuration is removed. The prior installed helper successfully
+removed its old managed integration, and the original Awesome configuration was
+verified restored before testing the new installer. The replacement installer
+then passed on the device and installed helpers byte-identical to the staged
+checkout, retaining all saved/config paths, bytes, owners and modes, checked app
+files/integration and seven unrelated receipts.
+
+Two new software reboots, `cf8113b3-705c-416c-bdd1-0579bfa0172b` and
+`d5004f81-2a37-4671-bfcf-11c26d9569dd`, each retain one native Shell identity and
+no service-owned zombies. At 0, 15 and 30 seconds after the first native-window
+observation, no PocketHome process/window exists and `XGetInputFocus` agrees with
+the focused 480×272 Shell window. Current-session Ready is established at the
+15- and 30-second samples. The first observer could match an earlier retained
+Ready line at its initial sample; its timings measure native-window observation,
+not current-session readiness. The original observer is retained and its future
+readiness check now isolates the current compositor/session log segment.
+Synthetic arrows, Enter and Escape visibly navigate the launcher, open/close
+Notepad and Settings, and Home returns to Shell while retaining Notepad's same
+PID. Resuming Notepad and normal clean close pass. Notepad owns actual X11 focus
+while foreground. Its first proof expected an incorrect window title; the
+retained data and corrected proof use actual title, PID, executable and class.
+Fresh physical cold-start keyboard/touch/display acceptance remains pending.
+The old draft release remains unpublished and is not the repaired candidate.
+Keyboard selection and activation of Exit Vitrallis remove every owned process
+and window without starting PocketHome. The restored original Home binding
+then starts a new ready Shell (PID 4004), with matching actual X11 focus and no
+PocketHome process/window. UI automation is paused at that launcher for the
+owner's new cold-power/input/display test.
+
+Full `sh scripts/validate.sh` passes on macOS and native Linux AArch64, including
+required formatting, strict Clippy, workspace tests, release builds, smokes,
+Python/shell syntax and 59 Markdown files. Python discovery runs 177 cases with
+nine macOS and six Linux explicit environment exclusions. Both real Awesome/X11
+fixtures run in Linux, including absence of the fake PocketHome launch and one
+Vitrallis startup. The first Linux attempt lacked rustfmt and stopped before
+source validation; the corrected disposable image includes rustfmt/Clippy and
+the required GUI tools. The initial Mac run failed three stale first-launch
+expectations, which were updated to test the new reboot deferral and exact query
+and launch behavior. No test failures are hidden.
+
+Evidence: `keyboard-cold-boot-x-input-before.json`,
+`keyboard-cold-boot-direct-focus-experiment.json`,
+`keyboard-cold-boot-live-nil-hook-experiment.json`,
+`keyboard-cold-boot-live-deferred-hook-experiment.json`,
+`pockethome-replacement-old-uninstall-v2.log` and
+`pockethome-replacement-device-preflight.json`,
+`pockethome-replacement-install-proof.json`,
+`pockethome-replacement-two-reboots.json`,
+`pockethome-replacement-reboot-ready-proof.json`,
+`pockethome-replacement-persistence-proof.json`,
+`pockethome-replacement-notepad-focus-proof.json`,
+`pockethome-replacement-after-exit.json`,
+`pockethome-replacement-after-home-relaunch.json` and the
+`pockethome-replacement-canonical-*-v2.log` records.
 
 ## Device and installation
 
@@ -993,9 +1070,9 @@ loading/cancellation captures are retained as such, rather than mistaken for
 completed catalog screens.
 Final inventory again matches all saved/config bytes and modes, Firefly payload/
 integration and unrelated receipts. All nine identified utility PIDs are gone.
-The owner reported that physical shutdown was normal and power-on was in progress.
-UI automation remains paused for the cold-start/display test; automatic-start
-and physical display acceptance have not yet been reported.
+The owner reported a normal physical shutdown and power-on, then a cold-boot
+keyboard failure with touch still working. The failure and replacement startup
+repair are recorded above; the earlier input acceptance does not clear this gate.
 Read-only SSH confirms the new boot `ec128189-6679-45c6-9411-8490119e4101`,
 automatic native ready at 480×272, one Shell process and no service-owned zombies.
 All five executable hashes/sizes/ownership/modes and saved/config bytes/modes,
@@ -1004,11 +1081,11 @@ boot log confirms accelerated Mali400 without fallback and has no panic/error,
 compositor exit or present failure; its sole warning is the existing missing
 `surf` entry. The first log matcher incorrectly classified `fallback=false` as
 a failure; its retained result is corrected to check `fallback=true`. These
-software observations do not establish the owner's physical display acceptance.
+software observations do not establish keyboard delivery or physical display acceptance.
 
 ## Reviewed release draft
 
-The authorized 1.0.0 candidate is staged as an unpublished GitHub draft and
+The superseded 1.0.0 candidate is staged as an unpublished GitHub draft and
 prerelease at `ed62b2cb7af23e1804abb85a65b69b1167af507a` (same production bytes as
 `dba70da`). All 19 assets have unique names, matching SHA-256 sidecars, matching
 checkout helpers/legal notices, and uploaded GitHub SHA-256 digests and sizes.
@@ -1017,7 +1094,9 @@ x86-64 is `635497dbb46b188fab812b7f1bbb8787b9c314e3f3b755ceed142de162260c86`.
 The public installer and official updater exclude drafts. The owner has been
 asked to authorize publication as a certification prerelease to permit those
 public-path checks; no publication approval has yet been received. This draft
-is not a stable release or a readiness declaration.
+is not a stable release or a readiness declaration. Its pending publication
+question concerns the old candidate and must be replaced with the repaired
+candidate after startup validation; no new publication is authorized.
 
 ## Gate ledger
 
@@ -1030,12 +1109,12 @@ is not a stable release or a readiness declaration.
 | Installer failure cases | Canonical fixtures pass; physical fault matrix pending |
 | Uninstall/reinstall with real app data | Initial removal/reinstall passed; complete persistence sequence pending |
 | 480×272 UI | Core launcher, Settings, native utilities and App Center list/Details/transient states inspected on final production; final public-path smoke remains pending. |
-| Keyboard/touch | Physical touch and keyboard accepted by owner; synthetic navigation, held-key filtering and control changes exercised; physical Fn-key and remaining stress coverage pending |
+| Keyboard/touch | Original cold-boot navigation FAILED with actual X11 focus on hidden PocketHome; touch worked. Replacement startup passes two reboot focus checks and visible synthetic launcher/Notepad/Settings/Home input. Renewed physical acceptance pending. |
 | App Center lifecycle/data preservation | Eight-app lifecycle evidence is retained; current Shell additionally passes Carousel removal/reprovision/public update, Music removal/install/launch/cleanup, Monitor refusal/remove/install and Firefly missing-launcher recovery/public update with saved data unchanged. App internals are deferred to Apps. |
 | Real data persistence | Places prepared update, Shell replacement, reboot, offline uninstall and online reinstall retain private state; complete ecosystem and Shell reinstall sequence pending |
 | Python runtime | Native Carousel removal/reprovision reclaims derived runtime backups, preserves AppData and generates the current launcher; current Music, Monitor and Firefly generated launchers verify against public packages. Additional app performance work is deferred. |
 | Process lifecycle stress | Final activity soak has no service-owned zombies in 61 samples; two complete native-utility cycles return to the same Shell, and all nine identified utility PIDs are gone. Repeated-install memory behavior is not inferred. |
-| Repeated startup | Three recorded final-production software reboots pass automatic startup, identity and sustained focus. After owner-reported normal shutdown/power-on, SSH confirms a new boot, native ready and unchanged executable/data integrity. Physical display acceptance remains pending. |
+| Repeated startup | Original physical cold boot FAILED keyboard navigation. Replacement startup passes two software reboots with current-session Ready, no PocketHome process/window and matching actual X11 focus. Renewed physical cold-power acceptance pending. |
 | Hardware features | Display/GPU backend and radio readback pass; brightness/volume actual readback passes; audible audio, battery/power and remaining acceptance incomplete |
 | Every setting persistence | Clock format and timeout survived development reboot; timezone save/return and restored values pass; remaining full persistence matrix pending |
 | Offline/network failures | Physical Wi-Fi off/on, cached App Center, offline uninstall and refresh recovery passed; remaining fault matrix pending |

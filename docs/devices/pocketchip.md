@@ -1,8 +1,8 @@
 # PocketCHIP installation and recovery
 
-Vitrallis is an additional launch target inside the existing Awesome session.
-Setup makes Vitrallis the default desktop at login. PocketHome remains installed
-and available when Vitrallis exits or fails. The supported
+Vitrallis replaces PocketHome as the desktop inside the existing Awesome session.
+Setup replaces the existing PocketHome launch command, so PocketHome does not
+run in the background. Uninstall restores that command. The supported
 installer consumes one complete native bundle, never a source build or standalone
 shell executable. The original menu and launcher files are preserved.
 
@@ -183,30 +183,30 @@ network/repository or package-manager problem, and rerun the same block. The
 script does not delete APT locks or automatically repair/upgrade the OS.
 Normal Vitrallis uninstall retains these system packages and platform settings.
 
-From the device's local graphical Terminal, setup opens Vitrallis and waits up to
-20 seconds for its owned shell window. **Home** returns from an app;
-**Exit Vitrallis** restores the original desktop. SSH installs, including X11
-forwarding, finish with the on-device launch command instead. They use the
-validated existing user manager; they do not invent display credentials or start
-a new login session. Missing graphical access also defers launch. A launch failure
-is reported separately from the successful installation, with the session log and
-retry command. Vitrallis starts automatically at the next desktop login; the
-existing Awesome and PocketHome startup remains in place as recovery. A GPU
-reboot notice
-still applies even if Vitrallis opens successfully.
+Reboot after setup to activate Vitrallis in place of PocketHome. Setup defers
+launch while PocketHome is running, and SSH installs (including X11 forwarding)
+also finish with this reboot instruction. Vitrallis starts automatically at the
+next desktop login. If the local graphical session already runs without
+PocketHome, setup can open Vitrallis and waits up to 20 seconds for its owned
+shell window. It uses the validated existing user manager and display credentials.
+A launch failure is reported separately from the successful installation, with
+the session log and retry command. **Home** returns from an app;
+**Exit Vitrallis** returns to Awesome without starting PocketHome. SSH and serial
+login remain available for recovery. A GPU reboot notice still applies even if
+Vitrallis opens successfully.
 
 **Source and published releases:** the prerequisite and checked-launch
 entry-point changes in this checkout become public only when the updated source
 is published at the URL above and a complete release includes the matching
-helpers with `--make-default` support. Older release helpers reject that flag
-before installing; publish the updated helpers together, never mix releases.
+helpers that replace the PocketHome launch. Publish the updated helpers together,
+never mix releases.
 This work does not bump versions or publish a
 release. See the [release inventory](../releases.md) for currently published
 bundles and helpers. To validate a complete locally built ARM bundle with this
 checkout's helpers after preparing prerequisites:
 
 ```sh
-python3 integrations/pocketchip/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle --make-default
+python3 integrations/pocketchip/install-session.py /path/to/vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle
 ```
 
 That local installer is the bundle transaction; automatic package preparation and
@@ -276,8 +276,8 @@ The session supervises an effects-free `picom --config /dev/null --backend xrend
 --vsync` process when X11 has no existing compositor. Its full-screen backbuffers
 are presented through X Present; XRender uses the existing glamor acceleration.
 An existing compositor is preserved and its synchronization remains externally
-managed. The owned compositor exits with the session; PocketHome startup and
-system Xorg configuration are unchanged. Failures are logged to `session.log`
+managed. The owned compositor exits with the session; system Xorg configuration
+is unchanged. Failures are logged to `session.log`
 as a possible-tearing fallback, without preventing the desktop from opening.
 
 From the existing desktop session after installation:
@@ -355,8 +355,9 @@ renames leaves `previous == current` with the intended build active; restore is
 then unavailable until a later update, and **Check for Updates** offers the newer
 release again.
 
-No Awesome startup file, greetd/login configuration, calibration, system package,
-PocketHome binary or recovery service is replaced. Root-owned or obsolete
+Only the recognized PocketHome launch command in the Awesome configuration is
+changed. Greetd/login configuration, calibration, system packages, the PocketHome
+binary and recovery services are preserved. Root-owned or obsolete
 unreceipted installations require manual reconciliation; the installer does not
 infer ownership or migrate a superseded layout.
 
@@ -379,14 +380,9 @@ automatic restart. The physical Home/Power key temporarily routes through Awesom
 to Vitrallis. Selecting **Exit Vitrallis** stops the owned session and restores the
 displaced Home bindings, preserving unrelated new bindings. The previously focused
 window is raised if still open; no launcher-specific Lua function is required.
-While the launcher is active, temporary Awesome activation filters prevent
-PocketHome's delayed background update window from taking focus. The filters
-identify the original desktop through the existing session's client and its
-process start time, permit other applications to activate normally, and are
-removed when Vitrallis exits. A focus handler also returns direct X11 focus
-requests from that desktop process to the active app or launcher. A PocketHome
-window that arrives after the supervisor starts is also retained for desktop
-restoration. Two session logs are limited to 128 KiB each.
+PocketHome is not launched in this installed session. Normal Awesome activation
+handles application focus; no competing-desktop focus filters or callbacks are
+installed. Two session logs are limited to 128 KiB each.
 
 To stop from the installed helper:
 
@@ -397,8 +393,9 @@ python3 "$HOME/.local/share/vitrallis/vitrallis-session.py" stop
 Stopping verifies the transient user unit, exact supervisor argv, process owner
 and process start identity; it never kills processes by name. It checks that the
 unit stopped and restores the saved bindings. Launcher/supervisor crash recovery
-also uses systemd's `ExecStopPost` helper. PocketHome and serial login remain
-available independently.
+also uses systemd's `ExecStopPost` helper. Exit returns to Awesome without
+starting PocketHome; the original Home binding launches Vitrallis again.
+SSH and serial login remain available independently.
 
 ## Built-in Fn keyboard
 
@@ -422,23 +419,25 @@ strict workspace Clippy, workspace tests and the ARM release build passed.
 
 ## Default startup and recovery
 
-The one-command installer appends a managed startup block to your existing
-`~/.config/awesome/rc.lua`. It checks the existing configuration and the proposed
-configuration with Awesome before enabling startup, preserves the original
-startup and permissions, and backs up the file with the installation transaction.
-Vitrallis starts once after five seconds at each login. No display-manager,
-login-shell, autologin or bootloader defaults are replaced.
+The installer replaces exactly one standalone PocketHome launch command in
+`~/.config/awesome/rc.lua` with a managed Vitrallis command. The same existing
+startup/Home function now launches Vitrallis, so no second desktop or delayed
+startup timer runs. The original command is recorded inside the managed block.
+The installer checks both configurations with Awesome, preserves permissions
+and surrounding content, and backs up the file with the installation transaction.
+No display-manager, login-shell, autologin or bootloader defaults are replaced.
 
 A failed install rolls back the startup change. Reinstalling does not duplicate
 it. Edited or duplicate Vitrallis blocks, missing configurations, symlinks,
 hardlinks and unsafe permissions stop installation for review. A concurrent
-configuration edit is preserved. Local bundle installation without
-`--make-default` installs only the launch target.
+configuration edit is preserved. Missing, ambiguous or unrecognized PocketHome
+launch commands stop installation before platform provisioning.
 
-If Vitrallis fails to start or exits, PocketHome remains available. Removal
-recognizes only the exact managed block and preserves surrounding edits; an
-edited block is retained for manual review. Do not restore an entire old
-`rc.lua` over later changes.
+If Vitrallis fails to start, use SSH or serial login to inspect the bounded
+session log and retry or uninstall. Removal restores the recorded PocketHome
+command only from an exact validated managed block and preserves surrounding
+edits; an edited block is retained for manual review. Do not restore an entire
+old `rc.lua` over later changes.
 
 ## Offline removal and recovery
 
@@ -454,8 +453,9 @@ hashes identify current and OTA-installed builds without following pointers into
 arbitrary directories. Missing/edited generations and modified helper/shortcut
 files are preserved. Reconcile an edited session helper before removal; it is
 not executed to stop the session. PocketHome configuration is never read or written.
-Matching desktop/autostart shortcuts and the exact managed startup block are
-removed. Known incomplete download and binary staging files are removed under the same
+Matching desktop/autostart shortcuts are removed and the exact managed startup
+block restores its original PocketHome command. Known incomplete download and
+binary staging files are removed under the same
 lock. Unknown contents are never recursively erased.
 
 A private removal journal stages each file by rename, records its identity and

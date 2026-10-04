@@ -3,6 +3,10 @@
 Validated from the current working branch on 2026-09-12 (America/Vancouver).
 No commit, version bump, publication, USB access or real-device modification occurred.
 
+This is a historical validation of the September 12 integration. The current
+installer replaces PocketHome startup; see the [current device guide](../pocketchip.md)
+and [release certification](../../release-certification-2026-10-02.md).
+
 ## Result and scope
 
 The shell uses the `linux_handheld` backend and `--linux-handheld` flag. ARMv7

@@ -31,6 +31,10 @@ new multimedia-helper directories remain usable by the desktop account.
 The supervised session also selects the launcher when its real window becomes
 ready, including a window whose title arrives after creation, and removes its
 temporary focus hooks on exit. Later title changes do not interrupt apps.
+Installation now replaces the existing PocketHome launch inside Awesome with
+Vitrallis instead of running both desktops. Setup requests a reboot when
+PocketHome is still active; uninstall restores its original launch command.
+The competing-desktop focus guards and delayed startup timer are removed.
 
 App Center reports an incomplete refresh when a repository or catalog entry
 fails, while keeping cached packages available for offline management. A

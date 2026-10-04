@@ -4,9 +4,11 @@ The copy-and-paste entry point is maintained in
 [`bootstrap.sh`](../../../integrations/pocketchip/bootstrap.sh) and reproduced
 verbatim in the [device guide](../pocketchip.md). Tests enforce their equality.
 `bootstrap.py` retains the existing same-release download/checksum contract and
-validates the user manager and space, requests `--make-default`, and checks the
-first launch. The single-line command is also identical in README and the guide;
+validates the user manager and space, and installs Vitrallis in place of
+PocketHome startup. The single-line command is also identical in README and the guide;
 fixtures execute it end to end with local transport and OS boundaries.
+Current physical-device evidence is in the
+[release certification](../../release-certification-2026-10-02.md).
 
 ## Behavior
 
@@ -36,22 +38,24 @@ fixtures execute it end to end with local transport and OS boundaries.
   Missing/insecure runtime directories, unavailable managers and running
   Vitrallis sessions stop installation. Display credentials are not fabricated.
 - Default startup is part of the user-file installation transaction. The existing
-  Awesome startup is retained, the combined configuration is syntax-checked, and
-  a five-second timer starts Vitrallis once at login. Backups preserve the prior
+  PocketHome launch command is replaced with Vitrallis; the rest of Awesome is
+  retained and both configurations are syntax-checked. Backups preserve the prior
   bytes and mode. Repeat installation adds no duplicate block; failed publication
   rolls back startup. Edited or duplicate blocks and concurrent edits fail safely.
-  Offline removal removes only the exact managed block and preserves later edits.
-- After installation, a local graphical Terminal can launch automatically.
+  Offline removal restores the recorded original command only from the exact
+  managed block and preserves later edits.
+- After installation, a local graphical Terminal can launch automatically only
+  if PocketHome is absent. Otherwise setup requests a reboot to activate replacement.
   Readiness requires a visible Awesome window, the installed generation's exact
   executable, matching process ownership and the expected supervisor parent.
   Startup polling has a 20-second window; individual manager queries also have
   their own bounded deadlines. Failed startup reports that installation succeeded,
   names the log/retry command, and stops only an unchanged owned session.
-- SSH, including forwarded X11, and unavailable graphical sessions print the
-  on-device launch command. Startup is enabled for the next desktop login, and
+- SSH, including forwarded X11, and unavailable graphical sessions request a
+  reboot. Startup is enabled for the next desktop login, and
   GPU reboot notices remain relevant even when the desktop opens.
 
-## Current validation, 2026-09-30
+## Historical validation, 2026-09-30
 
 The current pass ran on macOS with temporary-home and mocked-device fixtures.
 `sh scripts/validate.sh` passed, including required Rust formatting, strict
@@ -117,11 +121,10 @@ to run their active fixtures outside a container.
 
 ## Remaining scope
 
-No device was modified, no version was changed, and nothing was committed or
-published in this implementation pass. The updated public entry point requires
+The historical passes above modified no device and changed no version. The
+updated public entry point requires
 publishing the changed source and a complete release containing the updated
-helpers. An older installer rejects `--make-default` before installing; downloaded
-helpers are never replaced with files from another release.
+helpers; downloaded helpers are never replaced with files from another release.
 
 Before advertising this flow, test the exact published command on a fresh supported
 PocketCHIP image: missing-package preparation, sudo interaction, local first launch,

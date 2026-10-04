@@ -40,7 +40,7 @@ class Installer(unittest.TestCase):
         self.home.mkdir()
         self.awesome = self.home / '.config/awesome/rc.lua'
         self.awesome.parent.mkdir(parents=True)
-        self.awesome.write_bytes(b'-- original Awesome/PocketHome startup\n')
+        self.awesome.write_bytes(b'-- original Awesome/PocketHome startup\nlaunch_home_screen = function()\n    awful.spawn.with_shell("pocket-home")\nend\nlaunch_home_screen()\n')
         self.config = self.home / '.pocket-home/config.json'
         self.config.parent.mkdir()
         self.original = {'defaultPage': 'Apps', 'pages': [{'name': 'Apps', 'items': [{'name': 'Keep', 'shell': 'keep'}]}], 'custom': 19}
@@ -65,7 +65,7 @@ class Installer(unittest.TestCase):
     def install(self):
         # Tiny ARM header fixtures cannot execute on the host; real bounded
         # version probes are tested separately with owned executable fixtures.
-        with patch.object(m, 'verify_versions'):
+        with patch.object(m, 'verify_versions'), patch.object(m, 'validate_startup'):
             m.install(self.binary, self.source, self.home)
 
     def test_valid_bundle_runs_platform_setup(self):
@@ -75,14 +75,14 @@ class Installer(unittest.TestCase):
 
     def default_install(self):
         with patch.object(m, 'verify_versions'), patch.object(m, 'validate_startup'):
-            m.install(self.binary, self.source, self.home, make_default=True)
+            m.install(self.binary, self.source, self.home)
 
     def test_default_startup_is_idempotent_backed_up_and_preserves_desktop(self):
         original = self.awesome.read_bytes()
         self.awesome.chmod(0o600)
         self.default_install()
         self.default_install()
-        self.assertEqual(self.awesome.read_bytes(), original + m.STARTUP.encode())
+        self.assertEqual(self.awesome.read_bytes(), original.replace(b'awful.spawn.with_shell("pocket-home")', m.startup_block('awful.spawn.with_shell("pocket-home")').encode()))
         self.assertEqual(self.awesome.stat().st_mode & 0o777, 0o600)
         backups = self.home / '.local/share/vitrallis-backups'
         originals = []
@@ -92,22 +92,77 @@ class Installer(unittest.TestCase):
         self.assertIn(original, originals)
         self.assertEqual(self.config.read_text(), json.dumps(self.original))
 
+    def test_startup_and_home_launch_only_vitrallis_until_uninstalled(self):
+        lua = shutil.which('lua') or shutil.which('lua5.3') or shutil.which('luajit')
+        if lua is None:
+            self.skipTest('requires a Lua interpreter for actual startup execution')
+        original = self.awesome.read_bytes()
+        self.default_install()
+        installed = self.awesome.read_text()
+        fixture = '''
+local calls = {}
+local spawn = setmetatable({with_shell = function(command)
+    table.insert(calls, command)
+end}, {__call = function(_, command, startup)
+    assert(startup == false and #command == 1)
+    table.insert(calls, command[1])
+end})
+awful = {spawn = spawn}
+require = function(name) assert(name == 'awful'); return awful end
+os.getenv = function(name) assert(name == 'HOME'); return '/home/chip' end
+'''
+        script = fixture + installed + '''
+launch_home_screen()
+assert(#calls == 2)
+for _, command in ipairs(calls) do
+    assert(command == '/home/chip/.local/share/vitrallis/launch')
+end
+'''
+        result = subprocess.run([lua, '-'], input=script, text=True,
+                                capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        block, command = m.startup_replacement(installed.encode())
+        self.assertEqual(installed.encode().replace(block, command, 1), original)
+
+    def test_missing_ambiguous_and_unrecognized_home_launch_fail_before_setup(self):
+        for content in (b'-- no home launch\n',
+                        b'awful.spawn.with_shell("pocket-home")\n' * 2,
+                        b'awful.spawn.with_shell("pocket-home; unwanted")\n'):
+            with self.subTest(content=content):
+                self.awesome.write_bytes(content)
+                with patch.object(m, 'setup_platform') as setup, \
+                        self.assertRaisesRegex(ValueError, 'one standalone PocketHome'):
+                    self.default_install()
+                setup.assert_not_called()
+                self.assertFalse(self.target.exists())
+                self.assertEqual(self.awesome.read_bytes(), content)
+
+    def test_reinstall_refuses_a_second_pockethome_launch(self):
+        self.default_install()
+        edited = self.awesome.read_bytes() + b'awful.spawn("pocket-home", false)\n'
+        self.awesome.write_bytes(edited)
+        with patch.object(m, 'setup_platform') as setup, \
+                self.assertRaisesRegex(ValueError, 'PocketHome launch remains'):
+            self.default_install()
+        setup.assert_not_called()
+        self.assertEqual(self.awesome.read_bytes(), edited)
+
     def test_invalid_default_configuration_never_provisions_or_publishes(self):
-        for content in (b'-- BEGIN Vitrallis startup\nuser edit', m.STARTUP.encode() * 2):
+        for content in (b'-- BEGIN Vitrallis startup\nuser edit', m.startup_block('awful.spawn.with_shell("pocket-home")').encode() * 2):
             self.awesome.write_bytes(content)
             with patch.object(m, 'setup_platform') as setup, self.assertRaisesRegex(ValueError, 'startup block'):
                 self.default_install()
             setup.assert_not_called()
             self.assertFalse(self.target.exists())
             self.assertEqual(self.awesome.read_bytes(), content)
-        self.awesome.write_bytes(b'-- original\n')
+        self.awesome.write_bytes(b'awful.spawn.with_shell("pocket-home")\n')
         with patch.object(m, 'verify_versions'), patch.object(m, 'setup_platform') as setup, \
                 patch.object(m, 'validate_startup', side_effect=subprocess.CalledProcessError(1, 'awesome')):
             with self.assertRaises(subprocess.CalledProcessError):
-                m.install(self.binary, self.source, self.home, make_default=True)
+                m.install(self.binary, self.source, self.home)
         setup.assert_not_called()
         self.assertFalse((self.target / 'current').exists())
-        self.assertEqual(self.awesome.read_bytes(), b'-- original\n')
+        self.assertEqual(self.awesome.read_bytes(), b'awful.spawn.with_shell("pocket-home")\n')
 
     def test_missing_linked_or_writable_default_config_fails_before_installation(self):
         self.awesome.unlink()
@@ -135,14 +190,14 @@ class Installer(unittest.TestCase):
         self.assertEqual(self.awesome.read_bytes(), before)
         self.assertEqual(os.readlink(self.target / 'current'), old)
         self.default_install()
-        self.assertEqual(self.awesome.read_bytes(), before + m.STARTUP.encode())
+        self.assertEqual(self.awesome.read_bytes(), before)
 
     def test_config_edit_during_staging_is_preserved(self):
         def edit(*args):
             self.awesome.write_bytes(b'-- concurrent edit\n')
         with patch.object(m, 'verify_versions', side_effect=edit), patch.object(m, 'validate_startup'):
             with self.assertRaisesRegex(ValueError, 'configuration changed'):
-                m.install(self.binary, self.source, self.home, make_default=True)
+                m.install(self.binary, self.source, self.home)
         self.assertEqual(self.awesome.read_bytes(), b'-- concurrent edit\n')
         self.assertFalse((self.target / 'current').exists())
 
@@ -400,7 +455,7 @@ class Installer(unittest.TestCase):
             config = json.loads(self.config.read_bytes())
             config['late edit'] = 'preserve'
             self.config.write_text(json.dumps(config))
-        with patch.object(m, 'verify_versions', side_effect=edit):
+        with patch.object(m, 'verify_versions', side_effect=edit), patch.object(m, 'validate_startup'):
             m.install(self.binary, self.source, self.home)
         self.assertEqual(json.loads(self.config.read_bytes())['late edit'], 'preserve')
         self.assertTrue((self.target / 'current').exists())
@@ -426,7 +481,7 @@ class Installer(unittest.TestCase):
             "spec = importlib.util.spec_from_file_location('device_install', script)\n"
             'module = importlib.util.module_from_spec(spec)\n'
             'spec.loader.exec_module(module)\n'
-            "with patch.object(module, 'preflight'), patch.object(module, 'require_stopped_session'), patch.object(module, 'verify_versions'), patch.object(module, 'setup_platform'):\n"
+            "with patch.object(module, 'preflight'), patch.object(module, 'require_stopped_session'), patch.object(module, 'verify_versions'), patch.object(module, 'setup_platform'), patch.object(module, 'validate_startup'):\n"
             '    module.install(Path(bundle), Path(script).parent, Path.home())\n'
         )
         return subprocess.run(
@@ -541,7 +596,7 @@ class Preflight(unittest.TestCase):
                  patch.object(m.Path, 'lstat', return_value=SimpleNamespace(st_uid=1000, st_mode=stat.S_IFLNK | 0o777))]
         for case in cases:
             with case, patch.object(m, 'make_directories') as write, self.assertRaises(ValueError):
-                m.install(Path('/bundle'), Path('/source'), Path.home(), make_default=True)
+                m.install(Path('/bundle'), Path('/source'), Path.home())
             write.assert_not_called()
 
 

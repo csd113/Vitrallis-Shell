@@ -127,8 +127,9 @@ The read-only PocketHome importer exposes existing OS applications while suppres
 verified stock equivalents of the three native utilities. It is a boundary with the independent device
 image, not the Vitrallis package API. `--app-config` and `--assets` allow explicit
 inspection of an exported device menu; the desktop default discovers manifest
-packages without loading PocketHome configuration. The original desktop remains the
-supervised device session's recovery destination.
+packages without loading PocketHome configuration. Installation replaces the
+PocketHome launch command within Awesome; PocketHome does not run behind
+Vitrallis. Uninstall restores the original command, preserving surrounding edits.
 
 Build and install the shell using [device setup](devices/pocketchip.md).
 `integrations/pocketchip/install-session.py` and its adjacent `vitrallis-session.py` are the

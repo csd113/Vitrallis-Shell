@@ -100,14 +100,14 @@ class Uninstaller(unittest.TestCase):
     def test_managed_startup_removes_only_exact_block(self):
         path = self.home / u.AWESOME
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text('before\n' + u.STARTUP + '\nafter user edits\n')
+        path.write_text('before\n' + u.startup_block('awful.spawn.with_shell("pocket-home")') + '\nafter user edits\n')
         self.remove()
-        self.assertEqual(path.read_text(), 'before\n\nafter user edits\n')
+        self.assertEqual(path.read_text(), 'before\nawful.spawn.with_shell("pocket-home")\nafter user edits\n')
 
     def test_edited_startup_and_menu_entries_are_preserved(self):
         path = self.home / u.AWESOME
         path.parent.mkdir(parents=True, exist_ok=True)
-        edited = u.STARTUP.replace('start_new(5', 'start_new(9')
+        edited = u.startup_block('awful.spawn.with_shell("pocket-home")').replace('spawn({', 'spawn_changed({')
         path.write_text(edited)
         config = json.loads(self.config.read_bytes())
         config['pages'][0]['items'][-1]['custom'] = 1
@@ -168,7 +168,7 @@ class Uninstaller(unittest.TestCase):
     def test_write_failure_rolls_back_owned_files_and_startup_block(self):
         owned_config = self.home / u.AWESOME
         owned_config.parent.mkdir(parents=True, exist_ok=True)
-        owned_config.write_text('before\n' + u.STARTUP + '\nafter\n')
+        owned_config.write_text('before\n' + u.startup_block('awful.spawn.with_shell("pocket-home")') + '\nafter\n')
         before = owned_config.read_bytes()
         real = u.atomic
         failed = []
@@ -247,7 +247,7 @@ class Uninstaller(unittest.TestCase):
     def test_recovery_preserves_later_edits_and_leaves_journal(self):
         owned_config = self.home / u.AWESOME
         owned_config.parent.mkdir(parents=True, exist_ok=True)
-        owned_config.write_text('before\n' + u.STARTUP + '\nafter\n')
+        owned_config.write_text('before\n' + u.startup_block('awful.spawn.with_shell("pocket-home")') + '\nafter\n')
         real = u.atomic
         def fail(path, *args):
             if path == owned_config:

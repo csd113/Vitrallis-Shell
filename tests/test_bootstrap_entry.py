@@ -187,20 +187,45 @@ class FirstLaunch(unittest.TestCase):
             b.finish_install(Path('/verified'))
         load.assert_not_called()
         self.assertIn('installed successfully', output.getvalue())
-        self.assertIn('~/.local/share/vitrallis/launch', output.getvalue())
+        self.assertIn('Reboot PocketCHIP to activate Vitrallis in place of PocketHome', output.getvalue())
+
+    def test_existing_pockethome_defers_launch_until_reboot(self):
+        output = io.StringIO()
+        with patch.object(b, 'desktop_available', return_value=True), \
+                patch.object(b, 'command_output', return_value='string "pockethome-active"') as query, \
+                patch.object(b, 'load_session') as load, contextlib.redirect_stdout(output):
+            b.finish_install(Path('/verified'))
+        query.assert_called_once()
+        self.assertEqual(query.call_args.args[0][0], '/usr/bin/awesome-client')
+        self.assertIn('c.name == "pocket-home"', query.call_args.args[0][1])
+        load.assert_not_called()
+        self.assertIn('Reboot PocketCHIP', output.getvalue())
+
+    def test_unrecognized_desktop_response_never_launches(self):
+        with patch.object(b, 'desktop_available', return_value=True), \
+                patch.object(b, 'command_output', return_value='error: fixture'), \
+                patch.object(b, 'load_session') as load:
+            with self.assertRaisesRegex(ValueError, 'desktop state could not be verified'):
+                b.finish_install(Path('/verified'))
+        load.assert_not_called()
 
     def test_success_waits_for_window_and_failed_start_is_reported_as_installed(self):
         session = Mock()
         session.owned_session.side_effect = [None, ('123', 'start'), ('123', 'start')]
         with patch.object(b, 'desktop_available', return_value=True), patch.object(b, 'load_session', return_value=session), \
-                patch.object(b, 'command_output') as launch, patch.object(b, 'wait_for_desktop') as wait:
+                patch.object(b, 'command_output', return_value='string "pockethome-absent"') as launch, \
+                patch.object(b, 'wait_for_desktop') as wait:
             b.finish_install(Path('/verified'))
-            launch.assert_called_once()
+            self.assertEqual(launch.call_count, 2)
+            self.assertEqual(launch.call_args_list[0].args[0][0], '/usr/bin/awesome-client')
+            self.assertIn('c.name == "pocket-home"', launch.call_args_list[0].args[0][1])
+            self.assertEqual(launch.call_args_list[1].args[0], [str(Path.home() / '.local/share/vitrallis/launch')])
             wait.assert_called_once()
             session.stop_owned.assert_not_called()
         session.owned_session.side_effect = [None, ('123', 'start'), ('123', 'start')]
         with patch.object(b, 'desktop_available', return_value=True), patch.object(b, 'load_session', return_value=session), \
-                patch.object(b, 'command_output'), patch.object(b, 'wait_for_desktop', side_effect=ValueError('timeout')):
+                patch.object(b, 'command_output', return_value='string "pockethome-absent"'), \
+                patch.object(b, 'wait_for_desktop', side_effect=ValueError('timeout')):
             with self.assertRaisesRegex(ValueError, 'Installation succeeded, but launch failed'):
                 b.finish_install(Path('/verified'))
         session.stop_owned.assert_called_once()
@@ -209,17 +234,20 @@ class FirstLaunch(unittest.TestCase):
         session = Mock()
         session.owned_session.return_value = ('123', 'start')
         with patch.object(b, 'desktop_available', return_value=True), patch.object(b, 'load_session', return_value=session), \
-                patch.object(b, 'command_output') as launch:
+                patch.object(b, 'command_output', return_value='string "pockethome-absent"') as launch:
             with self.assertRaisesRegex(ValueError, 'already started'):
                 b.finish_install(Path('/verified'))
-        launch.assert_not_called()
+        launch.assert_called_once()
+        self.assertEqual(launch.call_args.args[0][0], '/usr/bin/awesome-client')
+        self.assertIn('c.name == "pocket-home"', launch.call_args.args[0][1])
         session.stop_owned.assert_not_called()
 
     def test_changed_session_is_preserved_after_startup_failure(self):
         session = Mock()
         session.owned_session.side_effect = [None, ('123', 'start'), ('456', 'new')]
         with patch.object(b, 'desktop_available', return_value=True), patch.object(b, 'load_session', return_value=session), \
-                patch.object(b, 'command_output'), patch.object(b, 'wait_for_desktop', side_effect=ValueError('changed')):
+                patch.object(b, 'command_output', return_value='string "pockethome-absent"'), \
+                patch.object(b, 'wait_for_desktop', side_effect=ValueError('changed')):
             with self.assertRaisesRegex(ValueError, 'session changed; it was left running'):
                 b.finish_install(Path('/verified'))
         session.stop_owned.assert_not_called()

@@ -143,10 +143,20 @@ def finish_install(directory):
     launch = target / 'launch'
     print('Vitrallis installed successfully.', flush=True)
     if not desktop_available(os.environ):
-        print('To open it on your PocketCHIP, open Terminal on the device and run:\n'
-              '~/.local/share/vitrallis/launch\n'
+        print('Reboot PocketCHIP to activate Vitrallis in place of PocketHome.\n'
               'Vitrallis will start automatically at your next desktop login.', flush=True)
         return
+    query = '''for _, c in ipairs(client.get()) do
+        if c.name == "pocket-home" then return "pockethome-active" end
+    end
+    return "pockethome-absent"'''
+    desktop = command_output(['/usr/bin/awesome-client', query], os.environ).strip()
+    if desktop == 'string "pockethome-active"':
+        print('Reboot PocketCHIP to activate the new desktop launch command.\n'
+              'Vitrallis will replace PocketHome at your next login.', flush=True)
+        return
+    if desktop != 'string "pockethome-absent"':
+        raise ValueError('Installation succeeded, but the desktop state could not be verified. Reboot PocketCHIP.')
     session = load_session(directory)
     script = target / 'vitrallis-session.py'
     print('Opening Vitrallis on the PocketCHIP display...', flush=True)
@@ -173,7 +183,7 @@ def finish_install(directory):
         raise ValueError('Installation succeeded, but launch failed: {}.\n'
                          'Inspect {} and retry {} from the device Terminal.{}'.format(
                              error, target / 'session.log', launch, cleanup)) from error
-    print('Vitrallis is open. Home returns from an app; Exit Vitrallis returns to your original desktop.\n'
+    print('Vitrallis is open. Home returns from an app; Exit Vitrallis returns to Awesome.\n'
           'Vitrallis will start automatically at your next desktop login. Any GPU reboot notice above still applies.', flush=True)
 
 
@@ -332,7 +342,7 @@ def main():
         check_download_space(release, directory)
         bundle = download_release(release, directory)
         subprocess.run([sys.executable, '-I', str(directory / 'install-session.py'), str(bundle),
-                        '--expected-version', release['tag_name'][1:], '--make-default'], check=True, env=env)
+                        '--expected-version', release['tag_name'][1:]], check=True, env=env)
         finish_install(directory)
 
 
