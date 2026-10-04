@@ -19,7 +19,11 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 
 ## Installation
 
-**Vitrallis Shell 1.0.0-beta-2.** Install the complete bundle containing the shell, Terminal, Notepad,
+**[Vitrallis Shell 1.0.0 certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.0).** Release certification is
+in progress; stable release readiness has not been declared.
+The published installer has a reinstall rollback-pointer defect; see the
+[certification record](docs/release-certification-2026-10-02.md#reinstall-rollback-pointer-regression).
+Install the complete bundle containing the shell, Terminal, Notepad,
 Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
 OS/runtime requirements, the single copy-and-paste setup command and hardware
@@ -70,7 +74,7 @@ for overrides and GPU validation limits. Hardware support requires a matching ad
 size alone is not support. See the [device guide](docs/devices/pocketchip.md) for
 recorded evidence and checks still requiring hardware.
 
-Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Catalog availability and runtime dependencies belong to each publisher. Publisher-disabled packages appear as **Unavailable** with their compatibility note. Fonts do not provide full Unicode shaping; Bluetooth controls, a public Python SDK, and signed publisher packages are future work. See the [trust model](docs/security.md) and [design roadmap](docs/design.md).
+Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Catalog availability and runtime dependencies belong to each publisher. Publisher-disabled packages appear as **Unavailable** with their compatibility note. Fonts do not provide full Unicode shaping; Bluetooth hardware qualification, a public Python SDK, and signed publisher packages are future work. See the [trust model](docs/security.md) and [design roadmap](docs/design.md).
 
 ## Documentation and development
 
