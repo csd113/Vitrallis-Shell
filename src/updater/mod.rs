@@ -147,12 +147,20 @@ impl Updater {
             self.relaunch_requested = true;
         }
     }
-    pub fn relaunch_if_requested(&mut self, blocked: bool) -> bool {
-        self.relaunch_with(blocked, Relaunch::execute)
+    pub const fn relaunch_pending(&self) -> bool {
+        self.relaunch_requested
+    }
+    pub fn relaunch_if_requested(
+        &mut self,
+        blocked: bool,
+        prepare: impl FnOnce() -> Result<bool, String>,
+    ) -> bool {
+        self.relaunch_with(blocked, prepare, Relaunch::execute)
     }
     fn relaunch_with(
         &mut self,
         blocked: bool,
+        prepare: impl FnOnce() -> Result<bool, String>,
         execute: impl FnOnce(&Relaunch) -> Result<(), String>,
     ) -> bool {
         if !std::mem::take(&mut self.relaunch_requested) {
@@ -165,7 +173,17 @@ impl Updater {
         let result = if blocked {
             Err("Close running apps and wait for operations to finish, then select Relaunch Shell again".into())
         } else {
-            execute(relaunch)
+            match prepare() {
+                Ok(true) => execute(relaunch),
+                Ok(false) => {
+                    self.relaunch_requested = true;
+                    let message = "Finishing system operations before relaunch...";
+                    let changed = self.relaunch_error.as_deref() != Some(message);
+                    self.relaunch_error = Some(message.into());
+                    return changed;
+                }
+                Err(error) => Err(error),
+            }
         };
         self.relaunch_error = result.err();
         true

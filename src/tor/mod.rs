@@ -185,14 +185,28 @@ impl Service {
             |s| s.clone(),
         )
     }
+    /// Stop the service and reap its supervisor before replacing the Shell.
+    /// Run off the UI thread because shutdown waits for child cleanup.
+    pub fn shutdown(mut self) -> Result<(), String> {
+        self.stop()
+    }
+    fn stop(&mut self) -> Result<(), String> {
+        let sent = self.tx.take().map_or(Ok(()), |tx| {
+            tx.send(worker::Event::Control(Control::Shutdown))
+                .map_err(|_| "Tor worker stopped before shutdown".to_owned())
+        });
+        let joined = self.handle.take().map_or(Ok(()), |handle| {
+            handle
+                .join()
+                .map_err(|_| "Tor worker stopped unexpectedly; relaunch refused".to_owned())
+        });
+        joined.and(sent)
+    }
 }
 impl Drop for Service {
     fn drop(&mut self) {
-        if let Some(tx) = self.tx.take() {
-            let _ = tx.send(worker::Event::Control(Control::Shutdown));
-        }
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
+        if let Err(error) = self.stop() {
+            eprintln!("level=error event=tor_shutdown_failed message={error:?}");
         }
     }
 }

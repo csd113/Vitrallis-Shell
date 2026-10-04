@@ -1002,23 +1002,12 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
         )?;
     }
     if let State::Downloading { received, total } = settings.updater.state {
-        let track = Rect {
-            x: layout.title.x,
-            y: geometry.controls[2].y - 24,
-            w: layout.title.w,
-            h: 12,
-        };
-        let width = u64::try_from(track.w)
-            .map_err(|_| "update progress width")?
-            .saturating_mul(received.min(total))
-            .checked_div(total)
-            .unwrap_or(0);
-        progress(
-            canvas,
-            track,
-            i32::try_from(width).map_err(|_| "update progress width")?,
-            false,
-        )?;
+        update_progress(canvas, layout, &geometry, received, total)?;
+    }
+    // Once relaunch is committed, input is held while service children finish.
+    // Do not advertise Back or another relaunch action during that short wait.
+    if settings.updater.relaunch_pending() {
+        return Ok(());
     }
     let action = match confirming {
         Some(UpdateConfirmation::Install) => "Confirm Install",
@@ -1057,6 +1046,32 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
         )?;
     }
     panel_footer(canvas, layout, settings)
+}
+
+fn update_progress(
+    canvas: &mut Screen,
+    layout: &Layout,
+    geometry: &PanelLayout,
+    received: u64,
+    total: u64,
+) -> Result<(), String> {
+    let track = Rect {
+        x: layout.title.x,
+        y: geometry.controls[2].y - 24,
+        w: layout.title.w,
+        h: 12,
+    };
+    let width = u64::try_from(track.w)
+        .map_err(|_| "update progress width")?
+        .saturating_mul(received.min(total))
+        .checked_div(total)
+        .unwrap_or(0);
+    progress(
+        canvas,
+        track,
+        i32::try_from(width).map_err(|_| "update progress width")?,
+        false,
+    )
 }
 
 fn update_lines(message: &str, capacity: usize) -> Vec<String> {

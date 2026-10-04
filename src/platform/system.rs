@@ -110,6 +110,7 @@ pub struct Worker {
     controlled: [Option<Instant>; 6],
     pub pending: bool,
     received: Instant,
+    threads: [thread::JoinHandle<()>; 2],
 }
 impl Worker {
     pub fn start(mut backend: impl System + Clone) -> Result<Self, String> {
@@ -118,7 +119,7 @@ impl Worker {
         let (stop, stopped) = mpsc::channel();
         let mut controls = backend.clone();
         let control_results = results.clone();
-        thread::Builder::new()
+        let control = thread::Builder::new()
             .name("system-control".into())
             .spawn(move || {
                 while let Ok((command, mut status)) = requests.recv() {
@@ -136,7 +137,7 @@ impl Worker {
                 }
             })
             .map_err(|error| format!("control worker: {error}"))?;
-        thread::Builder::new()
+        let status = thread::Builder::new()
             .name("system-status".into())
             .spawn(move || {
                 backend.initialize();
@@ -159,8 +160,20 @@ impl Worker {
                         return;
                     }
                 }
-            })
-            .map_err(|error| format!("status worker: {error}"))?;
+            });
+        let status = match status {
+            Ok(status) => status,
+            Err(error) => {
+                drop(commands);
+                drop(updates);
+                if control.join().is_err() {
+                    return Err(format!(
+                        "status worker: {error}; control worker stopped unexpectedly"
+                    ));
+                }
+                return Err(format!("status worker: {error}"));
+            }
+        };
         Ok(Self {
             commands,
             updates,
@@ -169,7 +182,33 @@ impl Worker {
             controlled: [None; 6],
             pending: false,
             received: Instant::now(),
+            threads: [control, status],
         })
+    }
+    /// Stop both workers and wait for their subprocesses to be reaped. Call off
+    /// the UI thread before `exec`, which would otherwise discard their owners.
+    pub fn shutdown(self) -> Result<(), String> {
+        let Self {
+            commands,
+            updates,
+            _stop: stop,
+            threads,
+            ..
+        } = self;
+        // Disconnect before joining: a worker may be blocked sending a result
+        // to the bounded queue after the UI stopped polling it.
+        drop(commands);
+        drop(updates);
+        drop(stop);
+        let mut failed = false;
+        for handle in threads {
+            failed |= handle.join().is_err();
+        }
+        if failed {
+            Err("System worker stopped unexpectedly; relaunch refused".into())
+        } else {
+            Ok(())
+        }
     }
     pub fn submit(&mut self, command: Control) -> Result<(), String> {
         if self.pending {
