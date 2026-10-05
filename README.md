@@ -19,14 +19,12 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 
 ## Installation
 
-**[Vitrallis Shell 1.0.1 certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.1).** Release certification is
-in progress; stable release readiness has not been declared.
-This release preserves the previous build when reinstalling; see the
-[certification record](docs/release-certification-2026-10-02.md#authorized-101-recovery-correction).
-Later certification found that Restore/relaunch can leave a background system
-query unreaped, and cancelling setup can print a Python traceback. The fixes in
-[PR #8](https://github.com/csd113/Vitrallis-Shell/pull/8) pass prepared-build tests
-but are not included in published 1.0.1.
+**Vitrallis Shell 1.0.3 certification prerelease is being prepared.** Release
+certification is in progress; stable release readiness has not been declared.
+This candidate restores keyboard focus after background apps exit and updates
+the Rust requirement and dependencies. Public 1.0.2 retains the input defect.
+See the
+[certification record](docs/release-certification-2026-10-02.md#app-exit-keyboard-focus-correction).
 Install the complete bundle containing the shell, Terminal, Notepad,
 Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
@@ -84,7 +82,7 @@ Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Cata
 
 Start with the [documentation index](docs/README.md), [device guide](docs/devices/pocketchip.md), or [app developer guide](docs/app-development.md).
 
-Host development uses the pinned Rust 1.99.0 toolchain (minimum 1.91), SDL2 development libraries, and pkg-config. CI also validates latest stable; release pins advance after the complete validation gates pass, including ARMv7 cross-builds. See [compiler policy](docs/dependencies.md).
+Host development requires the pinned Rust 1.99.0 toolchain, SDL2 development libraries, and pkg-config. CI also validates latest stable; release pins advance after the complete validation gates pass, including ARMv7 cross-builds. See [compiler policy](docs/dependencies.md).
 
 ```sh
 cargo build --workspace --locked

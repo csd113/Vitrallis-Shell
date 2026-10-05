@@ -1,14 +1,54 @@
 # Release validation and assets
 
-## 1.0.2 — authorized candidate in preparation
+## 1.0.3 — authorized certification prerelease
 
-The owner authorized Shell 1.0.2 on 2026-10-04. This candidate joins owned
-background system queries and Tor work before relaunching, keeps the waiting
-view responsive, and hides inactive actions until preparation finishes. Setup
-cancellation exits with a short recovery message instead of a Python traceback.
-The regression tests and prepared production device checks pass. Exact 1.0.2
-validation, public installation and final physical acceptance are pending;
-release readiness is not declared.
+The owner approved 1.0.3 and subsequent prerelease version changes until the
+actual full release. This candidate repairs actual X keyboard focus after a
+background app exits, including exits observed after foreground ownership has
+already cleared. Another focused app keeps its focus.
+
+At the owner's request, development, the declared minimum and release builds
+use Rust 1.99.0. Current dependency requirements and the workspace lockfile are
+refreshed; libc advances to 0.2.190, lazy_static to 1.5.1, and the separately
+bundled Arti advances to 2.7.0 with matching consumers and verified notices.
+Current direct crates are at their latest stable releases. Three older
+transitive versions remain required by upstream SDL2/PNG; see the
+[dependency review](dependencies.md#upstream-transitive-constraints).
+
+Full canonical validation passes on macOS and Linux, including strict Clippy,
+380/383 Rust tests, 181 Python cases with platform exclusions, renderer goldens,
+SDL smokes and documentation checks. The real Awesome/X11 focus regression
+passes with the refreshed dependencies. ARMv7 build and five-executable packaging
+pass. Exact tagged assets, clean public installation and final owner cold-power
+acceptance of this complete candidate remain to be recorded.
+The process scanner also handles Linux ESRCH when a process disappears during
+inspection; permission and other I/O errors still fail closed. Its regression
+and renewed canonical validation pass. Prepared device install/reinstall retains
+all 93 saved entries and eight settings, and all 15 Tor cases pass with real
+Arti 2.7.0 bootstrap and cleanup. Public 1.0.2 and earlier release bytes remain immutable.
+
+## 1.0.2 — certification prerelease
+
+The owner authorized Shell 1.0.2 on 2026-10-04. The
+[certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.2)
+is published from tagged source `6f0a155b53d84c68423e2240f57127e463cf0980`.
+It joins owned background system queries and Tor work before relaunching, keeps
+the waiting view responsive, and hides inactive actions until preparation
+finishes. Setup cancellation exits with a short recovery message instead of a
+Python traceback.
+
+Mac/Linux canonical validation and all six exact-source review checks pass.
+The exact tagged workflow builds both platforms, and all 19 assets verify against
+GitHub sizes/digests and tagged helper/legal bytes. Prepared installation and
+repeat installation of the exact ARM bundle pass on PocketCHIP, preserving all
+93 saved entries and eight settings. Mali400 graphics self-test and three utility
+hardware smokes pass with VSync and no fallback; the 480×272 launcher owns actual
+keyboard focus, with no PocketHome or owned zombie. Fully clean public README
+installation, completed repeat execution, saved-config checks and software reboot
+pass. A later Python app-exit check leaves actual X keyboard focus unset while
+Settings is visible. The prepared correction passes canonical validation and a
+real-device regression, but is unpublished. Final physical acceptance is postponed
+until the correction is released; stable readiness is not declared.
 
 ## 1.0.1 — certification prerelease
 
@@ -337,10 +377,10 @@ older standalone layouts remain outside the managed updater contract. See the
 The tag workflow builds on Debian 12 with Rust 1.99.0 and runs
 `sh scripts/validate.sh`: formatting, locked workspace check, strict Clippy,
 complete Rust/Python tests, native release build, SDL smoke checks and
-repository/documentation validation. Separate host CI also validates Rust 1.91.0 and latest stable.
+repository/documentation validation. Separate host CI also validates the declared Rust 1.99.0 minimum and latest stable.
 
 Packaging checks each executable's target and version: the four Vitrallis binaries
-match the workspace version; Arti independently reports 2.6.0. ARMv7
+match the workspace version; Arti independently reports 2.7.0. ARMv7
 cross-builds are checked under QEMU with the Cortex-A8 CPU model, including
 version probes, a 480×272 shell frame and native-app smokes. Both architecture
 bundles require glibc 2.36+ and SDL2 2.26.5+.

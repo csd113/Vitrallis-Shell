@@ -146,7 +146,7 @@ def verify_versions(generation, expected=None):
             output.seek(0)
             text = output.read(4097).decode('ascii').strip()
         if name == 'arti':
-            if text.splitlines()[:1] != ['Arti 2.6.0']:
+            if text.splitlines()[:1] != ['Arti 2.7.0']:
                 raise ValueError('Bundled executable version mismatch: arti')
             continue
         match = re.fullmatch(re.escape(name) + r' ([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)', text)

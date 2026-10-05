@@ -1,6 +1,6 @@
 # Licensing and third-party notices
 
-Audit date: **2026-10-02**. Project-owned code, documentation and original artwork
+Audit refreshed: **2026-10-04**. Project-owned code, documentation and original artwork
 are offered under the root [MIT License](LICENSE), at the owner's direction.
 This grants no rights to third-party material outside the project-owned artwork described below.
 Copyright remains with the respective contributors; no assignment is implied.
@@ -28,7 +28,7 @@ text or a documented source offer before that binary is cleared.
 - SDL2 is dynamically supplied by the OS through pkg-config, not built with the
   bundled SDL feature. The sdl2-sys crate also carries SDL's zlib terms. Preserve
   those notices if redistributing its sources or a runtime library.
-- Arti **2.6.0** is a separate bundled executable, built by
+- Arti **2.7.0** is a separate bundled executable, built by
   `scripts/build-arti.sh` with the pinned published feature set. Its metadata
   declares MIT OR Apache-2.0; the MIT text at the exact source revision is
   included, because the registry package omits the top-level license texts.
@@ -43,6 +43,11 @@ text or a documented source offer before that binary is cleared.
   bundles XZ Utils liblzma (0BSD); their notices are preserved. A complete
   binary notice set still requires resolving any missing text for a crate that is
   actually linked.
+  The 1.0.3 refresh verifies all 426 selected ARMv7 normal/build packages and
+  records 106 new or updated inventory rows. The Tor-family MIT text is verified
+  at registry source `ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087`; derive-deftly's
+  MIT text is verified at `4ef993f28240288732ff5b4e0a2803b811e7a30d`.
+  Historical inventory rows and notices remain for retained older artifacts.
   The selected ARMv7 normal/build dependency graph includes `priority-queue`
   2.7.0; its MPL text and immutable upstream source location are retained in the
   collected notices. The 2026-10-02 reconciliation also adds missing cookie-factory

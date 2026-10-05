@@ -527,7 +527,7 @@ end
         generation.mkdir()
         for name in m.BINARIES:
             path = generation / name
-            version = '2.6.0' if name == 'arti' else '0.1.0-test'
+            version = '2.7.0' if name == 'arti' else '0.1.0-test'
             path.write_text('#!/bin/sh\nprintf "' + ('Arti' if name == 'arti' else name) + ' ' + version + '\\n"\n')
             path.chmod(0o755)
         m.verify_versions(generation)

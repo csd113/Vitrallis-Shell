@@ -106,14 +106,26 @@ fn linux(entry: &Path) -> Result<Vec<Identity>, String> {
                 start: start.into(),
             }))
         })();
-        match result {
-            Ok(Some(p)) => found.push(p),
-            Ok(None) => (),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
-            Err(e) => return Err(e.to_string()),
+        if let Some(identity) = process_identity_result(result)? {
+            found.push(identity);
         }
     }
     Ok(found)
+}
+#[cfg(target_os = "linux")]
+fn process_identity_result(
+    result: std::io::Result<Option<Identity>>,
+) -> Result<Option<Identity>, String> {
+    match result {
+        // procfs can report ESRCH instead of ENOENT while a process exits.
+        Err(error)
+            if error.kind() == std::io::ErrorKind::NotFound
+                || error.raw_os_error() == Some(libc::ESRCH) =>
+        {
+            Ok(None)
+        }
+        result => result.map_err(|error| error.to_string()),
+    }
 }
 #[cfg(not(target_os = "linux"))]
 fn portable(entry: &Path) -> Result<Vec<Identity>, String> {
@@ -188,6 +200,30 @@ fn script_argument<'a>(args: &[&'a str]) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn disappeared_processes_do_not_hide_other_scan_errors() -> Result<(), String> {
+        let identity = Identity {
+            pid: 42,
+            start: "verified".into(),
+        };
+        assert_eq!(
+            process_identity_result(Ok(Some(identity.clone())))?,
+            Some(identity)
+        );
+        for code in [libc::ENOENT, libc::ESRCH] {
+            assert_eq!(
+                process_identity_result(Err(std::io::Error::from_raw_os_error(code)))?,
+                None
+            );
+        }
+        for code in [libc::EACCES, libc::EPERM, libc::EIO] {
+            let error = std::io::Error::from_raw_os_error(code);
+            let message = error.to_string();
+            assert_eq!(process_identity_result(Err(error)), Err(message));
+        }
+        Ok(())
+    }
     #[test]
     fn identity_and_timeout_are_conservative() {
         struct Stuck;

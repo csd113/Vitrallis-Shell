@@ -21,7 +21,7 @@ SPEC.loader.exec_module(TOR)
 FAKE = '''#!/usr/bin/env python3
 import os, signal, socket, sys, time
 if sys.argv[1:] == ['--version']:
-    print('Arti 2.6.0'); sys.exit()
+    print('Arti 2.7.0'); sys.exit()
 open(os.path.join(os.path.dirname(sys.argv[-1]), 'fake.pid'), 'w').write(str(os.getpid()))
 s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(('127.0.0.1', 9150)); s.listen(16)
 print('Bootstrapping: 45%', flush=True)

@@ -57,9 +57,9 @@ def binary():
         if not os.path.isfile(candidate):
             continue
         result = subprocess.run([candidate, '--version'], capture_output=True, timeout=5, check=True)
-        if result.stdout.splitlines()[:1] == [b'Arti 2.6.0']:
+        if result.stdout.splitlines()[:1] == [b'Arti 2.7.0']:
             return candidate
-    raise ValueError('Arti missing; complete beta4 in Settings > Device > Updates')
+    raise ValueError('Arti missing; reinstall Vitrallis or check Software Updates')
 
 
 def death_signal(parent):

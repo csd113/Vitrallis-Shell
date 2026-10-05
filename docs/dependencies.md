@@ -1,17 +1,18 @@
 # Rust toolchain and dependency policy
 
-The workspace uses edition 2024, Cargo resolver 3 and `rust-version = "1.91"`.
+The workspace uses edition 2024, Cargo resolver 3 and `rust-version = "1.99"`.
 `rust-toolchain.toml` pins Rust **1.99.0** with rustfmt and Clippy. CI also checks
-1.91.0 to verify the declared minimum and latest `stable` to catch future changes.
+1.99.0 to verify the declared minimum and latest `stable` to catch future changes.
 The MSRV is a compatibility floor, not the release compiler. After each stable
 release, install its exact version with rustup, update the host/CI/container pins
 together, and pass canonical host, Linux container and ARMv7 validation before
 advancing the release compiler. Do not change the global rustup default or add
 background update jobs. Workspace packages inherit `version`,
-`edition`, `rust-version` and shared dependencies. The Rust 1.99 upgrade preserves the Vitrallis release version, edition,
-MSRV and device ABI; dependency versions remain unchanged.
+`edition`, `rust-version` and shared dependencies. The 1.0.3 prerelease raises
+the minimum compiler to Rust 1.99 and refreshes dependencies at the owner's
+request; edition and device ABI remain unchanged.
 
-## Dependency review: 2026-09-19
+## Dependency review: 2026-10-04
 
 All ten direct registry dependencies use their newest non-yanked stable release.
 The manifest records those versions as minimum compatible requirements; the
@@ -21,7 +22,7 @@ lockfile fixes the exact resolved graph for release and CI builds.
 | --- | --- | --- |
 | sdl2 | 0.38.0 | `use-pkgconfig`; no bundled SDL build |
 | font8x8 | 0.3.1 | Unicode tables only; defaults disabled |
-| libc | 0.2.189 | POSIX boundary in the shared native crate and Terminal |
+| libc | 0.2.190 | POSIX boundary in the shared native crate and Terminal |
 | vt100 | 0.16.2 | ANSI/VT terminal state |
 | serde_json | 1.0.151 | Bounded JSON input |
 | serde | 1.0.229 | Recursive duplicate-key-rejecting JSON visitor |
@@ -76,8 +77,8 @@ to force incompatible transitive upgrades.
 Compression retains the pure Rust miniz backend. `zlib-rs` 0.6.8 appears in the
 lockfile through an optional PNG/flate2 feature, but that feature is not enabled
 by this workspace. There is no new native compression library requirement.
-The refreshed lockfile passed `cargo audit` with **1,251** loaded RustSec
-advisories and no reported advisories or unmaintained-crate warnings. This does
+The refreshed lockfile passed `cargo audit` with no reported advisories or
+unmaintained-crate warnings. This does
 not audit native OS libraries or establish trust in remote applications.
 
 Reproduce the review after manifest changes:
@@ -106,8 +107,17 @@ dependency pins. This refresh does not upgrade global or device packages.
 CI's only external action, [actions/checkout 7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1),
 was verified as the latest release and remains pinned to its full commit SHA.
 Repository permissions and disabled credential persistence are unchanged. The
-release container remains Debian 12, now with Rust 1.99.0. The Debian glibc
+release container is `rust:1.99.0-bookworm`. The Debian glibc
 2.36 / SDL2 2.26.5 and ARMv7 hard-float contracts remain unchanged.
+
+The workspace refresh advances libc to 0.2.190 and lazy_static to 1.5.1;
+all other direct requirements already match the newest stable releases. Arti
+advances from 2.6.0 to **2.7.0**, the latest published stable release, and remains
+a separate executable built with its publisher's locked dependency graph and
+the existing feature set. Current installation, update, packaging and Tor
+consumers require that exact Arti version. The license inventory includes the
+new graph and byte-verified upstream notices; older retained rows describe
+historical artifacts, not additional dependencies of the new build.
 
 ## Application dependency boundaries
 

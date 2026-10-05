@@ -233,6 +233,11 @@ limitations under the License.
 ========================================================================
 Text ID: 23f18e03dc49df91
 Sources:
+thiserror-impl 2.0.20/LICENSE-MIT
+thiserror 2.0.20/LICENSE-MIT
+syn 3.0.4/LICENSE-MIT
+async-trait 0.1.92/LICENSE-MIT
+lazy_static 1.5.1/LICENSE-MIT
 adler2 2.0.1/LICENSE-MIT
 anyhow 1.0.104/LICENSE-MIT
 async-channel 1.9.0/LICENSE-MIT
@@ -337,6 +342,8 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: a9040321c3712d8f
 Sources:
+keccak 0.2.2/LICENSE-APACHE
+aes 0.9.3/LICENSE-APACHE
 aes 0.9.2/LICENSE-APACHE
 base16ct 0.2.0/LICENSE-APACHE
 base64ct 1.8.3/LICENSE-APACHE
@@ -601,6 +608,7 @@ limitations under the License.
 ========================================================================
 Text ID: 25f77efa393854f7
 Sources:
+aes 0.9.3/LICENSE-MIT
 aes 0.9.2/LICENSE-MIT
 ========================================================================
 Copyright (c) 2018-2024 The RustCrypto Project Developers
@@ -999,6 +1007,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: c6596eb7be8581c1
 Sources:
+crc32fast 1.5.1/LICENSE-APACHE
+clap_builder 4.6.6/LICENSE-APACHE
+clap 4.6.6/LICENSE-APACHE
 anstream 1.0.0/LICENSE-APACHE
 anstyle 1.0.14/LICENSE-APACHE
 anstyle-parse 1.0.0/LICENSE-APACHE
@@ -1243,6 +1254,8 @@ toml_writer 1.1.2+spec-1.1.0/LICENSE-APACHE
 ========================================================================
 Text ID: 6efb0476a1cc0850
 Sources:
+clap_builder 4.6.6/LICENSE-MIT
+clap 4.6.6/LICENSE-MIT
 anstream 1.0.0/LICENSE-MIT
 anstyle 1.0.14/LICENSE-MIT
 anstyle-parse 1.0.0/LICENSE-MIT
@@ -1292,6 +1305,11 @@ SOFTWARE.
 ========================================================================
 Text ID: 62c7a1e35f564068
 Sources:
+thiserror-impl 2.0.20/LICENSE-APACHE
+thiserror 2.0.20/LICENSE-APACHE
+syn 3.0.4/LICENSE-APACHE
+async-trait 0.1.92/LICENSE-APACHE
+libc 0.2.190/LICENSE-APACHE
 anyhow 1.0.104/LICENSE-APACHE
 async-trait 0.1.91/LICENSE-APACHE
 dyn-clone 1.0.20/LICENSE-APACHE
@@ -1513,6 +1531,21 @@ END OF TERMS AND CONDITIONS
 ========================================================================
 Text ID: a60eea8175145316
 Sources:
+smallvec 1.16.0/LICENSE-APACHE
+serde_with_macros 3.22.0/LICENSE-APACHE
+serde_with 3.22.0/LICENSE-APACHE
+rustls 0.23.45/LICENSE-APACHE
+regex-automata 0.4.18/LICENSE-APACHE
+num-integer 0.1.47/LICENSE-APACHE
+log 0.4.34/LICENSE-APACHE
+liblzma-sys 0.4.8/LICENSE-APACHE
+liblzma 0.4.8/LICENSE-APACHE
+indexmap 2.14.1/LICENSE-APACHE
+find-msvc-tools 0.1.11/LICENSE-APACHE
+either 1.18.0/LICENSE-APACHE
+cc 1.4.4/LICENSE-APACHE
+bstr 1.13.1/LICENSE-APACHE
+lazy_static 1.5.1/LICENSE-APACHE
 arbitrary 1.4.2/LICENSE-APACHE
 arrayvec 0.7.8/LICENSE-APACHE
 asn1-rs 0.7.2/LICENSE-APACHE
@@ -2840,6 +2873,9 @@ SOFTWARE.
 ========================================================================
 Text ID: 6485b8ed310d3f03
 Sources:
+regex-automata 0.4.18/LICENSE-MIT
+num-integer 0.1.47/LICENSE-MIT
+log 0.4.34/LICENSE-MIT
 bitflags 1.3.2/LICENSE-MIT
 bitflags 2.13.1/LICENSE-MIT
 bitflags 2.13.2/LICENSE-MIT
@@ -3064,6 +3100,7 @@ SOFTWARE.
 ========================================================================
 Text ID: 68653aaa727a2bfa
 Sources:
+bstr 1.13.1/COPYING
 bstr 1.13.0/COPYING
 ========================================================================
 This project is licensed under either of
@@ -3079,6 +3116,7 @@ at your option.
 ========================================================================
 Text ID: 6b7374c39a57e57f
 Sources:
+bstr 1.13.1/LICENSE-MIT
 bstr 1.13.0/LICENSE-MIT
 ========================================================================
 The MIT License (MIT)
@@ -3306,6 +3344,8 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 378f5840b258e277
 Sources:
+find-msvc-tools 0.1.11/LICENSE-MIT
+cc 1.4.4/LICENSE-MIT
 cc 1.4.0/LICENSE-MIT
 cfg-if 1.0.4/LICENSE-MIT
 cfg-if 1.0.5/LICENSE-MIT
@@ -4251,6 +4291,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 61d383b05b87d78f
 Sources:
+crc32fast 1.5.1/LICENSE-MIT
 crc32fast 1.5.0/LICENSE-MIT
 crc32fast 1.5.2/LICENSE-MIT
 ========================================================================
@@ -5720,6 +5761,8 @@ SOFTWARE.
 ========================================================================
 Text ID: 8ca14a71ccb997fc
 Sources:
+derive-deftly-macros 1.12.0/LICENCE at 4ef993f28240288732ff5b4e0a2803b811e7a30d
+derive-deftly 1.12.0/LICENCE at 4ef993f28240288732ff5b4e0a2803b811e7a30d
 derive-deftly 1.11.5/LICENCE
 ========================================================================
 Copyright (C) 2022 onwards, Ian Jackson, Tor Project Inc, and contributors
@@ -6818,6 +6861,9 @@ SOFTWARE.
 ========================================================================
 Text ID: 7576269ea71f767b
 Sources:
+serde_with_macros 3.22.0/LICENSE-MIT
+serde_with 3.22.0/LICENSE-MIT
+either 1.18.0/LICENSE-MIT
 either 1.17.0/LICENSE-MIT
 itertools 0.14.0/LICENSE-MIT
 itertools 0.15.0/LICENSE-MIT
@@ -7938,6 +7984,15 @@ SOFTWARE.
 ========================================================================
 Text ID: 275c491d6d116055
 Sources:
+futures-util 0.3.34/LICENSE-APACHE
+futures-task 0.3.34/LICENSE-APACHE
+futures-sink 0.3.34/LICENSE-APACHE
+futures-macro 0.3.34/LICENSE-APACHE
+futures-io 0.3.34/LICENSE-APACHE
+futures-executor 0.3.34/LICENSE-APACHE
+futures-core 0.3.34/LICENSE-APACHE
+futures-channel 0.3.34/LICENSE-APACHE
+futures 0.3.34/LICENSE-APACHE
 futures 0.3.33/LICENSE-APACHE
 futures-channel 0.3.33/LICENSE-APACHE
 futures-core 0.3.33/LICENSE-APACHE
@@ -8155,6 +8210,15 @@ limitations under the License.
 ========================================================================
 Text ID: 6652c868f35dfe5e
 Sources:
+futures-util 0.3.34/LICENSE-MIT
+futures-task 0.3.34/LICENSE-MIT
+futures-sink 0.3.34/LICENSE-MIT
+futures-macro 0.3.34/LICENSE-MIT
+futures-io 0.3.34/LICENSE-MIT
+futures-executor 0.3.34/LICENSE-MIT
+futures-core 0.3.34/LICENSE-MIT
+futures-channel 0.3.34/LICENSE-MIT
+futures 0.3.34/LICENSE-MIT
 futures 0.3.33/LICENSE-MIT
 futures-channel 0.3.33/LICENSE-MIT
 futures-core 0.3.33/LICENSE-MIT
@@ -10437,6 +10501,20 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: f367c1b8e1aa2624
 Sources:
+zerovec-derive 0.11.6/LICENSE
+zerovec 0.11.8/LICENSE
+zerotrie 0.2.5/LICENSE
+writeable 0.6.4/LICENSE
+tinystr 0.8.4/LICENSE
+potential_utf 0.1.6/LICENSE
+litemap 0.8.3/LICENSE
+icu_provider 2.3.1/LICENSE
+icu_properties_data 2.3.0/LICENSE
+icu_properties 2.3.0/LICENSE
+icu_normalizer_data 2.3.0/LICENSE
+icu_normalizer 2.3.0/LICENSE
+icu_locale_core 2.3.0/LICENSE
+icu_collections 2.3.0/LICENSE
 icu_collections 2.2.0/LICENSE
 icu_locale_core 2.2.0/LICENSE
 icu_normalizer 2.2.0/LICENSE
@@ -10600,6 +10678,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: ecc269ef87fd38a1
 Sources:
+indexmap 2.14.1/LICENSE-MIT
 indexmap 1.9.3/LICENSE-MIT
 indexmap 2.14.0/LICENSE-MIT
 indexmap 2.14.2/LICENSE-MIT
@@ -10634,6 +10713,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 7f78b31de4e7a3e2
 Sources:
+inotify 0.11.5/LICENSE
 inotify 0.11.4/LICENSE
 ========================================================================
 Copyright (c) Hanno Braun and contributors
@@ -11331,6 +11411,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 123a331b5dbf04c3
 Sources:
+libc 0.2.190/LICENSE-MIT
 libc 0.2.189/LICENSE-MIT
 ========================================================================
 Copyright (c) The Rust Project Developers
@@ -11363,6 +11444,8 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: a90e2da47bdc152c
 Sources:
+liblzma-sys 0.4.8/LICENSE-MIT
+liblzma 0.4.8/LICENSE-MIT
 liblzma 0.4.7/LICENSE-MIT
 liblzma-sys 0.4.7/LICENSE-MIT
 ========================================================================
@@ -11396,6 +11479,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 616a3ad264ce29b8
 Sources:
+liblzma-sys 0.4.8/xz/COPYING
 liblzma-sys 0.4.7/xz/COPYING
 ========================================================================
 
@@ -11473,6 +11557,7 @@ XZ Utils Licensing
 ========================================================================
 Text ID: 0b01625d853911cd
 Sources:
+liblzma-sys 0.4.8/xz/COPYING.0BSD
 liblzma-sys 0.4.7/xz/COPYING.0BSD
 ========================================================================
 Permission to use, copy, modify, and/or distribute this
@@ -11491,6 +11576,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ========================================================================
 Text ID: edaef632cbb643e4
 Sources:
+liblzma-sys 0.4.8/xz/COPYING.GPLv2
 liblzma-sys 0.4.7/xz/COPYING.GPLv2
 ========================================================================
                     GNU GENERAL PUBLIC LICENSE
@@ -11836,6 +11922,7 @@ Public License instead of this License.
 ========================================================================
 Text ID: 3972dc9744f6499f
 Sources:
+liblzma-sys 0.4.8/xz/COPYING.GPLv3
 liblzma-sys 0.4.7/xz/COPYING.GPLv3
 ========================================================================
                     GNU GENERAL PUBLIC LICENSE
@@ -12517,6 +12604,7 @@ Public License instead of this License.  But first, please read
 ========================================================================
 Text ID: 20e50fe7aae3e563
 Sources:
+liblzma-sys 0.4.8/xz/COPYING.LGPLv2.1
 liblzma-sys 0.4.7/xz/COPYING.LGPLv2.1
 ========================================================================
                   GNU LESSER GENERAL PUBLIC LICENSE
@@ -13025,6 +13113,7 @@ That's all there is to it!
 ========================================================================
 Text ID: 2b3fa1d23cb2ab08
 Sources:
+liblzma-sys 0.4.8/xz/build-aux/license-check.sh
 liblzma-sys 0.4.7/xz/build-aux/license-check.sh
 ========================================================================
 #!/bin/sh
@@ -17407,6 +17496,7 @@ published under these same licenses.
 ========================================================================
 Text ID: 35242e7a83f69875
 Sources:
+rand 0.8.8/LICENSE-APACHE
 rand 0.10.2/LICENSE-APACHE
 rand 0.8.7/LICENSE-APACHE
 rand 0.9.5/LICENSE-APACHE
@@ -17595,6 +17685,7 @@ END OF TERMS AND CONDITIONS
 ========================================================================
 Text ID: 209fbbe0ad52d923
 Sources:
+rand 0.8.8/LICENSE-MIT
 rand 0.10.2/LICENSE-MIT
 rand 0.8.7/LICENSE-MIT
 rand 0.9.5/LICENSE-MIT
@@ -17880,6 +17971,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 1c7745cc26c7294b
 Sources:
+rangemap 1.8.0/LICENSE-APACHE
 rangemap 1.7.1/LICENSE-APACHE
 ========================================================================
 
@@ -18078,6 +18170,7 @@ rangemap 1.7.1/LICENSE-APACHE
 ========================================================================
 Text ID: 29a4c3823ee29ee5
 Sources:
+rangemap 1.8.0/LICENSE-MIT
 rangemap 1.7.1/LICENSE-MIT
 ========================================================================
 Copyright 2019 Jeffrey Parsons
@@ -19322,6 +19415,7 @@ at your option.
 ========================================================================
 Text ID: 7cfafc877eccc46c
 Sources:
+rustls 0.23.45/LICENSE-ISC
 rustls 0.23.43/LICENSE-ISC
 ========================================================================
 ISC License (ISC)
@@ -19344,6 +19438,7 @@ THIS SOFTWARE.
 ========================================================================
 Text ID: 709e3175b4212f7b
 Sources:
+rustls 0.23.45/LICENSE-MIT
 rustls 0.23.43/LICENSE-MIT
 ========================================================================
 Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com>
@@ -19616,6 +19711,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 5b698ca13897be3a
 Sources:
+rustls-webpki 0.103.15/LICENSE
 rustls-webpki 0.103.13/LICENSE
 ========================================================================
 Except as otherwise noted, this project is licensed under the following
@@ -21904,6 +22000,7 @@ the following restrictions:
 ========================================================================
 Text ID: 0b28172679e0009b
 Sources:
+smallvec 1.16.0/LICENSE-MIT
 smallvec 1.15.2/LICENSE-MIT
 ========================================================================
 Copyright (c) 2018 The Servo Project Developers
@@ -25036,6 +25133,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 9d185ac6703c4b04
 Sources:
+zerocopy 0.8.56/LICENSE-APACHE
 zerocopy 0.8.55/LICENSE-APACHE
 ========================================================================
                                  Apache License
@@ -25245,6 +25343,7 @@ zerocopy 0.8.55/LICENSE-APACHE
 ========================================================================
 Text ID: 83c1763356e822ad
 Sources:
+zerocopy 0.8.56/LICENSE-BSD
 zerocopy 0.8.55/LICENSE-BSD
 ========================================================================
 Copyright 2019 The Fuchsia Authors.
@@ -25276,6 +25375,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ========================================================================
 Text ID: 1a2f5c12ddc934d5
 Sources:
+zerocopy 0.8.56/LICENSE-MIT
 zerocopy 0.8.55/LICENSE-MIT
 ========================================================================
 Copyright 2023 The Fuchsia Authors
@@ -25309,6 +25409,7 @@ DEALINGS IN THE SOFTWARE.
 ========================================================================
 Text ID: 8c7516d4b27b1e49
 Sources:
+keccak 0.2.2/LICENSE-MIT
 zeroize 1.9.0/LICENSE-MIT
 ========================================================================
 Copyright (c) 2018-2026 The RustCrypto Project Developers
@@ -27115,3 +27216,145 @@ Sources:
 Rust 1.99.0 REUSE.toml (blanket library/** copyright line; MIT option)
 ========================================================================
 SPDX-FileCopyrightText = "The Rust Project Developers (see https://thanks.rust-lang.org)"
+
+
+========================================================================
+Text ID: e40081d18f17b678
+Sources:
+web-time-compat 0.3.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-units 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-socksproto 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-rtmock 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-rtcompat 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-relay-selection 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-protover 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-proto 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-persist 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-netdoc 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-netdir 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-memquota-cost 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-memquota 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-log-ratelim 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-llcrypto 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-linkspec 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-keymgr 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-key-forge 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-hscrypto 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-hsclient 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-guardmgr 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-general-addr 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-error 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-dirmgr 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-dircommon 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-dirclient 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-consdiff 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-config-shared 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-config-path 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-config 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-circmgr 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-checkable 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-chanmgr 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-cert 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-cell 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-bytes 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-basic-utils 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+tor-async-utils 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+slotmap-careful 0.9.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+saturating-time 0.5.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+safelog 0.10.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+retry-error 0.14.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+oneshot-fused-workaround 0.8.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+futures-copy 0.5.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+fslock-guard 0.9.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+fs-mistrust 0.16.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+caret 0.11.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+arti-client 0.47.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+arti 2.7.0/LICENSE-MIT at ce8bc6e0998bd5a4efdf06dd62dce53c98ea1087
+========================================================================
+Copyright 2019-2025, The Tor Project, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+
+========================================================================
+Text ID: 01e6df90d71d591f
+Sources:
+liblzma-sys 0.4.8/xz/AUTHORS
+========================================================================
+
+Authors of XZ Utils
+===================
+
+    XZ Utils is developed and maintained by
+    Lasse Collin <lasse.collin@tukaani.org>.
+
+    Major parts of liblzma are based on code written by Igor Pavlov,
+    specifically the LZMA SDK <https://7-zip.org/sdk.html>. Without
+    this code, XZ Utils wouldn't exist.
+
+    The SHA-256 implementation in liblzma is based on code written by
+    Wei Dai in Crypto++ Library <https://www.cryptopp.com/>.
+
+    A few scripts have been adapted from GNU gzip. The original
+    versions were written by Jean-loup Gailly, Charles Levert, and
+    Paul Eggert. Andrew Dudman helped adapting the scripts and their
+    man pages for XZ Utils.
+
+    The initial version of the threaded .xz decompressor was written
+    by Sebastian Andrzej Siewior.
+
+    The initial version of the .lz (lzip) decoder was written
+    by Michał Górny.
+
+    Architecture-specific CRC optimizations were contributed by
+    Ilya Kurdyukov, Chenxi Mao, and Xi Ruoyao.
+
+    Other authors:
+      - Jonathan Nieder
+      - Joachim Henke
+
+    Special author: Jia Tan was a co-maintainer in 2022-2024. He and
+    the team behind him inserted a backdoor (CVE-2024-3094) into
+    XZ Utils 5.6.0 and 5.6.1 releases. He suddenly disappeared when
+    this was discovered.
+
+    Many people have contributed improvements or reported bugs.
+    Most of these people are mentioned in the file THANKS.
+
+    The translations of the command line tools and man pages have been
+    contributed by many people via the Translation Project:
+
+      - https://translationproject.org/domain/xz.html
+      - https://translationproject.org/domain/xz-man.html
+
+    The authors of the translated man pages are in the header comments
+    of the man page files. In the source package, the authors of the
+    translations are in po/*.po and po4a/*.po files.
+
+    Third-party code whose authors aren't listed here:
+
+      - GNU getopt_long() in the 'lib' directory is included for
+        platforms that don't have a usable getopt_long().
+
+      - The build system files from GNU Autoconf, GNU Automake,
+        GNU Libtool, GNU Gettext, Autoconf Archive, and related files.
+
+
+========================================================================

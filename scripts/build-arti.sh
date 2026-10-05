@@ -9,7 +9,7 @@ arti_output=${2:-target/release}
 arti_build_root=$(pwd)/target/arti-build/$arti_target
 # Rebuild even when this version is already installed: a compiler pin change
 # must not reuse an executable produced by an older toolchain.
-cargo install --locked --force --version 2.6.0 --no-default-features \
+cargo install --locked --force --version 2.7.0 --no-default-features \
     --features tokio,rustls-ring,compression,onion-service-client,harden,static-sqlite \
     --target "$arti_target" --root "$arti_build_root" arti
 mkdir -p "$arti_output"

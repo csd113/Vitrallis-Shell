@@ -1,6 +1,8 @@
 # Public-release certification — 2026-10-02
 
-**NOT RELEASE READY. Certification is in progress, continuing into 2026-10-04 UTC.** This record distinguishes
+**NOT RELEASE READY. Authorized 1.0.3 preparation is underway, including the
+app-exit focus correction and requested compiler/dependency refresh. Exact
+public-candidate installation and physical acceptance remain open.** This record distinguishes
 published beta testing from development testing and will be updated as the
 remaining gates are exercised. The owner authorized preparation of Shell 1.0.0,
 Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
@@ -8,7 +10,7 @@ Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
 The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
 `upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
 release-preparation, fresh root provisioning and startup focus corrections are
-reviewed in separate commits. The current public candidate is 1.0.1 from
+reviewed in separate commits. The previous public candidate is 1.0.1 from
 `b2ff6d48be33b0a70c373d56d1a8c2f354501db2`, ARMv7 bundle
 `1ee6c8e5e4cd7184a27ce8668f252ab40ac8a339f30ba9e96e55f746910dc0e6`.
 The earlier published 1.0.0 candidate is built from
@@ -48,6 +50,63 @@ No stable release is declared.
 and 1.0.0 is published as a certification prerelease.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
+
+## Authorized 1.0.3 and dependency refresh
+
+The owner approved Shell 1.0.3 and gave standing authorization for prerelease
+version changes until the actual full release. This supersedes the named-version
+approval constraint for the ongoing certification work. The owner also requested
+Rust 1.99 and the newest dependencies. The workspace now declares Rust 1.99 as
+its minimum; host and release pins remain exact 1.99.0, and the official Debian
+12 Rust 1.99.0 container is available. CI validates 1.99.0 and latest stable.
+
+The live crates.io review checks all ten direct dependencies and 51 locked
+registry entries. libc updates to 0.2.190 and lazy_static to 1.5.1; remaining
+direct crates are current. Three older transitive versions remain constrained
+by upstream SDL2/PNG requirements, as documented in the dependency review.
+Arti updates to latest stable 2.7.0 using its publisher's locked graph and the
+existing feature set. Every current version consumer and fixture is updated.
+The selected ARMv7 normal/build graph contains 426 packages; 106 new or updated
+license rows are reconciled against cached source texts and exact registry VCS
+revisions. Workspace RustSec audit reports no vulnerabilities or warnings.
+
+Private evidence is recorded in `v103-authorization.json`,
+`v103-registry-index-audit.json`, `v103-dependency-upgrade-final.log`,
+`v103-cargo-update.log`, `v103-cargo-audit.json`,
+`v103-dependency-license-proof.json` and
+`v103-arti-license-reconciliation.json`. Full `sh scripts/validate.sh` passes
+on macOS and Linux: formatting, locked all-target/all-feature checks, unchanged
+strict Clippy policy, 380/382 Rust tests, 181 Python cases with nine/eight platform
+exclusions, release builds, renderer goldens, SDL smokes and documentation links.
+The real Awesome/X11 suite also passes on the new build, including actual-focus
+recovery after a background exit and preservation of another app's focus. ARMv7
+build and five-executable packaging pass with Arti 2.7.0.
+
+The first Linux Python pass failed because Docker's 95 GiB filesystem was full;
+free-space preflights stopped seven tests before their intended paths. The failed
+log is retained. Clearing only Vitrallis compiler incremental caches restored
+3.9 GiB free; the complete unchanged canonical sequence and X11 suite then pass.
+No unrelated volume, image or test evidence was removed. Both Arti target graphs
+have complete retained notices: 426 ARMv7 and 427 x86-64 packages, zero unresolved
+selected rows. Exact tag assets, the renewed clean public installer and final
+physical acceptance remain open.
+
+The first exact-source push check failed the existing live process-identity test
+with Linux ESRCH (`No such process`) while scanning procfs. The two PR jobs pass
+on the same source; this is a process-exit race, not grounds to discard the
+failed check. The scanner now ignores only ENOENT/ESRCH for disappeared entries
+and preserves permission and other I/O errors. A targeted regression checks
+both outcomes; complete renewed Mac/Linux canonical validation passes with
+380/383 Rust tests. The Shell reuses the existing workspace libc crate for the
+errno constant; no registry crate is added.
+
+Prepared 1.0.3 installation and repeat installation pass on PocketCHIP with the
+new dependencies, retaining all 93 tracked entries and all eight settings. The
+480×272 launcher owns actual X focus, with no PocketHome or owned zombie. All 15
+Tor cases pass on the device, including real Arti 2.7.0 bootstrap and clean stop.
+An initial test packet omitted sandbox.py; that fixture error and its corrected
+complete rerun are retained. These prepared checks do not replace the exact
+tagged/public candidate checks.
 
 ## Authorized 1.0.1 recovery correction
 
@@ -504,6 +563,122 @@ Evidence: `official-update-activation-v2.log`,
 `relaunch-review-ci-bc84d36.json` and
 `published-v101-relaunch-disclosure-proof.json`.
 
+## Exact tagged 1.0.2 certification prerelease
+
+[PR #8](https://github.com/csd113/Vitrallis-Shell/pull/8) is merged at
+`eaa11aa52d2c6858d4c79977c3fa595ec42b7f19`. Its tree equals reviewed/tagged
+source `6f0a155b53d84c68423e2240f57127e463cf0980`, which has all six successful
+Rust 1.91.0/1.99.0/stable push/review jobs. The
+[exact tagged workflow](https://github.com/csd113/Vitrallis-Shell/actions/runs/37230948676)
+passes full validation, x86-64/ARMv7 builds, utility probes, packaging and legal
+notice checks. All 19 assets match GitHub IDs/sizes/digests; eight checksum
+sidecars, six helpers and three legal files match tagged source. Both bundles
+have five verified ELF members and no trailing data. ARM bundle SHA-256 is
+`1052c7a2c6617c6d4c1ed8131b662f6457b5289dc12eac5cc955d5f3c2d07a24`.
+
+Actual installation and repeat installation of the exact tagged ARM bytes and
+helpers pass on PocketCHIP, retaining prepared `656c0850…` as the distinct
+previous generation and all 93 tracked saved entries. All five executable hashes,
+versions, owners and 0755 modes pass; installed helpers match with 0644 modes.
+All eight original settings match. Native Shell hardware graphics self-test and
+Terminal/Notepad/Files hardware smokes pass on Mali400 at 480×272, with VSync
+and no fallback. PID 28070 owns actual X11 focus on the fullscreen launcher,
+with no PocketHome or owned zombie, before and after the graphics probes.
+
+The release is published as a certification prerelease at 2026-10-04T20:26:52Z.
+All 19 asset IDs/sizes/digests remain unchanged by publication. The normal
+uninstaller and guarded removal of owned root integration leave the core root
+and all eight owned root paths absent. Stock reboot
+`8a0973f7-1162-4296-bec1-3dcaa4a2f448` reaches PocketHome in 176.914 seconds,
+with no Vitrallis process or core integration. Anonymous device metadata verifies
+all 19 public assets. The exact unmodified README command succeeds from this
+fully clean state and on completed repeat execution, including fresh GPU/media
+provisioning and its required reboot. All five executable versions/hashes/modes,
+five installed helpers, private core directories/receipts and saved config match.
+Restoring only retained App Center/Tor state preserves the freshly installed
+public core; all 93 original saved entries still match.
+
+Public-install reboot `6427f918-0efa-4099-aff1-b1b833a57cc5` reaches Ready in
+185.640 seconds, PID 1083. Three observations at 0, 15 and 30 seconds confirm
+480×272 fullscreen, sustained actual X11 focus, no PocketHome and no owned zombie.
+Terminal accepts `pwd`, reports `/home/chip`, reaps its PTY and closes normally.
+Notepad saves the new 26-byte `public 1.0.2 smoke.txt` with mode 0600 and
+`chip:chip` ownership; the earlier note's hash is unchanged. Files enters `bin`
+and returns to `/home/chip` with Escape, then closes through its keyboard footer.
+The intervening stock session again leaves OS-saved backlight brightness zero,
+clamped to 1/10 at startup. This repeats the separately qualified stock-interval
+observation; Shell config bytes and other controls are preserved.
+
+Final navigation automation accidentally launches Bitcoin while changing pages.
+After its verified owned Python process receives normal SIGTERM, Settings remains
+visible and Awesome considers Shell selected, but actual X11 input focus is
+**zero**. Keyboard activation fails while touch still works. A 60-second readiness
+observer fails; this is a real app-exit input blocker in public 1.0.2. The remaining
+owner cold-power check is postponed until that correction is released. Stable
+readiness is not declared. The first asset observer uses a draft tag REST lookup
+which returns 404; verification through the authenticated numeric release ID
+succeeds. This is an observer correction, not a product failure.
+
+Evidence: `v102-pr-merged.json`, `v102-candidate-identity.json`,
+`v102-review-ci-ledger-head-v4.json`, `v102-tag-workflow-final.json`,
+`v102-artifacts-manifest.json`, `v102-publication-proof.json`,
+`v102-device-install-proof.json`, `v102-tagged-installed-ready-state.json`,
+`settings-persistence-v102-tagged-installed.json`,
+`v102-native-graphics-proof.json`, `v102-after-native-graphics-state.json` and
+`v102-draft-tag-lookup-failure.json`.
+
+## App-exit keyboard focus correction
+
+Public 1.0.2 reaches the focused launcher after its clean public reboot, but its
+final Python app-exit test exposes another input transition defect. A FocusGained
+transition can mark Shell ready and clear foreground process ownership before
+the completed app is reaped. The subsequent exit skips the existing guarded focus
+repair, leaving Awesome's selected Shell client different from actual X input
+focus. Touch remains usable; keyboard activation does not.
+
+The correction keeps window raising conditional on the existing active-app policy,
+but runs the existing guarded X focus repair on every app exit. The guard preserves
+another selected app. No dependency, version, installation helper or data-format
+change is made. The real Awesome/X11 regression reproduces cached Shell selection
+with actual X focus zero after Home/background return: the old build times out;
+the corrected build restores keyboard focus and preserves another app's focus.
+Existing native launch, Home, resume, close and crash-recovery cases also pass.
+
+Full `sh scripts/validate.sh` passes again on macOS/Linux: formatting, checks,
+strict Clippy, 380/382 Rust tests, 181 Python cases (nine/eight exclusions),
+release builds, renderer/SDL smokes and documentation checks. ARMv7 build and
+five-member packaging pass. Initial disposable fixture runs lack Pillow; installing
+its test runtime allows the unchanged regression to run. One packaging probe uses
+an incompatible QEMU loader and segfaults on the unchanged published Arti executable;
+using the matching system loader and Cortex-A7 model passes all five probes.
+These failed harness attempts remain retained.
+
+Prepared bundle `f9db32028969f4a18e770a7270f23231d676e564fbfb43767321d88cdd1354cb`
+is installed through the normal installer, retaining immutable public 1.0.2 as
+previous. This bundle still reports workspace version 1.0.2 and is explicitly
+**unpublished correction evidence**, not the published asset. Its five binary
+hashes/versions/owners/modes pass. On device, a real Calculator Tk window is
+launched, returned Home and backgrounded while Settings is open. X focus is then
+set to None while Awesome still selects Shell; a normal WM close of that owned
+Calculator window restores actual Shell keyboard focus automatically in 1.132
+seconds. Calculator is reaped, keyboard Enter opens Display & Sound, and Escape
+returns to the launcher. All eight settings and 93 saved entries match; no
+PocketHome or owned zombie remains. Final public corrected candidate and owner
+cold-power acceptance remain required. No fresh release version is authorized yet.
+
+Evidence: `exit-focus-validation-summary.json`,
+`exit-focus-regression-baseline-v3.log`,
+`exit-focus-final-x11-artifacts/stock-session.json`,
+`exit-focus-prepared-manifest.json`, `exit-focus-device-install-proof.json`,
+`exit-focus-device-regression-proof.json`, `exit-focus-post-regression-state.json`,
+`settings-persistence-exit-focus-post-regression.json`,
+`retained-state-exit-focus-post-regression.json`,
+`v102-public-clean-proof.json`, `v102-stock-reboot.json`,
+`v102-public-readme-proof.json`, `v102-public-first-verification.json`,
+`v102-public-repeat-verification.json`, `v102-public-installed-reboot.json`,
+`v102-public-notes-proof.json`, `v102-accidental-app-focus-state.json` and
+`v102-stock-interval-brightness.log`.
+
 ## Actual low-NAND Shell update and fixture cleanup
 
 An owned, private incompressible filler on the real `ubi0:rootfs` UBIFS reaches
@@ -519,9 +694,12 @@ owner and mode throughout 4053 samples: initial free space is 117,432,320 bytes,
 minimum is 85,315,584 bytes, and final is 115,740,672 bytes. A new private download
 is observed; all five public executable hashes, sizes, versions and 0755 modes
 pass. Beta becomes previous, staging is removed, prepared helpers and receipt
-stay unchanged, and the real note is unchanged. The already verified target
-generation is reused; this does not certify extraction of a new generation
-under pressure or physical power-loss durability. Activation/extraction code
+stay unchanged, and the real note is unchanged. The already verified final target
+generation is reused after mandatory complete new staging extraction, sync and
+five version probes. The ready function is byte-identical to current tagged
+source, as recorded in `low-nand-staging-source-proof.json`. The absent-final-
+destination rename branch under pressure and physical power-loss durability
+are not inferred. Activation/extraction code
 matches current source as recorded above; the beta selection/bridge differences
 remain qualified.
 
@@ -587,8 +765,10 @@ Shell owns the device.
 
 The remaining Shell critical path is the exact tagged/public 1.0.2 candidate
 and final physical smoke. Actual UBIFS activation interruption, normal public
-retry and the low-NAND update pass with the qualifications above. The prepared relaunch correction passes a production-source held-query
-trial; exact tagged/public-candidate verification remains required.
+retry and the low-NAND update pass with the qualifications above. The relaunch
+correction passes a production-source held-query trial, and exact tagged 1.0.2
+installation, repeat and hardware smokes pass. Clean public-candidate
+installation and final owner acceptance remain required.
 Controlled brightness persistence passes with the qualification above. The clean
 public 1.0.1 README install, repeat execution, reboot and published artifact
 verification pass as recorded above. Earlier final-production

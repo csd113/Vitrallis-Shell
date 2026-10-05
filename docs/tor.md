@@ -1,6 +1,6 @@
 # Shared Tor service
 
-Vitrallis owns Tor policy, Settings and launch readiness. **Arti 2.6.0 is a
+Vitrallis owns Tor policy, Settings and launch readiness. **Arti 2.7.0 is a
 separate executable**, never a dependency linked into Shell. One supervised Arti
 serves all applications through **127.0.0.1:9150**. Nothing listens on a LAN
 address. Existing applications without networking metadata keep their behavior.
