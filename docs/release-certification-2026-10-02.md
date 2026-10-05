@@ -1,7 +1,7 @@
 # Public-release certification — 2026-10-02
 
-**NOT RELEASE READY. All exact-public 1.0.3 automated/device checks pass;
-final owner physical cold-power/input/display acceptance is pending.**
+**RELEASE READY. Exact-public 1.0.3 automated/device checks and final owner
+physical cold-power/input/display/audible-audio acceptance pass.**
 The [14-item readiness report](release-readiness-2026-10-02.md) is the current
 handoff. Earlier records below retain their original revision-qualified failures,
 repairs and qualifications; their pending/unauthorized statements are historical.
@@ -53,10 +53,11 @@ against the exact public Arti 2.7.0 SHA `a8553d5afa3387a729def3c46773e25e79a8621
 including real bootstrap and clean stop (77.960 seconds, no exclusions).
 
 The intervening stock session resets brightness again. Restoring 100% through
-actual Settings returns all eight original settings to baseline; final
-Vitrallis-only cold-power persistence remains pending. The stable release endpoint
-reports no stable release while all releases are certification prereleases; this
-clear response is expected until the first full release is published. Older
+actual Settings returns all eight original settings to baseline. The final
+Vitrallis-only cold-power review below verifies live/saved brightness and stored
+settings, while qualifying the live volume after manual audio use. The stable
+release endpoint reports no stable release while all releases are certification
+prereleases; this clear response is expected until the first full release is published. Older
 prereleases expecting Arti 2.6.0 require the README setup route for the current
 2.7.0 bundle, and obsolete generations are not supported rollback targets.
 
@@ -65,7 +66,8 @@ owned zombie. The missing optional surf warning and the deliberately requested
 no-stable-release check are recorded separately. Before owner acceptance, battery
 readback is Good/Charging, 98%, 4.196 V; USB is online at 4.812 V, Wi-Fi connected,
 and free space is 1,161,629,696 bytes. UI automation is paused for the final owner
-physical test. Audible hardware availability has been requested.
+physical test. This pre-owner snapshot is retained separately from the final
+acceptance below.
 
 The first private draft-asset observer uses the public tag endpoint and receives
 404; authenticated draft-ID lookup resolves it without changing artifacts. Old
@@ -78,13 +80,68 @@ status establish normal exit. Original failed observers are retained. Repository
 assertions and visual goldens remain unchanged; no public recovery latency is
 claimed from the failed timing observer.
 
+### Final owner cold-power acceptance
+
+The owner reports: “all testing looks good, audio is working, touch and keyboard”.
+This answers the final physical cold-power/input/display test request. Boot ID
+changes from `227f90e4-23b1-4a22-ac93-f5b506ec8653` to
+`3f18fc84-ab4b-4880-b1ac-0a05892bcae6`. Independent post-test inspection verifies
+the exact public 1.0.3 generation and five native versions/hashes/modes, five
+helpers, private configuration and startup replacement. Native PID 883 owns
+actual keyboard focus in the fullscreen 480×272 Shell; PocketHome and owned
+zombies are absent. Current-session logs contain no unexpected error, panic,
+warning or graphics fallback. Wi-Fi is connected, timezone is Vancouver, battery
+is Good at 99%, USB is online, and free space is 1,160,278,016 bytes.
+
+The first strict settings snapshot observes an idle DPMS-off screen with live
+brightness zero. A harmless Shift wake restores 10/10 without setting brightness;
+the OS-saved brightness is also 10/10. Private preferences, timeout, timezone and
+saved ALSA volume (57/63) match their original values. The live mixer after manual
+audio testing reads zero; the owner confirms “Yes, I changed system volume”.
+That chosen value is preserved. The owner confirms audible audio. Current mixer state and user edits
+are retained. Earlier controlled reboot/update/Restore volume evidence remains
+revision-qualified.
+
+An additional controlled software reboot of the same public artifacts verifies
+all eight original settings, including live volume 57/63. Boot is
+`c365234c-a1c2-46a3-a582-a4d8f509428e`, native PID 1072; SSH/native readiness
+takes 186.899 seconds, and actual fullscreen focus remains correct at 0, 15 and
+30 seconds.
+The OS-saved ALSA file retains identical bytes. The pre-test live mixer value
+zero is restored afterward, and all 93 validated post-owner entries—including
+the two app setting edits—remain unchanged. No source or release version changes
+are needed. This independently verifies persistence while preserving the
+owner-confirmed volume change.
+
+The strict unchanged-byte observer also stops on two settings files following
+manual app use. Review of the original archived JSON and current hashes shows
+only Music volume/selected track and Sketch color changed; both remain valid
+private settings. All 93 tracked paths retain their kinds, owners and modes;
+91 retain identical contents, and all three saved Notepad test documents remain
+unchanged and private. These app edits are preserved. Original failed observers
+are retained; no repository assertion or visual baseline is weakened.
+
+The candidate is ready for the owner's full release decision with the known
+qualifications in the readiness report. The published 1.0.3 assets remain the
+same certification prerelease; this documentation does not promote it to stable.
+
 Evidence: `v103-candidate-identity.json`, `v103-artifacts-manifest.json`,
 `v103-publication-proof.json`, `v103-stock-reboot.json`,
 `v103-public-readme-proof.json`, `v103-public-first-verification.json`,
 `v103-public-repeat-verification.json`, `v103-public-installed-reboot.json`,
 `v103-public-real-arti-device-proof.json`, `v103-calculator-exit-focus-proof.json`,
 `v103-final-health-before-owner.json`, `settings-persistence-v103-before-owner.json`
-and `retained-state-v103-before-owner.json`.
+and `retained-state-v103-before-owner.json`. Final evidence:
+`v103-owner-physical-acceptance.json`, `v103-final-health-after-owner.json`,
+`v103-public-after-owner-verification.json`,
+`settings-persistence-v103-after-owner-awake-review.json`,
+`retained-state-v103-after-owner-review.json`,
+`v103-after-owner-audio-state.json`, `v103-volume-controlled-reboot.json`,
+`v103-volume-controlled-persistence-proof.json`,
+`settings-persistence-v103-volume-controlled-boot.json`,
+`v103-final-health-after-controlled.json` and
+`retained-state-v103-after-controlled.json` and
+`v103-owner-volume-clarification.json`.
 
 ## Authorized 1.0.3 and dependency refresh
 

@@ -23,8 +23,17 @@ pass. The exact tagged workflow and all four source review checks pass. All 19
 published assets and tagged helper/legal bytes verify. Fully clean public first
 and repeat installation, sustained-focus software reboot, hardware/native smokes,
 Calculator lifecycle and all 93 retained entries pass. All 15 Tor tests also pass
-against the exact public Arti binary. Final owner cold-power/input/display
-acceptance remains pending; see the [readiness report](release-readiness-2026-10-02.md).
+against the exact public Arti binary. Final owner cold-power/input/display and
+audible-audio acceptance passes, with a new boot and exact installed hashes
+independently verified. The candidate is release ready; see the
+[readiness report](release-readiness-2026-10-02.md) for the retained qualifications.
+After manual app use, all 93 tracked paths retain ownership and permissions;
+91 retain identical contents and two contain valid Music/Sketch setting changes.
+Cold-start brightness and saved ALSA volume match the original values; the live
+volume after manual audio testing is an owner-confirmed change and is preserved.
+An additional controlled software reboot passes all eight original settings,
+including live volume, and retains identical saved ALSA bytes. The pre-test live
+volume and all 93 post-owner data entries are preserved afterward.
 The process scanner also handles Linux ESRCH when a process disappears during
 inspection; permission and other I/O errors still fail closed. Its regression
 and renewed canonical validation pass. Prepared device install/reinstall retains
