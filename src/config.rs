@@ -21,9 +21,8 @@ pub struct Config {
     pub screenshot: Option<std::path::PathBuf>,
 }
 impl Config {
-    pub fn parse(args: impl Iterator<Item = String>) -> Result<Self, String> {
+    pub fn parse(mut args: impl Iterator<Item = String>) -> Result<Self, String> {
         let mut config = Self::default();
-        let mut args = args;
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--renderer" => {
@@ -68,8 +67,10 @@ impl Config {
                         .split_once('x')
                         .ok_or("--size requires WIDTHxHEIGHT")?;
                     config.size = Some((
-                        w.parse().map_err(|_| "invalid width")?,
-                        h.parse().map_err(|_| "invalid height")?,
+                        w.parse()
+                            .map_err(|error| format!("invalid width: {error}"))?,
+                        h.parse()
+                            .map_err(|error| format!("invalid height: {error}"))?,
                     ));
                 }
                 "--screenshot" => {
@@ -206,7 +207,11 @@ impl Paths {
         // against the inherited cwd before constructing a child command.
         let search_path = std::env::var_os("PATH").map_or_else(
             || vec!["/bin".into(), "/usr/bin".into()],
-            |p| std::env::split_paths(&p).map(|p| absolute(&p)).collect(),
+            |search_path| {
+                std::env::split_paths(&search_path)
+                    .map(|entry| absolute(&entry))
+                    .collect()
+            },
         );
         Ok(Self {
             explicit_catalog,
@@ -227,7 +232,3 @@ impl Paths {
             .unwrap_or_else(|| self.cwd.join(path))
     }
 }
-
-// Optional Unix process-group cleanup helper; no shell or PATH lookup.
-#[cfg(unix)]
-pub const KILL_HELPER: &str = "/bin/kill";

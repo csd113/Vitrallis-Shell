@@ -16,27 +16,30 @@ pub(super) fn local_package(loc: &Locations, id: &str) -> Result<metadata::Packa
     metadata::identity(id)?;
     let root = loc.apps().join(id);
     let receipt = install::receipt(&root)?.ok_or("No installed app receipt; uninstall refused")?;
-    if receipt["id"] != id {
+    if metadata::field(&receipt, "id")?.as_str() != Some(id) {
         return Err("Installed receipt ID differs; uninstall refused".into());
     }
     let file = storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)?
         .ok_or("Installed manifest missing")?;
     let manifest = metadata::manifest(&file.bytes)?;
-    if manifest["id"] != id {
+    if metadata::field(&manifest, "id")?.as_str() != Some(id) {
         return Err("Installed manifest ID differs; uninstall refused".into());
     }
     Ok(metadata::Package {
         runtime: metadata::RuntimeKind::parse(&manifest)?,
-        origin: super::sources::Repository::parse(metadata::text(&receipt["origin"], 160)?)?,
+        origin: super::sources::Repository::parse(metadata::text(
+            metadata::field(&receipt, "origin")?,
+            160,
+        )?)?,
         repository: super::sources::Repository::parse(metadata::text(
-            &receipt["repository"],
+            metadata::field(&receipt, "repository")?,
             160,
         )?)?,
         id: id.into(),
-        name: metadata::text(&manifest["name"], 1000)?.into(),
+        name: metadata::text(metadata::field(&manifest, "name")?, 1000)?.into(),
         entry: metadata::manifest_entry(&manifest)?,
-        version: metadata::version(metadata::text(&receipt["version"], 32)?)?,
-        commit: metadata::text(&receipt["commit"], 40)?.into(),
+        version: metadata::version(metadata::text(metadata::field(&receipt, "version")?, 32)?)?,
+        commit: metadata::text(metadata::field(&receipt, "commit")?, 40)?.into(),
         description: "Installed application (local receipt)".into(),
         changelog: None,
         icon: None,
@@ -62,7 +65,7 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), Str
         return Err("App started again; uninstall cancelled".into());
     }
     let marker = root.join(".installation-pending");
-    storage::read(&marker, 1024)?;
+    let _validated_marker = storage::read(&marker, 1024)?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -85,9 +88,9 @@ pub fn uninstall(loc: &Locations, package: &metadata::Package) -> Result<(), Str
         (Ok(()), Err(error)) => Err(format!(
             "App uninstalled; runtime backup cleanup failed: {error}"
         )),
-        (Err(error), Err(cleanup)) => {
-            Err(format!("{error}; runtime backup cleanup failed: {cleanup}"))
-        }
+        (Err(error), Err(cleanup_error)) => Err(format!(
+            "{error}; runtime backup cleanup failed: {cleanup_error}"
+        )),
     }
 }
 pub(super) fn installed_entry(
@@ -96,7 +99,7 @@ pub(super) fn installed_entry(
 ) -> Result<std::path::PathBuf, String> {
     if let Some(file) = storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)? {
         let manifest = metadata::manifest(&file.bytes)?;
-        if manifest["id"] != p.id {
+        if metadata::field(&manifest, "id")?.as_str() != Some(p.id.as_str()) {
             return Err("Installed app ID differs; uninstall refused".into());
         }
         return Ok(root.join(metadata::manifest_entry(&manifest)?));
@@ -106,28 +109,28 @@ pub(super) fn installed_entry(
 }
 fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
     let root = loc.root(p);
-    let receipt = install::receipt(&root)?;
+    let installed_receipt = install::receipt(&root)?;
     let mut paths = BTreeSet::new();
-    if let Some(receipt) = receipt {
-        if receipt["origin"] != p.origin.as_str()
-            || receipt["repository"] != p.repository.as_str()
-            || receipt["id"] != p.id
+    if let Some(receipt) = installed_receipt {
+        if metadata::field(&receipt, "origin")?.as_str() != Some(p.origin.as_str())
+            || metadata::field(&receipt, "repository")?.as_str() != Some(p.repository.as_str())
+            || metadata::field(&receipt, "id")?.as_str() != Some(p.id.as_str())
         {
             return Err("Installed origin differs; uninstall refused".into());
         }
-        for name in receipt["files"]
+        for name in metadata::field(&receipt, "files")?
             .as_object()
             .ok_or("Invalid receipt")?
             .keys()
         {
             install::validate_owned_path(name)?;
-            paths.insert(root.join(name));
+            let _new_owned_path = paths.insert(root.join(name));
         }
     } else {
         return Err("No installed app receipt; uninstall refused".into());
     }
     let launcher = loc.state.join("launchers").join(&p.id);
-    paths.insert(launcher.clone());
+    let _new_launcher_path = paths.insert(launcher.clone());
     let desktop = format!("{}.desktop", p.id);
     let exec = format!("Exec={}", install::desktop_quote(&launcher)?);
     for directory in [loc.data.join("applications"), loc.home.join("Desktop")] {
@@ -135,7 +138,7 @@ fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
         if let Some(file) = storage::read(&path, metadata::FILE_LIMIT)?
             && std::str::from_utf8(&file.bytes).is_ok_and(|s| s.lines().any(|line| line == exec))
         {
-            paths.insert(path);
+            let _new_desktop_path = paths.insert(path);
         }
     }
     let receipt_write = transaction::remove(root.join(".vitrallis-receipt.json"))?;
@@ -146,7 +149,9 @@ fn plan(loc: &Locations, p: &metadata::Package) -> Result<Vec<Write>, String> {
     let mut writes = Vec::new();
     for path in paths {
         let write = transaction::remove(path)?;
-        bytes += write.before.as_ref().map_or(0, |data| data.bytes.len());
+        bytes = bytes
+            .checked_add(write.before.as_ref().map_or(0, |data| data.bytes.len()))
+            .ok_or("App removal byte count overflow; no files were removed")?;
         // Bound locally edited payloads before retaining all runtime images.
         if bytes > 32 * 1024 * 1024 {
             return Err("App payload exceeds removal bounds; no files were removed".into());
@@ -197,9 +202,11 @@ mod tests {
             &install::prepare(&loc, package.clone(), files.clone())?,
         )?;
         let root = loc.root(&package);
-        let runtime = root
-            .join("runtime")
-            .join(storage::sha(&files["requirements.txt"]));
+        let runtime = root.join("runtime").join(storage::sha(
+            files
+                .get("requirements.txt")
+                .ok_or("missing requirements fixture")?,
+        ));
         let executable = runtime.join("bin/python3");
         let library = runtime.join("lib/site-packages/dependency.py");
         // Real interpreter copies exceed the package's 2 MiB per-file limit.
@@ -236,7 +243,7 @@ mod tests {
         let journal = install::journal_root(&loc, &package).join("injected-failure");
         assert!(
             transaction::apply_with(&journal, &writes, |i| {
-                if writes[i].path == executable {
+                if writes.get(i).ok_or("missing removal step")?.path == executable {
                     Err("interrupted runtime removal".into())
                 } else {
                     Ok(())
@@ -254,31 +261,7 @@ mod tests {
         assert!(!executable.exists());
         assert!(!library.exists());
         assert!(!root.join(".vitrallis-receipt.json").exists());
-        let mut reclaimed = 0;
-        for entry in
-            std::fs::read_dir(install::journal_root(&loc, &package)).map_err(|e| e.to_string())?
-        {
-            let journal = entry.map_err(|e| e.to_string())?.path();
-            if let Some(completed) =
-                storage::read(&journal.join("completed.json"), metadata::CATALOG_LIMIT)?
-            {
-                let rows = metadata::json(&completed.bytes)?;
-                for (i, row) in rows
-                    .as_array()
-                    .ok_or("missing journal rows")?
-                    .iter()
-                    .enumerate()
-                {
-                    let path =
-                        std::path::PathBuf::from(row["path"].as_str().ok_or("missing path")?);
-                    if runtime_cleanup::owned_file(&root, &path) {
-                        assert!(!journal.join(format!("{i}.before")).exists());
-                        reclaimed += 1;
-                    }
-                }
-            }
-        }
-        assert_eq!(reclaimed, 2);
+        assert_eq!(reclaimed_runtime_backups(&loc, &package, &root)?, 2_i32);
         for path in &retained {
             assert_eq!(storage::read(path, 100)?, Some(saved.clone()));
         }
@@ -288,6 +271,42 @@ mod tests {
             assert_eq!(storage::read(path, 100)?, Some(saved.clone()));
         }
         Ok(())
+    }
+
+    fn reclaimed_runtime_backups(
+        loc: &Locations,
+        package: &metadata::Package,
+        root: &Path,
+    ) -> Result<i32, String> {
+        let mut reclaimed = 0_i32;
+        for entry in
+            std::fs::read_dir(install::journal_root(loc, package)).map_err(|e| e.to_string())?
+        {
+            let completed_journal = entry.map_err(|error| error.to_string())?.path();
+            if let Some(completed) = storage::read(
+                &completed_journal.join("completed.json"),
+                metadata::CATALOG_LIMIT,
+            )? {
+                let rows = metadata::json(&completed.bytes)?;
+                for (i, row) in rows
+                    .as_array()
+                    .ok_or("missing journal rows")?
+                    .iter()
+                    .enumerate()
+                {
+                    let path = std::path::PathBuf::from(
+                        metadata::field(row, "path")?
+                            .as_str()
+                            .ok_or("missing path")?,
+                    );
+                    if runtime_cleanup::owned_file(root, &path) {
+                        assert!(!completed_journal.join(format!("{i}.before")).exists());
+                        reclaimed = reclaimed.checked_add(1).ok_or("reclaimed count overflow")?;
+                    }
+                }
+            }
+        }
+        Ok(reclaimed)
     }
 
     #[test]
@@ -301,7 +320,12 @@ mod tests {
         let large =
             std::fs::File::create(runtime.join("too-large.so")).map_err(|e| e.to_string())?;
         large
-            .set_len(u64::try_from(metadata::BUNDLE_LIMIT).map_err(|e| e.to_string())? + 1)
+            .set_len(
+                u64::try_from(metadata::BUNDLE_LIMIT)
+                    .map_err(|e| e.to_string())?
+                    .checked_add(1)
+                    .ok_or("oversized fixture overflow")?,
+            )
             .map_err(|e| e.to_string())?;
         assert!(uninstall(&loc, &package).is_err());
         assert_eq!(install::label(&loc, &package)?, "0.1.0");

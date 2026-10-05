@@ -38,11 +38,11 @@ pub(super) fn plan(root: &Path, writes: &mut Vec<Write>) -> Result<(), String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error.to_string()),
     };
-    let mut bytes = 0;
-    let mut count = 0;
-    for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        count += 1;
+    let mut bytes = 0_usize;
+    let mut count = 0_usize;
+    for result in entries {
+        let entry = result.map_err(|e| e.to_string())?;
+        count = count.checked_add(1).ok_or("Runtime entry count overflow")?;
         if count > ENTRY_LIMIT {
             return Err("App runtime exceeds removal bounds; no files were removed".into());
         }
@@ -55,13 +55,19 @@ pub(super) fn plan(root: &Path, writes: &mut Vec<Write>) -> Result<(), String> {
         if !entry.file_type().map_err(|e| e.to_string())?.is_dir() {
             return Err("Unsafe runtime generation; no files were removed".into());
         }
-        walk(&entry.path(), &mut count, &mut |path| {
-            if writes.len() >= transaction::WRITE_LIMIT - 1 {
+        let _retained_directories = walk(&entry.path(), &mut count, &mut |path| {
+            if writes.len() >= transaction::WRITE_LIMIT.saturating_sub(1) {
                 return Err("App runtime has too many files; no files were removed".into());
             }
-            let before = storage::read(path, metadata::BUNDLE_LIMIT.min(BYTE_LIMIT - bytes))?
+            let remaining = BYTE_LIMIT
+                .checked_sub(bytes)
+                .ok_or("Runtime removal byte limit exceeded")?;
+            let before = storage::read(path, metadata::BUNDLE_LIMIT.min(remaining))?
                 .ok_or("Runtime changed while preparing removal")?;
-            bytes += before.bytes.len();
+            bytes = bytes
+                .checked_add(before.bytes.len())
+                .filter(|size| *size <= BYTE_LIMIT)
+                .ok_or("Runtime removal byte limit exceeded")?;
             writes.push(Write {
                 path: path.to_path_buf(),
                 before: Some(before),
@@ -99,11 +105,11 @@ fn walk(
     count: &mut usize,
     file: &mut impl FnMut(&Path) -> Result<(), String>,
 ) -> Result<Vec<std::path::PathBuf>, String> {
-    let mut pending = vec![(root.to_path_buf(), 0)];
+    let mut pending = vec![(root.to_path_buf(), 0_i32)];
     let mut directories = Vec::new();
     while let Some((path, depth)) = pending.pop() {
-        *count += 1;
-        if *count > ENTRY_LIMIT || depth > 32 {
+        *count = count.checked_add(1).ok_or("Runtime entry count overflow")?;
+        if *count > ENTRY_LIMIT || depth > 32_i32 {
             return Err("App runtime exceeds removal bounds; no files were removed".into());
         }
         storage::safe(&path)?;
@@ -112,10 +118,19 @@ fn walk(
             file(&path)?;
         } else if info.is_dir() {
             for entry in fs::read_dir(&path).map_err(|e| e.to_string())? {
-                if pending.len() + *count >= ENTRY_LIMIT {
+                if pending
+                    .len()
+                    .checked_add(*count)
+                    .is_none_or(|total| total >= ENTRY_LIMIT)
+                {
                     return Err("App runtime exceeds removal bounds; no files were removed".into());
                 }
-                pending.push((entry.map_err(|e| e.to_string())?.path(), depth + 1));
+                pending.push((
+                    entry.map_err(|e| e.to_string())?.path(),
+                    depth
+                        .checked_add(1)
+                        .ok_or("Runtime directory depth overflow")?,
+                ));
             }
             directories.push(path);
         } else {

@@ -28,22 +28,26 @@ impl Preferences {
         if !self.show_clock {
             return String::new();
         }
-        let Some(clock) = clock else {
+        let Some(time) = clock else {
             return "--:--".into();
         };
         if self.ampm
-            && let Some((hours, minutes)) = clock.split_once(':')
+            && let Some((hours, minutes)) = time.split_once(':')
             && let Ok(hour) = hours.parse::<u8>()
             && hour < 24
             && minutes.parse::<u8>().is_ok_and(|m| m < 60)
         {
+            let display_hour = match hour % 12 {
+                0 => 12,
+                remainder => remainder,
+            };
             return format!(
                 "{}:{minutes}{}",
-                (hour + 11) % 12 + 1,
+                display_hour,
                 if hour < 12 { "AM" } else { "PM" }
             );
         }
-        clock.into()
+        time.into()
     }
 }
 
@@ -96,13 +100,15 @@ impl Policy {
         let value = crate::app_center::metadata::json(&file.bytes)?;
         crate::app_center::metadata::fields(&value, "ampm background_seconds essential")?;
         let policy = Self {
-            ampm: value["ampm"].as_bool().ok_or("Invalid clock preference")?,
-            background_seconds: value["background_seconds"]
+            ampm: crate::app_center::metadata::field(&value, "ampm")?
+                .as_bool()
+                .ok_or("Invalid clock preference")?,
+            background_seconds: crate::app_center::metadata::field(&value, "background_seconds")?
                 .as_u64()
                 .and_then(|v| u32::try_from(v).ok())
                 .filter(|v| *v <= 86400)
                 .ok_or("Invalid background timeout")?,
-            essential: value["essential"]
+            essential: crate::app_center::metadata::field(&value, "essential")?
                 .as_array()
                 .filter(|v| v.len() <= 2000)
                 .ok_or("Invalid app policy")?

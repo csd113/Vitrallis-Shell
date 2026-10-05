@@ -15,8 +15,8 @@ use std::{
 };
 
 fn binary(directory: &Path, version: &str) -> Result<Vec<u8>, String> {
-    let output = if let Some(directory) = std::env::var_os("VITRALLIS_QA_NATIVE_FIXTURES") {
-        PathBuf::from(directory).join(version)
+    let output = if let Some(fixtures) = std::env::var_os("VITRALLIS_QA_NATIVE_FIXTURES") {
+        PathBuf::from(fixtures).join(version)
     } else {
         let source = directory.join(format!("{version}.rs"));
         let source_text = format!(
@@ -39,15 +39,29 @@ fn binary(directory: &Path, version: &str) -> Result<Vec<u8>, String> {
 }
 fn package(version: &str, bytes: Vec<u8>) -> Result<(metadata::Package, Files), String> {
     let (mut p, mut files) = tests::generic()?;
-    files.remove("main.py");
-    files.remove("requirements.txt");
+    assert!(
+        files.remove("main.py").is_some(),
+        "replace the Python entry with a native fixture"
+    );
+    assert!(
+        files.remove("requirements.txt").is_some(),
+        "remove the Python fixture requirements"
+    );
     let target = metadata::native_target();
     let manifest = format!(
         "manifest_version = 1\nname = {:?}\nid = {:?}\nversion = {:?}\nruntime = \"rust\"\n[binaries]\n{target} = \"bin/fixture\"\n[permissions]\nnetwork = false\naudio = false\nstorage = false\n",
         p.name, p.id, version
     );
-    files.insert("app.toml".into(), manifest.into_bytes());
-    files.insert("bin/fixture".into(), bytes);
+    assert!(
+        files
+            .insert("app.toml".into(), manifest.into_bytes())
+            .is_some(),
+        "replace the Python manifest"
+    );
+    assert!(
+        files.insert("bin/fixture".into(), bytes).is_none(),
+        "native fixture path is new"
+    );
     p.version = metadata::version(version)?;
     p.runtime = metadata::RuntimeKind::Rust([(target.into(), "bin/fixture".into())].into());
     p.entry = "bin/fixture".into();
@@ -72,8 +86,8 @@ fn native_install_launch_process_detection_update_and_uninstall() -> Result<(), 
     assert!(install::prepare(&loc, p.clone(), files)?.prepared.is_none());
     std::fs::write(root.join("saved-data"), b"keep").map_err(|e| e.to_string())?;
     run_and_close(&loc, &p, "v1")?;
-    let (next, files) = package("0.2.0", binary(&scratch.0, "v2")?)?;
-    install::install(&loc, &install::prepare(&loc, next.clone(), files)?)?;
+    let (next, upgraded_files) = package("0.2.0", binary(&scratch.0, "v2")?)?;
+    install::install(&loc, &install::prepare(&loc, next.clone(), upgraded_files)?)?;
     run_and_close(&loc, &next, "v2")?;
     uninstall::uninstall(&loc, &next)?;
     assert!(!root.join("bin/fixture").exists());
@@ -95,7 +109,9 @@ fn run_and_close(
         .map_err(|e| e.to_string())?;
     let entry = loc.root(p).join(&p.entry);
     let result = (|| {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_secs(5))
+            .ok_or("Native fixture deadline overflow")?;
         let identities = loop {
             let identities = running::Native.list(&entry)?;
             if identities.iter().any(|identity| identity.pid == child.id()) {
@@ -109,10 +125,18 @@ fn run_and_close(
         assert!(uninstall::uninstall(loc, p).is_err());
         // Read the version before TERM; this also proves the binary executed.
         let mut line = String::new();
-        BufReader::new(child.stdout.take().ok_or("stdout missing")?)
+        let line_bytes = BufReader::new(child.stdout.take().ok_or("stdout missing")?)
             .read_line(&mut line)
             .map_err(|e| e.to_string())?;
-        assert_eq!(line.trim(), expected);
+        assert!(
+            line_bytes > 0,
+            "native fixture writes its version before closing"
+        );
+        assert_eq!(
+            line.trim(),
+            expected,
+            "native fixture executed the selected release"
+        );
         running::close(
             &running::Native,
             &entry,
@@ -120,8 +144,7 @@ fn run_and_close(
             Duration::from_secs(3),
         )
     })();
-    let _ = child.kill();
-    let _ = child.wait();
+    crate::process::cleanup_child(&mut child);
     result
 }
 

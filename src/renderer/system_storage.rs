@@ -100,25 +100,29 @@ pub(super) fn hint(settings: &Settings) -> String {
             if count == 0 {
                 0
             } else {
-                settings.storage_start + 1
+                settings.storage_start.saturating_add(1_usize)
             },
-            (settings.storage_start + 4).min(count)
+            settings.storage_start.saturating_add(4_usize).min(count)
         );
     }
     "Arrows: select   Enter: open   Esc: back".into()
 }
 
 fn body(canvas: &mut Screen, layout: &Layout, lines: &[String]) -> Result<(), String> {
-    let top = layout.title.h + 6;
-    let height = (layout.footer.y - top - 6) / 8;
+    let top = layout.title.h.saturating_add(6_i32);
+    let height = layout.footer.y.saturating_sub(top).saturating_sub(6_i32) / 8_i32;
     for (index, line) in lines.iter().take(8).enumerate() {
         label(
             canvas,
             line,
             Rect {
-                x: layout.title.x + 4,
-                y: top + i32::try_from(index).map_err(|_| "storage line")? * height,
-                w: layout.title.w - 8,
+                x: layout.title.x.saturating_add(4_i32),
+                y: top.saturating_add(
+                    i32::try_from(index)
+                        .map_err(|error| format!("storage line: {error}"))?
+                        .saturating_mul(height),
+                ),
+                w: layout.title.w.saturating_sub(8_i32),
                 h: height,
             },
             layout.text_scale,
@@ -138,76 +142,22 @@ fn storage_state(settings: &Settings) -> &str {
 }
 fn overview(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
     let actions = PanelLayout::storage_actions(layout);
-    let top = layout.title.h + 5;
-    let line_height = ((actions[0].y - top - 15) / 5).max(10);
-    let row = |index| Rect {
-        x: layout.title.x + 4,
-        y: top + index * line_height,
-        w: layout.title.w - 8,
+    let top = layout.title.h.saturating_add(5_i32);
+    let line_height = (actions
+        .first()
+        .ok_or("Missing storage action geometry")?
+        .y
+        .saturating_sub(top)
+        .saturating_sub(15_i32)
+        / 5_i32)
+        .max(10_i32);
+    let row = |index: i32| Rect {
+        x: layout.title.x.saturating_add(4_i32),
+        y: top.saturating_add(index.saturating_mul(line_height)),
+        w: layout.title.w.saturating_sub(8_i32),
         h: line_height,
     };
-    match &settings.storage.disk {
-        Some(Ok(disk)) => {
-            label(
-                canvas,
-                &format!("{} mounted at {}", disk.filesystem, disk.mount),
-                row(0),
-                layout.text_scale,
-                MUTED,
-            )?;
-            label(
-                canvas,
-                &format!(
-                    "Total {}   Used {} ({}%)",
-                    format_bytes(disk.total),
-                    format_bytes(disk.used),
-                    disk.percent()
-                ),
-                row(1),
-                layout.text_scale,
-                INK,
-            )?;
-            let critical = settings.storage.thresholds.critical(disk);
-            label(
-                canvas,
-                &format!(
-                    "Available {}{}",
-                    format_bytes(disk.available),
-                    if critical { "  LOW STORAGE" } else { "" }
-                ),
-                row(2),
-                layout.text_scale,
-                if critical { AMBER } else { ACCENT },
-            )?;
-            let track = Rect {
-                y: row(3).y + 3,
-                h: 5 * layout.text_scale,
-                ..row(3)
-            };
-            progress(
-                canvas,
-                track,
-                track.w * i32::from(disk.percent()) / 100,
-                critical,
-            )?;
-        }
-        disk => {
-            label(
-                canvas,
-                if disk.is_none() {
-                    "Reading filesystem capacity..."
-                } else {
-                    "Filesystem capacity unavailable"
-                },
-                row(0),
-                layout.text_scale,
-                INK,
-            )?;
-            if let Some(Err(error)) = disk {
-                label(canvas, error, row(1), layout.text_scale, AMBER)?;
-            }
-        }
-    }
+    disk_capacity(canvas, layout, settings, row)?;
     let summary = settings.storage.report.as_ref().map_or_else(
         || storage_state(settings).to_owned(),
         |report| {
@@ -218,7 +168,7 @@ fn overview(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result
             )
         },
     );
-    label(canvas, &summary, row(4), layout.text_scale, INK)?;
+    label(canvas, &summary, row(4_i32), layout.text_scale, INK)?;
     for (index, bounds) in actions.into_iter().enumerate() {
         card(canvas, bounds, settings.selected == index)?;
         text(
@@ -235,6 +185,77 @@ fn overview(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result
     }
     Ok(())
 }
+fn disk_capacity(
+    canvas: &mut Screen,
+    layout: &Layout,
+    settings: &Settings,
+    row: impl Fn(i32) -> Rect,
+) -> Result<(), String> {
+    match &settings.storage.disk {
+        Some(Ok(disk)) => {
+            label(
+                canvas,
+                &format!("{} mounted at {}", disk.filesystem, disk.mount),
+                row(0_i32),
+                layout.text_scale,
+                MUTED,
+            )?;
+            label(
+                canvas,
+                &format!(
+                    "Total {}   Used {} ({}%)",
+                    format_bytes(disk.total),
+                    format_bytes(disk.used),
+                    disk.percent()
+                ),
+                row(1_i32),
+                layout.text_scale,
+                INK,
+            )?;
+            let critical = settings.storage.thresholds.critical(disk);
+            label(
+                canvas,
+                &format!(
+                    "Available {}{}",
+                    format_bytes(disk.available),
+                    if critical { "  LOW STORAGE" } else { "" }
+                ),
+                row(2_i32),
+                layout.text_scale,
+                if critical { AMBER } else { ACCENT },
+            )?;
+            let track = Rect {
+                y: row(3).y.saturating_add(3_i32),
+                h: 5_i32.saturating_mul(layout.text_scale),
+                ..row(3_i32)
+            };
+            progress(
+                canvas,
+                track,
+                track.w.saturating_mul(i32::from(disk.percent())) / 100,
+                critical,
+            )?;
+        }
+        disk => {
+            label(
+                canvas,
+                if disk.is_none() {
+                    "Reading filesystem capacity..."
+                } else {
+                    "Filesystem capacity unavailable"
+                },
+                row(0_i32),
+                layout.text_scale,
+                INK,
+            )?;
+            if let Some(Err(error)) = disk {
+                label(canvas, error, row(1_i32), layout.text_scale, AMBER)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn apps(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(), String> {
     let Some(report) = &settings.storage.report else {
         return body(canvas, layout, &[storage_state(settings).into()]);
@@ -262,10 +283,15 @@ fn apps(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(),
         .enumerate()
     {
         card(canvas, bounds, settings.selected == index)?;
-        let size = bounds.h.min(32 * layout.text_scale) - 4;
+        let size = bounds
+            .h
+            .min(32_i32.saturating_mul(layout.text_scale))
+            .saturating_sub(4_i32);
         let icon = Rect {
-            x: bounds.x + 5,
-            y: bounds.y + (bounds.h - size) / 2,
+            x: bounds.x.saturating_add(5_i32),
+            y: bounds
+                .y
+                .saturating_add((bounds.h.saturating_sub(size)) / 2_i32),
             w: size,
             h: size,
         };
@@ -280,13 +306,16 @@ fn apps(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(),
                 ACCENT,
             )?;
         }
-        let x = icon.x + icon.w + 8;
+        let x = icon.x.saturating_add(icon.w).saturating_add(8_i32);
         label(
             canvas,
             &app.name,
             Rect {
                 x,
-                w: bounds.w - (x - bounds.x) - 5,
+                w: bounds
+                    .w
+                    .saturating_sub(x.saturating_sub(bounds.x))
+                    .saturating_sub(5_i32),
                 h: bounds.h / 2,
                 ..bounds
             },
@@ -298,8 +327,11 @@ fn apps(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Result<(),
             &app.total.label(),
             Rect {
                 x,
-                y: bounds.y + bounds.h / 2,
-                w: bounds.w - (x - bounds.x) - 5,
+                y: bounds.y.saturating_add((bounds.h) / 2_i32),
+                w: bounds
+                    .w
+                    .saturating_sub(x.saturating_sub(bounds.x))
+                    .saturating_sub(5_i32),
                 h: bounds.h / 2,
             },
             layout.text_scale,
@@ -324,10 +356,10 @@ pub(in crate::renderer) fn qa(
     };
     let original = state.settings.page;
     state.settings.page(Page::Storage);
-    let save = |canvas: &mut Screen, state: &crate::launcher::Launcher, name: &str| {
-        super::super::render(canvas, layout, state, textures)?;
+    let save = |screen: &mut Screen, snapshot: &crate::launcher::Launcher, name: &str| {
+        super::super::render(screen, layout, snapshot, textures)?;
         super::super::screenshot(
-            canvas,
+            screen,
             &output.join(format!(
                 "storage-{name}-{}x{}.bmp",
                 layout.width, layout.height
@@ -353,7 +385,10 @@ pub(in crate::renderer) fn qa(
         ])
         .map(|(index, name)| {
             let parts = [1_u64, 2, 3, 4, 5].map(|factor| Size {
-                bytes: (6 - index) * 1_000_000 * factor,
+                bytes: 6_u64
+                    .saturating_sub(index)
+                    .saturating_mul(1_000_000)
+                    .saturating_mul(factor),
                 incomplete: index == 5,
                 issue: (index == 5).then(|| "Permission denied".into()),
             });

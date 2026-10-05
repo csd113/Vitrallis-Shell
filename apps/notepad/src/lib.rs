@@ -12,10 +12,12 @@ const BUTTONS: [&str; 6] = ["New", "Open", "Save", "Save as", "Find", "Close"];
 
 fn save_failure(error: &std::io::Error) -> String {
     eprintln!("level=warn event=notepad_save error={error:?}");
-    let action = match error.kind() {
-        std::io::ErrorKind::StorageFull => "\nFree disk space, then retry.",
-        std::io::ErrorKind::PermissionDenied => "\nChoose a writable folder with Save as.",
-        _ => "",
+    let action = if error.kind() == std::io::ErrorKind::StorageFull {
+        "\nFree disk space, then retry."
+    } else if error.kind() == std::io::ErrorKind::PermissionDenied {
+        "\nChoose a writable folder with Save as."
+    } else {
+        ""
     };
     format!("Could not save: {error}{action}")
 }
@@ -110,34 +112,39 @@ impl Editor {
         let row = self.document.row();
         if row < self.top {
             self.top = row;
-        } else if row >= self.top + rows {
-            self.top = row + 1 - rows;
+        } else if row >= self.top.saturating_add(rows) {
+            self.top = row.saturating_add(1).saturating_sub(rows);
         }
         let columns = Self::columns(ui);
         let col = self.document.column();
         if col < self.left {
             self.left = col;
-        } else if col >= self.left + columns {
-            self.left = col + 1 - columns;
+        } else if col >= self.left.saturating_add(columns) {
+            self.left = col.saturating_add(1).saturating_sub(columns);
         }
     }
     /// Editor rows that fit between the single-line header and the status/buttons.
     fn rows(ui: &Ui) -> usize {
-        ui.rows(ui.header_height() + ui.line())
+        ui.rows(ui.header_height().saturating_add(ui.line()))
             .saturating_sub(2)
             .max(1)
     }
 
     fn columns(ui: &Ui) -> usize {
-        usize::try_from((ui.width - 8) / ui.cell())
-            .unwrap_or(1)
-            .max(1)
+        usize::try_from(
+            ui.width
+                .saturating_sub(8)
+                .checked_div(ui.cell())
+                .unwrap_or(0_i32),
+        )
+        .unwrap_or(1)
+        .max(1)
     }
     fn render(&mut self, ui: &mut Ui) -> Result<(), String> {
         self.reveal(ui);
         ui.clear();
         self.header(ui)?;
-        let top = ui.header_height() + ui.line();
+        let top = ui.header_height().saturating_add(ui.line());
         let rows = Self::rows(ui);
         let columns = Self::columns(ui);
         let selection = self.document.selection();
@@ -157,12 +164,14 @@ impl Editor {
             .map_or_else(|| "Untitled".into(), |p| p.display().to_string());
         let state = if self.document.dirty { "*" } else { "" };
         let head = format!("Notepad{state}");
-        let head_width = i32::try_from(head.chars().count()).unwrap_or(0) * ui.cell();
+        let head_width = i32::try_from(head.chars().count())
+            .unwrap_or(0_i32)
+            .saturating_mul(ui.cell());
         ui.text(&head, 0, 0, head_width, ACCENT)?;
-        let path_columns = Self::columns(ui).saturating_sub(head.chars().count() + 1);
+        let path_columns = Self::columns(ui).saturating_sub(head.chars().count().saturating_add(1));
         let shown = tail(&path, path_columns);
-        let path_x = head_width + ui.cell();
-        ui.text(&shown, path_x, 0, ui.width - path_x, MUTED)?;
+        let path_x = head_width.saturating_add(ui.cell());
+        ui.text(&shown, path_x, 0, ui.width.saturating_sub(path_x), MUTED)?;
         ui.fill(
             Rect::new(0, ui.line(), ui.width.unsigned_abs(), 1),
             vitrallis_native::theme::BORDER,
@@ -178,8 +187,12 @@ impl Editor {
         columns: usize,
         selection: &Range<usize>,
     ) -> Result<(), String> {
-        for row in self.top..(self.top + rows).min(self.document.lines()) {
-            let y = top + i32::try_from(row - self.top).unwrap_or(0) * ui.line();
+        for row in self.top..(self.top.saturating_add(rows)).min(self.document.lines()) {
+            let y = top.saturating_add(
+                i32::try_from(row.saturating_sub(self.top))
+                    .unwrap_or(0_i32)
+                    .saturating_mul(ui.line()),
+            );
             let line = self.document.line(row);
             for (column, (byte, ch)) in line
                 .char_indices()
@@ -187,8 +200,16 @@ impl Editor {
                 .skip(self.left)
                 .take(columns)
             {
-                let x = i32::try_from(column - self.left).unwrap_or(0) * ui.cell();
-                if selection.contains(&(self.document.line_start(row).unwrap_or(0) + byte)) {
+                let x = i32::try_from(column.saturating_sub(self.left))
+                    .unwrap_or(0_i32)
+                    .saturating_mul(ui.cell());
+                if selection.contains(
+                    &(self
+                        .document
+                        .line_start(row)
+                        .unwrap_or(0)
+                        .saturating_add(byte)),
+                ) {
                     ui.fill(
                         Rect::new(x, y, ui.cell().unsigned_abs(), ui.line().unsigned_abs()),
                         vitrallis_native::theme::SELECTED,
@@ -211,12 +232,18 @@ impl Editor {
         let row = self.document.row();
         let column = self.document.column();
         if row >= self.top
-            && row < self.top + rows
+            && row < self.top.saturating_add(rows)
             && column >= self.left
-            && column < self.left + columns
+            && column < self.left.saturating_add(columns)
         {
-            let x = i32::try_from(column - self.left).unwrap_or(0) * ui.cell();
-            let y = top + i32::try_from(row - self.top).unwrap_or(0) * ui.line();
+            let x = i32::try_from(column.saturating_sub(self.left))
+                .unwrap_or(0_i32)
+                .saturating_mul(ui.cell());
+            let y = top.saturating_add(
+                i32::try_from(row.saturating_sub(self.top))
+                    .unwrap_or(0_i32)
+                    .saturating_mul(ui.line()),
+            );
             let ch = self
                 .document
                 .line(row)
@@ -224,11 +251,16 @@ impl Editor {
                 .nth(column)
                 .filter(|c| *c != '\t' && *c != '\n' && *c != '\r');
             ui.fill(
-                Rect::new(x, y, ui.cell().unsigned_abs(), 8 * ui.scale.unsigned_abs()),
+                Rect::new(
+                    x,
+                    y,
+                    ui.cell().unsigned_abs(),
+                    8_u32.saturating_mul(ui.scale.unsigned_abs()),
+                ),
                 ACCENT,
             )?;
-            if let Some(ch) = ch {
-                ui.glyph(ch, x, y, vitrallis_native::theme::BACKGROUND)?;
+            if let Some(character) = ch {
+                ui.glyph(character, x, y, vitrallis_native::theme::BACKGROUND)?;
             }
         }
         Ok((row, column))
@@ -247,22 +279,26 @@ impl Editor {
     ) -> Result<(), String> {
         let status = format!(
             "Ln {}  Col {}   {} B",
-            row + 1,
-            column + 1,
+            row.saturating_add(1),
+            column.saturating_add(1),
             self.document.text().len(),
         );
         let state = self.status_text(selection);
         ui.text(
             &status,
             0,
-            ui.height - ui.footer_height() - ui.line(),
-            ui.width / 2 - ui.cell(),
+            ui.height
+                .saturating_sub(ui.footer_height())
+                .saturating_sub(ui.line()),
+            (ui.width / 2).saturating_sub(ui.cell()),
             MUTED,
         )?;
         ui.text(
             state,
             ui.width / 2,
-            ui.height - ui.footer_height() - ui.line(),
+            ui.height
+                .saturating_sub(ui.footer_height())
+                .saturating_sub(ui.line()),
             ui.width / 2,
             if self.document.dirty {
                 vitrallis_native::theme::WARNING
@@ -297,10 +333,26 @@ impl Editor {
                 self.document.insert(&text).map_err(|e| e.to_string())
             }
             Input::Click(x, y) => {
-                let top = ui.header_height() + ui.line();
-                if y >= top && y < ui.height - ui.footer_height() - ui.line() {
-                    let row = self.top + usize::try_from((y - top).max(0) / ui.line()).unwrap_or(0);
-                    let col = self.left + usize::try_from(x.max(0) / ui.cell()).unwrap_or(0);
+                let top = ui.header_height().saturating_add(ui.line());
+                if y >= top
+                    && y < ui
+                        .height
+                        .saturating_sub(ui.footer_height())
+                        .saturating_sub(ui.line())
+                {
+                    let row = self.top.saturating_add(
+                        usize::try_from(
+                            y.saturating_sub(top)
+                                .max(0_i32)
+                                .checked_div(ui.line())
+                                .unwrap_or(0_i32),
+                        )
+                        .unwrap_or(0),
+                    );
+                    let col = self.left.saturating_add(
+                        usize::try_from(x.max(0_i32).checked_div(ui.cell()).unwrap_or(0_i32))
+                            .unwrap_or(0),
+                    );
                     self.document.anchor = None;
                     self.document.place(row, col);
                     self.footer = None;
@@ -308,11 +360,16 @@ impl Editor {
                 Ok(())
             }
             Input::Scroll(y) => {
-                self.document
-                    .vertical(-isize::try_from(y).unwrap_or(0) * 3, false);
+                self.document.vertical(
+                    isize::try_from(y)
+                        .unwrap_or(0)
+                        .saturating_neg()
+                        .saturating_mul(3),
+                    false,
+                );
                 Ok(())
             }
-            _ => Ok(()),
+            Input::Text(_) | Input::Resize | Input::Wake | Input::Close | Input::Ignore => Ok(()),
         };
         result?;
         Ok(false)
@@ -327,7 +384,7 @@ impl Editor {
             Keycode::Tab if self.footer.is_some() => {
                 self.footer = match self.footer {
                     Some(5) => None,
-                    Some(i) => Some(i + 1),
+                    Some(i) => Some(i.saturating_add(1)),
                     None => Some(0),
                 };
                 Ok(())
@@ -338,7 +395,8 @@ impl Editor {
             }
             Keycode::Left | Keycode::Right if self.footer.is_some() => {
                 let index = self.footer.unwrap_or(0);
-                self.footer = Some((index + if key == Keycode::Right { 1 } else { 5 }) % 6);
+                self.footer =
+                    Some((index % 6).saturating_add(if key == Keycode::Right { 1 } else { 5 }) % 6);
                 Ok(())
             }
             Keycode::Up | Keycode::Down if self.footer.is_some() => {
@@ -363,7 +421,7 @@ impl Editor {
                 Ok(())
             }
             Keycode::PageUp => {
-                self.document.vertical(-rows, select);
+                self.document.vertical(rows.saturating_neg(), select);
                 Ok(())
             }
             Keycode::PageDown => {
@@ -389,10 +447,15 @@ impl Editor {
             Keycode::C | Keycode::X if ui::ctrl(mods) => {
                 let range = self.document.selection();
                 if !range.is_empty() {
+                    let selected_text = self
+                        .document
+                        .text()
+                        .get(range.clone())
+                        .ok_or("Selection is outside the document")?;
                     ui.sdl
                         .video()?
                         .clipboard()
-                        .set_clipboard_text(&self.document.text()[range.clone()])?;
+                        .set_clipboard_text(selected_text)?;
                     if key == Keycode::X {
                         self.document
                             .replace(range, "")
@@ -420,7 +483,12 @@ impl Editor {
                 self.footer
             }
             Input::Click(x, y) => ui.button_at(x, y, BUTTONS.len()),
-            _ => None,
+            Input::Key(_, _)
+            | Input::Text(_)
+            | Input::Scroll(_)
+            | Input::Resize
+            | Input::Wake
+            | Input::Ignore => None,
         }
     }
     fn command(&mut self, ui: &mut Ui, action: usize) -> Result<bool, String> {
@@ -446,20 +514,30 @@ impl Editor {
                 }
             }
             2 | 3 => {
-                self.save(ui, action == 3)?;
+                let _saved = self.save(ui, action == 3)?;
             }
             4 => {
                 if let Some(needle) = ui.prompt("Find text", &self.find)? {
                     self.find = needle;
                     if !self.find.is_empty() {
                         let text = self.document.text();
-                        let start = self.document.cursor.min(text.len());
-                        let found = text[start..]
+                        let mut start = self.document.cursor.min(text.len());
+                        while !text.is_char_boundary(start) {
+                            start = start.saturating_sub(1);
+                        }
+                        let found = text
+                            .get(start..)
+                            .ok_or("Invalid search start")?
                             .find(&self.find)
-                            .map(|i| start + i)
-                            .or_else(|| text[..start].find(&self.find));
+                            .and_then(|i| start.checked_add(i))
+                            .or_else(|| {
+                                text.get(..start).and_then(|prefix| prefix.find(&self.find))
+                            });
                         if let Some(index) = found {
-                            self.document.cursor = index + self.find.len();
+                            self.document.cursor = index
+                                .checked_add(self.find.len())
+                                .filter(|cursor| *cursor <= text.len())
+                                .ok_or("Search result exceeds document")?;
                             self.document.anchor = Some(index);
                         } else {
                             ui.error("Text was not found")?;
@@ -566,7 +644,11 @@ mod tests {
     fn editor_rows_stop_before_the_status_line_and_buttons() -> Result<(), String> {
         let _guard = sdl_lock();
         for size in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
-            sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+            assert!(
+                sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                    || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+                "dummy SDL driver must be selected"
+            );
             let session = vitrallis_native::ui::Session::new(
                 "Notepad geometry",
                 &Options {
@@ -576,9 +658,12 @@ mod tests {
             )?;
             let creator = session.canvas.texture_creator();
             let ui = Ui::new(session, &creator)?;
-            let top = ui.header_height() + ui.line();
-            let rows = i32::try_from(Editor::rows(&ui)).unwrap_or(0);
-            let status_y = ui.height - ui.footer_height() - ui.line();
+            let top = ui.header_height().saturating_add(ui.line());
+            let rows = i32::try_from(Editor::rows(&ui)).unwrap_or(0_i32);
+            let status_y = ui
+                .height
+                .saturating_sub(ui.footer_height())
+                .saturating_sub(ui.line());
             assert!(top >= ui.header_height(), "{size:?}");
             assert!(
                 top + rows * ui.line() <= status_y,
@@ -589,7 +674,7 @@ mod tests {
                 "{size:?}: the status line reaches the buttons"
             );
             // The two status halves keep one cell between them.
-            let half = ui.width / 2;
+            let half = ui.width / 2_i32;
             assert!(half > ui.cell(), "{size:?}");
             assert!(half - ui.cell() + ui.cell() <= half, "{size:?}");
         }
@@ -626,7 +711,11 @@ mod tests {
     fn unsaved_actions_default_to_cancel_and_save_before_discard()
     -> Result<(), Box<dyn std::error::Error>> {
         let _guard = sdl_lock();
-        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        assert!(
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+            "dummy SDL driver must be selected"
+        );
         let session = vitrallis_native::ui::Session::new(
             "Notepad test",
             &Options {
@@ -642,7 +731,10 @@ mod tests {
             document: Document::open(&scratch.path)?,
             ..Editor::default()
         };
-        editor.input(&mut ui, Input::Text("edit ".into()))?;
+        assert!(
+            !editor.input(&mut ui, Input::Text("edit ".into()))?,
+            "typing must keep Notepad open"
+        );
         for action in [0, 5] {
             keys(&ui, &[Keycode::Return])?;
             assert!(!editor.command(&mut ui, action)?);
@@ -653,7 +745,10 @@ mod tests {
         assert!(editor.command(&mut ui, 5)?);
         assert_eq!(std::fs::read_to_string(&scratch.path)?, "edit before\r\n");
         assert!(!editor.document.dirty);
-        editor.input(&mut ui, Input::Text("more".into()))?;
+        assert!(
+            !editor.input(&mut ui, Input::Text("more".into()))?,
+            "typing must keep Notepad open"
+        );
         keys(&ui, &[Keycode::Tab, Keycode::Tab, Keycode::Return])?;
         assert!(!editor.command(&mut ui, 0)?);
         assert_eq!(editor.document.text(), "");

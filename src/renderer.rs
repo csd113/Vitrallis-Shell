@@ -19,7 +19,6 @@ use sdl2::{
     surface::Surface,
     video::{Window, WindowContext},
 };
-use std::io::Write;
 
 pub struct Screen<'a> {
     canvas: Canvas<Window>,
@@ -68,7 +67,7 @@ impl<'a> Screen<'a> {
         } else {
             // Bounded independently of catalogue size: 512 KiB textures + keys.
             if self.center_icons.len() == 128 {
-                self.center_icons.remove(0);
+                drop(self.center_icons.remove(0));
             }
             let mut texture = self
                 .creator
@@ -80,12 +79,15 @@ impl<'a> Screen<'a> {
                 .update(None, pixels, 32 * 4)
                 .map_err(|e| e.to_string())?;
             #[cfg(test)]
-            performance::count(|c| c.uploads += 1);
+            performance::count(|c| c.uploads = c.uploads.saturating_add(1));
             self.center_icons.push((pixels.into(), texture));
-            self.center_icons.len() - 1
+            self.center_icons.len().saturating_sub(1)
         };
-        self.canvas
-            .copy(&self.center_icons[index].1, None, rect(bounds)?)
+        let (_, texture) = self
+            .center_icons
+            .get(index)
+            .ok_or("App Center icon cache entry missing")?;
+        self.canvas.copy(texture, None, rect(bounds)?)
     }
     /// Draws the shortcut editor's chosen icon, decoding and uploading it only
     /// when the encoded bytes change. A PNG/BMP decode plus texture upload on
@@ -132,12 +134,12 @@ fn rect(r: Rect) -> Result<sdl2::rect::Rect, String> {
     Ok(sdl2::rect::Rect::new(
         r.x,
         r.y,
-        u32::try_from(r.w).map_err(|_| "negative rectangle width")?,
-        u32::try_from(r.h).map_err(|_| "negative rectangle height")?,
+        u32::try_from(r.w).map_err(|error| format!("negative rectangle width: {error}"))?,
+        u32::try_from(r.h).map_err(|error| format!("negative rectangle height: {error}"))?,
     ))
 }
 fn fill(canvas: &mut Screen, r: Rect, color: Color) -> Result<(), String> {
-    if r.w <= 0 || r.h <= 0 {
+    if r.w <= 0_i32 || r.h <= 0_i32 {
         return Ok(());
     }
     if canvas.draw_color() != color {
@@ -158,17 +160,17 @@ fn progress(canvas: &mut Screen, bounds: Rect, filled: i32, warning: bool) -> Re
 /// metric table or allocation is involved.
 #[must_use]
 pub const fn advance(scale: i32) -> i32 {
-    theme::CELL * scale
+    theme::CELL.saturating_mul(scale)
 }
 
 /// Whole characters that fit in `width` pixels at `scale`. This is the single
 /// measurement used by rendering and by the overflow policy below.
 #[must_use]
 pub fn fit_columns(width: i32, scale: i32) -> usize {
-    if scale <= 0 {
+    if scale <= 0_i32 {
         return 0;
     }
-    usize::try_from(width / advance(scale)).unwrap_or(0)
+    usize::try_from(width.checked_div(advance(scale)).unwrap_or(0_i32)).unwrap_or(0)
 }
 
 /// Characters reserved for the explicit truncation marker.
@@ -211,17 +213,13 @@ fn fit_visible(value: &str, columns: usize) -> (usize, bool) {
     }
     let shortened = columns > ELLIPSIS && value.chars().nth(columns).is_some();
     if shortened {
-        (columns - ELLIPSIS, true)
+        (columns.saturating_sub(ELLIPSIS), true)
     } else {
         (value.chars().take(columns).count(), false)
     }
 }
 
 /// Draws one glyph cell at the caller's existing integer position and scale.
-#[allow(
-    clippy::cast_possible_truncation,
-    reason = "Unsupported code points fall back to '?'; the plain ASCII alphabet is never truncated"
-)]
 fn glyph(
     canvas: &mut Screen,
     character: char,
@@ -231,20 +229,22 @@ fn glyph(
     color: Color,
 ) -> Result<(), String> {
     #[cfg(test)]
-    performance::count(|c| c.glyphs += 1);
+    performance::count(|c| c.glyphs = c.glyphs.saturating_add(1));
     #[cfg(test)]
     performance::count(|c| {
-        c.text_operations += u64::from(!character.is_ascii_control() && character != ' ');
+        c.text_operations = c
+            .text_operations
+            .saturating_add(u64::from(!character.is_ascii_control() && character != ' '));
     });
-    let character = if character.is_ascii() { character } else { '?' };
+    let glyph_character = if character.is_ascii() { character } else { '?' };
     canvas.font.draw(
         &mut canvas.canvas,
-        character,
+        glyph_character,
         rect(Rect {
             x,
             y,
-            w: theme::CELL * scale,
-            h: theme::CELL * scale,
+            w: theme::CELL.saturating_mul(scale),
+            h: theme::CELL.saturating_mul(scale),
         })?,
         color,
     )
@@ -256,10 +256,10 @@ fn glyph(
 #[cfg(debug_assertions)]
 fn assert_cell_fits(bounds: Rect, scale: i32) {
     debug_assert!(
-        bounds.h >= theme::CELL * scale || bounds.h <= 0,
+        bounds.h >= theme::CELL.saturating_mul(scale) || bounds.h <= 0_i32,
         "{}px text rectangle cannot hold a {}px glyph cell",
         bounds.h,
-        theme::CELL * scale
+        theme::CELL.saturating_mul(scale)
     );
 }
 
@@ -302,7 +302,7 @@ fn draw_line(
     color: Color,
     centered: bool,
 ) -> Result<(), String> {
-    if scale <= 0 {
+    if scale <= 0_i32 {
         return Err("invalid text scale".into());
     }
     let limit = fit_columns(bounds.w, scale);
@@ -313,22 +313,26 @@ fn draw_line(
     assert_cell_fits(bounds, scale);
     let (shown, shortened) = fit_visible(value, limit);
     let count = if shortened { limit } else { shown };
-    let count = i32::try_from(count).map_err(|_| "text too long")?;
+    let glyph_count = i32::try_from(count).map_err(|error| format!("text too long: {error}"))?;
     let cell = advance(scale);
     let mut x = if centered {
-        bounds.x + (bounds.w - count * cell) / 2
+        bounds
+            .x
+            .saturating_add(bounds.w.saturating_sub(glyph_count.saturating_mul(cell)) / 2_i32)
     } else {
         bounds.x
     };
-    let y = bounds.y + (bounds.h - cell) / 2;
+    let y = bounds
+        .y
+        .saturating_add(bounds.h.saturating_sub(cell) / 2_i32);
     for character in value.chars().take(shown) {
         glyph(canvas, display_char(character), x, y, scale, color)?;
-        x += cell;
+        x = x.saturating_add(cell);
     }
     if shortened {
         for _ in 0..ELLIPSIS {
             glyph(canvas, '.', x, y, scale, color)?;
-            x += cell;
+            x = x.saturating_add(cell);
         }
     }
     Ok(())
@@ -363,19 +367,26 @@ fn chrome(canvas: &mut Screen, layout: &Layout) -> Result<(), String> {
 #[must_use]
 pub fn wrap_words(value: &str, columns: usize) -> Vec<String> {
     const MAX_LINES: usize = 256;
-    let columns = columns.max(1);
+    let line_columns = columns.max(1);
     let mut lines = Vec::new();
     for paragraph in value.lines() {
         let mut line = String::new();
         for word in paragraph.split_whitespace() {
-            if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > columns {
+            if !line.is_empty()
+                && line
+                    .chars()
+                    .count()
+                    .saturating_add(1)
+                    .saturating_add(word.chars().count())
+                    > line_columns
+            {
                 lines.push(std::mem::take(&mut line));
             }
             if !line.is_empty() {
                 line.push(' ');
             }
             for character in word.chars() {
-                if line.chars().count() == columns {
+                if line.chars().count() == line_columns {
                     lines.push(std::mem::take(&mut line));
                 }
                 line.push(character);
@@ -396,7 +407,7 @@ pub use artwork::{Artwork, artwork};
 
 pub fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
     #[cfg(test)]
-    performance::count(|c| c.decodes += 1);
+    performance::count(|c| c.decodes = c.decodes.saturating_add(1));
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         let mut decoder = png::Decoder::new_with_limits(
             std::io::Cursor::new(bytes),
@@ -419,25 +430,43 @@ pub fn decode_icon(bytes: &[u8]) -> Result<Surface<'static>, String> {
         let mut pixels = vec![0; size];
         let frame = reader.next_frame(&mut pixels).map_err(|e| e.to_string())?;
         let channels = frame.color_type.samples();
-        let mut rgba = Vec::with_capacity(pixels.len() / channels * 4);
-        for pixel in pixels[..frame.buffer_size()].chunks_exact(channels) {
-            match frame.color_type {
-                png::ColorType::Rgb => rgba.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]),
-                png::ColorType::Rgba => rgba.extend_from_slice(pixel),
-                png::ColorType::Grayscale => {
-                    rgba.extend_from_slice(&[pixel[0], pixel[0], pixel[0], 255]);
-                }
-                png::ColorType::GrayscaleAlpha => {
-                    rgba.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
-                }
-                png::ColorType::Indexed => return Err("unexpanded PNG palette".into()),
-            }
+        let frame_bytes = pixels
+            .get(..frame.buffer_size())
+            .ok_or("Invalid decoded PNG length")?;
+        let capacity = frame_bytes
+            .len()
+            .checked_div(channels)
+            .and_then(|count| count.checked_mul(4))
+            .ok_or("Invalid PNG pixel buffer size")?;
+        let mut rgba = Vec::new();
+        rgba.try_reserve_exact(capacity)
+            .map_err(|error| format!("PNG allocation: {error}"))?;
+        let chunks = frame_bytes.chunks_exact(channels);
+        if !chunks.remainder().is_empty() {
+            return Err("Incomplete PNG pixel channels".into());
+        }
+        for pixel in chunks {
+            let components = match (frame.color_type, pixel) {
+                (png::ColorType::Rgb, &[red, green, blue]) => [red, green, blue, 255],
+                (png::ColorType::Rgba, &[red, green, blue, alpha]) => [red, green, blue, alpha],
+                (png::ColorType::Grayscale, &[value]) => [value, value, value, 255],
+                (png::ColorType::GrayscaleAlpha, &[value, alpha]) => [value, value, value, alpha],
+                (png::ColorType::Indexed, _) => return Err("unexpanded PNG palette".into()),
+                (
+                    png::ColorType::Rgb
+                    | png::ColorType::Rgba
+                    | png::ColorType::Grayscale
+                    | png::ColorType::GrayscaleAlpha,
+                    _,
+                ) => return Err("Invalid PNG pixel channels".into()),
+            };
+            rgba.extend_from_slice(&components);
         }
         return Surface::from_data(
             &mut rgba,
             frame.width,
             frame.height,
-            frame.width * 4,
+            frame.width.checked_mul(4).ok_or("PNG pitch overflow")?,
             PixelFormatEnum::RGBA32,
         )?
         .convert_format(PixelFormatEnum::RGBA32);
@@ -454,7 +483,7 @@ pub fn render(
 ) -> Result<(), String> {
     #[cfg(test)]
     performance::count(|counts| {
-        counts.frames += 1;
+        counts.frames = counts.frames.saturating_add(1);
         counts.last_frame = Some(std::time::Instant::now());
     });
     if let Some(power) = state.settings.power_transition {
@@ -525,7 +554,9 @@ fn render_launcher(
         layout.text_scale,
         theme::ACCENT,
     )?;
-    let system_icons = icons.get(state.apps.len() + 1..).unwrap_or(&[]);
+    let system_icons = icons
+        .get((state.apps.len()).saturating_add(1_usize)..)
+        .unwrap_or(&[]);
     system::status(
         canvas,
         layout,
@@ -541,7 +572,11 @@ fn render_launcher(
         (
             layout.next,
             ">",
-            state.page_start() / layout.tiles.len() + 1 < state.page_count(),
+            ((state.page_start())
+                .checked_div(layout.tiles.len())
+                .unwrap_or(0_usize))
+            .saturating_add(1_usize)
+                < state.page_count(),
         ),
     ] {
         text(
@@ -549,11 +584,13 @@ fn render_launcher(
             label,
             // Inset the arrow glyphs while keeping the full header touch targets.
             Rect {
-                y: bounds.y + 4 * layout.text_scale,
+                y: (bounds.y).saturating_add((4_i32).saturating_mul(layout.text_scale)),
                 h: bounds.h / 2,
                 ..bounds
             },
-            (layout.text_scale + 1).min(bounds.h / 16),
+            (layout.text_scale)
+                .saturating_add(1_i32)
+                .min(bounds.h / 16_i32),
             if enabled {
                 theme::ACCENT
             } else {
@@ -568,7 +605,7 @@ fn render_launcher(
         .zip(&layout.tiles)
         .enumerate()
     {
-        let index = state.page_start() + local;
+        let index = (state.page_start()).saturating_add(local);
         render_tile(
             canvas,
             layout,
@@ -602,11 +639,13 @@ fn launcher_status(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Re
     };
     let bounds = Rect {
         x: layout.footer.x,
-        y: layout.footer.y + (layout.footer.h - 8 * layout.text_scale) / 2,
-        w: right - layout.footer.x - 8,
-        h: 8 * layout.text_scale,
+        y: (layout.footer.y).saturating_add(
+            ((layout.footer.h).saturating_sub((8_i32).saturating_mul(layout.text_scale))) / 2_i32,
+        ),
+        w: ((right).saturating_sub(layout.footer.x)).saturating_sub(8_i32),
+        h: (8_i32).saturating_mul(layout.text_scale),
     };
-    if bounds.w <= 0 {
+    if bounds.w <= 0_i32 {
         return Ok(());
     }
     clipped(
@@ -671,27 +710,35 @@ fn render_tile(
     tile: Rect,
     selected: bool,
     state: AppState,
-    texture: Option<&Texture<'_>>,
+    optional_texture: Option<&Texture<'_>>,
 ) -> Result<(), String> {
     card(canvas, tile, selected)?;
     let icon = Rect {
-        x: tile.x + (tile.w - layout.icon_size) / 2,
-        y: tile.y + tile.h / 12,
+        x: (tile.x).saturating_add(((tile.w).saturating_sub(layout.icon_size)) / 2_i32),
+        y: (tile.y).saturating_add((tile.h) / 12_i32),
         w: layout.icon_size,
         h: layout.icon_size,
     };
-    if let Some(texture) = texture {
+    if let Some(texture) = optional_texture {
         let size = texture.query();
-        let width = i32::try_from(size.width).map_err(|_| "icon width")?;
-        let height = i32::try_from(size.height).map_err(|_| "icon height")?;
-        let w = icon.w.min(icon.h * width / height);
-        let h = icon.h.min(icon.w * height / width);
+        let width = i32::try_from(size.width).map_err(|error| format!("icon width: {error}"))?;
+        let height = i32::try_from(size.height).map_err(|error| format!("icon height: {error}"))?;
+        let w = icon.w.min(
+            ((icon.h).saturating_mul(width))
+                .checked_div(height)
+                .unwrap_or(0_i32),
+        );
+        let h = icon.h.min(
+            ((icon.w).saturating_mul(height))
+                .checked_div(width)
+                .unwrap_or(0_i32),
+        );
         canvas.copy(
             texture,
             None,
             rect(Rect {
-                x: icon.x + (icon.w - w) / 2,
-                y: icon.y + (icon.h - h) / 2,
+                x: (icon.x).saturating_add(((icon.w).saturating_sub(w)) / 2_i32),
+                y: (icon.y).saturating_add(((icon.h).saturating_sub(h)) / 2_i32),
                 w,
                 h,
             })?,
@@ -699,14 +746,20 @@ fn render_tile(
     } else {
         fill(canvas, icon, theme::BORDER)?;
         let mark = if app.unavailable.is_some() { "!" } else { "+" };
-        text(canvas, mark, icon, layout.text_scale + 1, theme::TEXT)?;
+        text(
+            canvas,
+            mark,
+            icon,
+            (layout.text_scale).saturating_add(1_i32),
+            theme::TEXT,
+        )?;
     }
     if app.unavailable.is_some() && !app.is_system_settings() {
         text(
             canvas,
             "!",
             Rect {
-                x: tile.x + tile.w - 20,
+                x: ((tile.x).saturating_add(tile.w)).saturating_sub(20_i32),
                 y: tile.y,
                 w: 20,
                 h: 20,
@@ -715,15 +768,17 @@ fn render_tile(
             theme::WARNING,
         )?;
     }
-    let label_top = icon.y + icon.h;
+    let label_top = (icon.y).saturating_add(icon.h);
     text(
         canvas,
         &app.name,
         Rect {
-            x: tile.x + theme::SPACE * layout.text_scale,
+            x: (tile.x).saturating_add((theme::SPACE).saturating_mul(layout.text_scale)),
             y: label_top,
-            w: tile.w - 2 * theme::SPACE * layout.text_scale,
-            h: tile.y + tile.h - label_top,
+            w: (tile.w).saturating_sub(
+                ((2_i32).saturating_mul(theme::SPACE)).saturating_mul(layout.text_scale),
+            ),
+            h: ((tile.y).saturating_add(tile.h)).saturating_sub(label_top),
         },
         layout.text_scale,
         theme::TEXT,
@@ -746,16 +801,19 @@ fn render_tile(
 fn badge_bounds(tile: Rect, label: &str, scale: i32) -> Rect {
     let width = chip_width(label, scale);
     Rect {
-        x: tile.x + tile.w - width - 3 * scale,
-        y: tile.y + 3 * scale,
+        x: (((tile.x).saturating_add(tile.w)).saturating_sub(width))
+            .saturating_sub((3_i32).saturating_mul(scale)),
+        y: (tile.y).saturating_add((3_i32).saturating_mul(scale)),
         w: width,
-        h: 10 * scale + 2,
+        h: ((10_i32).saturating_mul(scale)).saturating_add(2_i32),
     }
 }
 
 /// Width of a compact state chip: one cell per character plus padding.
 pub fn chip_width(label: &str, scale: i32) -> i32 {
-    i32::try_from(label.chars().count()).unwrap_or(0) * 8 * scale + 6 * scale
+    (((i32::try_from(label.chars().count()).unwrap_or(0)).saturating_mul(8_i32))
+        .saturating_mul(scale))
+    .saturating_add((6_i32).saturating_mul(scale))
 }
 
 /// Compact opaque state chip: one fill, one underline and one short label.
@@ -774,7 +832,7 @@ pub fn chip(
         canvas,
         Rect {
             x: bounds.x,
-            y: bounds.y + bounds.h - 1,
+            y: ((bounds.y).saturating_add(bounds.h)).saturating_sub(1_i32),
             w: bounds.w,
             h: 1,
         },
@@ -791,10 +849,10 @@ fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Resul
         x: layout.title.x,
         y: layout.title.h,
         w: layout.title.w,
-        h: layout.footer.y - layout.title.h,
+        h: (layout.footer.y).saturating_sub(layout.title.h),
     };
     fill(canvas, bounds, theme::ERROR_SURFACE)?;
-    let line_height = 16 * layout.text_scale;
+    let line_height = (16_i32).saturating_mul(layout.text_scale);
     text(
         canvas,
         "COULD NOT OPEN APP",
@@ -805,16 +863,24 @@ fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Resul
         layout.text_scale,
         theme::WARNING,
     )?;
-    let columns = fit_columns(bounds.w - 16, layout.text_scale);
-    let rows = usize::try_from(bounds.h / line_height - 1).map_err(|_| "dialog rows")?;
+    let columns = fit_columns((bounds.w).saturating_sub(16_i32), layout.text_scale);
+    let rows = usize::try_from(
+        ((bounds.h).checked_div(line_height).unwrap_or(0_i32)).saturating_sub(1_i32),
+    )
+    .map_err(|conversion| format!("dialog rows: {conversion}"))?;
     for (row, value) in wrap_words(error, columns).iter().take(rows).enumerate() {
         text_left(
             canvas,
             value,
             Rect {
-                x: bounds.x + 8,
-                y: bounds.y + (i32::try_from(row).map_err(|_| "dialog row")? + 1) * line_height,
-                w: bounds.w - 16,
+                x: (bounds.x).saturating_add(8_i32),
+                y: (bounds.y).saturating_add(
+                    ((i32::try_from(row)
+                        .map_err(|conversion| format!("dialog row: {conversion}"))?)
+                    .saturating_add(1_i32))
+                    .saturating_mul(line_height),
+                ),
+                w: (bounds.w).saturating_sub(16_i32),
                 h: line_height,
             },
             layout.text_scale,
@@ -827,52 +893,38 @@ fn error_dialog(canvas: &mut Screen, layout: &Layout, state: &Launcher) -> Resul
 /// Read the completed backbuffer before `present`, which may invalidate it on
 /// accelerated backends. SDL handles pixel conversion and backend orientation.
 pub fn screenshot(canvas: &Screen, path: &std::path::Path) -> Result<(), String> {
-    let (width, height) = canvas.output_size()?;
-    let mut pixels = canvas.read_pixels(None, PixelFormatEnum::RGB24)?;
-    let surface = Surface::from_data(
-        &mut pixels,
-        width,
-        height,
-        width * 3,
-        PixelFormatEnum::RGB24,
-    )?;
-    let mut encoded =
-        vec![0; usize::try_from(width * height * 4 + 4096).map_err(|_| "screenshot too large")?];
-    let length;
-    {
-        let mut rw = sdl2::rwops::RWops::from_bytes_mut(&mut encoded)?;
-        surface.save_bmp_rw(&mut rw)?;
-        length = std::io::Seek::stream_position(&mut rw).map_err(|e| e.to_string())?;
-    }
-    let length = usize::try_from(length).map_err(|_| "screenshot too large")?;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|e| format!("screenshot {}: {e}", path.display()))?;
-    file.write_all(&encoded[..length])
-        .map_err(|e| e.to_string())
+    vitrallis_native::ui::save_screenshot(&canvas.canvas, path)
 }
 
 // Inspect the same bounded bytes passed to SDL, before its native decoder allocates.
 fn validate_bmp(bytes: &[u8]) -> Result<(), String> {
-    if bytes.len() < 54 || bytes.len() > 1024 * 1024 || &bytes[..2] != b"BM" {
+    if bytes.len() < 54 || bytes.len() > 1024 * 1024 || !bytes.starts_with(b"BM") {
         return Err("icon must be a BMP between 54 bytes and 1 MiB".into());
     }
-    let word = |offset: usize| {
-        u32::from_le_bytes([
-            bytes[offset],
-            bytes[offset + 1],
-            bytes[offset + 2],
-            bytes[offset + 3],
-        ])
+    let word = |offset: usize| -> Result<u32, String> {
+        let end = offset.checked_add(4).ok_or("BMP header offset overflow")?;
+        let field: [u8; 4] = bytes
+            .get(offset..end)
+            .ok_or("Incomplete BMP header")?
+            .try_into()
+            .map_err(|error| format!("BMP header field: {error}"))?;
+        Ok(u32::from_le_bytes(field))
     };
-    if word(14) != 40
-        || !(1..=512).contains(&word(18))
-        || !(1..=512).contains(&word(22))
-        || bytes[26..28] != [1, 0]
-        || !matches!(u16::from_le_bytes([bytes[28], bytes[29]]), 24 | 32)
-        || word(30) != 0
+    if word(14)? != 40
+        || !(1..=512).contains(&word(18)?)
+        || !(1..=512).contains(&word(22)?)
+        || bytes.get(26..28) != Some([1, 0].as_slice())
+        || !matches!(
+            u16::from_le_bytes(
+                bytes
+                    .get(28..30)
+                    .ok_or("Incomplete BMP bit depth")?
+                    .try_into()
+                    .map_err(|error| format!("BMP bit depth: {error}"))?
+            ),
+            24 | 32
+        )
+        || word(30)? != 0
     {
         return Err("icon requires a 1..512 x 1..512 uncompressed 24/32-bit Windows BMP".into());
     }
@@ -901,9 +953,9 @@ mod tests {
     /// cell; the overflow policy must agree with it exactly.
     #[test]
     fn measurement_and_overflow_policy_agree_with_the_fixed_cell() {
-        for scale in 1..=4 {
+        for scale in 1_i32..=4_i32 {
             let cell = advance(scale);
-            assert_eq!(cell, theme::CELL * scale);
+            assert_eq!(cell, theme::CELL.saturating_mul(scale));
             assert_eq!(fit_columns(cell * 5, scale), 5);
             assert_eq!(fit_columns(cell * 5 - 1, scale), 4);
             assert_eq!(fit_columns(0, scale), 0);
@@ -962,7 +1014,11 @@ mod tests {
     #[test]
     fn text_never_draws_outside_its_rectangle() -> Result<(), String> {
         let _guard = crate::test_support::sdl_lock();
-        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        assert!(
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+            "dummy video must be available for this fixture"
+        );
         let sdl = sdl2::init()?;
         let video = sdl.video()?;
         let window = video
@@ -970,14 +1026,14 @@ mod tests {
             .hidden()
             .build()
             .map_err(|e| e.to_string())?;
-        let canvas = window
+        let raw_canvas = window
             .into_canvas()
             .software()
             .build()
             .map_err(|e| e.to_string())?;
-        let creator = canvas.texture_creator();
-        let mut canvas = Screen::new(canvas, &creator)?;
-        for scale in 1..=3 {
+        let creator = raw_canvas.texture_creator();
+        let mut canvas = Screen::new(raw_canvas, &creator)?;
+        for scale in 1_i32..=3_i32 {
             for value in [
                 "",
                 "A",
@@ -986,7 +1042,11 @@ mod tests {
                 "Extremely Long Application Name That Cannot Fit",
                 "\u{2019}quoted\u{201d} \u{2014} dash",
             ] {
-                for (w, h) in [(16 * scale, 12 * scale), (52 * scale, 10 * scale), (1, 1)] {
+                for (w, h) in [
+                    (16_i32 * scale, 12_i32 * scale),
+                    (52_i32 * scale, 10_i32 * scale),
+                    (1_i32, 1_i32),
+                ] {
                     let bounds = Rect { x: 7, y: 9, w, h };
                     canvas.set_draw_color(theme::BACKGROUND);
                     canvas.clear();
@@ -1015,7 +1075,7 @@ mod tests {
             let layout = Layout::home(width, height)?;
             let geometry = crate::app_center::Geometry::new(&layout);
             let scale = geometry.scale;
-            let top = geometry.list_top + 40 * scale + 4 * scale;
+            let top = geometry.list_top + 40_i32 * scale + 4_i32 * scale;
             for description in 0..=3 {
                 for count in 0..=12 {
                     let plan = app_center::detail_plan(&geometry, top, description, count);
@@ -1037,9 +1097,9 @@ mod tests {
                     let drawn = indices.len() + usize::from(plan.omitted);
                     let pitch = app_center::DETAIL_PITCH * scale;
                     let last = top
-                        + i32::try_from(plan.description_lines).unwrap_or(0) * pitch
-                        + 2 * scale
-                        + i32::try_from(drawn).unwrap_or(0) * pitch;
+                        + i32::try_from(plan.description_lines).unwrap_or(0_i32) * pitch
+                        + 2_i32 * scale
+                        + i32::try_from(drawn).unwrap_or(0_i32) * pitch;
                     assert!(
                         last <= geometry.pinned.y,
                         "{width}x{height} description={description} fields={count}: \
@@ -1056,14 +1116,14 @@ mod tests {
     /// marker can never spill over the row it belongs to.
     #[test]
     fn state_chip_contains_its_label() {
-        for scale in 1..=3 {
+        for scale in 1_i32..=3_i32 {
             for label in ["RUNNING", "UPDATE 1.2.3", "UNAVAILABLE", "A"] {
                 let width = chip_width(label, scale);
                 assert!(
-                    width >= i32::try_from(label.chars().count()).unwrap_or(0) * advance(scale)
+                    width >= i32::try_from(label.chars().count()).unwrap_or(0_i32) * advance(scale)
                 );
                 assert!(fit_columns(width, scale) >= label.chars().count());
-                assert!(10 * scale + 2 >= advance(scale));
+                assert!(10_i32 * scale + 2_i32 >= advance(scale));
             }
         }
     }
@@ -1073,7 +1133,11 @@ mod tests {
     #[test]
     fn shortcut_preview_decodes_once_per_icon_and_clears_on_reset() -> Result<(), String> {
         let _guard = crate::test_support::sdl_lock();
-        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        assert!(
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+            "dummy video must be available for this fixture"
+        );
         let sdl = sdl2::init()?;
         let video = sdl.video()?;
         let window = video
@@ -1081,13 +1145,13 @@ mod tests {
             .hidden()
             .build()
             .map_err(|e| e.to_string())?;
-        let canvas = window
+        let raw_canvas = window
             .into_canvas()
             .software()
             .build()
             .map_err(|e| e.to_string())?;
-        let creator = canvas.texture_creator();
-        let mut canvas = Screen::new(canvas, &creator)?;
+        let creator = raw_canvas.texture_creator();
+        let mut canvas = Screen::new(raw_canvas, &creator)?;
         let icon = include_bytes!("../assets/system/apps.png").as_slice();
         let other = include_bytes!("../assets/system/wifi.png").as_slice();
         let bounds = Rect {
@@ -1136,29 +1200,26 @@ mod tests {
         scale: i32,
     ) -> Result<(), String> {
         let pixels = canvas.read_pixels(None, PixelFormatEnum::RGB24)?;
-        let (width, height) = canvas.output_size()?;
-        let (width, height) = (
-            i32::try_from(width).unwrap_or(0),
-            i32::try_from(height).unwrap_or(0),
-        );
+        let (width, _) = canvas.output_size()?;
+        let pixel_width = usize::try_from(width).map_err(|error| error.to_string())?;
         let background = [
             theme::BACKGROUND.r,
             theme::BACKGROUND.g,
             theme::BACKGROUND.b,
         ];
-        for y in 0..height {
-            for x in 0..width {
-                let offset = usize::try_from((y * width + x) * 3).unwrap_or(0);
-                let pixel = pixels.get(offset..offset + 3).ok_or("pixel offset")?;
-                let inside = x >= bounds.x
-                    && x < bounds.x + bounds.w
-                    && y >= bounds.y
-                    && y < bounds.y + bounds.h;
-                if !inside && pixel != background {
-                    return Err(format!(
-                        "{value:?} at scale {scale} drew {pixel:?} outside {bounds:?} at {x},{y}"
-                    ));
-                }
+        let (rgb_pixels, remainder) = pixels.as_chunks::<3>();
+        if !remainder.is_empty() {
+            return Err("Incomplete RGB24 pixel".into());
+        }
+        for (index, pixel) in rgb_pixels.iter().enumerate() {
+            let x = i32::try_from(index.checked_rem(pixel_width).ok_or("Zero canvas width")?)
+                .map_err(|error| error.to_string())?;
+            let y = i32::try_from(index.checked_div(pixel_width).ok_or("Zero canvas width")?)
+                .map_err(|error| error.to_string())?;
+            if !bounds.contains(f64::from(x), f64::from(y)) && *pixel != background {
+                return Err(format!(
+                    "{value:?} at scale {scale} drew {pixel:?} outside {bounds:?} at {x},{y}"
+                ));
             }
         }
         Ok(())
@@ -1237,7 +1298,7 @@ mod png_tests {
         let surface = decode_icon(&bytes)?;
         assert_eq!((surface.width(), surface.height()), (1, 1));
         assert_eq!(surface.without_lock(), Some([12, 34, 56, 255].as_slice()));
-        assert!(decode_icon(&bytes[..24]).is_err());
+        assert!(decode_icon(bytes.get(..24).ok_or("Missing fixture element")?).is_err());
         assert!(decode_icon(b"broken asset").is_err());
         bytes.extend(vec![0; 1024 * 1024]);
         assert!(decode_icon(&bytes).is_err());
@@ -1306,10 +1367,10 @@ mod system_tests {
             canvas,
             &output.join(format!("update-available-{w}x{h}.bmp")),
         )?;
-        state.settings.input(Action::SelectAndActivate(1));
+        assert_eq!(state.settings.input(Action::SelectAndActivate(1)), None);
         render(canvas, layout, state, textures)?;
         screenshot(canvas, &output.join(format!("update-confirm-{w}x{h}.bmp")))?;
-        state.settings.input(Action::Back);
+        assert_eq!(state.settings.input(Action::Back), None);
         state.settings.updater.state = crate::updater::State::Downloading {
             received: 2_500_000,
             total: 10_000_000,
@@ -1353,7 +1414,9 @@ mod system_tests {
                 x: 0,
                 y: controls.confirmation[0].y,
                 w: i32::try_from(w).map_err(|e| e.to_string())?,
-                h: i32::try_from(h).map_err(|e| e.to_string())? - controls.confirmation[0].y,
+                h: i32::try_from(h)
+                    .map_err(|e| e.to_string())?
+                    .saturating_sub(controls.confirmation[0].y),
             })?),
             PixelFormatEnum::RGB24,
         )?;
@@ -1362,9 +1425,9 @@ mod system_tests {
             theme::BACKGROUND.g,
             theme::BACKGROUND.b,
         ];
-        let (pixels, remainder) = pixels.as_chunks::<3>();
-        assert_eq!(remainder, &[] as &[u8]);
-        assert!(pixels.iter().all(|pixel| *pixel == background));
+        let (rgb_pixels, remainder) = pixels.as_chunks::<3>();
+        assert!(remainder.is_empty(), "RGB readback has an incomplete pixel");
+        assert!(rgb_pixels.iter().all(|pixel| *pixel == background));
         let waiting = output.join("relaunch-wait");
         std::fs::create_dir_all(&waiting).map_err(|e| e.to_string())?;
         screenshot(canvas, &waiting.join(format!("updates-{w}x{h}.bmp")))?;
@@ -1429,7 +1492,11 @@ mod system_tests {
     #[test]
     fn system_panels_render_at_device_and_scaled_sizes() -> Result<(), String> {
         let _guard = crate::test_support::sdl_lock();
-        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        assert!(
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+            "dummy video must be available for this fixture"
+        );
         let sdl = sdl2::init()?;
         let video = sdl.video()?;
         let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
@@ -1453,7 +1520,7 @@ mod system_tests {
             .hidden()
             .build()
             .map_err(|e| e.to_string())?;
-        let canvas = window
+        let raw_canvas = window
             .into_canvas()
             .software()
             .build()
@@ -1479,8 +1546,8 @@ mod system_tests {
             power_controls: true,
             ..Status::default()
         };
-        let creator = canvas.texture_creator();
-        let mut canvas = Screen::new(canvas, &creator)?;
+        let creator = raw_canvas.texture_creator();
+        let mut canvas = Screen::new(raw_canvas, &creator)?;
         home_samples(&mut canvas, &layout, output)?;
         if w == 480 {
             cache_tests::lifecycle(&creator, &mut canvas)?;
@@ -1490,9 +1557,9 @@ mod system_tests {
         power_samples(&mut canvas, &layout, &mut state, output)?;
         state.settings.system_state = crate::settings::SystemState::Ready;
         state.settings.network_available = true;
-        state.settings.input(Action::System);
-        let creator = canvas.texture_creator();
-        let textures = artwork(&creator, &state);
+        assert_eq!(state.settings.input(Action::System), None);
+        let scene_creator = canvas.texture_creator();
+        let textures = artwork(&scene_creator, &state);
         capture(&mut canvas, &layout, &state, &textures, output, "system")?;
         state.settings.page(crate::settings::Page::Device);
         capture(&mut canvas, &layout, &state, &textures, output, "device")?;
@@ -1557,13 +1624,13 @@ mod system_tests {
         // Power actions are directly reachable from the overview.
         state.settings.page(crate::settings::Page::Home);
         state.settings.selected = 14;
-        state.settings.input(Action::Activate);
+        assert_eq!(state.settings.input(Action::Activate), None);
         capture(canvas, layout, state, &[], output, "confirm")?;
         assert_eq!(state.settings.selected, 0);
         state.settings.cancel();
         state.settings.status = Status::default();
         state.settings.system_state = crate::settings::SystemState::Unavailable;
-        state.settings.input(Action::System);
+        assert_eq!(state.settings.input(Action::System), None);
         capture(canvas, layout, state, &[], output, "unavailable")?;
         state.settings.cancel();
         // Launch feedback is a status line, not a modal loading screen.
@@ -1667,7 +1734,7 @@ mod system_tests {
             layout.columns,
             layout.tiles.len(),
         )?;
-        state.app_states.insert(
+        let _previous_fixture_state = state.app_states.insert(
             "io.vitrallis.notepad".into(),
             crate::process::AppState::RunningBackground,
         );
@@ -1714,18 +1781,18 @@ mod system_tests {
             layout.columns,
             layout.tiles.len(),
         )?;
-        long.folders.names.insert("folder".into(), "Tools".into());
+        drop(long.folders.names.insert("folder".into(), "Tools".into()));
         for app in long.all_apps.clone() {
             if app.id != "folder" {
-                long.folders.members.insert(app.id, "folder".into());
+                drop(long.folders.members.insert(app.id, "folder".into()));
             }
         }
         long.folder = Some("folder".into());
         long.rebuild_view(None);
         long.status = "Experimental Rust Application is launching...".into();
         long.status_notice = true;
-        let textures = artwork(&creator, &long);
-        render(canvas, layout, &long, &textures)?;
+        let long_textures = artwork(&creator, &long);
+        render(canvas, layout, &long, &long_textures)?;
         screenshot(
             canvas,
             &output.join(format!(
@@ -1737,7 +1804,7 @@ mod system_tests {
             "Entry point is not executable and no compatible runtime was found for this device."
                 .into(),
         );
-        render(canvas, layout, &long, &textures)?;
+        render(canvas, layout, &long, &long_textures)?;
         screenshot(
             canvas,
             &output.join(format!("home-error-{}x{}.bmp", layout.width, layout.height)),
@@ -1757,12 +1824,12 @@ mod system_tests {
         // SDL's software image blending uses architecture-specific SIMD rounding.
         // Keep exact reviewed pixels for each host instead of tolerating differences.
         let profile = format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH);
-        let references = references
+        let reference_entries = references
             .get(&profile)
             .ok_or_else(|| format!("No renderer references for {profile}"))?;
         let rendered: std::collections::BTreeSet<_> = std::fs::read_dir(output)
             .map_err(|e| e.to_string())?
-            .map(|entry| entry.map(|entry| entry.path()).map_err(|e| e.to_string()))
+            .map(|result| result.map(|entry| entry.path()).map_err(|e| e.to_string()))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .filter(|path| path.extension().is_some_and(|extension| extension == "bmp"))
@@ -1771,7 +1838,7 @@ mod system_tests {
                     .map(|name| name.to_string_lossy().into_owned())
             })
             .collect();
-        let expected_names = references.keys().cloned().collect();
+        let expected_names = reference_entries.keys().cloned().collect();
         if rendered != expected_names {
             return Err(format!(
                 "Renderer reference inventory differs: unreviewed {:?}; missing {:?}",
@@ -1779,10 +1846,15 @@ mod system_tests {
                 expected_names.difference(&rendered).collect::<Vec<_>>()
             ));
         }
-        for (name, expected) in references {
+        for (name, expected) in reference_entries {
             let bytes = std::fs::read(output.join(name)).map_err(|e| e.to_string())?;
             let digest = Sha256::digest(bytes);
-            let mut actual = String::with_capacity(digest.len() * 2);
+            let mut actual = String::with_capacity(
+                digest
+                    .len()
+                    .checked_mul(2)
+                    .ok_or("Digest capacity overflow")?,
+            );
             for byte in digest {
                 write!(&mut actual, "{byte:02x}").map_err(|e| e.to_string())?;
             }

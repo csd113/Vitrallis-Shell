@@ -75,6 +75,11 @@ pub fn fields(value: &Value, keys: &str) -> Result<(), String> {
     }
     Ok(())
 }
+pub fn field<'a>(value: &'a Value, key: &str) -> Result<&'a Value, String> {
+    value
+        .get(key)
+        .ok_or_else(|| format!("missing field: {key}"))
+}
 pub fn text(value: &Value, max: usize) -> Result<&str, String> {
     let s = value.as_str().ok_or("expected text")?;
     if s.is_empty() || s.chars().count() > max || s.chars().any(char::is_control) {
@@ -122,7 +127,8 @@ impl Version {
 }
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}.{}", self.0[0], self.0[1], self.0[2])
+        let [major, minor, patch] = &self.0;
+        write!(f, "{major}.{minor}.{patch}")
     }
 }
 impl Ord for Version {
@@ -152,7 +158,10 @@ pub fn version(s: &str) -> Result<Version, String> {
     {
         return Err("Expected stable MAJOR.MINOR.PATCH".into());
     }
-    Ok(Version([parts[0].into(), parts[1].into(), parts[2].into()]))
+    let [major, minor, patch] = parts.as_slice() else {
+        return Err("Expected stable MAJOR.MINOR.PATCH".into());
+    };
+    Ok(Version([(*major).into(), (*minor).into(), (*patch).into()]))
 }
 pub fn hex(s: &str, len: usize) -> Result<(), String> {
     if s.len() != len
@@ -188,7 +197,8 @@ pub fn check_paths<'a>(paths: impl Iterator<Item = &'a str>) -> Result<(), Strin
     }
     for name in &files {
         for (i, _) in name.match_indices('/') {
-            if files.contains(&name[..i]) {
+            let parent = name.get(..i).ok_or("Invalid package path boundary")?;
+            if files.contains(parent) {
                 return Err("file/directory collision".into());
             }
         }
@@ -226,9 +236,14 @@ impl RuntimeKind {
                     ) {
                         return Err(format!("Unsupported native target: {target}"));
                     }
-                    let entry = text(entry, 240)?;
-                    path(entry)?;
-                    binaries.insert(target.clone(), entry.into());
+                    let binary_entry = text(entry, 240)?;
+                    path(binary_entry)?;
+                    if binaries
+                        .insert(target.clone(), binary_entry.into())
+                        .is_some()
+                    {
+                        return Err("Duplicate native binary target".into());
+                    }
                 }
                 Ok(Self::Rust(binaries))
             }
@@ -333,16 +348,16 @@ pub fn catalog_entries(
 ) -> Result<Vec<Result<Package, String>>, String> {
     let doc = json(bytes)?;
     fields(&doc, "schema_version apps")?;
-    if doc["schema_version"].as_u64() != Some(1) {
+    if field(&doc, "schema_version")?.as_u64() != Some(1) {
         return Err("unsupported catalog schema".into());
     }
-    let apps = doc["apps"]
+    let apps = field(&doc, "apps")?
         .as_array()
         .filter(|a| a.len() <= 1000)
         .ok_or("invalid app list")?;
     let mut ids = BTreeSet::new();
     for v in apps {
-        if let Some(id) = v["id"].as_str()
+        if let Some(id) = field(v, "id")?.as_str()
             && !ids.insert(id)
         {
             return Err("Duplicate app ID".into());
@@ -352,33 +367,34 @@ pub fn catalog_entries(
         .iter()
         .enumerate()
         .map(|(i, v)| {
-            parse_package(origin, v).map_err(|e| format!("App {} metadata invalid: {e}", i + 1))
+            parse_package(origin, v)
+                .map_err(|e| format!("App {} metadata invalid: {e}", i.saturating_add(1)))
         })
         .collect())
 }
 fn parse_package(origin: &Repository, v: &Value) -> Result<Package, String> {
     fields(
         v,
-        if v["runtime"] == "rust" {
+        if field(v, "runtime")? == "rust" {
             "id name version description runtime binaries permissions installable compatibility_notes source files"
         } else {
             "id name version description runtime entry permissions installable compatibility_notes source files"
         },
     )?;
-    let id = text(&v["id"], 128)?.to_owned();
+    let id = text(field(v, "id")?, 128)?.to_owned();
     identity(&id)?;
-    let name = text(&v["name"], 1000)?.to_owned();
-    let description = text(&v["description"], 1000)?.to_owned();
-    let notes = text(&v["compatibility_notes"], 1000)?.to_owned();
-    let version = version(text(&v["version"], 32)?)?;
+    let name = text(field(v, "name")?, 1000)?.to_owned();
+    let description = text(field(v, "description")?, 1000)?.to_owned();
+    let notes = text(field(v, "compatibility_notes")?, 1000)?.to_owned();
+    let version = version(text(field(v, "version")?, 32)?)?;
     let runtime = RuntimeKind::parse(v)?;
     let entry = runtime.entry(v)?;
-    permissions(&v["permissions"])?;
-    let installable = v["installable"]
+    permissions(field(v, "permissions")?)?;
+    let installable = field(v, "installable")?
         .as_bool()
         .ok_or("Invalid installable flag")?;
-    let (repository, commit, directory) = parse_source(&v["source"])?;
-    let files = parse_inventory(&v["files"])?;
+    let (repository, commit, directory) = parse_source(field(v, "source")?)?;
+    let files = parse_inventory(field(v, "files")?)?;
     if !files.iter().any(|f| f.path == entry) {
         return Err("Entry missing from inventory".into());
     }
@@ -392,7 +408,7 @@ fn parse_package(origin: &Repository, v: &Value) -> Result<Package, String> {
         icon: None,
         version,
         entry,
-        permissions: v["permissions"].clone(),
+        permissions: field(v, "permissions")?.clone(),
         installable,
         notes,
         repository,
@@ -450,7 +466,10 @@ fn parse_inventory(v: &Value) -> Result<Vec<FileRow>, String> {
     if files.iter().any(|f| f.path.starts_with("tests/")) {
         return Err("App-local tests must be excluded from device packages".into());
     }
-    if files.windows(2).any(|rows| rows[0].path >= rows[1].path) {
+    if files
+        .windows(2)
+        .any(|pair| matches!(pair, [left, right] if left.path >= right.path))
+    {
         return Err("Inventory must be sorted by ASCII path".into());
     }
     if files.iter().map(|f| f.size).sum::<usize>() > BUNDLE_LIMIT {
@@ -472,7 +491,7 @@ pub fn manifest(bytes: &[u8]) -> Result<Value, String> {
     let s = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
     let parsed: toml::Value = toml::from_str(s).map_err(|e| e.to_string())?;
     let v = serde_json::to_value(parsed).map_err(|e| e.to_string())?;
-    let mut keys = if v["runtime"] == "rust" {
+    let mut keys = if field(&v, "runtime")? == "rust" {
         "manifest_version name id version runtime binaries permissions".to_owned()
     } else {
         "manifest_version name id version runtime entry permissions".to_owned()
@@ -481,18 +500,18 @@ pub fn manifest(bytes: &[u8]) -> Result<Value, String> {
         keys.push_str(" network");
     }
     fields(&v, &keys)?;
-    crate::tor::Requirement::parse(&v)?;
-    if v["manifest_version"].as_u64() != Some(1) {
+    let _tor_requirement = crate::tor::Requirement::parse(&v)?;
+    if field(&v, "manifest_version")?.as_u64() != Some(1) {
         return Err("unsupported manifest/runtime".into());
     }
-    text(&v["name"], 1000)?;
-    identity(text(&v["id"], 128)?)?;
-    version(text(&v["version"], 32)?)?;
-    RuntimeKind::parse(&v)?;
-    if v["runtime"] == "python" {
-        manifest_entry(&v)?;
+    let _name = text(field(&v, "name")?, 1000)?;
+    identity(text(field(&v, "id")?, 128)?)?;
+    let _version = version(text(field(&v, "version")?, 32)?)?;
+    let _runtime = RuntimeKind::parse(&v)?;
+    if field(&v, "runtime")? == "python" {
+        let _entry = manifest_entry(&v)?;
     }
-    permissions(&v["permissions"])?;
+    permissions(field(&v, "permissions")?)?;
     Ok(v)
 }
 pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
@@ -534,16 +553,16 @@ pub fn validate_bundle(p: &Package, files: &Files) -> Result<(), String> {
     }
     // Development tests are required in the source repository, but current
     // catalog v1 device packages omit them. Assets remain part of the payload.
-    if !files.keys().any(|p| p.starts_with("assets/")) {
+    if !files.keys().any(|path| path.starts_with("assets/")) {
         return Err("missing populated assets/".into());
     }
     let v = manifest(manifest_bytes)?;
-    if v["id"] != p.id
-        || v["name"] != p.name
-        || v["version"] != p.version.to_string()
+    if field(&v, "id")?.as_str() != Some(p.id.as_str())
+        || field(&v, "name")?.as_str() != Some(p.name.as_str())
+        || field(&v, "version")?.as_str() != Some(p.version.to_string().as_str())
         || manifest_entry(&v)? != p.entry
         || RuntimeKind::parse(&v)? != p.runtime
-        || v["permissions"] != p.permissions
+        || field(&v, "permissions")? != &p.permissions
     {
         return Err("catalog/manifest disagreement".into());
     }
@@ -563,7 +582,7 @@ pub(super) fn validate_icon(bytes: &[u8]) -> Result<(), String> {
         .output_buffer_size()
         .ok_or("PNG output buffer exceeds addressable memory")?;
     let mut pixels = vec![0; size];
-    reader.next_frame(&mut pixels).map_err(|e| e.to_string())?;
+    let _decoded_frame = reader.next_frame(&mut pixels).map_err(|e| e.to_string())?;
     reader.finish().map_err(|e| e.to_string())?;
 
     Ok(())
@@ -610,7 +629,10 @@ mod tests {
             sha256: crate::app_center::storage::sha(&manifest),
         }];
         let mut files = Files::new();
-        files.insert("app.toml".into(), manifest);
+        assert!(
+            files.insert("app.toml".into(), manifest).is_none(),
+            "fixture must start without a manifest"
+        );
         assert_eq!(
             validate_bundle(&package, &files),
             Err("missing icon.png".into())

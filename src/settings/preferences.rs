@@ -37,11 +37,14 @@ impl Settings {
                     }
                     1 if !self.policy_apps.is_empty() => {
                         self.policy_app = if forward {
-                            (self.policy_app + 1) % self.policy_apps.len()
+                            self.policy_app
+                                .saturating_add(1)
+                                .checked_rem(self.policy_apps.len())
+                                .unwrap_or(0)
                         } else {
                             self.policy_app
                                 .checked_sub(1)
-                                .unwrap_or(self.policy_apps.len() - 1)
+                                .unwrap_or_else(|| self.policy_apps.len().saturating_sub(1))
                         };
                         return;
                     }
@@ -50,7 +53,7 @@ impl Settings {
                             return;
                         };
                         if !policy.essential.remove(id) {
-                            policy.essential.insert(id.clone());
+                            let _new_essential_app = policy.essential.insert(id.clone());
                         }
                     }
                     _ => return,
@@ -101,9 +104,9 @@ impl Settings {
 fn seconds(value: u32) -> String {
     match value {
         0 => "never".into(),
-        value if value % 3600 == 0 => format!("{} hour", value / 3600),
-        value if value % 60 == 0 => format!("{} min", value / 60),
-        value => format!("{value} sec"),
+        _ if value.is_multiple_of(3600) => format!("{} hour", value / 3600),
+        _ if value.is_multiple_of(60) => format!("{} min", value / 60),
+        _ => format!("{value} sec"),
     }
 }
 
@@ -119,25 +122,25 @@ mod tests {
             ("first".into(), "Same name".into()),
             ("second".into(), "Same name".into()),
         ];
-        settings.policy.essential.insert("second".into());
+        assert!(settings.policy.essential.insert("second".into()));
         settings.policy.background_seconds = 300;
         settings.selected = 1;
-        settings.input(Action::Move(Direction::Right));
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
         assert_eq!(settings.policy_app, 1);
         assert_eq!(
             settings.preference_rows()[2].1,
             "Yes - never closes it automatically"
         );
-        settings.input(Action::Move(Direction::Left));
+        assert_eq!(settings.input(Action::Move(Direction::Left)), None);
         assert_eq!(settings.policy_app, 0);
         assert!(settings.preference_rows()[2].1.contains("asked to close"));
-        settings.input(Action::Move(Direction::Down));
+        assert_eq!(settings.input(Action::Move(Direction::Down)), None);
         assert_eq!(settings.selected, 2);
-        settings.input(Action::Move(Direction::Down));
+        assert_eq!(settings.input(Action::Move(Direction::Down)), None);
         assert_eq!(settings.selected, super::super::footer::BACK);
-        settings.input(Action::Move(Direction::Up));
+        assert_eq!(settings.input(Action::Move(Direction::Up)), None);
         assert_eq!(settings.selected, 2);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Home);
     }
     #[test]

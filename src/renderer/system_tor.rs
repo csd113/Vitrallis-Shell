@@ -39,7 +39,7 @@ pub(super) fn panel(
         State::Error => "Error",
         State::Starting => "Starting",
         State::Stopping => "Stopping",
-        _ => "Stopped",
+        State::Disabled | State::Stopped => "Stopped",
     };
     let status = format!(
         "{} / {} / {}",
@@ -51,23 +51,19 @@ pub(super) fn panel(
         match snapshot.state {
             State::Connected => "Connected",
             State::Starting | State::Bootstrapping => "Bootstrapping",
-            _ => "Offline",
+            State::Disabled | State::Stopped | State::Stopping | State::Error => "Offline",
         },
         percent
     );
     let detail = format!("Service: {service}    Apps: {}", snapshot.apps);
-    for (bounds, top, bottom) in [
-        (
-            rows[0],
-            status,
-            format!("Startup: {}", snapshot.mode.label()),
-        ),
-        (rows[1], detail, "SOCKS: 127.0.0.1:9150".into()),
-    ] {
+    for (bounds, (top, bottom)) in rows.into_iter().zip([
+        (status, format!("Startup: {}", snapshot.mode.label())),
+        (detail, "SOCKS: 127.0.0.1:9150".into()),
+    ]) {
         card(canvas, bounds, false)?;
         let line = Rect {
-            x: bounds.x + 10,
-            w: bounds.w - 20,
+            x: bounds.x.saturating_add(10_i32),
+            w: bounds.w.saturating_sub(20_i32),
             h: bounds.h / 2,
             ..bounds
         };
@@ -76,7 +72,7 @@ pub(super) fn panel(
             canvas,
             &bottom,
             Rect {
-                y: bounds.y + bounds.h / 2,
+                y: bounds.y.saturating_add((bounds.h) / 2_i32),
                 ..line
             },
             layout.text_scale,
@@ -95,14 +91,18 @@ pub(super) fn panel(
         "Startup",
         "Details >",
     ];
-    for (index, bounds) in PanelLayout::tor_controls(layout).into_iter().enumerate() {
+    for (index, (bounds, title)) in PanelLayout::tor_controls(layout)
+        .into_iter()
+        .zip(labels)
+        .enumerate()
+    {
         card(canvas, bounds, settings.selected == index)?;
         label(
             canvas,
-            labels[index],
+            title,
             Rect {
-                x: bounds.x + 8,
-                w: bounds.w - 16,
+                x: bounds.x.saturating_add(8_i32),
+                w: bounds.w.saturating_sub(16_i32),
                 ..bounds
             },
             layout.text_scale,

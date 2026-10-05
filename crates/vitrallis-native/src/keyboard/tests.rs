@@ -34,8 +34,16 @@ fn function_row_consumes_fn_and_preserves_other_modifiers_and_repeats() {
                 for (base, function) in row {
                     let mut event = key(base, fn_mod | modifiers);
                     let mut expected = key(function, modifiers);
-                    for event in [&mut event, &mut expected] {
-                        if let Event::KeyDown { repeat: value, .. } = event {
+                    for sample_event in [&mut event, &mut expected] {
+                        if let Event::KeyDown {
+                            repeat: value,
+                            timestamp: _,
+                            window_id: _,
+                            keycode: _,
+                            scancode: _,
+                            keymod: _,
+                        } = sample_event
+                        {
                             *value = repeat;
                         }
                     }

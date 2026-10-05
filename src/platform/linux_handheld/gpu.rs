@@ -38,7 +38,7 @@ fn read_regular(path: &Path) -> Option<Vec<u8>> {
         return None;
     }
     let mut bytes = Vec::new();
-    fs::File::open(path)
+    let _bytes_read = fs::File::open(path)
         .ok()?
         .take(4097)
         .read_to_end(&mut bytes)

@@ -20,12 +20,12 @@ struct Timer {
 impl Timer {
     fn parse(text: &str) -> Option<Self> {
         // XKB also prints a "Suspend: off" indicator above these sections.
-        let text = text.split_once("Screen Saver:")?.1;
-        let words: Vec<_> = text.split_whitespace().collect();
+        let timers = text.split_once("Screen Saver:")?.1;
+        let words: Vec<_> = timers.split_whitespace().collect();
         let number = |label| {
             words
                 .windows(2)
-                .find(|p| p[0] == label)?
+                .find(|pair| pair.first().is_some_and(|word| *word == label))?
                 .get(1)?
                 .parse()
                 .ok()
@@ -36,7 +36,7 @@ impl Timer {
             standby: number("Standby:")?,
             suspend: number("Suspend:")?,
             off: number("Off:")?,
-            enabled: text.contains("DPMS is Enabled"),
+            enabled: timers.contains("DPMS is Enabled"),
         })
     }
     fn apply(self, io: &impl Hardware) -> Result<(), String> {
@@ -107,21 +107,21 @@ fn save_with_sync(
     safe(path)?;
     let parent = path.parent().ok_or("Missing settings directory")?;
     let mut directories = fs::DirBuilder::new();
-    directories.recursive(true);
+    let _recursive_directories = directories.recursive(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
-        directories.mode(0o700);
+        let _private_directories = directories.mode(0o700);
     }
     directories.create(parent).map_err(|e| e.to_string())?;
     safe(path)?;
     let temp = parent.join(format!(".screen-timeout-{}", std::process::id()));
     let mut options = fs::OpenOptions::new();
-    options.write(true).create_new(true);
+    let _exclusive_options = options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        let _private_options = options.mode(0o600);
     }
     let mut file = options.open(&temp).map_err(|e| e.to_string())?;
     let result = (|| {
@@ -137,7 +137,16 @@ fn save_with_sync(
             Err(error) => Saved::SyncFailed(error),
         })
     })();
-    let _ = fs::remove_file(temp);
+    if let Err(error) = fs::remove_file(&temp)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(match result {
+            Ok(_) => format!("Cannot remove screen timeout staging file: {error}"),
+            Err(primary) => {
+                format!("{primary}; cannot remove screen timeout staging file: {error}")
+            }
+        });
+    }
     result
 }
 fn set(io: &impl Hardware, seconds: u16, path: Option<&Path>) -> Result<(), String> {
@@ -167,7 +176,9 @@ fn set_with_save(
         if readback != new {
             return Err("Display sleep setting was not accepted".into());
         }
-        path.map_or(Ok(Saved::Durable), |path| persist(path, seconds))
+        path.map_or(Ok(Saved::Durable), |destination| {
+            persist(destination, seconds)
+        })
     });
     if let Ok(Saved::SyncFailed(error)) = &result {
         eprintln!("level=warn event=screen_timeout_sync message={error:?}");
@@ -193,14 +204,14 @@ pub fn restore() -> Result<(), String> {
         return Ok(());
     }
     let mut text = String::new();
-    fs::File::open(&path)
+    let _bytes_read = fs::File::open(&path)
         .and_then(|file| file.take(16).read_to_string(&mut text))
         .map_err(|e| e.to_string())?;
     set(
         &Native,
         text.trim()
             .parse()
-            .map_err(|_| "Invalid saved screen timeout")?,
+            .map_err(|error| format!("Invalid saved screen timeout: {error}"))?,
         None,
     )
 }
@@ -296,14 +307,19 @@ mod tests {
                 ));
             }
             assert_eq!(args.len(), 8);
-            let number = |index: usize| args[index].parse().map_err(|_| "invalid timer".to_owned());
+            let number = |index: usize| {
+                args.get(index)
+                    .ok_or("missing timer argument")?
+                    .parse()
+                    .map_err(|error| format!("invalid timer: {error}"))
+            };
             self.0.set(Timer {
                 timeout: number(1)?,
                 cycle: number(2)?,
                 standby: number(4)?,
                 suspend: number(5)?,
                 off: number(6)?,
-                enabled: args[7] == "+dpms",
+                enabled: args.get(7) == Some(&"+dpms"),
             });
             Ok(String::new())
         }
@@ -341,12 +357,12 @@ mod tests {
             .canonicalize()
             .map_err(|e| e.to_string())?
             .join("settings/screen-timeout");
-        save(&path, 60)?;
+        assert!(matches!(save(&path, 60)?, Saved::Durable));
         assert_eq!(
             fs::read_to_string(&path).map_err(|e| e.to_string())?,
             "60\n"
         );
-        save(&path, 0)?;
+        assert!(matches!(save(&path, 0)?, Saved::Durable));
         #[cfg(unix)]
         {
             let link = scratch.0.join("link");
@@ -372,8 +388,8 @@ mod tests {
             .canonicalize()
             .map_err(|e| e.to_string())?
             .join("screen-timeout");
-        let result = set_with_save(&io, 30, Some(&path), |path, seconds| {
-            save_with_sync(path, seconds, |_| {
+        let result = set_with_save(&io, 30, Some(&path), |save_path, seconds| {
+            save_with_sync(save_path, seconds, |_| {
                 Err("injected directory sync failure".into())
             })
         });
@@ -402,7 +418,7 @@ mod tests {
         assert!(save(&unsafe_parent.join("settings/screen-timeout"), 30).is_err());
         assert!(!unsafe_parent.join("settings").exists());
         let path = root.join("private/settings/screen-timeout");
-        save(&path, 60)?;
+        assert!(matches!(save(&path, 60)?, Saved::Durable));
         for directory in [root.join("private"), root.join("private/settings")] {
             assert_eq!(
                 fs::metadata(directory)

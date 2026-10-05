@@ -60,7 +60,9 @@ impl Settings {
             Action::Back | Action::System => match self.storage_view {
                 StorageView::Overview => self.page(self.storage_parent),
                 StorageView::App(_) => self.storage_view(StorageView::Apps),
-                _ => self.storage_view(StorageView::Overview),
+                StorageView::Apps | StorageView::Categories => {
+                    self.storage_view(StorageView::Overview);
+                }
             },
             Action::SelectAndActivate(index)
                 if index < rows || [BACK, NEXT, REFRESH].contains(&index) =>
@@ -84,13 +86,13 @@ impl Settings {
                     self.storage_view(StorageView::Categories);
                 }
                 index if self.storage_view == StorageView::Apps && index < rows => {
-                    self.storage_view(StorageView::App(self.storage_start + index));
+                    self.storage_view(StorageView::App(self.storage_start.saturating_add(index)));
                 }
                 _ => (),
             },
             Action::Move(Direction::Down) => {
-                self.selected = if self.selected + 1 < rows {
-                    self.selected + 1
+                self.selected = if self.selected.saturating_add(1) < rows {
+                    self.selected.saturating_add(1)
                 } else {
                     BACK
                 };
@@ -108,20 +110,13 @@ impl Settings {
                         self.selected = if direction == Direction::Left {
                             self.selected.saturating_sub(1)
                         } else {
-                            (self.selected + 1).min(rows - 1)
+                            (self.selected.saturating_add(1)).min(rows.saturating_sub(1))
                         };
                     }
                     return;
                 }
-                let controls = self.footer_controls();
-                let targets: Vec<_> = controls.into_iter().flatten().map(|(i, _)| i).collect();
-                if let Some(index) = targets.iter().position(|&i| i == self.selected) {
-                    let next = if direction == Direction::Left {
-                        index.saturating_sub(1)
-                    } else {
-                        (index + 1).min(targets.len() - 1)
-                    };
-                    self.selected = targets[next];
+                if let Some(target) = self.footer_neighbor(direction) {
+                    self.selected = target;
                 }
             }
             Action::Page(next) if self.storage_view == StorageView::Apps => {
@@ -131,14 +126,20 @@ impl Settings {
                     .as_ref()
                     .map_or(0, |report| report.apps.len());
                 self.storage_start = if next {
-                    (self.storage_start + 4).min(count.saturating_sub(1) / 4 * 4)
+                    (self.storage_start.saturating_add(4)).min(
+                        count
+                            .saturating_sub(1)
+                            .checked_div(4)
+                            .unwrap_or(0)
+                            .saturating_mul(4),
+                    )
                 } else {
                     self.storage_start.saturating_sub(4)
                 };
                 self.selected = if count == 0 { BACK } else { 0 };
                 self.clear_pointer();
             }
-            _ => (),
+            Action::SelectAndActivate(_) | Action::Page(_) => (),
         }
     }
 }
@@ -151,11 +152,11 @@ mod tests {
         let mut settings = Settings::default();
         settings.show();
         settings.page(super::super::Page::Storage);
-        settings.input(Action::Move(Direction::Right));
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
         assert_eq!(settings.selected, 1);
-        settings.input(Action::Activate);
+        assert_eq!(settings.input(Action::Activate), None);
         assert_eq!(settings.storage_view, StorageView::Categories);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         settings.selected = REFRESH;
         settings.storage_snapshot_changed();
         assert_eq!(settings.selected, REFRESH);

@@ -124,7 +124,7 @@ impl Paths {
         };
         let value = metadata::json(&file.bytes)?;
         metadata::fields(&value, "startup")?;
-        match value["startup"].as_str() {
+        match metadata::field(&value, "startup")?.as_str() {
             Some("on-demand") => Ok(Mode::OnDemand),
             Some("always-on") => Ok(Mode::AlwaysOn),
             Some("disabled") => Ok(Mode::Disabled),
@@ -173,7 +173,7 @@ impl Service {
             .as_ref()
             .ok_or("Tor worker unavailable")?
             .try_send(worker::Event::Control(control))
-            .map_err(|_| "Tor service is busy; retry".into())
+            .map_err(|error| format!("Tor service is busy or stopped; retry: {error}"))
     }
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot.lock().map_or_else(
@@ -193,12 +193,12 @@ impl Service {
     fn stop(&mut self) -> Result<(), String> {
         let sent = self.tx.take().map_or(Ok(()), |tx| {
             tx.send(worker::Event::Control(Control::Shutdown))
-                .map_err(|_| "Tor worker stopped before shutdown".to_owned())
+                .map_err(|error| format!("Tor worker stopped before shutdown: {error}"))
         });
         let joined = self.handle.take().map_or(Ok(()), |handle| {
-            handle
-                .join()
-                .map_err(|_| "Tor worker stopped unexpectedly; relaunch refused".to_owned())
+            handle.join().map_err(|payload| {
+                format!("Tor worker stopped unexpectedly; relaunch refused: {payload:?}")
+            })
         });
         joined.and(sent)
     }
@@ -220,7 +220,7 @@ pub fn required_command() -> Result<std::process::Command, String> {
     }
     let paths = Paths::current()?;
     let mut cmd = std::process::Command::new("/usr/bin/bwrap");
-    cmd.args(sandbox_arguments(&paths.root));
+    let _configured_builder = cmd.args(sandbox_arguments(&paths.root));
     Ok(cmd)
 }
 
@@ -245,10 +245,10 @@ pub fn configure_app(app: &mut crate::app::AppEntry, snapshot: &Snapshot) {
             snapshot.state.label().to_ascii_lowercase(),
         ),
     ] {
-        env.insert(key.into(), value.into());
+        let _previous_status_value = env.insert(key.into(), value.into());
     }
     if let Ok(paths) = Paths::current() {
-        env.insert(
+        let _previous_status_socket = env.insert(
             "VITRALLIS_TOR_STATUS_SOCKET".into(),
             paths.root.join("status.sock").into_os_string(),
         );
@@ -262,10 +262,10 @@ pub fn configure_app(app: &mut crate::app::AppEntry, snapshot: &Snapshot) {
             "HTTP_PROXY",
             "http_proxy",
         ] {
-            env.insert(key.into(), format!("socks5h://{HOST}:{PORT}").into());
+            let _previous_proxy = env.insert(key.into(), format!("socks5h://{HOST}:{PORT}").into());
         }
         for key in ["NO_PROXY", "no_proxy"] {
-            env.insert(key.into(), "".into());
+            let _previous_no_proxy = env.insert(key.into(), "".into());
         }
     }
 }
@@ -311,13 +311,13 @@ pub fn wrap_launcher(
     let script = String::from_utf8(bytes).map_err(|e| e.to_string())?;
     let mut args = sandbox_arguments(root);
     args.extend(["/bin/sh".into(), "-c".into(), script.into()]);
-    let mut script = "#!/bin/sh\nexec /usr/bin/bwrap".to_owned();
+    let mut wrapper = "#!/bin/sh\nexec /usr/bin/bwrap".to_owned();
     for arg in args {
         let value = arg.to_str().ok_or("Tor launcher paths require UTF-8")?;
-        script.push_str(" '");
-        script.push_str(&value.replace('\'', "'\\''"));
-        script.push('\'');
+        wrapper.push_str(" '");
+        wrapper.push_str(&value.replace('\'', "'\\''"));
+        wrapper.push('\'');
     }
-    script.push('\n');
-    Ok(script.into_bytes())
+    wrapper.push('\n');
+    Ok(wrapper.into_bytes())
 }

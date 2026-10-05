@@ -19,7 +19,7 @@ fn vanished_executable_cwd_and_permissions_return_to_a_dismissible_error()
         fs::set_permissions(&script, fs::Permissions::from_mode(0o755))?;
         draft.command = command::quote(&script)?;
         draft.cwd = cwd.to_string_lossy().into_owned();
-        store.save(None, &draft)?;
+        let _saved_shortcut_id = store.save(None, &draft)?;
         let mut catalog = Catalog::default();
         store.integrate(&mut catalog)?;
         let mut launcher = Launcher::new(catalog.apps, 3, 6)?;
@@ -84,9 +84,19 @@ fn crud_restart_and_icon_copy_are_atomic_and_never_delete_target()
     let mut catalog = Catalog::default();
     restarted.integrate(&mut catalog)?;
     assert_eq!(catalog.apps.len(), 1);
-    assert_eq!(catalog.apps[0].name, "Edited");
-    assert_eq!(catalog.apps[0].source, AppSource::Custom);
-    store.remove(&catalog.apps[0])?;
+    assert_eq!(
+        catalog.apps.first().ok_or("Missing fixture element")?.name,
+        "Edited"
+    );
+    assert_eq!(
+        catalog
+            .apps
+            .first()
+            .ok_or("Missing fixture element")?
+            .source,
+        AppSource::Custom
+    );
+    store.remove(catalog.apps.first().ok_or("Missing fixture element")?)?;
     assert!(restarted.load(&id).is_err());
     assert_eq!(fs::read_to_string(target)?, "#!/bin/sh\nprintf target\n");
     Ok(())
@@ -101,11 +111,14 @@ fn corrupt_records_and_icons_do_not_block_other_shortcuts() -> Result<(), Box<dy
     fs::write(store.path(&bad)?, b"{")?;
     let mut catalog = Catalog::default();
     store.integrate(&mut catalog)?;
-    assert_eq!(catalog.apps[0].id, good);
+    assert_eq!(
+        catalog.apps.first().ok_or("Missing fixture element")?.id,
+        good
+    );
     assert_eq!(catalog.apps.len(), 1);
     assert_eq!(catalog.diagnostics.len(), 1);
     let mut value: Value = serde_json::from_slice(&fs::read(store.path(&good)?)?)?;
-    value["icon"] = json!([0, 1, 2]);
+    *value.get_mut("icon").ok_or("Missing icon fixture")? = json!([0_i32, 1_i32, 2_i32]);
     fs::write(store.path(&good)?, serde_json::to_vec(&value)?)?;
     let loaded = store.load(&good)?;
     assert!(crate::renderer::decode_icon(loaded.icon.as_deref().ok_or("icon")?).is_err());
@@ -127,8 +140,15 @@ fn unmanaged_hiding_and_collisions_never_grant_uninstall_or_removal_authority() 
     };
     store.integrate(&mut catalog)?;
     assert_eq!(catalog.apps.len(), 1);
-    assert_eq!(catalog.apps[0].id, id);
-    assert!(store.hide(&catalog.apps[0]).is_err());
+    assert_eq!(
+        catalog.apps.first().ok_or("Missing fixture element")?.id,
+        id
+    );
+    assert!(
+        store
+            .hide(catalog.apps.first().ok_or("Missing fixture element")?)
+            .is_err()
+    );
     unmanaged.source = AppSource::AppCenter;
     unmanaged.id.clone_from(&id);
     assert!(store.remove(&unmanaged).is_err());

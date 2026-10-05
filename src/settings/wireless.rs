@@ -90,7 +90,7 @@ mod tests {
             Some(Request::Control(Control::Radio(Radio::Wifi, true)))
         );
         assert_eq!(settings.input(Action::Move(Direction::Left)), None);
-        settings.input(Action::Move(Direction::Down));
+        assert_eq!(settings.input(Action::Move(Direction::Down)), None);
         assert_eq!(
             settings.input(Action::Activate),
             Some(Request::Control(Control::Radio(Radio::Bluetooth, false)))
@@ -99,8 +99,9 @@ mod tests {
         assert_eq!(settings.input(Action::Activate), None);
         settings.pending = false;
         for (index, radio, enabled) in [(0, Radio::Wifi, true), (1, Radio::Bluetooth, false)] {
-            let bounds =
-                PanelLayout::rows(&layout, i32::try_from(WIRELESS_ROWS).unwrap_or(4))[index];
+            let bounds = *PanelLayout::rows(&layout, i32::try_from(WIRELESS_ROWS).unwrap_or(4_i32))
+                .get(index)
+                .ok_or("Missing fixture element")?;
             let event = |down| {
                 if down {
                     Event::MouseButtonDown {
@@ -109,8 +110,8 @@ mod tests {
                         which: 0,
                         mouse_btn: MouseButton::Left,
                         clicks: 1,
-                        x: bounds.x + 10,
-                        y: bounds.y + 10,
+                        x: bounds.x + 10_i32,
+                        y: bounds.y + 10_i32,
                     }
                 } else {
                     Event::MouseButtonUp {
@@ -119,8 +120,8 @@ mod tests {
                         which: 0,
                         mouse_btn: MouseButton::Left,
                         clicks: 1,
-                        x: bounds.x + 10,
-                        y: bounds.y + 10,
+                        x: bounds.x + 10_i32,
+                        y: bounds.y + 10_i32,
                     }
                 }
             };
@@ -135,17 +136,22 @@ mod tests {
         settings.selected = 2;
         assert_eq!(settings.input(Action::Activate), Some(Request::Network));
         settings.selected = 3;
-        settings.input(Action::Activate);
+        assert_eq!(settings.input(Action::Activate), None);
         assert_eq!(settings.page, Page::Tor);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Wireless);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Home);
         // Rendered rows and pointer targets have identical centers at every size.
         for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
-            let layout = Layout::home(width, height)?;
+            let pointer_layout = Layout::home(width, height)?;
             settings.page(Page::Wireless);
-            let bounds = PanelLayout::rows(&layout, i32::try_from(WIRELESS_ROWS).unwrap_or(4))[3];
+            let bounds = *PanelLayout::rows(
+                &pointer_layout,
+                i32::try_from(WIRELESS_ROWS).unwrap_or(4_i32),
+            )
+            .get(3)
+            .ok_or("Missing fixture element")?;
             for down in [true, false] {
                 let event = if down {
                     Event::MouseButtonDown {
@@ -154,8 +160,8 @@ mod tests {
                         which: 0,
                         mouse_btn: MouseButton::Left,
                         clicks: 1,
-                        x: bounds.x + bounds.w / 2,
-                        y: bounds.y + bounds.h / 2,
+                        x: bounds.x + bounds.w / 2_i32,
+                        y: bounds.y + bounds.h / 2_i32,
                     }
                 } else {
                     Event::MouseButtonUp {
@@ -164,11 +170,11 @@ mod tests {
                         which: 0,
                         mouse_btn: MouseButton::Left,
                         clicks: 1,
-                        x: bounds.x + bounds.w / 2,
-                        y: bounds.y + bounds.h / 2,
+                        x: bounds.x + bounds.w / 2_i32,
+                        y: bounds.y + bounds.h / 2_i32,
                     }
                 };
-                assert_eq!(settings.event(&event, &layout), None);
+                assert_eq!(settings.event(&event, &pointer_layout), None);
             }
             assert_eq!(settings.page, Page::Tor);
         }

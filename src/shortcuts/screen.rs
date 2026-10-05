@@ -187,7 +187,7 @@ impl Desktop {
             desktop.draft.cwd = "/home/alex/My Documents".into();
             desktop.text.clone_from(&desktop.draft.command);
             desktop.directory = "/home/alex/Pictures".into();
-            desktop.files = (0..10)
+            desktop.files = (0_i32..10_i32)
                 .map(|i| {
                     (
                         PathBuf::from(format!("/home/alex/Pictures/Chosen icon {i}.png")),
@@ -212,7 +212,9 @@ impl Desktop {
             keycode: Some(key),
             keymod,
             repeat: false,
-            ..
+            timestamp: _,
+            window_id: _,
+            scancode: _,
         } = event
         else {
             return None;
@@ -346,7 +348,11 @@ impl Desktop {
                 _ if super::hidden_key(app).is_some() => {
                     rows.push((Target::Remove, "Remove shortcut".into()));
                 }
-                _ => (),
+                AppSource::Folder
+                | AppSource::Native
+                | AppSource::PocketHome
+                | AppSource::System
+                | AppSource::Demo => (),
             }
         }
         rows
@@ -424,10 +430,47 @@ impl Desktop {
         }
     }
     fn capacity(layout: &Layout) -> usize {
-        let scale = layout.text_scale.max(1);
-        usize::try_from((i32::from(layout.height) - 100 * scale).max(0) / (32 * scale))
-            .unwrap_or(1)
-            .max(1)
+        let scale = layout.text_scale.max(1_i32);
+        usize::try_from(
+            (i32::from(layout.height)
+                .saturating_sub(100_i32.saturating_mul(scale))
+                .max(0))
+            .checked_div((32_i32).saturating_mul(scale))
+            .unwrap_or(0_i32),
+        )
+        .unwrap_or(1)
+        .max(1)
+    }
+    fn keyboard_targets(&self, layout: &Layout, targets: &mut Vec<(Target, String, Rect)>) {
+        let scale = layout.text_scale;
+        let width = i32::from(layout.width);
+        let keys = self.keyboard_page.keys();
+        let key_width = (width).saturating_sub((16_i32).saturating_mul(scale)) / 10_i32;
+        for (key_index, key) in keys.chars().enumerate() {
+            let i = i32::try_from(key_index).unwrap_or(0_i32);
+            let key_label = if key == ' ' {
+                crate::renderer::space_legend(
+                    (key_width).saturating_sub((2_i32).saturating_mul(scale)),
+                    scale,
+                )
+                .to_owned()
+            } else {
+                key.to_string()
+            };
+            targets.push((
+                Target::Character(key),
+                key_label,
+                Rect {
+                    x: ((8_i32).saturating_mul(scale))
+                        .saturating_add(((i) % 10_i32).saturating_mul(key_width)),
+                    y: ((72_i32).saturating_mul(scale)).saturating_add(
+                        (((i) / 10_i32).saturating_mul(28_i32)).saturating_mul(scale),
+                    ),
+                    w: (key_width).saturating_sub((2_i32).saturating_mul(scale)),
+                    h: (26_i32).saturating_mul(scale),
+                },
+            ));
+        }
     }
     pub fn targets(&self, layout: &Layout) -> Vec<(Target, String, Rect)> {
         let scale = layout.text_scale;
@@ -435,26 +478,7 @@ impl Desktop {
         let height = i32::from(layout.height);
         let mut targets = Vec::new();
         if matches!(self.page, Page::Text(_)) {
-            let keys = self.keyboard_page.keys();
-            let key_width = (width - 16 * scale) / 10;
-            for (i, key) in keys.chars().enumerate() {
-                let i = i32::try_from(i).unwrap_or(0);
-                let key_label = if key == ' ' {
-                    crate::renderer::space_legend(key_width - 2 * scale, scale).to_owned()
-                } else {
-                    key.to_string()
-                };
-                targets.push((
-                    Target::Character(key),
-                    key_label,
-                    Rect {
-                        x: 8 * scale + (i % 10) * key_width,
-                        y: 72 * scale + (i / 10) * 28 * scale,
-                        w: key_width - 2 * scale,
-                        h: 26 * scale,
-                    },
-                ));
-            }
+            self.keyboard_targets(layout, &mut targets);
         } else {
             for (i, (target, label)) in self
                 .rows()
@@ -467,15 +491,17 @@ impl Desktop {
                     target,
                     label,
                     Rect {
-                        x: 8 * scale,
-                        y: 64 * scale + i32::try_from(i).unwrap_or(0) * 32 * scale,
-                        w: width
-                            - if self.page == Page::Menu {
-                                16 * scale
-                            } else {
-                                64 * scale
-                            },
-                        h: 30 * scale,
+                        x: (8_i32).saturating_mul(scale),
+                        y: ((64_i32).saturating_mul(scale)).saturating_add(
+                            ((i32::try_from(i).unwrap_or(0_i32)).saturating_mul(32_i32))
+                                .saturating_mul(scale),
+                        ),
+                        w: (width).saturating_sub(if self.page == Page::Menu {
+                            16_i32.saturating_mul(scale)
+                        } else {
+                            64_i32.saturating_mul(scale)
+                        }),
+                        h: (30_i32).saturating_mul(scale),
                     },
                 ));
             }
@@ -485,20 +511,20 @@ impl Desktop {
                         Target::Previous,
                         "Up".into(),
                         Rect {
-                            x: width - 52 * scale,
-                            y: 64 * scale,
-                            w: 44 * scale,
-                            h: 44 * scale,
+                            x: (width).saturating_sub((52_i32).saturating_mul(scale)),
+                            y: (64_i32).saturating_mul(scale),
+                            w: (44_i32).saturating_mul(scale),
+                            h: (44_i32).saturating_mul(scale),
                         },
                     ),
                     (
                         Target::Next,
                         "Down".into(),
                         Rect {
-                            x: width - 52 * scale,
-                            y: 112 * scale,
-                            w: 44 * scale,
-                            h: 44 * scale,
+                            x: (width).saturating_sub((52_i32).saturating_mul(scale)),
+                            y: (112_i32).saturating_mul(scale),
+                            w: (44_i32).saturating_mul(scale),
+                            h: (44_i32).saturating_mul(scale),
                         },
                     ),
                 ]);
@@ -508,16 +534,19 @@ impl Desktop {
         if self.page == Page::Menu && self.rows().len() > Self::capacity(layout) {
             footer.extend([(Target::Previous, "Previous"), (Target::Next, "Next")]);
         }
-        let cell = (width - 16 * scale) / i32::try_from(footer.len()).unwrap_or(1);
+        let cell = ((width).saturating_sub((16_i32).saturating_mul(scale)))
+            .checked_div(i32::try_from(footer.len()).unwrap_or(1_i32))
+            .unwrap_or(0_i32);
         for (i, (target, label)) in footer.into_iter().enumerate() {
             targets.push((
                 target,
                 label.into(),
                 Rect {
-                    x: 8 * scale + i32::try_from(i).unwrap_or(0) * cell,
-                    y: height - 34 * scale,
-                    w: cell - 4 * scale,
-                    h: 30 * scale,
+                    x: ((8_i32).saturating_mul(scale))
+                        .saturating_add((i32::try_from(i).unwrap_or(0_i32)).saturating_mul(cell)),
+                    y: (height).saturating_sub((34_i32).saturating_mul(scale)),
+                    w: (cell).saturating_sub((4_i32).saturating_mul(scale)),
+                    h: (30_i32).saturating_mul(scale),
                 },
             ));
         }
@@ -559,8 +588,8 @@ impl Desktop {
     fn read_directory(&mut self) -> Result<(), String> {
         let entries = std::fs::read_dir(&self.directory).map_err(|e| e.to_string())?;
         let mut files = Vec::new();
-        for entry in entries.take(1000) {
-            let entry = entry.map_err(|e| e.to_string())?;
+        for entry_result in entries.take(1000) {
+            let entry = entry_result.map_err(|e| e.to_string())?;
             let path = entry.path();
             if path.is_dir() || path.is_file() {
                 files.push((path.clone(), path.is_dir()));
@@ -617,7 +646,27 @@ impl Desktop {
                     folder,
                 ))));
             }
-            _ => return Err("Invalid folder action".into()),
+            Target::Add
+            | Target::Edit
+            | Target::Remove
+            | Target::Uninstall
+            | Target::Cancel
+            | Target::Save
+            | Target::Field(_)
+            | Target::Icon
+            | Target::DefaultIcon
+            | Target::Terminal
+            | Target::Shell
+            | Target::Previous
+            | Target::Next
+            | Target::Item(_)
+            | Target::Parent
+            | Target::Character(_)
+            | Target::Delete
+            | Target::Clear
+            | Target::Shift
+            | Target::Done
+            | Target::Confirm => return Err("Invalid folder action".into()),
         }
         Ok(None)
     }
@@ -653,7 +702,7 @@ impl Desktop {
                 }
                 Page::Text(_) | Page::Browse(_) => self.page(Page::Editor),
                 Page::Remove => self.page(Page::Menu),
-                _ => {
+                Page::Menu | Page::Editor => {
                     self.open = false;
                     self.contact = None;
                 }
@@ -672,7 +721,7 @@ impl Desktop {
             Target::Done => return self.finish_text(),
             Target::Character(c) => self.insert(&c.to_string()),
             Target::Delete => {
-                self.text.pop();
+                let _removed_character = self.text.pop();
             }
             Target::Clear => self.text.clear(),
             Target::Shift => self.keyboard_page = self.keyboard_page.next(),
@@ -688,8 +737,9 @@ impl Desktop {
             Target::Icon => self.browse(true)?,
             Target::Previous => self.scroll = self.scroll.saturating_sub(Self::capacity(layout)),
             Target::Next => {
-                self.scroll =
-                    (self.scroll + Self::capacity(layout)).min(self.rows().len().saturating_sub(1));
+                self.scroll = (self.scroll)
+                    .saturating_add(Self::capacity(layout))
+                    .min(self.rows().len().saturating_sub(1));
             }
             Target::Parent => {
                 if let Some(parent) = self.directory.parent() {
@@ -740,9 +790,21 @@ impl Desktop {
         let limit = match self.page {
             Page::Text(Field::Name | Field::FolderName) => 100,
             Page::Text(Field::Cwd) => 4096,
-            _ => 8192,
+            Page::Menu
+            | Page::Editor
+            | Page::Text(_)
+            | Page::Browse(_)
+            | Page::Remove
+            | Page::FolderMove
+            | Page::FolderDelete => 8192,
         };
-        if self.text.len() + text.len() <= limit && !text.chars().any(char::is_control) {
+        if self
+            .text
+            .len()
+            .checked_add(text.len())
+            .is_some_and(|length| length <= limit)
+            && !text.chars().any(char::is_control)
+        {
             self.text.push_str(text);
         }
     }
@@ -767,7 +829,11 @@ impl Desktop {
                     .unwrap_or_else(|| targets.len().saturating_sub(1));
             }
             Keycode::Tab | Keycode::Down | Keycode::Right => {
-                self.selected = (self.selected + 1) % targets.len().max(1);
+                self.selected = self
+                    .selected
+                    .saturating_add(1)
+                    .checked_rem(targets.len().max(1))
+                    .unwrap_or(0);
             }
             Keycode::Up | Keycode::Left => {
                 self.selected = self
@@ -785,6 +851,11 @@ impl Desktop {
         }
         activate
     }
+    #[allow(
+        clippy::wildcard_enum_match_arm,
+        clippy::rest_pattern_accessible_field,
+        reason = "SDL metadata is intentionally ignored. This SDL handler consumes selected keyboard, pointer or window events; unrelated controller, audio, drop and platform events intentionally have no action"
+    )]
     pub fn event(&mut self, event: &Event, layout: &Layout) -> Option<Request> {
         let targets = self.targets(layout);
         self.selected = self.selected.min(targets.len().saturating_sub(1));
@@ -805,8 +876,8 @@ impl Desktop {
                 activate = self.keyboard(*key, *keymod, &targets);
             }
             Event::TextInput { text, .. } if self.editing() => self.insert(text),
-            Event::MouseWheel { y, .. } if *y != 0 => {
-                activate = Some(if *y > 0 {
+            Event::MouseWheel { y, .. } if *y != 0_i32 => {
+                activate = Some(if *y > 0_i32 {
                     Target::Previous
                 } else {
                     Target::Next

@@ -21,13 +21,13 @@ impl Percent {
         self.0
     }
     pub const fn snapped(self) -> Self {
-        Self(((self.0 + 5) / 10) * 10)
+        Self((self.0.saturating_add(5) / 10).saturating_mul(10))
     }
     pub fn step(self, up: bool) -> Self {
         Self(if up {
-            ((self.0 / 10 + 1) * 10).min(100)
+            (self.0 / 10).saturating_add(1).saturating_mul(10).min(100)
         } else {
-            (self.0.saturating_sub(1) / 10) * 10
+            (self.0.saturating_sub(1) / 10).saturating_mul(10)
         })
     }
 }
@@ -137,7 +137,7 @@ impl Worker {
                 }
             })
             .map_err(|error| format!("control worker: {error}"))?;
-        let status = thread::Builder::new()
+        let status_thread = thread::Builder::new()
             .name("system-status".into())
             .spawn(move || {
                 backend.initialize();
@@ -161,8 +161,8 @@ impl Worker {
                     }
                 }
             });
-        let status = match status {
-            Ok(status) => status,
+        let status = match status_thread {
+            Ok(handle) => handle,
             Err(error) => {
                 drop(commands);
                 drop(updates);
@@ -323,7 +323,12 @@ mod tests {
                     status.volume = Some(p);
                     Ok(())
                 }
-                _ => Err("unsupported".into()),
+                Control::Radio(_, _)
+                | Control::Brightness(_)
+                | Control::Power(_)
+                | Control::ScreenTimeout(_)
+                | Control::Timezone(_)
+                | Control::ReadTimezone => Err("unsupported".into()),
             }
         }
     }
@@ -340,9 +345,11 @@ mod tests {
         }
         impl System for Slow {
             fn refresh(&mut self) -> Status {
-                self.reads.fetch_add(1, Ordering::SeqCst);
-                if let Ok(release) = self.release.lock() {
-                    let _ = release.recv_timeout(Duration::from_secs(30));
+                let _previous_reads = self.reads.fetch_add(1, Ordering::SeqCst);
+                if let Ok(release) = self.release.lock()
+                    && let Err(error) = release.recv_timeout(Duration::from_secs(30))
+                {
+                    eprintln!("Slow system fixture released by cancellation/timeout: {error}");
                 }
                 Status::default()
             }
@@ -397,15 +404,20 @@ mod tests {
         worker.received = earlier
             .checked_sub(Duration::from_secs(31))
             .ok_or("test clock")?;
-        worker.accept(Sample {
-            status: Status {
-                volume: Some(Percent::new(80)?),
-                muted: Some(false),
-                ..Status::default()
-            },
-            result: Some((Control::Volume(Percent::new(80)?), Ok(()))),
-            started: later,
-        });
+        assert!(
+            worker
+                .accept(Sample {
+                    status: Status {
+                        volume: Some(Percent::new(80)?),
+                        muted: Some(false),
+                        ..Status::default()
+                    },
+                    result: Some((Control::Volume(Percent::new(80)?), Ok(()))),
+                    started: later,
+                })
+                .result
+                .is_some_and(|result| result.is_ok())
+        );
         assert!(worker.stale());
         let stale = Status {
             volume: Some(Percent::new(30)?),
@@ -421,13 +433,13 @@ mod tests {
         assert_eq!(updated.status.volume, Some(Percent::new(80)?));
         assert_eq!(updated.status.muted, Some(false));
         assert_eq!(updated.status.battery, Some(Percent::new(60)?));
-        let updated = worker.accept(Sample {
+        let refreshed_update = worker.accept(Sample {
             status: stale,
             result: None,
             started: later + Duration::from_millis(1),
         });
-        assert_eq!(updated.status.volume, Some(Percent::new(30)?));
-        assert_eq!(updated.status.muted, Some(true));
+        assert_eq!(refreshed_update.status.volume, Some(Percent::new(30)?));
+        assert_eq!(refreshed_update.status.muted, Some(true));
         Ok(())
     }
     #[test]
@@ -438,16 +450,21 @@ mod tests {
         let earlier = Instant::now();
         let later = earlier + Duration::from_millis(1);
         for radio in [Radio::Wifi, Radio::Bluetooth] {
-            worker.accept(Sample {
-                status: Status {
-                    wifi_enabled: Some(false),
-                    wifi: Some(Wifi::Off),
-                    bluetooth: Some(false),
-                    ..Status::default()
-                },
-                result: Some((Control::Radio(radio, false), Ok(()))),
-                started: later,
-            });
+            assert!(
+                worker
+                    .accept(Sample {
+                        status: Status {
+                            wifi_enabled: Some(false),
+                            wifi: Some(Wifi::Off),
+                            bluetooth: Some(false),
+                            ..Status::default()
+                        },
+                        result: Some((Control::Radio(radio, false), Ok(()))),
+                        started: later,
+                    })
+                    .result
+                    .is_some_and(|result| result.is_ok())
+            );
         }
         let result = worker.accept(Sample {
             status: Status {

@@ -39,13 +39,20 @@ fn scrolling_a_short_final_page_keeps_focus_on_scroll_not_save() -> Result<(), S
         .iter()
         .position(|(target, _, _)| *target == Target::Next)
         .ok_or("Down button")?;
-    for _ in 0..3 {
+    for _ in 0_i32..3_i32 {
         assert!(
             desktop
                 .event(&key(Keycode::Return, Mod::NOMOD), &layout)
                 .is_none()
         );
-        assert_eq!(desktop.targets(&layout)[desktop.selected].0, Target::Next);
+        assert_eq!(
+            desktop
+                .targets(&layout)
+                .get(desktop.selected)
+                .ok_or("Missing fixture element")?
+                .0,
+            Target::Next
+        );
     }
     Ok(())
 }
@@ -57,15 +64,18 @@ fn empty_desktop_toolbar_has_visible_keyboard_focus_and_matching_actions() -> Re
     let mut desktop = Desktop::default();
     for (target, action) in [(Toolbar::Actions, DesktopAction::Menu(None))] {
         desktop.toolbar = None;
-        for _ in 0..3 {
-            desktop.toolbar_event(&key(Keycode::Tab, Mod::NOMOD));
+        for _ in 0_i32..3_i32 {
+            assert_eq!(
+                desktop.toolbar_event(&key(Keycode::Tab, Mod::NOMOD)),
+                Some(crate::input::DesktopAction::Focus)
+            );
             if desktop.toolbar == Some(target) {
                 break;
             }
         }
         assert_eq!(desktop.toolbar, Some(target));
         let bounds = target.bounds(&layout);
-        assert!(bounds.w > 0 && bounds.h > 0);
+        assert!(bounds.w > 0_i32 && bounds.h > 0_i32);
         assert_eq!(
             desktop.toolbar_event(&key(Keycode::Return, Mod::NOMOD)),
             Some(action)
@@ -80,24 +90,66 @@ fn editing_shortcuts_keep_done_focused_and_cancel_does_not_commit() -> Result<()
     let mut desktop = Desktop::default();
     desktop.add();
     desktop.draft.name = "Original".into();
-    desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout);
-    assert!(desktop.editing());
-    assert_eq!(desktop.targets(&layout)[desktop.selected].0, Target::Done);
-    desktop.event(&key(Keycode::A, Mod::LCTRLMOD), &layout);
-    assert_eq!(desktop.targets(&layout)[desktop.selected].0, Target::Done);
-    desktop.event(
-        &Event::TextInput {
-            timestamp: 0,
-            window_id: 1,
-            text: "Edited".into(),
-        },
-        &layout,
+    assert!(
+        desktop
+            .event(&key(Keycode::Return, Mod::NOMOD), &layout)
+            .is_none()
     );
-    desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout);
+    assert!(desktop.editing());
+    assert_eq!(
+        desktop
+            .targets(&layout)
+            .get(desktop.selected)
+            .ok_or("Missing fixture element")?
+            .0,
+        Target::Done
+    );
+    assert!(
+        desktop
+            .event(&key(Keycode::A, Mod::LCTRLMOD), &layout)
+            .is_none()
+    );
+    assert_eq!(
+        desktop
+            .targets(&layout)
+            .get(desktop.selected)
+            .ok_or("Missing fixture element")?
+            .0,
+        Target::Done
+    );
+    assert!(
+        desktop
+            .event(
+                &Event::TextInput {
+                    timestamp: 0,
+                    window_id: 1,
+                    text: "Edited".into(),
+                },
+                &layout,
+            )
+            .is_none()
+    );
+    assert!(
+        desktop
+            .event(&key(Keycode::Return, Mod::NOMOD), &layout)
+            .is_none()
+    );
     assert_eq!(desktop.draft.name, "Edited");
-    desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout);
-    desktop.event(&key(Keycode::Backspace, Mod::NOMOD), &layout);
-    desktop.event(&key(Keycode::Escape, Mod::NOMOD), &layout);
+    assert!(
+        desktop
+            .event(&key(Keycode::Return, Mod::NOMOD), &layout)
+            .is_none()
+    );
+    assert!(
+        desktop
+            .event(&key(Keycode::Backspace, Mod::NOMOD), &layout)
+            .is_none()
+    );
+    assert!(
+        desktop
+            .event(&key(Keycode::Escape, Mod::NOMOD), &layout)
+            .is_none()
+    );
     assert_eq!(desktop.draft.name, "Edited");
     assert!(
         desktop
@@ -116,25 +168,46 @@ fn scroll_and_focus_reach_every_editor_action_at_both_sizes() -> Result<(), Stri
         desktop.add();
         let expected = desktop.rows();
         let mut seen = Vec::new();
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             let targets = desktop.targets(&layout);
             for (_, _, bounds) in &targets {
-                assert!(bounds.x >= 0 && bounds.y >= 0);
+                assert!(bounds.x >= 0_i32 && bounds.y >= 0_i32);
                 assert!(bounds.x + bounds.w <= i32::from(width));
                 assert!(bounds.y + bounds.h <= i32::from(height));
             }
             for _ in 0..targets.len() {
-                seen.push(desktop.targets(&layout)[desktop.selected].0);
-                desktop.event(&key(Keycode::Tab, Mod::NOMOD), &layout);
+                seen.push(
+                    desktop
+                        .targets(&layout)
+                        .get(desktop.selected)
+                        .ok_or("Missing fixture element")?
+                        .0,
+                );
+                assert!(
+                    desktop
+                        .event(&key(Keycode::Tab, Mod::NOMOD), &layout)
+                        .is_none()
+                );
             }
-            desktop.event(&key(Keycode::PageDown, Mod::NOMOD), &layout);
+            assert!(
+                desktop
+                    .event(&key(Keycode::PageDown, Mod::NOMOD), &layout)
+                    .is_none()
+            );
         }
         assert!(expected.iter().all(|(target, _)| seen.contains(target)));
         for required in [Target::Save, Target::Cancel] {
             assert!(seen.contains(&required));
         }
         desktop.page(Page::Remove);
-        assert_eq!(desktop.targets(&layout)[desktop.selected].0, Target::Cancel);
+        assert_eq!(
+            desktop
+                .targets(&layout)
+                .get(desktop.selected)
+                .ok_or("Missing fixture element")?
+                .0,
+            Target::Cancel
+        );
         assert!(
             desktop
                 .event(&key(Keycode::Return, Mod::NOMOD), &layout)
@@ -181,13 +254,71 @@ fn menu_labels_and_authority_come_from_provenance() {
     );
 }
 
+fn assert_folder_destination(
+    desktop: &mut Desktop,
+    layout: &Layout,
+    target: Target,
+    folder_id: &str,
+) -> Result<(), String> {
+    if target == Target::DeleteFolder {
+        assert_eq!(
+            desktop
+                .targets(layout)
+                .get(desktop.selected)
+                .ok_or("Missing fixture element")?
+                .0,
+            Target::Cancel
+        );
+        assert!(
+            desktop
+                .event(&key(Keycode::Return, Mod::NOMOD), layout)
+                .is_none()
+        );
+        assert_eq!(desktop.page, Page::Menu);
+    } else if target == Target::MoveApp {
+        assert_eq!(
+            desktop
+                .targets(layout)
+                .first()
+                .ok_or("Missing fixture element")?
+                .0,
+            Target::Unfile
+        );
+        assert!(
+            desktop
+                .event(&key(Keycode::Down, Mod::NOMOD), layout)
+                .is_none()
+        );
+        assert!(
+            matches!(desktop.event(&key(Keycode::Return, Mod::NOMOD), layout), Some(Request::Folder(crate::folders::Change::Move(_,Some(folder)))) if folder == folder_id)
+        );
+    } else {
+        assert!(desktop.editing());
+        assert_eq!(
+            desktop
+                .targets(layout)
+                .get(desktop.selected)
+                .ok_or("Missing fixture element")?
+                .0,
+            Target::Done
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn folder_actions_keyboard_destinations_and_safe_delete_are_reachable() -> Result<(), String> {
     for (width, height) in [(480, 272), (800, 480)] {
         let layout = Layout::home(width, height)?;
         let mut desktop = Desktop::default();
         let id = format!("{}{}", crate::folders::PREFIX, "a".repeat(64));
-        desktop.folders.names.insert(id.clone(), "Tools".into());
+        assert!(
+            desktop
+                .folders
+                .names
+                .insert(id.clone(), "Tools".into())
+                .is_none()
+        );
         desktop.folder_context = Some(id.clone());
         desktop.in_folder = true;
         desktop.menu(Some(
@@ -205,7 +336,11 @@ fn folder_actions_keyboard_destinations_and_safe_delete_are_reachable() -> Resul
                 .iter()
                 .any(|(t, _, _)| *t == target)
             {
-                desktop.event(&key(Keycode::PageDown, Mod::NOMOD), &layout);
+                assert!(
+                    desktop
+                        .event(&key(Keycode::PageDown, Mod::NOMOD), &layout)
+                        .is_none()
+                );
                 desktop.selected = 0;
             }
             let targets = desktop.targets(&layout);
@@ -214,31 +349,25 @@ fn folder_actions_keyboard_destinations_and_safe_delete_are_reachable() -> Resul
                 .position(|(t, _, _)| *t == target)
                 .ok_or("Missing folder action")?;
             for _ in 0..index {
-                desktop.event(&key(Keycode::Tab, Mod::NOMOD), &layout);
-            }
-            desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout);
-            if target == Target::DeleteFolder {
-                assert_eq!(desktop.targets(&layout)[desktop.selected].0, Target::Cancel);
                 assert!(
                     desktop
-                        .event(&key(Keycode::Return, Mod::NOMOD), &layout)
+                        .event(&key(Keycode::Tab, Mod::NOMOD), &layout)
                         .is_none()
                 );
-                assert_eq!(desktop.page, Page::Menu);
-            } else if target == Target::MoveApp {
-                assert_eq!(desktop.targets(&layout)[0].0, Target::Unfile);
-                desktop.event(&key(Keycode::Down, Mod::NOMOD), &layout);
-                assert!(
-                    matches!(desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout), Some(Request::Folder(crate::folders::Change::Move(_,Some(folder)))) if folder == id)
-                );
-            } else {
-                assert!(desktop.editing());
-                assert_eq!(desktop.targets(&layout)[desktop.selected].0, Target::Done);
             }
+            assert!(
+                desktop
+                    .event(&key(Keycode::Return, Mod::NOMOD), &layout)
+                    .is_none()
+            );
+            assert_folder_destination(&mut desktop, &layout, target, &id)?;
         }
         desktop.open = false;
         desktop.toolbar = None;
-        desktop.toolbar_event(&key(Keycode::Tab, Mod::NOMOD));
+        assert_eq!(
+            desktop.toolbar_event(&key(Keycode::Tab, Mod::NOMOD)),
+            Some(crate::input::DesktopAction::Focus)
+        );
         assert_eq!(desktop.toolbar, Some(Toolbar::Back));
         assert_eq!(
             desktop.toolbar_event(&key(Keycode::Return, Mod::NOMOD)),
@@ -263,17 +392,28 @@ fn actions_use_full_width_and_reordering_remains_keyboard_reachable() -> Result<
                 .iter()
                 .any(|(target, _, _)| *target == wanted)
             {
-                desktop.event(&key(Keycode::PageDown, Mod::NOMOD), &layout);
+                assert!(
+                    desktop
+                        .event(&key(Keycode::PageDown, Mod::NOMOD), &layout)
+                        .is_none()
+                );
             }
             let targets = desktop.targets(&layout);
             let index = targets
                 .iter()
                 .position(|(t, _, _)| *t == wanted)
                 .ok_or("missing reorder")?;
-            assert_eq!(targets[index].2.w, i32::from(w) - 16 * layout.text_scale);
+            assert_eq!(
+                targets.get(index).ok_or("Missing fixture element")?.2.w,
+                i32::from(w) - 16_i32 * layout.text_scale
+            );
             desktop.selected = 0;
             for _ in 0..index {
-                desktop.event(&key(Keycode::Tab, Mod::NOMOD), &layout);
+                assert!(
+                    desktop
+                        .event(&key(Keycode::Tab, Mod::NOMOD), &layout)
+                        .is_none()
+                );
             }
             assert!(
                 matches!(desktop.event(&key(Keycode::Return, Mod::NOMOD), &layout), Some(Request::Reorder(later)) if later == (wanted == Target::MoveLater))

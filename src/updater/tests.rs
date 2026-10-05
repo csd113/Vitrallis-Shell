@@ -19,7 +19,7 @@ impl Transport for Mock {
             .ok_or("Unexpected network request")?
             .as_ref()
             .map_err(Clone::clone)?;
-        if bytes.len() as u64 > limit {
+        if u64::try_from(bytes.len()).map_err(|error| error.to_string())? > limit {
             return Err("fixture exceeds download limit".into());
         }
         for chunk in bytes.chunks(2) {
@@ -78,9 +78,12 @@ fn versions_use_semantic_precedence_and_ignore_drafts_prereleases()
         assert!(matches!(state, State::Available(_) | State::Current));
     }
     let mut draft = metadata("99.0.0")?;
-    draft["draft"] = true.into();
+    *draft
+        .get_mut("draft")
+        .ok_or("Missing release fixture field")? = true.into();
     let mut pre = metadata("98.0.0")?;
-    pre["prerelease"] = true.into();
+    *pre.get_mut("prerelease")
+        .ok_or("Missing release fixture field")? = true.into();
     let transport = mock(&[
         metadata("1.9.0")?,
         draft,
@@ -114,7 +117,9 @@ fn beta_builds_receive_published_previews_without_downgrades()
     ] {
         for flagged in [false, true] {
             let mut value = metadata(newest)?;
-            value["prerelease"] = flagged.into();
+            *value
+                .get_mut("prerelease")
+                .ok_or("Missing release fixture field")? = flagged.into();
             let state = check(&mock(&[value])?, current, target)?;
             assert_eq!(
                 matches!(state, State::Available(_)),
@@ -125,9 +130,13 @@ fn beta_builds_receive_published_previews_without_downgrades()
         }
     }
     let mut draft = metadata("99.0.0-beta.1")?;
-    draft["draft"] = true.into();
+    *draft
+        .get_mut("draft")
+        .ok_or("Missing release fixture field")? = true.into();
     let mut beta = metadata("0.1.0-beta.10")?;
-    beta["prerelease"] = true.into();
+    *beta
+        .get_mut("prerelease")
+        .ok_or("Missing release fixture field")? = true.into();
     let transport = mock(&[beta, draft.clone(), metadata("0.1.0-beta.2")?])?;
     let State::Available(release) = check(&transport, "0.1.0-beta.1", target)? else {
         return Err("missing beta update".into());
@@ -136,7 +145,9 @@ fn beta_builds_receive_published_previews_without_downgrades()
     assert!(check(&mock(&[draft])?, "0.1.0-beta.1", target).is_err());
     assert!(check(&transport, "0.1.0", target).is_err());
     let mut invalid = metadata("0.1.0-beta.2")?;
-    invalid["prerelease"] = "true".into();
+    *invalid
+        .get_mut("prerelease")
+        .ok_or("Missing release fixture field")? = "true".into();
     assert!(check(&mock(&[invalid])?, "0.1.0-beta.1", target).is_err());
     Ok(())
 }
@@ -151,14 +162,20 @@ fn armhf_beta_selects_the_standard_arm_artifact_and_verifies_download()
         "vitrallis-armv7-unknown-linux-gnueabihf-glibc2.36-v2.vtrbundle"
     );
     let mut value = metadata("0.1.0-beta.2")?;
-    value["prerelease"] = true.into();
+    *value
+        .get_mut("prerelease")
+        .ok_or("Missing release fixture field")? = true.into();
     assert!(check(&mock(&[value.clone()])?, "0.1.0-beta.1", arm).is_err());
-    value["assets"][0]["name"] = name.clone().into();
+    *value
+        .pointer_mut("/assets/0/name")
+        .ok_or("Missing asset field fixture")? = name.clone().into();
     let url =
         format!("https://github.com/csd113/Vitrallis-Shell/releases/download/v0.1.0-beta.2/{name}");
-    value["assets"][0]["browser_download_url"] = url.clone().into();
+    *value
+        .pointer_mut("/assets/0/browser_download_url")
+        .ok_or("Missing asset field fixture")? = url.clone().into();
     let mut transport = mock(&[value])?;
-    transport.responses.insert(url, Ok(b"shell".to_vec()));
+    drop(transport.responses.insert(url, Ok(b"shell".to_vec())));
     let State::Available(release) = check(&transport, "0.1.0-beta.1", arm)? else {
         return Err("missing ARMv7 beta update".into());
     };
@@ -170,7 +187,7 @@ fn armhf_beta_selects_the_standard_arm_artifact_and_verifies_download()
         .create_new(true)
         .open(scratch.0.join("download"))?;
     let mut samples = Vec::new();
-    download(&transport, &release, &mut file, &mut |state| {
+    let _download_digest = download(&transport, &release, &mut file, &mut |state| {
         samples.push(state);
     })?;
     assert!(matches!(
@@ -220,11 +237,13 @@ fn invalid_metadata_network_and_unsupported_builds_fail_closed()
         Ok(b"not JSON".to_vec()),
         Ok(b"{}".to_vec()),
     ] {
-        let mut transport = mock(&[])?;
-        transport
-            .responses
-            .insert(format!("{}?per_page=100&page=1", release::API), response);
-        assert!(check(&transport, "0.1.0", target).is_err());
+        let mut missing_transport = mock(&[])?;
+        drop(
+            missing_transport
+                .responses
+                .insert(format!("{}?per_page=100&page=1", release::API), response),
+        );
+        assert!(check(&missing_transport, "0.1.0", target).is_err());
     }
     Ok(())
 }
@@ -236,20 +255,31 @@ fn artifacts_reject_foreign_urls_duplicates_missing_hashes_and_bad_sizes() -> Re
             "browser_download_url",
             serde_json::json!("https://example.com/payload"),
         ),
-        ("size", serde_json::json!(0)),
+        ("size", serde_json::json!(0_i32)),
         ("size", serde_json::json!(release::MAX_BINARY + 1)),
         ("digest", Value::Null),
         ("digest", serde_json::json!("sha256:bad")),
         ("state", serde_json::json!("new")),
     ] {
         let mut value_metadata = metadata("1.0.0")?;
-        value_metadata["assets"][0][field] = value;
+        drop(
+            value_metadata
+                .pointer_mut("/assets/0")
+                .and_then(Value::as_object_mut)
+                .ok_or("Missing asset fixture")?
+                .insert(field.into(), value),
+        );
         assert!(
             release::select(&value_metadata, Version::new(1, 0, 0), target()?.artifact()).is_err()
         );
     }
     let mut value = metadata("1.0.0")?;
-    value["assets"] = serde_json::json!([value["assets"][0], value["assets"][0]]);
+    let asset = value
+        .get("assets")
+        .and_then(|assets| assets.get(0))
+        .ok_or("Missing asset fixture")?
+        .clone();
+    *value.get_mut("assets").ok_or("Missing assets fixture")? = serde_json::json!([asset, asset]);
     assert!(release::select(&value, Version::new(1, 0, 0), target()?.artifact()).is_err());
     Ok(())
 }
@@ -258,7 +288,10 @@ fn artifacts_reject_foreign_urls_duplicates_missing_hashes_and_bad_sizes() -> Re
 fn unrelated_release_assets_do_not_affect_bundle_selection() -> Result<(), String> {
     let name = target()?.artifact();
     let mut value = metadata("1.0.0")?;
-    let mut assets = value["assets"].as_array().cloned().unwrap_or_default();
+    let mut assets = (*value.get("assets").ok_or("Missing fixture element")?)
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
     // Published releases also carry the project license and third-party
     // notices; they are not bundle assets and must be ignored here.
     for notice in [
@@ -267,12 +300,14 @@ fn unrelated_release_assets_do_not_affect_bundle_selection() -> Result<(), Strin
         "THIRD_PARTY_LICENSES.txt",
     ] {
         assets.push(serde_json::json!({
-            "name": notice, "state": "uploaded", "size": 4096,
+            "name": notice, "state": "uploaded", "size": 4_096_i32,
             "browser_download_url": format!(
                 "https://github.com/csd113/Vitrallis-Shell/releases/download/v1.0.0/{notice}")
         }));
     }
-    value["assets"] = serde_json::json!(assets);
+    *value
+        .get_mut("assets")
+        .ok_or("Missing release fixture field")? = serde_json::json!(assets);
     let selected = release::select(&value, Version::new(1, 0, 0), name.clone())?;
     assert_eq!(selected.name, name);
     Ok(())
@@ -325,7 +360,7 @@ fn checksum_sidecars_must_match_name_size_and_any_api_digest()
     .into_bytes();
     let asset = release::Asset {
         url: format!("{}.sha256", release.binary.url),
-        size: checksum.len() as u64,
+        size: u64::try_from(checksum.len())?,
         digest: None,
     };
     release.checksum = Some(asset.clone());
@@ -379,7 +414,7 @@ fn install_requires_separate_confirmation_and_never_enumerates_apps()
     assert_eq!(settings.selected, 0);
     assert_eq!(settings.input(Action::Activate), None);
     assert!(settings.update_confirmation.is_none());
-    settings.input(Action::SelectAndActivate(1));
+    assert_eq!(settings.input(Action::SelectAndActivate(1)), None);
     assert_eq!(
         settings.input(Action::SelectAndActivate(1)),
         Some(crate::settings::Request::InstallUpdate)
@@ -412,17 +447,19 @@ fn pagination_finds_newer_versions_and_never_accepts_partial_results()
     let first_page = vec![metadata("1.0.0")?; 100];
     let mut transport = mock(&first_page)?;
     let second = format!("{}?per_page=100&page=2", release::API);
-    transport.responses.insert(
+    drop(transport.responses.insert(
         second.clone(),
         Ok(serde_json::to_vec(&[metadata("2.0.0")?])?),
-    );
+    ));
     let State::Available(release) = check(&transport, "1.0.0", target)? else {
         return Err("second-page update missing".into());
     };
     assert_eq!(release.version, Version::new(2, 0, 0));
-    transport
-        .responses
-        .insert(second, Err("network interrupted on page two".into()));
+    drop(
+        transport
+            .responses
+            .insert(second, Err("network interrupted on page two".into())),
+    );
     assert!(check(&transport, "1.0.0", target).is_err_and(|error| error.contains("page two")));
     Ok(())
 }
@@ -442,11 +479,11 @@ fn progress_counts_successful_partial_writes_only() {
     assert!(writer.write_all(b"shell").is_err());
     assert_eq!(samples.len(), 1);
     assert!(matches!(
-        samples[0],
-        State::Downloading {
+        samples.first(),
+        Some(State::Downloading {
             received: 3,
             total: 5
-        }
+        })
     ));
     assert_eq!(&output, b"she");
 }
@@ -461,7 +498,10 @@ fn polling_uses_latest_progress_and_keeps_worker_until_terminal_result()
         ..Updater::default()
     };
     for received in [1, 2, 4] {
-        *updater.progress.lock().map_err(|_| "progress lock")? =
+        *updater
+            .progress
+            .lock()
+            .map_err(|error| format!("progress lock: {error}"))? =
             Some(State::Downloading { received, total: 5 });
     }
     assert!(updater.poll());
@@ -474,7 +514,10 @@ fn polling_uses_latest_progress_and_keeps_worker_until_terminal_result()
     ));
     assert!(updater.state.busy());
     assert!(!updater.poll());
-    *updater.progress.lock().map_err(|_| "progress lock")? = Some(State::Installing);
+    *updater
+        .progress
+        .lock()
+        .map_err(|error| format!("progress lock: {error}"))? = Some(State::Installing);
     assert!(updater.poll());
     assert!(matches!(updater.state, State::Installing));
     sender.send(State::Failed("interrupted".into()))?;
@@ -542,7 +585,14 @@ fn relaunch_is_explicit_guarded_and_retryable_after_failure() {
         }
     ));
     assert_eq!(updater.detail(), "exec failed");
-    assert!(matches!(updater.state, State::Installed { .. }));
+    assert!(matches!(
+        updater.state,
+        State::Installed {
+            version: _,
+            durable: _,
+            relaunch: _
+        }
+    ));
     assert!(!updater.relaunch_with(
         false,
         || Ok(true),
@@ -586,7 +636,14 @@ fn relaunch_waits_for_service_cleanup_and_refuses_preparation_failure() {
     ));
     assert!(!updater.relaunch_pending());
     assert_eq!(updater.detail(), "cleanup failed");
-    assert!(matches!(updater.state, State::Installed { .. }));
+    assert!(matches!(
+        updater.state,
+        State::Installed {
+            version: _,
+            durable: _,
+            relaunch: _
+        }
+    ));
     updater.request_relaunch();
     assert!(updater.relaunch_with(false, || Ok(true), |_| Ok(())));
     assert!(updater.relaunch_error.is_none());
@@ -629,13 +686,20 @@ fn restore_requires_an_explicit_retryable_request() {
     };
     updater.request_restore();
     assert!(!updater.restore_if_requested(false));
-    assert!(matches!(updater.state, State::Installed { .. }));
+    assert!(matches!(
+        updater.state,
+        State::Installed {
+            version: _,
+            durable: _,
+            relaunch: _
+        }
+    ));
 }
 
 fn wait_for_restore(updater: &mut Updater) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while matches!(updater.state, State::Restoring) && Instant::now() < deadline {
-        updater.poll();
+    let started = Instant::now();
+    while matches!(updater.state, State::Restoring) && started.elapsed() < Duration::from_secs(5) {
+        let _update_redraw = updater.poll();
         std::thread::sleep(Duration::from_millis(5));
     }
 }
@@ -659,7 +723,7 @@ fn restored_state_offers_the_same_guarded_relaunch_as_an_update() {
         State::Restored {
             version: None,
             durable: true,
-            ..
+            relaunch: _
         }
     ));
     assert!(updater.detail().contains("Relaunch required"));
@@ -680,7 +744,14 @@ fn restored_state_offers_the_same_guarded_relaunch_as_an_update() {
     assert!(updater.relaunch_error.is_none());
     // Checking for updates waits until the restored build is running.
     updater.check();
-    assert!(matches!(updater.state, State::Restored { .. }));
+    assert!(matches!(
+        updater.state,
+        State::Restored {
+            version: _,
+            durable: _,
+            relaunch: _
+        }
+    ));
 }
 
 #[test]
@@ -704,7 +775,8 @@ fn failed_restore_is_visible_and_retryable() {
         updater.state,
         State::Restored {
             version: Some(_),
-            ..
+            durable: _,
+            relaunch: _
         }
     ));
     assert_eq!(
@@ -715,5 +787,12 @@ fn failed_restore_is_visible_and_retryable() {
     updater.restore_with(|| {
         unreachable!("a restore must not start from a restored, un-relaunched state")
     });
-    assert!(matches!(updater.state, State::Restored { .. }));
+    assert!(matches!(
+        updater.state,
+        State::Restored {
+            version: _,
+            durable: _,
+            relaunch: _
+        }
+    ));
 }

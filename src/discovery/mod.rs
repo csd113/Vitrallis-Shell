@@ -113,7 +113,11 @@ mod tests {
             include_str!("../../tests/fixtures/pockethome/current.json"),
         ] {
             let mut root: serde_json::Value = serde_json::from_str(fixture)?;
-            let items = root["pages"][0]["items"].as_array_mut().ok_or("items")?;
+            let items = root
+                .pointer_mut("/pages/0/items")
+                .ok_or("Missing stock items fixture")?
+                .as_array_mut()
+                .ok_or("items")?;
             // Labels/icons may be localized or replaced without restoring stock utilities.
             for (index, item) in items.iter_mut().enumerate() {
                 item["name"] = format!("Traduit 日本語 {index}").into();
@@ -127,7 +131,7 @@ mod tests {
             let original = std::fs::read(&config_path)?;
             let first = load(&config)?;
             let ids: Vec<_> = first.apps.iter().map(|app| app.id.clone()).collect();
-            for _ in 0..4 {
+            for _ in 0_i32..4_i32 {
                 let mut catalog = refresh(&config)?;
                 // Idempotence of native integration also protects repeated reload callers.
                 crate::native::integrate(&mut catalog)?;
@@ -158,7 +162,7 @@ mod tests {
                 assert!(imported.iter().any(|a| a.name == "Traduit 日本語 1"));
                 assert!(imported.iter().any(|a| a.name == "Traduit 日本語 2"));
                 assert!(imported.iter().any(|a| a.name == "Traduit 日本語 3"));
-                for index in [0, 4, 5] {
+                for index in [0_i32, 4_i32, 5_i32] {
                     assert!(
                         !imported
                             .iter()

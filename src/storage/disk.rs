@@ -10,6 +10,10 @@ pub struct Disk {
     pub available: u64,
 }
 impl Disk {
+    #[allow(
+        clippy::arithmetic_side_effects,
+        reason = "A u64 byte count times 100 fits in u128, and total.max(1) makes the divisor nonzero"
+    )]
     pub fn percent(&self) -> u8 {
         u8::try_from(u128::from(self.used) * 100 / u128::from(self.total.max(1)))
             .unwrap_or(100)
@@ -18,11 +22,14 @@ impl Disk {
 }
 
 pub fn query(path: &Path) -> Result<Disk, String> {
-    let path = path.to_str().ok_or("Filesystem path is not UTF-8")?;
-    if !Path::new(path).is_absolute() {
+    let path_text = path.to_str().ok_or("Filesystem path is not UTF-8")?;
+    if !path.is_absolute() {
         return Err("Filesystem path must be absolute".into());
     }
-    parse(&crate::platform::command::run("/bin/df", &["-kP", path])?)
+    parse(&crate::platform::command::run(
+        "/bin/df",
+        &["-kP", path_text],
+    )?)
 }
 
 pub(super) fn parse(output: &str) -> Result<Disk, String> {
@@ -32,31 +39,42 @@ pub(super) fn parse(output: &str) -> Result<Disk, String> {
         .nth(1)
         .ok_or("Filesystem usage unavailable")?;
     let fields: Vec<_> = row.split_whitespace().collect();
-    if fields.len() < 6 {
+    let [
+        filesystem,
+        total_field,
+        used_field,
+        available_field,
+        _percent,
+        mount @ ..,
+    ] = fields.as_slice()
+    else {
         return Err("Unrecognized filesystem usage".into());
+    };
+    if mount.is_empty() {
+        return Err("Missing filesystem mount".into());
     }
-    let bytes = |index: usize| {
-        fields[index]
+    let bytes = |field: &str| {
+        field
             .parse::<u64>()
-            .ok()
-            .and_then(|value| value.checked_mul(1024))
+            .map_err(|error| format!("Invalid filesystem capacity {field}: {error}"))?
+            .checked_mul(1024)
             .ok_or_else(|| "Invalid filesystem capacity".to_owned())
     };
-    let total = bytes(1)?;
-    let used = bytes(2)?;
+    let total = bytes(total_field)?;
+    let used = bytes(used_field)?;
     // Some filesystems report negative available space when reserved blocks are used.
-    let available = if fields[3].starts_with('-') {
-        fields[3].parse::<i64>().map_err(|e| e.to_string())?;
+    let available = if available_field.starts_with('-') {
+        let _negative_available = available_field.parse::<i64>().map_err(|e| e.to_string())?;
         0
     } else {
-        bytes(3)?
+        bytes(available_field)?
     };
     if total == 0 || used > total || available > total {
         return Err("Inconsistent filesystem capacity".into());
     }
     Ok(Disk {
-        filesystem: fields[0].into(),
-        mount: fields[5..].join(" "),
+        filesystem: (*filesystem).into(),
+        mount: mount.join(" "),
         total,
         used,
         available,
@@ -64,6 +82,10 @@ pub(super) fn parse(output: &str) -> Result<Disk, String> {
 }
 
 /// Decimal units match the labels and avoid floating-point precision loss.
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "Widening u64 to u128 leaves room for multiplication by ten and rounding; the selected divisor is one of 1000, 1000000 or 1000000000"
+)]
 pub fn format_bytes(bytes: u64) -> String {
     let (unit, divisor) = if bytes >= 1_000_000_000 {
         ("GB", 1_000_000_000)
@@ -92,6 +114,10 @@ impl Default for LowSpace {
     }
 }
 impl LowSpace {
+    #[allow(
+        clippy::arithmetic_side_effects,
+        reason = "Both u64 byte counts are widened to u128 before multiplying by at most 255, so neither product can overflow"
+    )]
     pub fn critical(self, disk: &Disk) -> bool {
         disk.available <= self.bytes
             || u128::from(disk.available) * 100 <= u128::from(disk.total) * u128::from(self.percent)

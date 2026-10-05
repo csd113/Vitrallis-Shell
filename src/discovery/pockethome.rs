@@ -11,15 +11,18 @@ use std::collections::BTreeMap;
 pub(super) fn parse_catalog(text: &str, paths: &Paths) -> Result<Catalog, String> {
     let root: Value = serde_json::from_str(&without_trailing_commas(text))
         .map_err(|e| format!("invalid JSON: {e}"))?;
-    let pages = root["pages"].as_array().ok_or("missing pages array")?;
+    let pages = root
+        .get("pages")
+        .and_then(Value::as_array)
+        .ok_or("missing pages array")?;
     let mut catalog = Catalog::default();
     let mut ids = BTreeMap::<String, usize>::new();
     for (page_index, page) in pages
         .iter()
         .enumerate()
-        .filter(|(_, p)| p["name"] == "Apps")
+        .filter(|(_, p)| p.get("name").is_some_and(|name| name == "Apps"))
     {
-        let Some(items) = page["items"].as_array() else {
+        let Some(items) = page.get("items").and_then(Value::as_array) else {
             catalog
                 .diagnostics
                 .push(format!("page {page_index}: missing items array"));
@@ -34,7 +37,9 @@ pub(super) fn parse_catalog(text: &str, paths: &Paths) -> Result<Catalog, String
                     // PocketHome has no IDs and permits duplicate commands. Keep all
                     // tiles, with deterministic content IDs and occurrence suffixes.
                     let occurrence = ids.entry(app.id.clone()).or_default();
-                    *occurrence += 1;
+                    *occurrence = occurrence
+                        .checked_add(1)
+                        .ok_or("Too many duplicate device entries")?;
                     if *occurrence > 1 {
                         app.id = format!("{}-{}", app.id, occurrence);
                     }
@@ -68,7 +73,7 @@ pub(super) fn parse_catalog(text: &str, paths: &Paths) -> Result<Catalog, String
 // commands are documented in docs/devices/pocketchip/stock-source.md. Match
 // argv exactly and check resolved executable provenance, never a visible label.
 fn stock_utility(item: &Value, app: &AppEntry) -> bool {
-    let Some(shell) = item["shell"].as_str() else {
+    let Some(shell) = item.get("shell").and_then(Value::as_str) else {
         return false;
     };
     let Ok((program, args)) = command_tokens(shell) else {
@@ -95,9 +100,18 @@ fn stock_utility(item: &Value, app: &AppEntry) -> bool {
 }
 
 fn parse_entry(item: &Value, paths: &Paths) -> Result<AppEntry, String> {
-    let name = item["name"].as_str().ok_or("name must be a string")?;
-    let shell = item["shell"].as_str().ok_or("shell must be a string")?;
-    let icon = item["icon"].as_str().ok_or("icon must be a string")?;
+    let name = item
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or("name must be a string")?;
+    let shell = item
+        .get("shell")
+        .and_then(Value::as_str)
+        .ok_or("shell must be a string")?;
+    let icon = item
+        .get("icon")
+        .and_then(Value::as_str)
+        .ok_or("icon must be a string")?;
     if item.as_object().is_none_or(|fields| {
         fields
             .keys()
@@ -170,13 +184,13 @@ fn command_tokens(command: &str) -> Result<(String, Vec<std::ffi::OsString>), St
     if !current.is_empty() {
         words.push(current);
     }
-    let mut words = words.into_iter();
-    let program = words.next().ok_or("empty command")?;
-    let program = program.trim_matches(['"', '\'']).to_owned();
+    let mut tokens = words.into_iter();
+    let raw_program = tokens.next().ok_or("empty command")?;
+    let program = raw_program.trim_matches(['"', '\'']).to_owned();
     if program.is_empty() {
         return Err("empty executable".into());
     }
-    Ok((program, words.map(Into::into).collect()))
+    Ok((program, tokens.map(Into::into).collect()))
 }
 
 fn stable_id(name: &str, shell: &str) -> String {
@@ -197,7 +211,7 @@ fn without_trailing_commas(text: &str) -> String {
     let mut bytes = text.as_bytes().to_vec();
     let mut quoted = false;
     let mut escaped = false;
-    for (index, byte) in text.bytes().enumerate() {
+    for (index, (byte, destination)) in text.bytes().zip(&mut bytes).enumerate() {
         if quoted {
             if escaped {
                 escaped = false;
@@ -209,17 +223,24 @@ fn without_trailing_commas(text: &str) -> String {
         } else if byte == b'"' {
             quoted = true;
         } else if byte == b','
-            && text.as_bytes()[..index]
-                .iter()
-                .rev()
-                .find(|b| !b.is_ascii_whitespace())
-                .is_some_and(|b| !matches!(b, b'[' | b'{' | b',' | b':'))
-            && text.as_bytes()[index + 1..]
-                .iter()
-                .find(|b| !b.is_ascii_whitespace())
-                .is_some_and(|b| matches!(b, b']' | b'}'))
+            && text.as_bytes().get(..index).is_some_and(|prefix| {
+                prefix
+                    .iter()
+                    .rev()
+                    .find(|b| !b.is_ascii_whitespace())
+                    .is_some_and(|b| !matches!(b, b'[' | b'{' | b',' | b':'))
+            })
+            && text
+                .as_bytes()
+                .get(index.saturating_add(1)..)
+                .is_some_and(|suffix| {
+                    suffix
+                        .iter()
+                        .find(|b| !b.is_ascii_whitespace())
+                        .is_some_and(|b| matches!(b, b']' | b'}'))
+                })
         {
-            bytes[index] = b' ';
+            *destination = b' ';
         }
     }
     // Only ASCII commas were replaced in a valid UTF-8 string.
@@ -253,7 +274,15 @@ mod tests {
         ]}]});
         let catalog = parse_catalog(&root.to_string(), &paths)?;
         assert_eq!(catalog.apps.len(), 4);
-        assert_eq!(catalog.apps[0].manifest.entry, scratch.0.join("leafpad"));
+        assert_eq!(
+            catalog
+                .apps
+                .first()
+                .ok_or("Missing fixture element")?
+                .manifest
+                .entry,
+            scratch.0.join("leafpad")
+        );
         Ok(())
     }
 
@@ -275,13 +304,39 @@ mod tests {
             ["Zulu", "Alpha", "Zulu", "Last"]
         );
         assert_eq!(result.diagnostics.len(), 2);
-        assert!(result.apps[0].unavailable.is_none());
-        assert!(result.apps[1].unavailable.is_some());
-        assert_ne!(result.apps[0].id, result.apps[2].id);
-        assert_eq!(result.apps[1].icon, Some("/appIcons/default.png".into()));
+        assert!(
+            result
+                .apps
+                .first()
+                .ok_or("Missing fixture element")?
+                .unavailable
+                .is_none()
+        );
+        assert!(
+            result
+                .apps
+                .get(1)
+                .ok_or("Missing fixture element")?
+                .unavailable
+                .is_some()
+        );
+        assert_ne!(
+            result.apps.first().ok_or("Missing fixture element")?.id,
+            result.apps.get(2).ok_or("Missing fixture element")?.id
+        );
+        assert_eq!(
+            result.apps.get(1).ok_or("Missing fixture element")?.icon,
+            Some("/appIcons/default.png".into())
+        );
         let again = parse_catalog(text, &paths())?;
-        assert_eq!(again.apps[0].id, result.apps[0].id);
-        assert_eq!(stable_id("Zulu", "sh"), result.apps[0].id);
+        assert_eq!(
+            again.apps.first().ok_or("Missing fixture element")?.id,
+            result.apps.first().ok_or("Missing fixture element")?.id
+        );
+        assert_eq!(
+            stable_id("Zulu", "sh"),
+            result.apps.first().ok_or("Missing fixture element")?.id
+        );
         Ok(())
     }
     #[test]
@@ -289,9 +344,9 @@ mod tests {
         let (program, args) =
             command_tokens(r#""/bin/echo" "two words" 'single words' $HOME a\ b ;"#)?;
         assert_eq!(program, "/bin/echo");
-        let args: Vec<_> = args.iter().map(|a| a.to_string_lossy()).collect();
+        let display_args: Vec<_> = args.iter().map(|a| a.to_string_lossy()).collect();
         assert_eq!(
-            args,
+            display_args,
             [
                 "\"two words\"",
                 "'single",
@@ -313,15 +368,25 @@ mod tests {
         let value = r#"{"text":"a,] b\",} c", "items":[1,],}"#;
         let normalized = without_trailing_commas(value);
         let result: Value = serde_json::from_str(&normalized)?;
-        assert_eq!(result["text"], "a,] b\",} c");
-        assert_eq!(result["items"][0], 1);
+        assert_eq!(
+            (*result.get("text").ok_or("Missing fixture element")?),
+            "a,] b\",} c"
+        );
+        assert_eq!(
+            (*result
+                .get("items")
+                .ok_or("Missing fixture element")?
+                .get(0)
+                .ok_or("Missing fixture element")?),
+            1_i32
+        );
         for text in ["{}", "{bad}", "{\"pages\":false}", "{\"pages\":[,]}"] {
             assert!(parse_catalog(text, &paths()).is_err());
         }
         Ok(())
     }
     #[test]
-    fn device_menu_rejects_non_contract_fields() {
+    fn device_menu_rejects_non_contract_fields() -> Result<(), String> {
         for (key, value) in [
             ("env", serde_json::json!({"KEY":"value"})),
             ("cwd", serde_json::json!("/tmp")),
@@ -329,9 +394,14 @@ mod tests {
             ("name", serde_json::json!("\n")),
         ] {
             let mut item = serde_json::json!({"name":"Tool", "shell":"sh", "icon":""});
-            item[key] = value;
+            drop(
+                item.as_object_mut()
+                    .ok_or("Missing device entry fixture")?
+                    .insert(key.into(), value),
+            );
             assert!(parse_entry(&item, &paths()).is_err());
         }
+        Ok(())
     }
 
     #[test]

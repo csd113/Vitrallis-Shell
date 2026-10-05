@@ -33,8 +33,8 @@ pub fn remove(path: PathBuf) -> Result<Write, String> {
     })
 }
 fn replace(path: &Path, data: Option<&FileData>) -> Result<(), String> {
-    if let Some(data) = data {
-        return storage::atomic(path, data);
+    if let Some(image) = data {
+        return storage::atomic(path, image);
     }
     storage::safe(path)?;
     match std::fs::remove_file(path) {
@@ -96,9 +96,9 @@ fn validate_bounds(writes: &[Write]) -> Result<(), String> {
         [write.before.as_ref(), write.after.as_ref()]
             .into_iter()
             .flatten()
-            .try_fold(bytes, |bytes, data| bytes.checked_add(data.bytes.len()))
+            .try_fold(bytes, |total, data| total.checked_add(data.bytes.len()))
     });
-    if writes.len() > WRITE_LIMIT || bytes.is_none_or(|bytes| bytes > BYTE_LIMIT) {
+    if writes.len() > WRITE_LIMIT || bytes.is_none_or(|total| total > BYTE_LIMIT) {
         return Err("App transaction exceeds recovery bounds; no files were changed".into());
     }
     Ok(())
@@ -117,15 +117,24 @@ pub fn commit(journal: &Path, writes: &[Write], marker: &Path) -> Result<(), Str
         },
     );
     if let Err(error) = result {
-        if recover(journal, |p| writes.iter().any(|w| w.path == p)).is_ok() {
-            match std::fs::remove_file(marker) {
-                Ok(()) => (),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
-                Err(e) => return Err(format!("{error}; marker cleanup failed: {e}")),
+        match recover(journal, |p| writes.iter().any(|w| w.path == p)) {
+            Ok(_) => {
+                match std::fs::remove_file(marker) {
+                    Ok(()) => (),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                    Err(e) => return Err(format!("{error}; marker cleanup failed: {e}")),
+                }
+                let parent = marker
+                    .parent()
+                    .ok_or_else(|| format!("{error}; missing marker parent"))?;
+                storage::sync(parent).map_err(|sync_error| {
+                    format!("{error}; marker cleanup sync failed: {sync_error}")
+                })?;
             }
-            storage::sync(marker.parent().ok_or("Missing marker parent")?)?;
-        } else {
-            storage::atomic(marker, &marker_data)?;
+            Err(recovery_error) => {
+                storage::atomic(marker, &marker_data).map_err(|restore_error| format!("{error}; recovery failed: {recovery_error}; marker restore failed: {restore_error}"))?;
+                return Err(format!("{error}; recovery failed: {recovery_error}"));
+            }
         }
         return Err(error);
     }
@@ -240,7 +249,7 @@ pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, 
         .ok_or("Invalid recovery journal")?;
     let mut writes = Vec::new();
     let mut seen = BTreeSet::new();
-    let mut byte_count = 0;
+    let mut byte_count = 0_usize;
     for (i, row) in rows.iter().enumerate() {
         metadata::fields(row, "path before after")?;
         let path = PathBuf::from(metadata::text(&row["path"], 4096)?);
@@ -259,7 +268,9 @@ pub fn recover(journal: &Path, allowed: impl Fn(&Path) -> bool) -> Result<bool, 
             Some(load_saved(journal, i, "after", &row["after"])?)
         };
         for data in [before.as_ref(), after.as_ref()].into_iter().flatten() {
-            byte_count += data.bytes.len();
+            byte_count = byte_count
+                .checked_add(data.bytes.len())
+                .ok_or("Recovery snapshot size overflow; no files were changed")?;
             if byte_count > BYTE_LIMIT {
                 return Err(
                     "App transaction exceeds recovery bounds; no files were changed".into(),
@@ -292,7 +303,7 @@ fn recover_staging(
     let mut seen = BTreeSet::new();
     let mut snapshots = Vec::new();
     let mut temporaries = Vec::new();
-    let mut bytes = 0;
+    let mut bytes = 0_usize;
     for (i, row) in rows.iter().enumerate() {
         metadata::fields(row, "path before after")?;
         let target = PathBuf::from(metadata::text(&row["path"], 4096)?);
@@ -305,7 +316,7 @@ fn recover_staging(
                 continue;
             }
             metadata::fields(&row[kind], "sha256 mode")?;
-            let mode = row[kind]["mode"]
+            let mode = metadata::field(metadata::field(row, kind)?, "mode")?
                 .as_u64()
                 .filter(|mode| *mode <= 0o777)
                 .ok_or("Invalid staging image mode")?;
@@ -323,7 +334,9 @@ fn recover_staging(
                 Ok(_) => (),
             }
             let image = load_saved(journal, i, kind, &row[kind])?;
-            bytes += image.bytes.len();
+            bytes = bytes
+                .checked_add(image.bytes.len())
+                .ok_or("Staging snapshot size overflow; no files were changed")?;
             if bytes > BYTE_LIMIT {
                 return Err("Staging images exceed recovery bounds".into());
             }
@@ -412,7 +425,7 @@ pub(super) fn discard_finished_removals(
         .filter(|rows| rows.len() <= WRITE_LIMIT)
         .ok_or("Invalid finished journal")?;
     let mut paths = Vec::new();
-    let mut bytes = 0;
+    let mut bytes = 0_usize;
     for (i, row) in rows.iter().enumerate() {
         metadata::fields(row, "path before after")?;
         let target = PathBuf::from(metadata::text(&row["path"], 4096)?);
@@ -420,7 +433,9 @@ pub(super) fn discard_finished_removals(
             let backup = journal.join(format!("{i}.before"));
             if let Some(data) = storage::read(&backup, metadata::BUNDLE_LIMIT)? {
                 validate_saved(&data, &row["before"])?;
-                bytes += data.bytes.len();
+                bytes = bytes
+                    .checked_add(data.bytes.len())
+                    .ok_or("Removal recovery byte count overflow")?;
                 if bytes > BYTE_LIMIT {
                     return Err("Finished runtime backups exceed cleanup bounds".into());
                 }
@@ -474,7 +489,7 @@ mod tests {
         storage::atomic(
             &partial,
             &FileData {
-                bytes: original.bytes[..7].to_vec(),
+                bytes: (*original.bytes.get(..7).ok_or("Missing fixture element")?).to_vec(),
                 mode: 0o600,
             },
         )?;
@@ -557,7 +572,9 @@ mod tests {
                 mode: 0o600,
             },
         )?;
-        let error = commit(&journal, &writes, &marker).expect_err("journal staging must fail");
+        let error = commit(&journal, &writes, &marker)
+            .err()
+            .ok_or("journal staging must fail")?;
         if enospc {
             assert!(
                 error.to_ascii_lowercase().contains("no space left"),
@@ -725,7 +742,7 @@ mod tests {
         assert_eq!(storage::read(&path, 100)?, Some(old));
         assert!(recover(&journal, |p| p == path)?);
         assert!(!recover(&journal, |p| p == path)?);
-        let w = plan(
+        let edited_write = plan(
             path.clone(),
             FileData {
                 bytes: b"new".to_vec(),
@@ -737,7 +754,7 @@ mod tests {
             mode: 0o600,
         };
         assert!(
-            apply_with(&journal, &[w], |_| {
+            apply_with(&journal, &[edited_write], |_| {
                 storage::atomic(&path, &later)?;
                 Err("interrupted".into())
             })

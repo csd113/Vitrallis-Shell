@@ -49,7 +49,7 @@ impl Draft {
             return Err("Working directory must be absolute".into());
         }
         if self.mode == Mode::Direct {
-            command::parse(&self.command)?;
+            let _validated_arguments = command::parse(&self.command)?;
         }
         if self
             .icon
@@ -85,9 +85,9 @@ impl Draft {
     }
 
     pub fn choose_icon(&mut self, path: &Path) -> Result<(), String> {
-        let path = path.canonicalize().map_err(|e| e.to_string())?;
-        let file = storage::read(&path, ICON_LIMIT)?.ok_or("Icon file is missing")?;
-        crate::renderer::decode_icon(&file.bytes)?;
+        let canonical_path = path.canonicalize().map_err(|e| e.to_string())?;
+        let file = storage::read(&canonical_path, ICON_LIMIT)?.ok_or("Icon file is missing")?;
+        drop(crate::renderer::decode_icon(&file.bytes)?);
         self.icon = Some(file.bytes);
         Ok(())
     }
@@ -139,30 +139,39 @@ impl Store {
         let record =
             storage::read(&self.path(id)?, RECORD_LIMIT)?.ok_or("Shortcut no longer exists")?;
         let value: Value = serde_json::from_slice(&record.bytes).map_err(|e| e.to_string())?;
-        if value["kind"] != "custom-shortcut" || value["id"] != id {
+        if value.get("kind").and_then(Value::as_str) != Some("custom-shortcut")
+            || value.get("id").and_then(Value::as_str) != Some(id)
+        {
             return Err("Invalid shortcut provenance or identity".into());
         }
         let text = |key: &str| {
-            value[key]
-                .as_str()
+            value
+                .get(key)
+                .and_then(Value::as_str)
                 .map(str::to_owned)
                 .ok_or_else(|| format!("Invalid {key}"))
         };
-        let flag = |key: &str| value[key].as_bool().ok_or_else(|| format!("Invalid {key}"));
+        let flag = |key: &str| {
+            value
+                .get(key)
+                .and_then(Value::as_bool)
+                .ok_or_else(|| format!("Invalid {key}"))
+        };
+        let icon_value = value.get("icon").unwrap_or(&Value::Null);
         let draft = Draft {
             name: text("name")?,
             command: text("command")?,
             cwd: text("cwd")?,
-            mode: match value["mode"].as_str() {
+            mode: match value.get("mode").and_then(Value::as_str) {
                 Some("direct") => Mode::Direct,
                 Some("shell") => Mode::Shell,
                 _ => return Err("Invalid command mode".into()),
             },
             terminal: flag("terminal")?,
-            icon: if value["icon"].is_null() {
+            icon: if icon_value.is_null() {
                 None
             } else {
-                let bytes = value["icon"]
+                let bytes = icon_value
                     .as_array()
                     .filter(|v| v.len() <= ICON_LIMIT)
                     .ok_or("Invalid icon")?;
@@ -171,7 +180,7 @@ impl Store {
                         .iter()
                         .map(|v| {
                             v.as_u64()
-                                .and_then(|v| u8::try_from(v).ok())
+                                .and_then(|number| u8::try_from(number).ok())
                                 .ok_or("Invalid icon byte")
                         })
                         .collect::<Result<Vec<_>, _>>()?,
@@ -182,18 +191,18 @@ impl Store {
         Ok(draft)
     }
 
-    pub fn save(&self, id: Option<&str>, draft: &Draft) -> Result<String, String> {
-        draft.manifest()?; // Validation only; never creates a process.
-        if let Some(id) = id {
-            self.path(id)?;
+    pub fn save(&self, existing_id: Option<&str>, draft: &Draft) -> Result<String, String> {
+        drop(draft.manifest()?); // Validation only; never creates a process.
+        if let Some(selected_id) = existing_id {
+            let _validated_path = self.path(selected_id)?;
         }
         if let Some(bytes) = &draft.icon {
-            crate::renderer::decode_icon(bytes)?;
+            drop(crate::renderer::decode_icon(bytes)?);
         }
         let _lock = storage::Lock::take(&self.root)?;
-        let id = if let Some(id) = id {
-            self.load(id)?;
-            id.to_owned()
+        let saved_id = if let Some(selected) = existing_id {
+            drop(self.load(selected)?);
+            selected.to_owned()
         } else {
             if self.ids()?.len() >= COUNT_LIMIT {
                 return Err("Shortcut limit reached (1000)".into());
@@ -201,17 +210,21 @@ impl Store {
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|e| e.to_string())?;
-            let id = format!(
+            let generated_id = format!(
                 "{PREFIX}{}",
                 storage::sha(format!("{}:{}", std::process::id(), stamp.as_nanos()).as_bytes())
             );
-            if self.path(&id)?.try_exists().map_err(|e| e.to_string())? {
+            if self
+                .path(&generated_id)?
+                .try_exists()
+                .map_err(|e| e.to_string())?
+            {
                 return Err("Shortcut ID collision; try again".into());
             }
-            id
+            generated_id
         };
         let bytes = serde_json::to_vec(&json!({
-            "kind": "custom-shortcut", "id": id, "name": draft.name,
+            "kind": "custom-shortcut", "id": saved_id, "name": draft.name,
             "command": draft.command, "cwd": draft.cwd,
             "mode": match draft.mode { Mode::Direct => "direct", Mode::Shell => "shell" },
             "terminal": draft.terminal, "icon": draft.icon,
@@ -220,8 +233,8 @@ impl Store {
         if bytes.len() > RECORD_LIMIT {
             return Err("Shortcut record is too large".into());
         }
-        storage::atomic(&self.path(&id)?, &FileData { bytes, mode: 0o600 })?;
-        Ok(id)
+        storage::atomic(&self.path(&saved_id)?, &FileData { bytes, mode: 0o600 })?;
+        Ok(saved_id)
     }
 
     /// The only deleted file is derived from a validated custom ID, never a
@@ -232,7 +245,7 @@ impl Store {
         }
         let path = self.path(&app.id)?;
         let _lock = storage::Lock::take(&self.root)?;
-        storage::read(&path, RECORD_LIMIT)?.ok_or("Shortcut no longer exists")?;
+        drop(storage::read(&path, RECORD_LIMIT)?.ok_or("Shortcut no longer exists")?);
         fs::remove_file(path).map_err(|e| e.to_string())?;
         storage::sync(&self.root)
     }
@@ -245,8 +258,8 @@ impl Store {
             Err(e) => return Err(e.to_string()),
         };
         let mut ids = Vec::new();
-        for item in entries.take(COUNT_LIMIT * 2) {
-            let item = item.map_err(|e| e.to_string())?;
+        for item_result in entries.take(COUNT_LIMIT * 2) {
+            let item = item_result.map_err(|e| e.to_string())?;
             if let Some(id) = item.path().file_stem().and_then(|s| s.to_str())
                 && item.path().extension().is_some_and(|ext| ext == "json")
                 && self.path(id).is_ok()

@@ -23,7 +23,9 @@ impl Scratch {
 }
 impl Drop for Scratch {
     fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
+        if let Err(error) = fs::remove_dir_all(&self.0) {
+            eprintln!("Cannot remove test directory {}: {error}", self.0.display());
+        }
     }
 }
 #[test]
@@ -152,7 +154,11 @@ fn save_as_requires_replacement_and_rejects_links() -> io::Result<()> {
 fn document_size_guard_and_invalid_utf8() -> io::Result<()> {
     let dir = Scratch::new()?;
     let path = dir.0.join("large");
-    fs::File::create(&path)?.set_len(MAX_BYTES as u64 + 1)?;
+    let oversized = u64::try_from(MAX_BYTES)
+        .map_err(io::Error::other)?
+        .checked_add(1)
+        .ok_or_else(|| io::Error::other("test file size overflow"))?;
+    fs::File::create(&path)?.set_len(oversized)?;
     assert!(Document::open(&path).is_err());
     fs::write(&path, [0xff, 0x00])?;
     assert!(Document::open(&path).is_err());
@@ -226,19 +232,20 @@ fn stream_copy_large_file_and_never_overwrite() -> io::Result<()> {
     let source = dir.0.join("source");
     let target = dir.0.join("target");
     let mut file = fs::File::create(&source)?;
-    for _ in 0..512 {
+    for _ in 0_i32..512_i32 {
         file.write_all(&[42; 8192])?;
     }
     drop(file);
-    let mut calls = 0;
+    let mut calls = 0_i32;
     let mut bytes = 0;
+    let buffer_size = u64::try_from(files::COPY_BUFFER).map_err(io::Error::other)?;
     files::copy_entry(&source, &target, &mut |n| {
         assert!(n >= bytes);
-        assert!(n - bytes <= files::COPY_BUFFER as u64);
+        assert!(n.abs_diff(bytes) <= buffer_size);
         bytes = n;
-        calls += 1;
+        calls = calls.saturating_add(1);
     })?;
-    assert!(calls > 1);
+    assert!(calls > 1_i32);
     assert_eq!(bytes, 4 * 1024 * 1024);
     assert_eq!(fs::read(&source)?, fs::read(&target)?);
     assert!(files::copy_entry(&source, &target, &mut |_| {}).is_err());
@@ -298,12 +305,19 @@ fn content_dispatch_is_bounded_and_does_not_execute() -> io::Result<()> {
 #[test]
 fn listing_thousands_is_a_single_bounded_sorted_model() -> io::Result<()> {
     let dir = Scratch::new()?;
-    for i in (0..3000).rev() {
+    for i in (0_i32..3_000_i32).rev() {
         fs::write(dir.0.join(format!("entry-{i:04}")), "")?;
     }
     let mut browser = Browser::new(&dir.0)?;
     assert_eq!(browser.entries.len(), 3000);
-    assert_eq!(browser.entries[0].label, "entry-0000");
+    assert_eq!(
+        browser
+            .entries
+            .first()
+            .ok_or_else(|| io::Error::other("empty listing"))?
+            .label,
+        "entry-0000"
+    );
     browser.move_by(2999, 10);
     assert_eq!(browser.offset, 2990);
     browser.move_by(-2999, 10);

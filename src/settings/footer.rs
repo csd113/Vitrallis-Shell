@@ -40,7 +40,9 @@ impl Settings {
                     Some((REFRESH, "Previous")),
                     Some((NEXT, "Next >")),
                 ],
-                _ => [Some((BACK, "< Back")), None, None],
+                super::StorageView::App(_) | super::StorageView::Categories => {
+                    [Some((BACK, "< Back")), None, None]
+                }
             },
             // The restore control is offered only while a validated previous
             // generation exists and no update action is already pending.
@@ -57,7 +59,15 @@ impl Settings {
             {
                 [Some((BACK, "< Back")), Some((RESTORE, "Restore")), None]
             }
-            _ => [Some((BACK, "< Back")), None, None],
+            Page::Display
+            | Page::DateTime
+            | Page::Wireless
+            | Page::Tor
+            | Page::TorDetails
+            | Page::Applications
+            | Page::Device
+            | Page::Updates
+            | Page::About => [Some((BACK, "< Back")), None, None],
         }
     }
 
@@ -66,7 +76,7 @@ impl Settings {
         let index = match action {
             Action::SelectAndActivate(index) => index,
             Action::Activate | Action::Move(_) => self.selected,
-            _ => return false,
+            Action::System | Action::Back | Action::Page(_) => return false,
         };
         let Some(position) = controls
             .iter()
@@ -77,9 +87,13 @@ impl Settings {
         match action {
             Action::Move(Direction::Left | Direction::Right) => {
                 let neighbor = if action == Action::Move(Direction::Left) {
-                    controls[..position].iter().rev().flatten().next()
+                    controls.iter().take(position).rev().flatten().next()
                 } else {
-                    controls[position + 1..].iter().flatten().next()
+                    controls
+                        .iter()
+                        .skip(position.saturating_add(1))
+                        .flatten()
+                        .next()
                 };
                 if let Some(&(target, _)) = neighbor {
                     self.selected = target;
@@ -92,10 +106,11 @@ impl Settings {
             Action::Activate | Action::SelectAndActivate(_) => match self.page {
                 Page::Timezones => match index {
                     PREVIOUS => {
-                        self.input(Action::Page(false));
+                        // Paging Timezones only changes its selection, without a hardware request.
+                        let _page_navigation = self.input(Action::Page(false));
                     }
                     NEXT => {
-                        self.input(Action::Page(true));
+                        let _page_navigation = self.input(Action::Page(true));
                     }
                     _ => self.back(),
                 },
@@ -114,9 +129,19 @@ impl Settings {
                     self.selected = 0; // Cancel is always the default.
                     self.clear_pointer();
                 }
-                _ => self.back(),
+                Page::Home
+                | Page::Display
+                | Page::DateTime
+                | Page::Wireless
+                | Page::Tor
+                | Page::TorDetails
+                | Page::Applications
+                | Page::Storage
+                | Page::Device
+                | Page::Updates
+                | Page::About => self.back(),
             },
-            _ => return false,
+            Action::System | Action::Back | Action::Page(_) => return false,
         }
         true
     }
@@ -157,29 +182,37 @@ impl Settings {
                 };
             }
             Direction::Down => {
-                self.selected = if self.selected + 1 < rows {
-                    self.selected + 1
+                self.selected = if self.selected.saturating_add(1) < rows {
+                    self.selected.saturating_add(1)
                 } else {
                     BACK
                 };
             }
             Direction::Left | Direction::Right => {
                 let controls = self.footer_controls();
-                let targets: Vec<_> = controls.into_iter().flatten().map(|(i, _)| i).collect();
-                if targets.is_empty() {
-                    return;
-                }
-                if let Some(position) = targets.iter().position(|&i| i == self.selected) {
-                    let next = if direction == Direction::Left {
-                        position.saturating_sub(1)
-                    } else {
-                        (position + 1).min(targets.len() - 1)
-                    };
-                    self.selected = targets[next];
-                } else {
-                    self.selected = targets[0];
+                if let Some(target) = self
+                    .footer_neighbor(direction)
+                    .or_else(|| controls.iter().flatten().next().map(|(target, _)| *target))
+                {
+                    self.selected = target;
                 }
             }
         }
+    }
+    pub(super) fn footer_neighbor(&self, direction: Direction) -> Option<usize> {
+        let controls = self.footer_controls();
+        let position = controls
+            .iter()
+            .position(|control| control.is_some_and(|(index, _)| index == self.selected))?;
+        let neighbor = if direction == Direction::Left {
+            controls.iter().take(position).rev().flatten().next()
+        } else {
+            controls
+                .iter()
+                .skip(position.saturating_add(1))
+                .flatten()
+                .next()
+        };
+        neighbor.map(|(target, _)| *target)
     }
 }

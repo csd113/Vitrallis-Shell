@@ -29,7 +29,11 @@ pub fn count(update: impl FnOnce(&mut Counts)) {
 #[test]
 #[ignore = "opt-in rendering benchmark; no timing threshold"]
 fn rendering_workloads() -> Result<(), String> {
-    sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+    assert!(
+        sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+            || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+        "dummy video must be available for this fixture"
+    );
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
     let window = video
@@ -37,13 +41,13 @@ fn rendering_workloads() -> Result<(), String> {
         .hidden()
         .build()
         .map_err(|e| e.to_string())?;
-    let canvas = window
+    let raw_canvas = window
         .into_canvas()
         .software()
         .build()
         .map_err(|e| e.to_string())?;
-    let creator = canvas.texture_creator();
-    let mut canvas = Screen::new(canvas, &creator)?;
+    let creator = raw_canvas.texture_creator();
+    let mut canvas = Screen::new(raw_canvas, &creator)?;
     let layout = Layout::home(480, 272)?;
     for (name, mut sample) in samples(&layout)? {
         let textures = artwork(&creator, &sample);
@@ -58,14 +62,14 @@ fn rendering_workloads() -> Result<(), String> {
         let start = Instant::now();
         for frame in 0..200 {
             if name == "rapid-keyboard" {
-                sample.input(crate::input::Action::Move(
+                let _workload_activation = sample.input(crate::input::Action::Move(
                     crate::navigation::Direction::Right,
                 ));
             }
             if name == "rapid-pointer" {
                 sample.phase = crate::launcher::Phase::Ready;
                 sample.opening = None;
-                sample.input(crate::input::Action::SelectAndActivate(
+                let _workload_activation = sample.input(crate::input::Action::SelectAndActivate(
                     frame % sample.apps.len(),
                 ));
             }
@@ -90,7 +94,7 @@ fn rendering_workloads() -> Result<(), String> {
     app_center::draw_icon(&mut canvas, &icon, bounds)?;
     reset();
     let start = Instant::now();
-    for _ in 0..200 {
+    for _ in 0_i32..200_i32 {
         app_center::draw_icon(&mut canvas, &icon, bounds)?;
         canvas.present();
     }
@@ -110,9 +114,9 @@ fn samples(layout: &Layout) -> Result<Vec<(String, Launcher)>, String> {
     let mut samples = vec![("home".to_owned(), make_state()?)];
     state.settings.show();
     samples.push(("settings".into(), state));
-    let mut state = make_state()?;
-    state.opening = Some("Example application".into());
-    samples.push(("modal".into(), state));
+    let mut modal_state = make_state()?;
+    modal_state.opening = Some("Example application".into());
+    samples.push(("modal".into(), modal_state));
     for (name, center) in crate::app_center::Center::qa_samples()? {
         let mut sample = make_state()?;
         sample.app_center = center;
@@ -123,9 +127,13 @@ fn samples(layout: &Layout) -> Result<Vec<(String, Launcher)>, String> {
         sample.desktop = desktop;
         samples.push((format!("desktop-{name}"), sample));
     }
-    let many_apps = (0..1000)
-        .map(|index| {
-            let mut app = apps[index % apps.len()].clone();
+    let many_apps = apps
+        .iter()
+        .cycle()
+        .take(1000)
+        .enumerate()
+        .map(|(index, fixture)| {
+            let mut app = fixture.clone();
             app.id = format!("fixture-{index}");
             app.icon = Some(
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/system/apps.png"),
@@ -164,7 +172,7 @@ fn hardware_scenes_match_software() -> Result<(), String> {
         backend::RendererMode::Software,
         backend::RendererMode::Hardware,
     ] {
-        let (canvas, info) = backend::initialize(&video, mode, || {
+        let (raw_canvas, info) = backend::initialize(&video, mode, || {
             video
                 .window("Vitrallis scene validation", 480, 272)
                 .hidden()
@@ -172,8 +180,8 @@ fn hardware_scenes_match_software() -> Result<(), String> {
                 .map_err(|e| e.to_string())
         })?;
         eprintln!("{info}");
-        let creator = canvas.texture_creator();
-        let mut canvas = Screen::new(canvas, &creator)?;
+        let creator = raw_canvas.texture_creator();
+        let mut canvas = Screen::new(raw_canvas, &creator)?;
         for (index, (name, mut state)) in samples(&layout)?.into_iter().enumerate() {
             // Fixtures use compile-host paths; materialize embedded bytes on the
             // actual test host so missing files cannot silently skip artwork.

@@ -66,12 +66,16 @@ impl Options {
                         .to_str()
                         .and_then(|s| s.split_once('x'))
                         .ok_or("Use WIDTHxHEIGHT")?;
-                    let w = w.parse().map_err(|_| "Invalid width")?;
-                    let h = h.parse().map_err(|_| "Invalid height")?;
-                    if !(320..=4096).contains(&w) || !(200..=2160).contains(&h) {
+                    let width = w
+                        .parse()
+                        .map_err(|error| format!("Invalid width: {error}"))?;
+                    let height = h
+                        .parse()
+                        .map_err(|error| format!("Invalid height: {error}"))?;
+                    if !(320..=4096).contains(&width) || !(200..=2160).contains(&height) {
                         return Err("Display must be 320x200 to 4096x2160".into());
                     }
-                    options.size = Some((w, h));
+                    options.size = Some((width, height));
                 }
                 Some("--fullscreen") => options.fullscreen = true,
                 Some("--smoke-test") => options.smoke = true,
@@ -133,13 +137,13 @@ impl Session {
     /// # Errors
     /// Reports SDL/video/window initialization errors.
     pub fn new(title: &str, options: &Options) -> Result<Self, String> {
-        sdl2::hint::set("SDL_VIDEO_ALLOW_SCREENSAVER", "1");
-        sdl2::hint::set("SDL_TOUCH_MOUSE_EVENTS", "0");
-        sdl2::hint::set("SDL_MOUSE_TOUCH_EVENTS", "0");
-        sdl2::hint::set("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
+        hint("SDL_VIDEO_ALLOW_SCREENSAVER", "1");
+        hint("SDL_TOUCH_MOUSE_EVENTS", "0");
+        hint("SDL_MOUSE_TOUCH_EVENTS", "0");
+        hint("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
         // Handle the window close once. SDL's additional last-window Quit would
         // immediately cancel the unsaved-document or terminal confirmation.
-        sdl2::hint::set("SDL_QUIT_ON_LAST_WINDOW_CLOSE", "0");
+        hint("SDL_QUIT_ON_LAST_WINDOW_CLOSE", "0");
         let sdl = sdl2::init()?;
         let video = sdl.video()?;
         let session = std::env::var_os("VITRALLIS_SESSION").is_some();
@@ -148,9 +152,9 @@ impl Session {
             .unwrap_or(if session { (480, 272) } else { (800, 480) });
         let (canvas, info) = crate::renderer::initialize(&video, options.renderer, || {
             let mut builder = video.window(title, width, height);
-            builder.position_centered().resizable().hidden();
+            let _window_options = builder.position_centered().resizable().hidden();
             if options.fullscreen || (session && options.size.is_none()) {
-                builder.fullscreen_desktop();
+                let _fullscreen_options = builder.fullscreen_desktop();
             }
             let mut window = builder.build().map_err(|e| e.to_string())?;
             window
@@ -216,26 +220,29 @@ impl<'a> Ui<'a> {
     }
     fn resize(&mut self) -> Result<(), String> {
         let (w, h) = self.canvas.output_size()?;
-        self.width = i32::try_from(w).map_err(|_| "Display too wide")?;
-        self.height = i32::try_from(h).map_err(|_| "Display too tall")?;
-        self.scale = (self.width / 640).min(self.height / 400).clamp(1, 3);
+        self.width = i32::try_from(w).map_err(|error| format!("Display too wide: {error}"))?;
+        self.height = i32::try_from(h).map_err(|error| format!("Display too tall: {error}"))?;
+        self.scale = (self.width / 640_i32)
+            .min(self.height / 400_i32)
+            .clamp(1_i32, 3_i32);
         Ok(())
     }
     #[must_use]
     pub const fn line(&self) -> i32 {
-        theme::LINE * self.scale
+        theme::LINE.saturating_mul(self.scale)
     }
     #[must_use]
     pub const fn cell(&self) -> i32 {
-        theme::CELL * self.scale
+        let cell = theme::CELL.saturating_mul(self.scale);
+        if cell > 0 { cell } else { 1 }
     }
     #[must_use]
     pub const fn header_height(&self) -> i32 {
-        28 * self.scale
+        28_i32.saturating_mul(self.scale)
     }
     #[must_use]
     pub const fn footer_height(&self) -> i32 {
-        28 * self.scale
+        28_i32.saturating_mul(self.scale)
     }
     #[must_use]
     pub fn rows(&self, top: i32) -> usize {
@@ -262,10 +269,14 @@ impl<'a> Ui<'a> {
         width: i32,
         color: Color,
     ) -> Result<(), String> {
-        let limit = usize::try_from(width / self.cell()).unwrap_or(0);
+        let limit = self.columns(width);
         for (index, ch) in value.chars().take(limit).enumerate() {
-            let x = x + i32::try_from(index).map_err(|_| "Text width")? * self.cell();
-            self.glyph(ch, x, y, color)?;
+            let glyph_x = i32::try_from(index)
+                .map_err(|error| format!("Text width: {error}"))?
+                .checked_mul(self.cell())
+                .and_then(|offset| x.checked_add(offset))
+                .ok_or("Text coordinate overflow")?;
+            self.glyph(ch, glyph_x, y, color)?;
         }
         Ok(())
     }
@@ -278,8 +289,12 @@ impl<'a> Ui<'a> {
             Rect::new(
                 x,
                 y,
-                theme::CELL.unsigned_abs() * self.scale.unsigned_abs(),
-                theme::CELL.unsigned_abs() * self.scale.unsigned_abs(),
+                theme::CELL
+                    .unsigned_abs()
+                    .saturating_mul(self.scale.unsigned_abs()),
+                theme::CELL
+                    .unsigned_abs()
+                    .saturating_mul(self.scale.unsigned_abs()),
             ),
             color,
         )
@@ -296,22 +311,28 @@ impl<'a> Ui<'a> {
             ),
             PANEL,
         )?;
-        self.text(title, 8, 5, self.width - 16, ACCENT)?;
-        self.text(detail, 8, 5 + self.line(), self.width - 16, MUTED)
+        self.text(title, 8, 5, self.width.saturating_sub(16), ACCENT)?;
+        self.text(
+            detail,
+            8,
+            5_i32.saturating_add(self.line()),
+            self.width.saturating_sub(16),
+            MUTED,
+        )
     }
     /// Header whose second line is a filesystem path. The path is trimmed from
     /// the left so the file name stays visible in deep directories.
     /// # Errors
     /// Reports a renderer error.
     pub fn header_path(&mut self, title: &str, path: &str) -> Result<(), String> {
-        let columns = self.columns(self.width - 16);
+        let columns = self.columns(self.width.saturating_sub(16));
         let shown = tail(path, columns);
         self.header(title, &shown)
     }
     /// Whole characters that fit in `width` pixels at this session's scale.
     #[must_use]
     pub fn columns(&self, width: i32) -> usize {
-        usize::try_from(width.max(0) / self.cell()).unwrap_or(0)
+        usize::try_from(width.max(0).checked_div(self.cell()).unwrap_or(0)).unwrap_or(0)
     }
     #[must_use]
     pub fn button_rect(&self, index: usize, count: usize) -> Rect {
@@ -325,9 +346,15 @@ impl<'a> Ui<'a> {
             theme::card(&mut self.canvas, rect, focus == Some(index))?;
             self.text(
                 label,
-                rect.x() + 6,
-                rect.y() + (self.footer_height() - 8 * self.scale) / 2,
-                i32::try_from(rect.width()).unwrap_or(0) - 12,
+                rect.x().saturating_add(6),
+                rect.y().saturating_add(
+                    self.footer_height()
+                        .saturating_sub(8_i32.saturating_mul(self.scale))
+                        / 2_i32,
+                ),
+                i32::try_from(rect.width())
+                    .unwrap_or(0_i32)
+                    .saturating_sub(12),
                 if focus == Some(index) { ACCENT } else { TEXT },
             )?;
         }
@@ -346,13 +373,18 @@ impl<'a> Ui<'a> {
     /// A released row must match the pressed row; crossing adjacent rows never activates one.
     #[must_use]
     pub fn row_at(&self, y: i32, top: i32, height: i32, count: usize) -> Option<usize> {
-        if y < top {
+        if y < top || height <= 0_i32 {
             return None;
         }
-        let row = usize::try_from((y - top) / height).ok()?;
+        let row_value = y.checked_sub(top)?.checked_div(height)?;
+        let row = usize::try_from(row_value).ok()?;
         (row < count
             && self.released_from.is_none_or(|(_, start)| {
-                start >= top && (start - top) / height == (y - top) / height
+                start >= top
+                    && start
+                        .checked_sub(top)
+                        .and_then(|offset| offset.checked_div(height))
+                        == Some(row_value)
             }))
         .then_some(row)
     }
@@ -396,6 +428,11 @@ impl<'a> Ui<'a> {
     pub const fn text_modifiers(&self) -> Mod {
         self.keyboard.text_modifiers()
     }
+    #[allow(
+        clippy::rest_pattern_accessible_field,
+        clippy::wildcard_enum_match_arm,
+        reason = "SDL dispatch ignores timestamps and device fields not used by this UI, and events outside its supported input/window set"
+    )]
     fn translate(&mut self, mut event: Event) -> Result<Input, String> {
         self.keyboard.event(&mut event);
         if self
@@ -436,16 +473,16 @@ impl<'a> Ui<'a> {
             } if which != u32::MAX => self.release(i64::from(which), x, y),
             Event::FingerDown {
                 finger_id, x, y, ..
-            } => {
-                let (x, y) = self.touch(x, y);
-                self.press = Some((finger_id, x, y));
+            } if x.is_finite() && y.is_finite() => {
+                let (pixel_x, pixel_y) = self.touch(x, y);
+                self.press = Some((finger_id, pixel_x, pixel_y));
                 Input::Ignore
             }
             Event::FingerUp {
                 finger_id, x, y, ..
-            } => {
-                let (x, y) = self.touch(x, y);
-                self.release(finger_id, x, y)
+            } if x.is_finite() && y.is_finite() => {
+                let (pixel_x, pixel_y) = self.touch(x, y);
+                self.release(finger_id, pixel_x, pixel_y)
             }
             Event::Window {
                 win_event: WindowEvent::SizeChanged(..) | WindowEvent::Resized(..),
@@ -478,6 +515,7 @@ impl<'a> Ui<'a> {
     // SDL finger coordinates are normalized; clamp before the bounded pixel conversion.
     #[allow(
         clippy::cast_possible_truncation,
+        clippy::as_conversions,
         reason = "Normalized finite touch positions are clamped to a display bounded by SDL"
     )]
     fn touch(&self, x: f32, y: f32) -> (i32, i32) {
@@ -488,7 +526,7 @@ impl<'a> Ui<'a> {
     }
     const fn release(&mut self, id: i64, x: i32, y: i32) -> Input {
         match self.press.take() {
-            Some((old, px, py)) if old == id && (x - px).abs() < 12 && (y - py).abs() < 12 => {
+            Some((old, px, py)) if old == id && x.abs_diff(px) < 12 && y.abs_diff(py) < 12 => {
                 self.released_from = Some((px, py));
                 Input::Click(x, y)
             }
@@ -500,32 +538,7 @@ impl<'a> Ui<'a> {
     pub fn finish_preview(&mut self, options: &Options) -> Result<bool, String> {
         // Accelerated backbuffers may be invalidated by present. Read first.
         if let Some(path) = &options.screenshot {
-            let mut output = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(path)
-                .map_err(|e| e.to_string())?;
-            let pixels = self.canvas.read_pixels(None, PixelFormatEnum::ARGB8888)?;
-            let mut pixels = pixels;
-            let width = self.width.unsigned_abs();
-            let height = self.height.unsigned_abs();
-            let surface = sdl2::surface::Surface::from_data(
-                &mut pixels,
-                width,
-                height,
-                width * 4,
-                PixelFormatEnum::ARGB8888,
-            )?;
-            let mut bytes =
-                vec![0; usize::try_from(width * height * 4 + 4096).map_err(|_| "Screenshot size")?];
-            let mut rw = sdl2::rwops::RWops::from_bytes_mut(&mut bytes)?;
-            surface.save_bmp_rw(&mut rw)?;
-            let length = usize::try_from(rw.stream_position().map_err(|e| e.to_string())?)
-                .map_err(|_| "Screenshot length")?;
-            drop(rw);
-            output
-                .write_all(&bytes[..length])
-                .map_err(|e| e.to_string())?;
+            save_screenshot(&self.canvas, path)?;
             self.present();
             return Ok(true);
         }
@@ -543,22 +556,21 @@ impl<'a> Ui<'a> {
         }
         let mut selected = 0;
         let mut offset = 0;
-        let lines = wrap(
-            body,
-            usize::try_from((self.width - 16) / self.cell())
-                .unwrap_or(1)
-                .max(1),
-        );
+        let lines = wrap(body, self.columns(self.width.saturating_sub(16_i32)).max(1));
         loop {
             self.clear();
             self.header(title, "Arrows / Tab select   Enter activates")?;
-            let top = self.header_height() + 8;
+            let top = self.header_height().saturating_add(8);
             for (i, line) in lines.iter().skip(offset).take(self.rows(top)).enumerate() {
                 self.text(
                     line,
                     8,
-                    top + i32::try_from(i).unwrap_or(0) * self.line(),
-                    self.width - 16,
+                    top.saturating_add(
+                        i32::try_from(i)
+                            .unwrap_or(0_i32)
+                            .saturating_mul(self.line()),
+                    ),
+                    self.width.saturating_sub(16),
                     TEXT,
                 )?;
             }
@@ -568,13 +580,18 @@ impl<'a> Ui<'a> {
                 Input::Close | Input::Key(Keycode::Escape, _) => return Ok(0),
                 Input::Key(Keycode::Return | Keycode::KpEnter, _) => return Ok(selected),
                 Input::Key(Keycode::Tab | Keycode::Right, _) => {
-                    selected = (selected + 1) % labels.len();
+                    selected = selected
+                        .checked_add(1)
+                        .filter(|index| *index < labels.len())
+                        .unwrap_or(0);
                 }
                 Input::Key(Keycode::Left, _) => {
-                    selected = (selected + labels.len() - 1) % labels.len();
+                    selected = selected
+                        .checked_sub(1)
+                        .unwrap_or_else(|| labels.len().saturating_sub(1));
                 }
                 Input::Key(Keycode::Down | Keycode::PageDown, _) | Input::Scroll(-1) => {
-                    offset = (offset + 1).min(lines.len().saturating_sub(1));
+                    offset = offset.saturating_add(1).min(lines.len().saturating_sub(1));
                 }
                 Input::Key(Keycode::Up | Keycode::PageUp, _) | Input::Scroll(1) => {
                     offset = offset.saturating_sub(1);
@@ -584,7 +601,12 @@ impl<'a> Ui<'a> {
                         return Ok(i);
                     }
                 }
-                _ => {}
+                Input::Key(_, _)
+                | Input::Text(_)
+                | Input::Scroll(_)
+                | Input::Resize
+                | Input::Wake
+                | Input::Ignore => {}
             }
         }
     }
@@ -605,33 +627,42 @@ impl<'a> Ui<'a> {
             self.header(title, "Type a path or name   Tab selects controls")?;
             let field = Rect::new(
                 8,
-                self.header_height() + 12,
-                (self.width - 16).unsigned_abs(),
-                (28 * self.scale).unsigned_abs(),
+                self.header_height().saturating_add(12),
+                self.width.saturating_sub(16).unsigned_abs(),
+                28_i32.saturating_mul(self.scale).unsigned_abs(),
             );
-            let visible = usize::try_from((self.width - 24) / self.cell()).unwrap_or(1);
+            let visible = self.columns(self.width.saturating_sub(24)).max(1);
             let count = value.chars().count();
             let tail: String = value.chars().skip(count.saturating_sub(visible)).collect();
             self.fill(field, if focus == 0 { SELECTED } else { PANEL })?;
             // The value sits on the field's own vertical centre, with the same
             // inset the caret uses horizontally.
-            let text_y = self.header_height()
-                + 12
-                + (i32::try_from(field.height()).unwrap_or(0) - 8 * self.scale) / 2;
-            self.text(&tail, 12, text_y, self.width - 24, TEXT)?;
+            let text_y = self.header_height().saturating_add(12).saturating_add(
+                i32::try_from(field.height())
+                    .unwrap_or(0_i32)
+                    .saturating_sub(8_i32.saturating_mul(self.scale))
+                    / 2_i32,
+            );
+            self.text(&tail, 12, text_y, self.width.saturating_sub(24), TEXT)?;
             self.buttons(&["Cancel", "OK"], focus.checked_sub(1))?;
             self.present();
             match self.wait()? {
                 Input::Close | Input::Key(Keycode::Escape, _) => return Ok(None),
-                Input::Key(Keycode::Tab, _) => focus = (focus + 1) % 3,
+                Input::Key(Keycode::Tab, _) => focus = focus.saturating_add(1) % 3,
                 Input::Key(Keycode::Return | Keycode::KpEnter, _) => {
                     return Ok((focus != 1).then_some(value));
                 }
                 Input::Key(Keycode::Backspace, _) if focus == 0 => {
-                    value.pop();
+                    let _removed_character = value.pop();
                 }
                 Input::Key(Keycode::A, m) if ctrl(m) && focus == 0 => value.clear(),
-                Input::Text(text) if focus == 0 && value.len() + text.len() <= 4096 => {
+                Input::Text(text)
+                    if focus == 0
+                        && value
+                            .len()
+                            .checked_add(text.len())
+                            .is_some_and(|length| length <= 4096) =>
+                {
                     value.extend(text.chars().filter(|c| !c.is_control()));
                 }
                 Input::Click(x, y) => {
@@ -640,11 +671,61 @@ impl<'a> Ui<'a> {
                     }
                     focus = 0;
                 }
-                _ => {}
+                Input::Key(_, _)
+                | Input::Text(_)
+                | Input::Scroll(_)
+                | Input::Resize
+                | Input::Wake
+                | Input::Ignore => {}
             }
         }
     }
 }
+/// Encode the current backbuffer and publish a new BMP atomically.
+/// # Errors
+/// Reports SDL, allocation, path, and I/O failures; refuses existing destinations.
+pub fn save_screenshot(canvas: &Canvas<Window>, path: &std::path::Path) -> Result<(), String> {
+    let destination = crate::files::checked_path(path).map_err(|error| error.to_string())?;
+    let (width, height) = canvas.output_size()?;
+    if !(1..=4096).contains(&width) || !(1..=4096).contains(&height) {
+        return Err("Screenshot dimensions exceed supported bounds".into());
+    }
+    let pitch = width.checked_mul(3).ok_or("Screenshot pitch overflow")?;
+    let capacity = width
+        .checked_mul(height)
+        .and_then(|area| area.checked_mul(4))
+        .and_then(|size| size.checked_add(4096))
+        .ok_or("Screenshot size overflow")?;
+    let mut pixels = canvas.read_pixels(None, PixelFormatEnum::RGB24)?;
+    let surface = sdl2::surface::Surface::from_data(
+        &mut pixels,
+        width,
+        height,
+        pitch,
+        PixelFormatEnum::RGB24,
+    )?;
+    let mut bytes = Vec::new();
+    let buffer_capacity =
+        usize::try_from(capacity).map_err(|error| format!("Screenshot size: {error}"))?;
+    bytes
+        .try_reserve_exact(buffer_capacity)
+        .map_err(|error| format!("Screenshot allocation: {error}"))?;
+    bytes.resize(buffer_capacity, 0);
+    let mut rw = sdl2::rwops::RWops::from_bytes_mut(&mut bytes)?;
+    surface.save_bmp_rw(&mut rw)?;
+    let length = usize::try_from(rw.stream_position().map_err(|e| e.to_string())?)
+        .map_err(|error| format!("Screenshot length: {error}"))?;
+    drop(rw);
+    let (temporary, mut output) =
+        crate::files::Temporary::file(destination.parent().ok_or("Missing screenshot directory")?)
+            .map_err(|error| error.to_string())?;
+    output
+        .write_all(bytes.get(..length).ok_or("Invalid screenshot length")?)
+        .map_err(|e| e.to_string())?;
+    drop(output);
+    crate::files::rename_new(&temporary.path, &destination).map_err(|error| error.to_string())
+}
+
 #[must_use]
 pub const fn ctrl(mods: Mod) -> bool {
     mods.intersects(Mod::LCTRLMOD.union(Mod::RCTRLMOD))
@@ -659,12 +740,18 @@ pub const fn shift(mods: Mod) -> bool {
 /// can never be drawn under the footer.
 #[must_use]
 pub fn text_rows(height: i32, footer: i32, line: i32, top: i32) -> usize {
-    if line <= 0 {
+    if line <= 0_i32 {
         return 1;
     }
-    usize::try_from((height - footer - top) / line)
-        .unwrap_or(1)
-        .max(1)
+    usize::try_from(
+        height
+            .saturating_sub(footer)
+            .saturating_sub(top)
+            .checked_div(line)
+            .unwrap_or(0),
+    )
+    .unwrap_or(1)
+    .max(1)
 }
 
 /// Equal-width footer controls. The last column absorbs the remainder of a
@@ -672,15 +759,20 @@ pub fn text_rows(height: i32, footer: i32, line: i32, top: i32) -> usize {
 /// without overlapping or leaving a gap at the right edge.
 #[must_use]
 pub fn button_bounds(height: i32, footer: i32, width: i32, index: usize, count: usize) -> Rect {
-    let count = i32::try_from(count).unwrap_or(1).max(1);
-    let column = width / count;
-    let x = i32::try_from(index).unwrap_or(0) * column;
-    let w = if i32::try_from(index).unwrap_or(0) + 1 == count {
-        width - x
+    let columns = i32::try_from(count).unwrap_or(1_i32).max(1_i32);
+    let column = width.checked_div(columns).unwrap_or(0_i32);
+    let x = i32::try_from(index).unwrap_or(0_i32).saturating_mul(column);
+    let w = if i32::try_from(index).unwrap_or(0_i32).saturating_add(1_i32) == columns {
+        width.saturating_sub(x)
     } else {
         column
     };
-    Rect::new(x, height - footer, w.unsigned_abs(), footer.unsigned_abs())
+    Rect::new(
+        x,
+        height.saturating_sub(footer),
+        w.unsigned_abs(),
+        footer.unsigned_abs(),
+    )
 }
 
 /// Keep the end of a path or name visible when it does not fit a line. A
@@ -693,7 +785,7 @@ pub fn tail(value: &str, columns: usize) -> String {
         return value.to_owned();
     }
     if columns <= 3 {
-        return value.chars().skip(count - columns).collect();
+        return value.chars().skip(count.saturating_sub(columns)).collect();
     }
     let mut out = String::from("...");
     out.extend(
@@ -708,19 +800,30 @@ pub fn tail(value: &str, columns: usize) -> String {
 /// # Errors
 /// Returns SDL queue errors. Callers retain their bounded data until consumed.
 pub fn wake(sender: &sdl2::event::EventSender) -> Result<(), String> {
+    #[allow(
+        clippy::as_conversions,
+        reason = "SDL's repr(u32) event discriminant is the API's required user-event type code"
+    )]
+    let type_ = sdl2::event::EventType::User as u32;
     sender.push_event(Event::User {
         timestamp: 0,
         window_id: 0,
-        type_: sdl2::event::EventType::User as u32,
+        type_,
         code: 0,
         data1: std::ptr::null_mut(),
         data2: std::ptr::null_mut(),
     })
 }
 
+pub(crate) fn hint(name: &str, value: &str) {
+    if !sdl2::hint::set(name, value) {
+        eprintln!("SDL rejected hint {name}={value:?}");
+    }
+}
+
 fn wrap(body: &str, columns: usize) -> Vec<String> {
     let mut lines = vec![String::new()];
-    let mut count = 0;
+    let mut count = 0_usize;
     for ch in body.chars().take(16 * 1024) {
         if ch == '\n' || count == columns {
             if lines.len() == 256 {
@@ -734,7 +837,7 @@ fn wrap(body: &str, columns: usize) -> Vec<String> {
         }
         if let Some(line) = lines.last_mut() {
             line.push(ch);
-            count += 1;
+            count = count.saturating_add(1);
         }
     }
     lines
@@ -748,37 +851,46 @@ mod tests {
     /// never places a text line under the footer, at any supported size.
     #[test]
     fn shared_control_geometry_never_overlaps_its_own_chrome() {
-        for (height, top, line) in [(200, 40, 12), (272, 40, 12), (480, 56, 24)] {
-            let footer = 28;
+        for (height, top, line) in [
+            (200_i32, 40_i32, 12_i32),
+            (272_i32, 40_i32, 12_i32),
+            (480_i32, 56_i32, 24_i32),
+        ] {
+            let footer = 28_i32;
             let rows = text_rows(height, footer, line, top);
             assert!(rows >= 1);
             assert!(
-                top + i32::try_from(rows).unwrap_or(0) * line <= height - footer,
+                top + i32::try_from(rows).unwrap_or(0_i32) * line <= height - footer,
                 "{height}: rows reach the footer"
             );
             assert!(
-                top + i32::try_from(rows + 1).unwrap_or(0) * line > height - footer,
+                top + i32::try_from(rows + 1).unwrap_or(0_i32) * line > height - footer,
                 "{height}: a row was dropped"
             );
         }
         assert_eq!(text_rows(272, 28, 0, 40), 1);
-        for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+        for (width, height) in [
+            (320_i32, 200_i32),
+            (480_i32, 272_i32),
+            (800_i32, 480_i32),
+            (1_280_i32, 720_i32),
+        ] {
             for count in 1..=6_usize {
-                let mut previous_end = 0;
+                let mut previous_end = 0_i32;
                 for index in 0..count {
                     let rect = button_bounds(height, 28, width, index, count);
-                    assert_eq!(rect.y(), height - 28, "{width}x{height}/{count}");
+                    assert_eq!(rect.y(), height - 28_i32, "{width}x{height}/{count}");
                     assert_eq!(rect.height(), 28, "{width}x{height}/{count}");
                     let x = rect.x();
-                    let w = i32::try_from(rect.width()).unwrap_or(0);
-                    assert!(w >= 1, "{width}x{height}/{count}");
+                    let w = i32::try_from(rect.width()).unwrap_or(0_i32);
+                    assert!(w >= 1_i32, "{width}x{height}/{count}");
                     assert!(x >= previous_end, "{width}x{height}/{count}: overlap");
                     assert!(x + w <= width, "{width}x{height}/{count}: past the edge");
                     previous_end = x + w;
                 }
                 // The controls cover the row: nothing narrower than one column.
                 assert!(
-                    previous_end > width - i32::try_from(count).unwrap_or(1),
+                    previous_end > width - i32::try_from(count).unwrap_or(1_i32),
                     "{width}x{height}/{count} leaves {} empty",
                     width - previous_end
                 );
@@ -799,7 +911,7 @@ mod tests {
     #[test]
     fn dialogs_pointer_guards_and_private_ipc_work_at_native_sizes() -> Result<(), String> {
         for size in [(480, 272), (800, 480), (1280, 720)] {
-            sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+            hint("SDL_VIDEODRIVER", "dummy");
             let session = Session::new(
                 "Native controls test",
                 &Options {
@@ -811,7 +923,10 @@ mod tests {
             let mut ui = Ui::new(session, &creator)?;
             crate::theme::tests::primitive_pixels(&mut ui.canvas)?;
             crate::font::tests::pixel_parity(&mut ui.canvas, &mut ui.font)?;
-            ui.translate(Event::RenderDeviceReset { timestamp: 0 })?;
+            assert_eq!(
+                ui.translate(Event::RenderDeviceReset { timestamp: 0 })?,
+                Input::Resize
+            );
             crate::font::tests::pixel_parity(&mut ui.canvas, &mut ui.font)?;
             key(&ui, Keycode::Return)?;
             assert_eq!(
@@ -824,16 +939,16 @@ mod tests {
                 ui.choose("Delete?", "Explicit selection", &["Cancel", "Delete"])?,
                 1
             );
-            let boundary = ui.width / 2;
-            let y = ui.height - 10;
-            ui.press = Some((1, boundary - 1, y));
+            let boundary = ui.width / 2_i32;
+            let y = ui.height - 10_i32;
+            ui.press = Some((1, boundary - 1_i32, y));
             assert!(matches!(ui.release(1, boundary + 1, y), Input::Click(..)));
             assert_eq!(ui.button_at(boundary + 1, y, 2), None);
-            ui.press = Some((1, 10, 49));
-            ui.release(1, 10, 51);
+            ui.press = Some((1, 10_i32, 49_i32));
+            assert_eq!(ui.release(1, 10, 51), Input::Click(10, 51));
             assert_eq!(ui.row_at(51, 30, 20, 8), None);
-            ui.press = Some((1, 10, 51));
-            ui.release(2, 10, 51);
+            ui.press = Some((1, 10_i32, 51_i32));
+            assert_eq!(ui.release(2, 10, 51), Input::Ignore);
             assert_eq!(ui.press, None);
             crate::ipc::test_private_inbox(&ui.sdl)?;
             while ui.events.poll_event().is_some() {}

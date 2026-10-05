@@ -136,9 +136,13 @@ class Handler(BaseHTTPRequestHandler):
         with REQUESTS.open('a') as log:
             log.write(json.dumps(key) + '\n')
         data = routes(state).get(key)
+        body = data if data is not None else b'Simulator repository unavailable'
         self.send_response(200 if data is not None else 503)
+        # Frame the response explicitly: current curl/OpenSSL must not infer
+        # completion from this HTTP/1.0 server's unclean TLS connection close.
+        self.send_header('Content-Length', str(len(body)))
         self.end_headers()
-        self.wfile.write(data if data is not None else b'Simulator repository unavailable')
+        self.wfile.write(body)
 
     def log_message(self, *_):
         pass

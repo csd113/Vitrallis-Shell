@@ -19,8 +19,13 @@ pub fn sha(bytes: &[u8]) -> String {
         let digest = Sha256::digest(bytes);
         let mut out = String::with_capacity(64);
         for byte in digest {
-            out.push(char::from(b"0123456789abcdef"[usize::from(byte >> 4)]));
-            out.push(char::from(b"0123456789abcdef"[usize::from(byte & 15)]));
+            for nibble in [byte >> 4, byte & 15] {
+                out.push(char::from(if nibble < 10 {
+                    b'0'.saturating_add(nibble)
+                } else {
+                    b'a'.saturating_add(nibble.saturating_sub(10))
+                }));
+            }
         }
         out
     }
@@ -62,7 +67,13 @@ pub fn safe(path: &Path) -> Result<(), String> {
 }
 pub fn read(path: &Path, limit: usize) -> Result<Option<FileData>, String> {
     safe(path)?;
-    let mut f = match File::open(path) {
+    let mut options = OpenOptions::new();
+    let _read_options = options.read(true);
+    // Prevent a final-component substitution from opening a symlink or blocking
+    // on a FIFO between safe() and the descriptor's metadata check.
+    #[cfg(unix)]
+    let _guarded_options = options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let mut f = match options.open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(e.to_string()),
@@ -79,8 +90,12 @@ pub fn read(path: &Path, limit: usize) -> Result<Option<FileData>, String> {
         }
     }
     let mut bytes = Vec::new();
-    Read::by_ref(&mut f)
-        .take(u64::try_from(limit).map_err(|e| e.to_string())? + 1)
+    let _bytes_read = Read::by_ref(&mut f)
+        .take(
+            u64::try_from(limit)
+                .map_err(|e| e.to_string())?
+                .saturating_add(1),
+        )
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
     if bytes.len() > limit {
@@ -127,11 +142,11 @@ pub fn private_directory(path: &Path, home: &Path) -> Result<(), String> {
 fn directory_mode(path: &Path, mode: u32) -> Result<(), String> {
     safe(path)?;
     let mut builder = fs::DirBuilder::new();
-    builder.recursive(true);
+    let _recursive_builder = builder.recursive(true);
     // Apply to every new ancestor as well, even with a group-writable umask.
     // Existing directories retain their permissions and must pass safe().
     #[cfg(unix)]
-    builder.mode(mode);
+    let _mode_builder = builder.mode(mode);
     #[cfg(not(unix))]
     let _ = mode;
     builder.create(path).map_err(|e| e.to_string())?;
@@ -162,9 +177,9 @@ pub(super) fn atomic_with_temp(path: &Path, data: &FileData, tmp: &Path) -> Resu
     let mut created = false;
     let result = (|| {
         let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
+        let _exclusive_options = options.write(true).create_new(true);
         #[cfg(unix)]
-        options.mode(0o600);
+        let _private_options = options.mode(0o600);
         let mut f = options.open(tmp).map_err(|e| e.to_string())?;
         created = true;
         f.write_all(&data.bytes).map_err(|e| e.to_string())?;
@@ -176,8 +191,16 @@ pub(super) fn atomic_with_temp(path: &Path, data: &FileData, tmp: &Path) -> Resu
         fs::rename(tmp, path).map_err(|e| e.to_string())?;
         sync(parent)
     })();
-    if created && tmp.exists() {
-        let _ = fs::remove_file(tmp);
+    if created
+        && let Err(cleanup) = fs::remove_file(tmp)
+        && cleanup.kind() != std::io::ErrorKind::NotFound
+    {
+        return Err(match result {
+            Ok(()) => {
+                format!("Atomic write completed, but temporary cleanup failed: {cleanup}")
+            }
+            Err(error) => format!("{error}; temporary cleanup failed: {cleanup}"),
+        });
     }
     result
 }
@@ -188,10 +211,24 @@ impl Lock {
         let path = root.join("lock");
         safe(&path)?;
         let mut opts = OpenOptions::new();
-        opts.read(true).write(true).create(true).truncate(false);
+        let _lock_options = opts.read(true).write(true).create(true).truncate(false);
         #[cfg(unix)]
-        opts.mode(0o600);
-        let file = opts.open(path).map_err(|e| e.to_string())?;
+        let _guarded_options = opts
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+        let file = opts.open(&path).map_err(|e| e.to_string())?;
+        if !file.metadata().map_err(|e| e.to_string())?.is_file() {
+            return Err("Storage lock must be a regular file".into());
+        }
+        safe(&path)?;
+        #[cfg(unix)]
+        {
+            let opened = file.metadata().map_err(|e| e.to_string())?;
+            let current = fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+            if opened.ino() != current.ino() || opened.dev() != current.dev() {
+                return Err("Storage lock changed during open".into());
+            }
+        }
         file.try_lock()
             .map_err(|e| format!("Another Vitrallis storage operation is active: {e}"))?;
         Ok(Self(file))
@@ -199,7 +236,9 @@ impl Lock {
 }
 impl Drop for Lock {
     fn drop(&mut self) {
-        let _ = self.0.unlock();
+        if let Err(error) = self.0.unlock() {
+            eprintln!("level=error event=storage_unlock message={error:?}");
+        }
     }
 }
 #[derive(Debug, Clone)]

@@ -51,14 +51,27 @@ impl Settings {
                     self.clear_pointer();
                 } else if matches!(
                     self.updater.state,
-                    State::Installed { .. } | State::Restored { .. }
+                    State::Installed {
+                        version: _,
+                        durable: _,
+                        relaunch: _
+                    } | State::Restored {
+                        version: _,
+                        durable: _,
+                        relaunch: _
+                    }
                 ) {
                     return Some(Request::RelaunchUpdate);
                 } else {
                     return Some(Request::CheckUpdates);
                 }
             }
-            _ => {}
+            Action::System
+            | Action::Move(_)
+            | Action::Activate
+            | Action::SelectAndActivate(_)
+            | Action::Back
+            | Action::Page(_) => {}
         }
         None
     }
@@ -80,7 +93,7 @@ mod tests {
                 sha256: [0; 32],
             },
         };
-        settings.input(Action::Move(Direction::Right));
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
         assert_eq!(
             settings.input(Action::Activate),
             Some(Request::RelaunchUpdate)
@@ -108,7 +121,7 @@ mod tests {
         );
         settings.updater.state = State::Checking;
         assert_eq!(settings.input(Action::Activate), None);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Home);
     }
     #[test]
@@ -121,7 +134,7 @@ mod tests {
         settings.update_confirmation = Some((UpdateConfirmation::Install, Instant::now()));
         assert_eq!(settings.input(Action::Activate), None);
         settings.update_confirmation = Some((UpdateConfirmation::Install, Instant::now()));
-        settings.input(Action::Move(Direction::Right));
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
         assert_eq!(
             settings.input(Action::Activate),
             Some(Request::InstallUpdate)
@@ -135,7 +148,7 @@ mod tests {
         settings.lost_focus();
         assert!(settings.update_confirmation.is_none());
         settings.update_confirmation = Some((UpdateConfirmation::Install, Instant::now()));
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert!(settings.update_confirmation.is_none());
         assert_eq!(settings.page, Page::Updates);
     }
@@ -162,7 +175,7 @@ mod tests {
         // Activating the footer control opens the confirmation with Cancel
         // selected; a second activation of Confirm Restore completes it.
         settings.selected = super::super::footer::RESTORE;
-        settings.input(Action::Activate);
+        assert_eq!(settings.input(Action::Activate), None);
         assert!(
             settings
                 .update_confirmation
@@ -172,8 +185,8 @@ mod tests {
         assert_eq!(settings.input(Action::Activate), None);
         assert!(settings.update_confirmation.is_none());
         settings.selected = super::super::footer::RESTORE;
-        settings.input(Action::Activate);
-        settings.input(Action::Move(Direction::Right));
+        assert_eq!(settings.input(Action::Activate), None);
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
         assert_eq!(
             settings.input(Action::Activate),
             Some(Request::RestorePrevious)

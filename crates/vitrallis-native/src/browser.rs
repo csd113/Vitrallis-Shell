@@ -49,16 +49,14 @@ impl Browser {
     pub fn refresh(&mut self) -> io::Result<()> {
         let path = self.path.canonicalize()?;
         let mut entries = Vec::new();
-        let mut seen = 0;
         let mut bytes: usize = 0;
-        for entry in fs::read_dir(&path)? {
-            seen += 1;
-            if seen > MAX_ENTRIES {
+        for (index, pending_entry) in fs::read_dir(&path)?.enumerate() {
+            if index >= MAX_ENTRIES {
                 return Err(io::Error::other(
                     "Directory exceeds 20,000 entries; use a narrower directory",
                 ));
             }
-            let entry = entry?;
+            let entry = pending_entry?;
             let name = entry.file_name();
             if !self.hidden && name.as_encoded_bytes().first() == Some(&b'.') {
                 continue;
@@ -71,8 +69,11 @@ impl Browser {
                 .collect::<String>();
             let sort = label.to_lowercase();
             let entry_path = entry.path();
-            bytes =
-                bytes.saturating_add(label.capacity() + sort.capacity() + entry_path.capacity());
+            bytes = bytes
+                .checked_add(label.capacity())
+                .and_then(|length| length.checked_add(sort.capacity()))
+                .and_then(|length| length.checked_add(entry_path.capacity()))
+                .ok_or_else(|| io::Error::other("Directory name/path storage overflow"))?;
             if bytes > MAX_LIST_BYTES {
                 return Err(io::Error::other(
                     "Directory name/path storage exceeds 8 MiB; use a narrower directory",
@@ -124,22 +125,32 @@ impl Browser {
             .min(self.entries.len());
         self.reveal(rows);
     }
-    pub const fn reveal(&mut self, rows: usize) {
+    pub fn reveal(&mut self, rows: usize) {
+        let visible_rows = rows.max(1);
+        self.selected = self.selected.min(self.entries.len());
+        self.offset = self.offset.min(self.selected);
         if self.selected < self.offset {
             self.offset = self.selected;
-        } else if self.selected >= self.offset + rows {
-            self.offset = self.selected + 1 - rows;
+        } else if self.selected >= self.offset.saturating_add(visible_rows) {
+            self.offset = self.selected.saturating_add(1).saturating_sub(visible_rows);
         }
     }
     #[must_use]
     pub const fn row_height(ui: &Ui) -> i32 {
-        20 * ui.scale
+        let scale = if ui.scale > 0_i32 { ui.scale } else { 1_i32 };
+        20_i32.saturating_mul(scale)
     }
     #[must_use]
     pub fn visible_rows(ui: &Ui, top: i32) -> usize {
-        usize::try_from((ui.height - ui.footer_height() - top) / Self::row_height(ui))
-            .unwrap_or(1)
-            .max(1)
+        usize::try_from(
+            ui.height
+                .saturating_sub(ui.footer_height())
+                .saturating_sub(top)
+                .checked_div(Self::row_height(ui))
+                .unwrap_or(0),
+        )
+        .unwrap_or(1)
+        .max(1)
     }
     /// # Errors
     /// Reports rendering errors; only visible rows are visited, with no metadata I/O.
@@ -147,14 +158,21 @@ impl Browser {
         let height = Self::row_height(ui);
         self.reveal(Self::visible_rows(ui, top));
         for row in 0..Self::visible_rows(ui, top) {
-            let index = self.offset + row;
+            let Some(index) = self.offset.checked_add(row) else {
+                break;
+            };
             if index > self.entries.len() {
                 break;
             }
-            let y = top + i32::try_from(row).unwrap_or(0) * height;
+            let y = top.saturating_add(i32::try_from(row).unwrap_or(0_i32).saturating_mul(height));
             if index == self.selected {
                 ui.fill(
-                    Rect::new(4, y, (ui.width - 8).unsigned_abs(), height.unsigned_abs()),
+                    Rect::new(
+                        4,
+                        y,
+                        ui.width.saturating_sub(8).unsigned_abs(),
+                        height.unsigned_abs(),
+                    ),
                     if focused {
                         SELECTED
                     } else {
@@ -164,10 +182,17 @@ impl Browser {
             }
             // The label sits on the row's own vertical centre, so every row
             // shares one baseline whether or not it is highlighted.
-            let text_y = y + (height - ui.cell()) / 2;
+            let text_y = y.saturating_add(height.saturating_sub(ui.cell()) / 2_i32);
             if index == 0 {
-                ui.text("[..] Parent directory", 8, text_y, ui.width - 16, TEXT)?;
-            } else if let Some(entry) = self.entries.get(index - 1) {
+                ui.text(
+                    "[..] Parent directory",
+                    8,
+                    text_y,
+                    ui.width.saturating_sub(16),
+                    TEXT,
+                )?;
+            } else if let Some(entry) = index.checked_sub(1).and_then(|item| self.entries.get(item))
+            {
                 ui.text(
                     if entry.directory {
                         "[D]"
@@ -178,14 +203,14 @@ impl Browser {
                     },
                     8,
                     text_y,
-                    32 * ui.scale,
+                    32_i32.saturating_mul(ui.scale),
                     TEXT,
                 )?;
                 ui.text(
                     &entry.label,
-                    40 * ui.scale,
+                    40_i32.saturating_mul(ui.scale),
                     text_y,
-                    ui.width - 48 * ui.scale,
+                    ui.width.saturating_sub(48_i32.saturating_mul(ui.scale)),
                     TEXT,
                 )?;
             }
@@ -218,72 +243,11 @@ pub fn pick(ui: &mut Ui, start: &Path) -> Result<Option<PathBuf>, String> {
     loop {
         ui.clear();
         ui.header_path("Open text file", &browser.path.to_string_lossy())?;
-        browser.render(ui, ui.header_height() + 4, footer.is_none())?;
+        browser.render(ui, ui.header_height().saturating_add(4), footer.is_none())?;
         ui.buttons(&["Cancel", "Open", "Path", "Hidden"], footer)?;
         ui.present();
         let input = ui.wait()?;
-        let action = match input {
-            Input::Close | Input::Key(Keycode::Escape, _) => Some(0),
-            Input::Key(Keycode::Tab, _) => {
-                footer = match footer {
-                    None => Some(0),
-                    Some(3) => None,
-                    Some(i) => Some(i + 1),
-                };
-                None
-            }
-            Input::Key(Keycode::Return | Keycode::KpEnter, _) => Some(footer.unwrap_or(1)),
-            Input::Key(Keycode::Up, _) => {
-                browser.move_by(-1, Browser::visible_rows(ui, ui.header_height() + 4));
-                footer = None;
-                None
-            }
-            Input::Key(Keycode::Down, _) => {
-                browser.move_by(1, Browser::visible_rows(ui, ui.header_height() + 4));
-                footer = None;
-                None
-            }
-            Input::Key(Keycode::PageUp, _) => {
-                browser.move_by(
-                    -isize::try_from(Browser::visible_rows(ui, ui.header_height() + 4))
-                        .unwrap_or(1),
-                    Browser::visible_rows(ui, ui.header_height() + 4),
-                );
-                None
-            }
-            Input::Key(Keycode::PageDown, _) => {
-                browser.move_by(
-                    isize::try_from(Browser::visible_rows(ui, ui.header_height() + 4)).unwrap_or(1),
-                    Browser::visible_rows(ui, ui.header_height() + 4),
-                );
-                None
-            }
-            Input::Click(x, y) => {
-                if let Some(i) = ui.button_at(x, y, 4) {
-                    Some(i)
-                } else {
-                    let row = ui.row_at(
-                        y,
-                        ui.header_height() + 4,
-                        Browser::row_height(ui),
-                        Browser::visible_rows(ui, ui.header_height() + 4),
-                    );
-                    let index = row.map_or(usize::MAX, |row| browser.offset + row);
-                    if index <= browser.entries.len() {
-                        if browser.selected == index {
-                            Some(1)
-                        } else {
-                            browser.selected = index;
-                            footer = None;
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                }
-            }
-            _ => None,
-        };
+        let action = picker_action(&input, ui, &mut browser, &mut footer);
         let result = match action {
             Some(0) => return Ok(None),
             Some(1) => match browser.activate() {
@@ -293,11 +257,11 @@ pub fn pick(ui: &mut Ui, start: &Path) -> Result<Option<PathBuf>, String> {
             },
             Some(2) => {
                 if let Some(path) = ui.prompt("Open path", &browser.path.to_string_lossy())? {
-                    let path = PathBuf::from(path);
-                    if path.is_file() {
-                        return Ok(Some(path));
+                    let entered_path = PathBuf::from(path);
+                    if entered_path.is_file() {
+                        return Ok(Some(entered_path));
                     }
-                    browser.enter(&path)
+                    browser.enter(&entered_path)
                 } else {
                     Ok(())
                 }
@@ -311,5 +275,96 @@ pub fn pick(ui: &mut Ui, start: &Path) -> Result<Option<PathBuf>, String> {
         if let Err(error) = result {
             ui.error(&error.to_string())?;
         }
+    }
+}
+
+fn picker_action(
+    input: &Input,
+    ui: &Ui,
+    browser: &mut Browser,
+    footer: &mut Option<usize>,
+) -> Option<usize> {
+    match *input {
+        Input::Close | Input::Key(Keycode::Escape, _) => Some(0),
+        Input::Key(Keycode::Tab, _) => {
+            *footer = match *footer {
+                None => Some(0),
+                Some(3) => None,
+                Some(i) => i.checked_add(1),
+            };
+            None
+        }
+        Input::Key(Keycode::Return | Keycode::KpEnter, _) => Some(footer.unwrap_or(1)),
+        Input::Key(Keycode::Up, _) => {
+            browser.move_by(
+                -1,
+                Browser::visible_rows(ui, ui.header_height().saturating_add(4)),
+            );
+            *footer = None;
+            None
+        }
+        Input::Key(Keycode::Down, _) => {
+            browser.move_by(
+                1,
+                Browser::visible_rows(ui, ui.header_height().saturating_add(4)),
+            );
+            *footer = None;
+            None
+        }
+        Input::Key(Keycode::PageUp, _) => {
+            browser.move_by(
+                isize::try_from(Browser::visible_rows(
+                    ui,
+                    ui.header_height().saturating_add(4),
+                ))
+                .unwrap_or(1)
+                .saturating_neg(),
+                Browser::visible_rows(ui, ui.header_height().saturating_add(4)),
+            );
+            None
+        }
+        Input::Key(Keycode::PageDown, _) => {
+            browser.move_by(
+                isize::try_from(Browser::visible_rows(
+                    ui,
+                    ui.header_height().saturating_add(4),
+                ))
+                .unwrap_or(1),
+                Browser::visible_rows(ui, ui.header_height().saturating_add(4)),
+            );
+            None
+        }
+        Input::Click(x, y) => {
+            if let Some(i) = ui.button_at(x, y, 4) {
+                Some(i)
+            } else {
+                let selected_row = ui.row_at(
+                    y,
+                    ui.header_height().saturating_add(4),
+                    Browser::row_height(ui),
+                    Browser::visible_rows(ui, ui.header_height().saturating_add(4)),
+                );
+                let index = selected_row
+                    .and_then(|row| browser.offset.checked_add(row))
+                    .unwrap_or(usize::MAX);
+                if index <= browser.entries.len() {
+                    if browser.selected == index {
+                        Some(1)
+                    } else {
+                        browser.selected = index;
+                        *footer = None;
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+        Input::Key(_, _)
+        | Input::Text(_)
+        | Input::Scroll(_)
+        | Input::Resize
+        | Input::Wake
+        | Input::Ignore => None,
     }
 }

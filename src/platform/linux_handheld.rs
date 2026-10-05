@@ -56,7 +56,7 @@ impl Hardware for Native {
     }
     fn read(&self, path: &str) -> Result<String, String> {
         let mut value = String::new();
-        File::open(path)
+        let _bytes_read = File::open(path)
             .map_err(|e| e.to_string())?
             .take(129)
             .read_to_string(&mut value)
@@ -114,9 +114,9 @@ impl System for LinuxHandheld {
                 .get(index)
                 .filter(|zone| display::valid_zone(zone))
                 .ok_or("Time zone unavailable")?;
-            Native
+            let _timezone_set_output = Native
                 .command("timedatectl", &["--no-ask-password", "set-timezone", zone])
-                .map_err(|_| "Time zone change denied or unavailable".to_owned())?;
+                .map_err(|error| format!("Time zone change denied or unavailable: {error}"))?;
             let actual =
                 Native.command("timedatectl", &["show", "--property=Timezone", "--value"])?;
             if actual.trim() != zone {
@@ -137,7 +137,8 @@ impl System for LinuxHandheld {
         match control {
             Control::Brightness(_) => {
                 status.brightness = brightness_percent(&Native);
-                status.brightness.ok_or("brightness readback unavailable")?;
+                let _verified_brightness =
+                    status.brightness.ok_or("brightness readback unavailable")?;
             }
             Control::Volume(_) => {
                 status.volume = None;
@@ -156,8 +157,8 @@ impl System for LinuxHandheld {
         Ok(())
     }
 }
-fn byte(value: &str) -> Result<u8, String> {
-    let value = value
+fn byte(register_text: &str) -> Result<u8, String> {
+    let value = register_text
         .trim()
         .strip_prefix("0x")
         .ok_or("expected hexadecimal register")?;
@@ -193,7 +194,7 @@ fn brightness(io: &impl Hardware) -> Result<(u8, u8), String> {
 }
 fn brightness_percent(io: &impl Hardware) -> Option<Percent> {
     let (level, _) = brightness(io).ok()?;
-    Percent::new(level * 10).ok()
+    Percent::new(level.checked_mul(10)?).ok()
 }
 
 fn brightness_level(percent: Percent) -> u8 {
@@ -334,11 +335,11 @@ fn apply(io: &impl Hardware, control: Control) -> Result<(), String> {
             Err("Time zone requires an available selection".into())
         }
         Control::Brightness(value) => {
-            brightness(io)?;
+            let _supported_brightness = brightness(io)?;
             io.write(BRIGHTNESS, &format!("{}\n", brightness_level(value)))
         }
         Control::Volume(value) => {
-            audio(&io.command("amixer", &["sget", "Power Amplifier"])?)?;
+            let _supported_audio = audio(&io.command("amixer", &["sget", "Power Amplifier"])?)?;
             io.command(
                 "amixer",
                 &["sset", "Power Amplifier", &format!("{}%", value.value())],
@@ -456,7 +457,10 @@ mod tests {
                     Some(&"0xb9") => 2,
                     _ => return Err("unexpected register".into()),
                 };
-                return Ok(format!("0x{:02x}", registers[index]));
+                return Ok(format!(
+                    "0x{:02x}",
+                    registers.get(index).ok_or("missing register fixture")?
+                ));
             }
             Err("unavailable".into())
         }
@@ -496,9 +500,9 @@ mod tests {
             assert_eq!(brightness_level(Percent::new(value)?), value / 10);
         }
         for value in 0..=100 {
-            let value = Percent::new(value)?;
-            assert!((1..=10).contains(&brightness_level(value)));
-            apply(&io, Control::Brightness(value))?;
+            let next_value = Percent::new(value)?;
+            assert!((1..=10).contains(&brightness_level(next_value)));
+            apply(&io, Control::Brightness(next_value))?;
         }
         assert!(
             io.writes
@@ -534,9 +538,9 @@ mod tests {
         io.registers = Some([0x10, 0x20, 100]);
         assert_eq!(snapshot(&io).charging, Some(false)); // Full on external power.
         io.registers = Some([0x01, 0x20, 0x7f]);
-        let status = snapshot(&io);
-        assert_eq!(status.battery, None); // Gauge not initialized.
-        assert_eq!(status.external_power, Some(false)); // Boot source is not live power.
+        let refreshed_status = snapshot(&io);
+        assert_eq!(refreshed_status.battery, None); // Gauge not initialized.
+        assert_eq!(refreshed_status.external_power, Some(false)); // Boot source is not live power.
         io.registers = Some([0, 0, 73]);
         assert_eq!(snapshot(&io).battery, None); // No battery.
         io.registers = Some([0, 0x20, 0x80 | 0x49]);
@@ -553,8 +557,8 @@ mod tests {
         };
         assert!(apply(&io, Control::Power(Power::Shutdown)).is_err());
         assert_eq!(
-            io.writes.borrow()[0],
-            "systemctl [\"--no-ask-password\", \"poweroff\"]"
+            io.writes.borrow().first().map(String::as_str),
+            Some("systemctl [\"--no-ask-password\", \"poweroff\"]")
         );
     }
 }
@@ -587,7 +591,7 @@ pub fn timezone_app(zone: &str) -> Result<crate::app::AppEntry, String> {
         return Err("Invalid time zone".into());
     }
     let binary = std::env::current_exe().map_err(|e| e.to_string())?;
-    let binary = binary.to_str().ok_or("Non-UTF-8 executable path")?;
+    let binary_text = binary.to_str().ok_or("Non-UTF-8 executable path")?;
     // LXTerminal parses --command with GLib shell quoting. Quote both arguments.
     let quote = |text: &str| format!("'{}'", text.replace('\'', "'\\''"));
     Ok(crate::app::AppEntry {
@@ -601,7 +605,12 @@ pub fn timezone_app(zone: &str) -> Result<crate::app::AppEntry, String> {
             args: vec![
                 "--no-remote".into(),
                 "--title=Time zone".into(),
-                format!("--command={} --set-timezone {}", quote(binary), quote(zone)).into(),
+                format!(
+                    "--command={} --set-timezone {}",
+                    quote(binary_text),
+                    quote(zone)
+                )
+                .into(),
             ],
             ..crate::app::AppManifest::default()
         },
@@ -637,7 +646,7 @@ pub fn authenticate_timezone(zone: &str) -> Result<(), String> {
     );
     // Read only the acknowledgement, never an authentication secret.
     let mut input = String::new();
-    std::io::BufRead::read_line(
+    let _acknowledgement_bytes = std::io::BufRead::read_line(
         &mut std::io::BufReader::new(std::io::stdin().take(1024)),
         &mut input,
     )

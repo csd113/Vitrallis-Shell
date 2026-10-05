@@ -74,14 +74,20 @@ impl Fetch for Curl {
             let out = child.stdout.take().ok_or("Missing download stream")?;
             read_download(out, limit, progress)
         })();
-        if result.is_err() {
-            let _ = child.kill();
+        if result.is_err()
+            && let Err(error) = child.kill()
+            && error.kind() != std::io::ErrorKind::InvalidInput
+        {
+            eprintln!(
+                "level=error event=download_kill pid={} message={error:?}",
+                child.id()
+            );
         }
         let status = child.wait().map_err(|e| e.to_string())?;
         let bytes = result?;
         if !status.success() {
             // curl's exit code 28 means the transfer deadline was reached.
-            if status.code() == Some(28) {
+            if status.code() == Some(28_i32) {
                 return Err(format!(
                     "Download timed out; check connection and retry\ncurl: {status}"
                 ));
@@ -107,14 +113,17 @@ pub(super) fn read_download(
             .saturating_sub(bytes.len())
             .saturating_add(1)
             .min(chunk.len());
-        let count = match reader.read(&mut chunk[..remaining]) {
+        let part = chunk
+            .get_mut(..remaining)
+            .ok_or("Invalid download buffer length")?;
+        let count = match reader.read(part) {
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             result => result.map_err(|e| e.to_string())?,
         };
         if count == 0 {
             break;
         }
-        bytes.extend_from_slice(&chunk[..count]);
+        bytes.extend_from_slice(chunk.get(..count).ok_or("Invalid download read count")?);
         progress(bytes.len())?;
         if bytes.len() > limit {
             return Err("Download exceeds byte limit".into());
@@ -134,20 +143,26 @@ fn encode(s: &str) -> String {
         if c.is_ascii_alphanumeric() || b"-_.~".contains(&c) {
             out.push(char::from(c));
         } else {
-            use std::fmt::Write;
-            let _ = write!(out, "%{c:02X}");
+            out.push('%');
+            for nibble in [c >> 4_i32, c & 15] {
+                out.push(char::from(if nibble < 10 {
+                    b'0'.saturating_add(nibble)
+                } else {
+                    b'A'.saturating_add(nibble.saturating_sub(10))
+                }));
+            }
         }
     }
     out
 }
 pub fn catalog_document(fetch: &impl Fetch, repo: &Repository) -> Result<Vec<u8>, String> {
     let info = api(fetch, repo.as_str())?;
-    let branch = metadata::text(&info["default_branch"], 255)?;
+    let branch = metadata::text(metadata::field(&info, "default_branch")?, 255)?;
     let commit = api(
         fetch,
         &format!("{}/commits/{}", repo.as_str(), encode(branch)),
     )?;
-    let sha = metadata::text(&commit["sha"], 40)?;
+    let sha = metadata::text(metadata::field(&commit, "sha")?, 40)?;
     metadata::hex(sha, 40)?;
     let url = format!(
         "https://raw.githubusercontent.com/{}/{sha}/apps.json",
@@ -201,9 +216,16 @@ pub fn download(
         fetch,
         &format!("{}/git/trees/{tree}?recursive=1", p.repository.as_str()),
     )?;
+    let modes = check_inventory(&v, p)?;
+    download_files(fetch, p, modes, progress)
+}
+fn check_inventory(
+    value: &serde_json::Value,
+    package: &Package,
+) -> Result<std::collections::BTreeMap<String, u32>, String> {
     let mut inventory = std::collections::BTreeMap::new();
     let mut modes = std::collections::BTreeMap::new();
-    for entry in tree_entries(&v)? {
+    for entry in tree_entries(value)? {
         let name = metadata::text(&entry["path"], 240)?;
         metadata::path(name)?;
         if entry["type"] == "tree" && entry["mode"] == "040000" {
@@ -217,7 +239,7 @@ pub fn download(
             return Err("Duplicate Git path".into());
         }
         if !name.starts_with("tests/") {
-            modes.insert(
+            let previous_mode = modes.insert(
                 name.to_owned(),
                 if entry["mode"] == "100755" {
                     0o755
@@ -225,13 +247,17 @@ pub fn download(
                     0o644
                 },
             );
+            if previous_mode.is_some() {
+                return Err("Duplicate Git mode path".into());
+            }
         }
     }
     // Device packages always exclude app-local development tests.
     metadata::check_paths(inventory.keys().copied())?;
     inventory.retain(|name, _| !name.starts_with("tests/"));
-    if inventory.len() != p.files.len()
-        || p.files
+    if inventory.len() != package.files.len()
+        || package
+            .files
             .iter()
             .any(|r| inventory.get(r.path.as_str()).copied() != u64::try_from(r.size).ok())
     {
@@ -240,9 +266,24 @@ pub fn download(
                 .into(),
         );
     }
+    Ok(modes)
+}
+fn download_files(
+    fetch: &impl Fetch,
+    p: &Package,
+    modes: std::collections::BTreeMap<String, u32>,
+    mut progress: impl FnMut(String) -> Result<(), String>,
+) -> Result<Bundle, String> {
     let mut files = Files::new();
-    let total = p.files.iter().map(|f| f.size).sum::<usize>();
-    let mut downloaded = 0;
+    let total = p
+        .files
+        .iter()
+        .try_fold(0_usize, |size, file| size.checked_add(file.size))
+        .ok_or("Package download size overflow")?;
+    if total > metadata::BUNDLE_LIMIT {
+        return Err("Package download exceeds the bundle byte limit".into());
+    }
+    let mut downloaded = 0_usize;
     for row in &p.files {
         let url = format!(
             "https://raw.githubusercontent.com/{}/{}/{}/{}",
@@ -253,13 +294,16 @@ pub fn download(
         );
         let bytes = fetch
             .fetch_progress(&url, row.size, &mut |received| {
-                let received = downloaded + received;
-                let percent = received
-                    .saturating_mul(100)
+                let cumulative = downloaded
+                    .checked_add(received)
+                    .ok_or("Download progress overflow")?;
+                let percent = cumulative
+                    .checked_mul(100)
+                    .ok_or("Download percentage overflow")?
                     .checked_div(total)
                     .unwrap_or(100);
                 progress(format!(
-                    "Downloading: {received} / {total} bytes ({percent}%)\n{}",
+                    "Downloading: {cumulative} / {total} bytes ({percent}%)\n{}",
                     p.name
                 ))
             })
@@ -270,8 +314,12 @@ pub fn download(
                 row.path
             ));
         }
-        downloaded += bytes.len();
-        files.insert(row.path.clone(), bytes);
+        downloaded = downloaded
+            .checked_add(bytes.len())
+            .ok_or("Download length overflow")?;
+        if files.insert(row.path.clone(), bytes).is_some() {
+            return Err("Duplicate package download path".into());
+        }
     }
     progress(format!("Verifying {}", p.name))?;
     metadata::validate_bundle(p, &files)?;

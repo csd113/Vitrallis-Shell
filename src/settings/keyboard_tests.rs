@@ -236,13 +236,15 @@ fn updates_are_reachable_and_confirmable_using_only_keys() -> Result<(), String>
 
 #[test]
 fn timezone_selector_pages_and_applies_with_keys_only() {
-    for count in [1, 5, 6, 11] {
+    for count in [1_i32, 5_i32, 6_i32, 11_i32] {
         let mut settings = Settings::default();
-        settings.status.timezones = (0..count).map(|index| format!("Zone/{index}")).collect();
+        settings.status.timezones = (0_i32..count)
+            .map(|index| format!("Zone/{index}"))
+            .collect();
         settings.show();
         settings.page(Page::Timezones);
         // Down past the last visible zone reaches the visible Back control.
-        for _ in 0..count.min(5) {
+        for _ in 0_i32..count.min(5_i32) {
             move_keys(&mut settings, &[Keycode::Down]);
         }
         assert_eq!(settings.selected, BACK);
@@ -258,7 +260,9 @@ fn timezone_selector_pages_and_applies_with_keys_only() {
     }
     // Previous and Next are visible footer controls with keyboard focus.
     let mut settings = Settings::default();
-    settings.status.timezones = (0..11).map(|index| format!("Zone/{index}")).collect();
+    settings.status.timezones = (0_i32..11_i32)
+        .map(|index| format!("Zone/{index}"))
+        .collect();
     settings.show();
     settings.page(Page::Timezones);
     settings.selected = NEXT;
@@ -300,7 +304,8 @@ fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<
                 touch.status.power_controls = true;
                 touch.show();
                 touch.page(page);
-                touch.status.timezones = (0..6).map(|zone| format!("Zone/{zone}")).collect();
+                touch.status.timezones =
+                    (0_i32..6_i32).map(|zone| format!("Zone/{zone}")).collect();
                 keyboard.show();
                 keyboard.page(page);
                 keyboard.zone_start = 0;
@@ -309,10 +314,14 @@ fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<
                     .timezones
                     .clone_from(&touch.status.timezones);
                 keyboard.selected = index;
-                let x = f32::from(u16::try_from(bounds.x + bounds.w / 2).map_err(|_| "x")?)
-                    / f32::from(width);
-                let y = f32::from(u16::try_from(bounds.y + bounds.h * 3 / 4).map_err(|_| "y")?)
-                    / f32::from(height);
+                let x = f32::from(
+                    u16::try_from(bounds.x + bounds.w / 2_i32)
+                        .map_err(|error| format!("x: {error}"))?,
+                ) / f32::from(width);
+                let y = f32::from(
+                    u16::try_from(bounds.y + bounds.h * 3_i32 / 4_i32)
+                        .map_err(|error| format!("y: {error}"))?,
+                ) / f32::from(height);
                 let up = Event::FingerUp {
                     timestamp: 0,
                     touch_id: 1,
@@ -325,18 +334,21 @@ fn visible_footer_targets_have_identical_touch_and_keyboard_actions() -> Result<
                 };
                 assert_eq!(touch.event(&up, &layout), None);
                 assert_eq!(touch.page, page);
-                touch.event(
-                    &Event::FingerDown {
-                        timestamp: 0,
-                        touch_id: 1,
-                        finger_id: 1,
-                        x,
-                        y,
-                        dx: 0.,
-                        dy: 0.,
-                        pressure: 1.,
-                    },
-                    &layout,
+                assert_eq!(
+                    touch.event(
+                        &Event::FingerDown {
+                            timestamp: 0,
+                            touch_id: 1,
+                            finger_id: 1,
+                            x,
+                            y,
+                            dx: 0.,
+                            dy: 0.,
+                            pressure: 1.,
+                        },
+                        &layout,
+                    ),
+                    None
                 );
                 assert_eq!(
                     touch.event(&up, &layout),
@@ -396,7 +408,7 @@ fn storage_app_paging_handles_partial_last_pages_and_details() {
     settings.show();
     settings.page(Page::Storage);
     settings.storage.report = Some(crate::storage::Report {
-        apps: (0..7)
+        apps: (0_i32..7_i32)
             .map(|index| crate::app_center::accounting::AppUsage {
                 id: format!("io.test.app{index}"),
                 name: format!("App {index}"),
@@ -428,7 +440,7 @@ fn settings_navigation_has_no_dead_ends() {
     for index in 0..super::HOME_ROWS {
         let mut settings = Settings::default();
         settings.show();
-        settings.status.timezones = (0..6).map(|zone| format!("Zone/{zone}")).collect();
+        settings.status.timezones = (0_i32..6_i32).map(|zone| format!("Zone/{zone}")).collect();
         settings.selected = index;
         move_keys(&mut settings, &[Keycode::Return]);
         let opened = settings.page;

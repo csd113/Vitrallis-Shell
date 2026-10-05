@@ -19,14 +19,13 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 
 ## Installation
 
-**[Vitrallis Shell 1.0.3 certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.3)
-is published and verified on PocketCHIP.** Clean public installation, repeat
-installation, software and physical cold startup, native utilities, App Center,
-keyboard, touch and audible-audio checks pass. The candidate is release ready
-with the qualifications in the report below; full stable publication remains
-separate from this certification prerelease. The release restores keyboard focus
-after a background app exits and uses Rust 1.99 with refreshed dependencies and
-Arti 2.7.0. See the
+**[Vitrallis Shell 1.0.4 reliability hardening prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.4)**
+hardens App Center updates, process cleanup, file operations and input boundaries,
+with permanent strict Rust 1.99 lint enforcement. Host and Linux simulator checks
+pass; see the [changelog](docs/releases.md#104--reliability-hardening-prerelease)
+and [hardening report](docs/rust-lint-hardening.md). This release has no new physical
+PocketCHIP certification. The earlier 1.0.3 installation, cold-start, keyboard,
+touch and audible-audio results remain qualified to that candidate in the
 [readiness report](docs/release-readiness-2026-10-02.md) and
 [certification record](docs/release-certification-2026-10-02.md#final-public-candidate).
 Install the complete bundle containing the shell, Terminal, Notepad,

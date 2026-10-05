@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 fn main() -> std::process::ExitCode {
     match vitrallis_shell::run() {
         Ok(()) => std::process::ExitCode::SUCCESS,

@@ -35,8 +35,8 @@ fn report(cancel: &AtomicBool) -> Result<Report, String> {
     apps.extend(accounting::native(&loc, &mut scanner)?);
     accounting::sort(&mut apps);
     let mut app_total = accounting::aggregate(apps.iter().map(|app| &app.total));
-    if let Some(issue) = &issue {
-        app_total.fail(issue);
+    if let Some(diagnostic) = &issue {
+        app_total.fail(diagnostic);
     }
     let mut categories = Vec::new();
     if let Ok(executable) = std::env::current_exe() {
@@ -171,7 +171,7 @@ impl Storage {
                     Err(TryRecvError::Empty) => break,
                     Err(TryRecvError::Disconnected) => {
                         if !job.cancel.load(Ordering::Relaxed) && !job.finished {
-                            self.error.get_or_insert_with(|| {
+                            let _retained_error = self.error.get_or_insert_with(|| {
                                 "Storage worker stopped; Refresh to retry".into()
                             });
                             self.wanted = false;
@@ -200,9 +200,17 @@ impl Storage {
         let result = std::thread::Builder::new()
             .name("storage-scan".into())
             .spawn(move || {
-                let _ = send.send(Update::Disk(disk::query(Path::new("/"))));
-                if !stopped.load(Ordering::Relaxed) {
-                    let _ = send.send(Update::Report(report(&stopped)));
+                if send
+                    .send(Update::Disk(disk::query(Path::new("/"))))
+                    .is_err()
+                {
+                    eprintln!("level=debug event=storage_disk_scan_cancelled");
+                    return;
+                }
+                if !stopped.load(Ordering::Relaxed)
+                    && send.send(Update::Report(report(&stopped))).is_err()
+                {
+                    eprintln!("level=debug event=storage_report_cancelled");
                 }
             });
         match result {

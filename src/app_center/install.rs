@@ -36,13 +36,13 @@ pub fn check(loc: &Locations, p: Package) -> Result<Checked, String> {
     let saved = receipt(&root)?;
     let mut ready = true;
     if let Some(r) = &saved {
-        if r["origin"] != p.origin.as_str()
-            || r["repository"] != p.repository.as_str()
-            || r["id"] != p.id
+        if metadata::field(r, "origin")?.as_str() != Some(p.origin.as_str())
+            || metadata::field(r, "repository")?.as_str() != Some(p.repository.as_str())
+            || metadata::field(r, "id")?.as_str() != Some(p.id.as_str())
         {
             return Err("Installed origin differs; refusing publisher/source switch".into());
         }
-        let local = metadata::version(metadata::text(&r["version"], 32)?)?;
+        let local = metadata::version(metadata::text(metadata::field(r, "version")?, 32)?)?;
         if local > p.version {
             return Err("Installed version is newer; downgrade blocked".into());
         }
@@ -51,11 +51,14 @@ pub fn check(loc: &Locations, p: Package) -> Result<Checked, String> {
             .iter()
             .map(|f| (f.path.clone(), Value::String(f.sha256.clone())))
             .collect::<serde_json::Map<_, _>>();
-        if local == p.version && r["files"] != Value::Object(hashes) {
+        if local == p.version && metadata::field(r, "files")? != &Value::Object(hashes) {
             return Err("Same version has a different inventory; keeping local files".into());
         }
         ready = local != p.version;
-        for (name, hash) in r["files"].as_object().ok_or("Invalid receipt")? {
+        for (name, hash) in metadata::field(r, "files")?
+            .as_object()
+            .ok_or("Invalid receipt")?
+        {
             match storage::read(&root.join(name), metadata::FILE_LIMIT)? {
                 Some(old) if hash != &storage::sha(&old.bytes) => {
                     return Err(format!("Local edit preserved: {name}"));
@@ -138,7 +141,7 @@ pub struct Prepared {
 pub fn label(loc: &Locations, p: &Package) -> Result<String, String> {
     let root = loc.root(p);
     if let Some(receipt) = receipt(&root)? {
-        return Ok(metadata::text(&receipt["version"], 32)?.into());
+        return Ok(metadata::text(metadata::field(&receipt, "version")?, 32)?.into());
     }
     if storage::read(&root.join(&p.entry), metadata::FILE_LIMIT)?.is_none()
         && storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)?.is_none()
@@ -155,12 +158,19 @@ pub(super) fn receipt(root: &Path) -> Result<Option<Value>, String> {
     .map(|d| {
         let v = metadata::json(&d.bytes)?;
         metadata::fields(&v, "version origin repository commit id files")?;
-        metadata::version(metadata::text(&v["version"], 32)?)?;
-        super::sources::Repository::parse(metadata::text(&v["origin"], 160)?)?;
-        super::sources::Repository::parse(metadata::text(&v["repository"], 160)?)?;
-        metadata::identity(metadata::text(&v["id"], 128)?)?;
-        metadata::hex(metadata::text(&v["commit"], 40)?, 40)?;
-        let files = v["files"]
+        let _validated_version =
+            metadata::version(metadata::text(metadata::field(&v, "version")?, 32)?)?;
+        let _validated_origin = super::sources::Repository::parse(metadata::text(
+            metadata::field(&v, "origin")?,
+            160,
+        )?)?;
+        let _validated_repository = super::sources::Repository::parse(metadata::text(
+            metadata::field(&v, "repository")?,
+            160,
+        )?)?;
+        metadata::identity(metadata::text(metadata::field(&v, "id")?, 128)?)?;
+        metadata::hex(metadata::text(metadata::field(&v, "commit")?, 40)?, 40)?;
+        let files = metadata::field(&v, "files")?
             .as_object()
             .filter(|m| m.len() <= 256)
             .ok_or("Invalid receipt inventory")?;
@@ -194,9 +204,9 @@ pub fn prepare_with_modes(
     let old_receipt = receipt(&root)?;
     protect(&p, &root, &files, old_receipt.as_ref())?;
     let runtime = if p.runtime == metadata::RuntimeKind::Python {
-        let runtime = runtime::ensure(&root, &files)?;
-        runtime::validate(&runtime, &files)?;
-        Some(runtime)
+        let interpreter = runtime::ensure(&root, &files)?;
+        runtime::validate(&interpreter, &files)?;
+        Some(interpreter)
     } else {
         None
     };
@@ -257,7 +267,9 @@ fn obsolete(
     writes: &mut Vec<Write>,
 ) -> Result<(), String> {
     let mut modules = std::collections::BTreeSet::new();
-    let old = receipt.and_then(|r| r["files"].as_object());
+    let old = receipt
+        .and_then(|r| r.get("files"))
+        .and_then(Value::as_object);
     for name in files.keys().chain(old.into_iter().flat_map(|r| r.keys())) {
         if old.is_some_and(|r| r.contains_key(name)) && !files.contains_key(name) {
             writes.push(transaction::remove(root.join(name))?);
@@ -269,7 +281,7 @@ fn obsolete(
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .ok_or("Invalid module name")?;
-            modules.insert((parent, stem.to_owned()));
+            let _new_module = modules.insert((parent, stem.to_owned()));
         }
     }
     // Python timestamp bytecode may remain valid across same-size, same-second
@@ -318,14 +330,14 @@ fn remove_module_cache(root: &Path, parent: &Path, stem: &str) -> Result<(), Str
         if index >= 1024 {
             return Err("Python cache directory exceeds bounds".into());
         }
-        let entry = entry.map_err(|e| e.to_string())?;
-        let name = entry.file_name();
+        let directory_entry = entry.map_err(|error| error.to_string())?;
+        let name = directory_entry.file_name();
         if !name.to_str().is_some_and(|n| {
             n.starts_with(&prefix) && Path::new(n).extension().is_some_and(|ext| ext == "pyc")
         }) {
             continue;
         }
-        let path = entry.path();
+        let path = directory_entry.path();
         let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
         if !metadata.is_file()
             || metadata.uid() != owner
@@ -344,13 +356,13 @@ const fn remove_module_cache(_root: &Path, _parent: &Path, _stem: &str) -> Resul
 }
 fn protect(p: &Package, root: &Path, files: &Files, receipt: Option<&Value>) -> Result<(), String> {
     if let Some(r) = receipt {
-        if r["origin"] != p.origin.as_str()
-            || r["repository"] != p.repository.as_str()
-            || r["id"] != p.id
+        if metadata::field(r, "origin")?.as_str() != Some(p.origin.as_str())
+            || metadata::field(r, "repository")?.as_str() != Some(p.repository.as_str())
+            || metadata::field(r, "id")?.as_str() != Some(p.id.as_str())
         {
             return Err("Installed origin differs; refusing publisher/source switch".into());
         }
-        let local = metadata::version(metadata::text(&r["version"], 32)?)?;
+        let local = metadata::version(metadata::text(metadata::field(r, "version")?, 32)?)?;
         if local > p.version {
             return Err("Installed version is newer; downgrade blocked".into());
         }
@@ -359,11 +371,14 @@ fn protect(p: &Package, root: &Path, files: &Files, receipt: Option<&Value>) -> 
                 .iter()
                 .map(|(name, bytes)| (name.clone(), Value::String(storage::sha(bytes))))
                 .collect::<serde_json::Map<_, _>>();
-            if r["files"] != Value::Object(hashes) {
+            if metadata::field(r, "files")? != &Value::Object(hashes) {
                 return Err("Same version has a different inventory; keeping local files".into());
             }
         }
-        for (name, hash) in r["files"].as_object().ok_or("Invalid receipt")? {
+        for (name, hash) in metadata::field(r, "files")?
+            .as_object()
+            .ok_or("Invalid receipt")?
+        {
             if let Some(old) = storage::read(&root.join(name), metadata::FILE_LIMIT)? {
                 if hash != &storage::sha(&old.bytes) {
                     return Err(format!("Local edit preserved: {name}"));
@@ -380,7 +395,11 @@ fn protect(p: &Package, root: &Path, files: &Files, receipt: Option<&Value>) -> 
     }
     for (name, bytes) in files {
         if let Some(old) = storage::read(&root.join(name), metadata::FILE_LIMIT)? {
-            let owned = receipt.is_some_and(|r| r["files"].get(name).is_some());
+            let owned = receipt.is_some_and(|r| {
+                r.get("files")
+                    .and_then(|inventory| inventory.get(name))
+                    .is_some()
+            });
             if !owned && old.bytes != *bytes {
                 return Err(format!("Unmanaged custom file preserved: {name}"));
             }
@@ -402,7 +421,7 @@ fn support(
         bytes: runtime::environment(
             &crate::tor::wrap_launcher(
                 match runtime {
-                    Some(runtime) => runtime::launcher(runtime, &root.join(&p.entry))?,
+                    Some(interpreter) => runtime::launcher(interpreter, &root.join(&p.entry))?,
                     None => super::native::launcher(&root.join(&p.entry))?,
                 },
                 tor,
@@ -417,7 +436,8 @@ fn support(
         let old_entry = super::uninstall::installed_entry(&root, p)?;
         let mut old_files = Files::new();
         if let Some(requirements) = storage::read(&root.join("requirements.txt"), 65536)? {
-            old_files.insert("requirements.txt".into(), requirements.bytes);
+            let _previous_requirements =
+                old_files.insert("requirements.txt".into(), requirements.bytes);
         }
         let manifest = storage::read(&root.join("app.toml"), metadata::FILE_LIMIT)?
             .ok_or("Installed manifest missing; cannot verify launcher ownership")?;
@@ -462,16 +482,16 @@ fn support(
     let filename = format!("{}.desktop", p.id);
     for directory in [loc.data.join("applications"), loc.home.join("Desktop")] {
         let path = directory.join(&filename);
-        let before = storage::read(&path, metadata::FILE_LIMIT)?;
+        let existing_shortcut = storage::read(&path, metadata::FILE_LIMIT)?;
         // Existing shortcuts are user-owned and may contain custom launch options.
-        let after = before.clone().unwrap_or_else(|| FileData {
+        let shortcut = existing_shortcut.clone().unwrap_or_else(|| FileData {
             bytes: desktop.as_bytes().to_vec(),
             mode: 0o755,
         });
         writes.push(Write {
             path,
-            before,
-            after: Some(after),
+            before: existing_shortcut,
+            after: Some(shortcut),
         });
     }
     Ok(())
@@ -503,9 +523,10 @@ pub fn recover(loc: &Locations, p: &Package) -> Result<(), String> {
         Err(e) => return Err(e.to_string()),
     };
     for entry in entries {
-        let entry = entry.map_err(|e| e.to_string())?;
-        transaction::recover(&entry.path(), |path| allowed(loc, p, path))?;
-        transaction::discard_finished_removals(&entry.path(), |path| {
+        let directory_entry = entry.map_err(|error| error.to_string())?;
+        let _recovered_journal =
+            transaction::recover(&directory_entry.path(), |path| allowed(loc, p, path))?;
+        transaction::discard_finished_removals(&directory_entry.path(), |path| {
             super::runtime_cleanup::owned_file(&loc.root(p), path)
         })?;
     }
@@ -534,7 +555,7 @@ pub fn install(loc: &Locations, checked: &Planned) -> Result<(), String> {
     }
     let root = loc.root(&checked.package);
     let marker = root.join(".installation-pending");
-    storage::read(&marker, 1024)?;
+    let _validated_marker = storage::read(&marker, 1024)?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?

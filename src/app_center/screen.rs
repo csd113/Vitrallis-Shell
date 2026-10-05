@@ -68,18 +68,28 @@ impl Geometry {
     pub fn new(layout: &Layout) -> Self {
         let width = i32::from(layout.width);
         let height = i32::from(layout.height);
-        let scale = layout.text_scale.max(1);
-        let inset = 8 * scale;
-        let title_height = 20 * scale;
-        let actions_height = 22 * scale;
-        let actions_y = title_height + 2 * scale;
-        let search_y = actions_y + actions_height + 2 * scale;
-        let search_height = 20 * scale;
-        let list_top = search_y + search_height + 4 * scale;
-        let footer_height = 12 * scale;
-        let pinned_height = 24 * scale;
-        let pinned_y = height - footer_height - pinned_height - 4 * scale;
-        let button_width = (12 * 8 * scale + 2 * inset).min(width - 2 * inset);
+        let scale = layout.text_scale.max(1_i32);
+        let inset = 8_i32.saturating_mul(scale);
+        let title_height = 20_i32.saturating_mul(scale);
+        let actions_height = 22_i32.saturating_mul(scale);
+        let actions_y = title_height.saturating_add(2_i32.saturating_mul(scale));
+        let search_y = actions_y
+            .saturating_add(actions_height)
+            .saturating_add(2_i32.saturating_mul(scale));
+        let search_height = 20_i32.saturating_mul(scale);
+        let list_top = search_y
+            .saturating_add(search_height)
+            .saturating_add(4_i32.saturating_mul(scale));
+        let footer_height = 12_i32.saturating_mul(scale);
+        let pinned_height = 24_i32.saturating_mul(scale);
+        let pinned_y = height
+            .saturating_sub(footer_height)
+            .saturating_sub(pinned_height)
+            .saturating_sub(4_i32.saturating_mul(scale));
+        let button_width = (96_i32
+            .saturating_mul(scale)
+            .saturating_add(2_i32.saturating_mul(inset)))
+        .min(width.saturating_sub(2_i32.saturating_mul(inset)));
         Self {
             width,
             height,
@@ -87,46 +97,46 @@ impl Geometry {
             title: Rect {
                 x: inset,
                 y: 0,
-                w: width - 2 * inset,
+                w: width.saturating_sub(2_i32.saturating_mul(inset)),
                 h: title_height,
             },
             actions: Rect {
                 x: inset,
                 y: actions_y,
-                w: width - 2 * inset,
+                w: width.saturating_sub(2_i32.saturating_mul(inset)),
                 h: actions_height,
             },
             search: Rect {
                 x: inset,
                 y: search_y,
-                w: (width * 2 / 3) - 2 * inset,
+                w: (width.saturating_mul(2) / 3).saturating_sub(2_i32.saturating_mul(inset)),
                 h: search_height,
             },
             filter: Rect {
-                x: width * 2 / 3,
+                x: width.saturating_mul(2) / 3,
                 y: search_y,
-                w: width / 3 - inset,
+                w: (width / 3).saturating_sub(inset),
                 h: search_height,
             },
             list_top,
-            row_height: 28 * scale,
-            row_gap: 2 * scale,
+            row_height: 28_i32.saturating_mul(scale),
+            row_gap: 2_i32.saturating_mul(scale),
             pinned: Rect {
                 x: inset,
                 y: pinned_y,
-                w: width - 2 * inset,
+                w: width.saturating_sub(2_i32.saturating_mul(inset)),
                 h: pinned_height,
             },
             details: Rect {
-                x: width / 2 - button_width / 2,
+                x: (width / 2).saturating_sub(button_width / 2),
                 y: pinned_y,
                 w: button_width,
                 h: pinned_height,
             },
             footer: Rect {
                 x: inset,
-                y: height - footer_height,
-                w: width - 2 * inset,
+                y: height.saturating_sub(footer_height),
+                w: width.saturating_sub(2_i32.saturating_mul(inset)),
                 h: footer_height,
             },
         }
@@ -134,30 +144,39 @@ impl Geometry {
     /// Visible row capacity for the current size.
     #[must_use]
     pub fn rows(&self) -> usize {
-        let span = self.pinned.y - self.list_top;
-        usize::try_from((span + self.row_gap) / (self.row_height + self.row_gap))
-            .unwrap_or(0)
-            .max(1)
+        let span = self.pinned.y.saturating_sub(self.list_top);
+        usize::try_from(
+            span.saturating_add(self.row_gap)
+                .checked_div(self.row_height.saturating_add(self.row_gap))
+                .unwrap_or(0_i32),
+        )
+        .unwrap_or(0)
+        .max(1)
     }
     #[must_use]
     pub fn row(&self, position: usize) -> Rect {
         Rect {
-            x: 8 * self.scale,
-            y: self.list_top
-                + i32::try_from(position).unwrap_or(0) * (self.row_height + self.row_gap),
-            w: self.width - 16 * self.scale,
+            x: 8_i32.saturating_mul(self.scale),
+            y: self.list_top.saturating_add(
+                i32::try_from(position)
+                    .unwrap_or(0_i32)
+                    .saturating_mul(self.row_height.saturating_add(self.row_gap)),
+            ),
+            w: self.width.saturating_sub(16_i32.saturating_mul(self.scale)),
             h: self.row_height,
         }
     }
     /// Equal-width buttons inside a bar.
     #[must_use]
     pub fn button(&self, bar: Rect, index: usize, count: usize) -> Rect {
-        let count = i32::try_from(count).unwrap_or(1).max(1);
-        let width = bar.w / count;
+        let columns = i32::try_from(count).unwrap_or(1_i32).max(1_i32);
+        let width = bar.w.checked_div(columns).unwrap_or(0_i32);
         Rect {
-            x: bar.x + i32::try_from(index).unwrap_or(0) * width,
+            x: bar
+                .x
+                .saturating_add(i32::try_from(index).unwrap_or(0_i32).saturating_mul(width)),
             y: bar.y,
-            w: width - 2 * self.scale,
+            w: width.saturating_sub(2_i32.saturating_mul(self.scale)),
             h: bar.h,
         }
     }
@@ -371,18 +390,18 @@ impl Center {
                     self.selected = 0;
                     self.contact = None;
                 }
-                Update::Done(result, changed) => {
+                Update::Done(result, storage_changed) => {
                     self.busy = false;
                     self.download_cancel = None;
                     self.confirmation = None;
-                    self.refresh |= changed;
+                    self.refresh |= storage_changed;
                     if let Some(key) = self.operation.take() {
                         match &result {
                             Err(error) => {
-                                self.errors.insert(key, error.clone());
+                                let _previous_error = self.errors.insert(key, error.clone());
                             }
                             Ok(_) => {
-                                self.errors.remove(&key);
+                                let _cleared_error = self.errors.remove(&key);
                             }
                         }
                     }
@@ -403,7 +422,9 @@ impl Center {
                 Command::Install(keys) => keys.first().cloned(),
                 Command::Uninstall(key) => Some(key.clone()),
                 Command::Answer(_, _) => self.operation.take(),
-                _ => None,
+                Command::Check | Command::Scan | Command::Save(_) | Command::SelectInstalled(_) => {
+                    None
+                }
             };
             if matches!(command, Command::Check | Command::Install(_)) {
                 w.cancelled
@@ -495,7 +516,6 @@ impl Center {
         )
     }
     fn app_details(&self) -> String {
-        use std::fmt::Write;
         self.chosen_row().map_or_else(
             || self.message.clone(),
             |r| {
@@ -514,34 +534,53 @@ impl Center {
                     r.status
                 );
                 if let Some(error) = self.errors.get(&r.package.key()) {
-                    let _ = write!(detail, "\n\nLAST OPERATION FAILED\n{error}");
+                    append_detail(
+                        &mut detail,
+                        format_args!("\n\nLAST OPERATION FAILED\n{error}"),
+                    );
                 }
                 if summary != r.package.description {
-                    let _ = write!(detail, "\n\nABOUT\n{}", r.package.description);
+                    append_detail(
+                        &mut detail,
+                        format_args!("\n\nABOUT\n{}", r.package.description),
+                    );
                 }
-                let _ = write!(
-                    detail,
-                    "\n\nREPOSITORY\n{}\n\nREQUIREMENTS\n{}\nDownload: {} KiB",
-                    r.package.origin.as_str(),
-                    r.package.notes,
-                    r.download_size.div_ceil(1024)
+                append_detail(
+                    &mut detail,
+                    format_args!(
+                        "\n\nREPOSITORY\n{}\n\nREQUIREMENTS\n{}\nDownload: {} KiB",
+                        r.package.origin.as_str(),
+                        r.package.notes,
+                        r.download_size.div_ceil(1024)
+                    ),
                 );
                 if r.package.repository != r.package.origin {
-                    let _ = write!(detail, "\nSource: {}", r.package.repository.as_str());
+                    append_detail(
+                        &mut detail,
+                        format_args!("\nSource: {}", r.package.repository.as_str()),
+                    );
                 }
                 let requirements: Vec<_> = ["network", "audio", "storage"]
                     .into_iter()
-                    .filter(|key| r.package.permissions[key].as_bool() == Some(true))
+                    .filter(|key| {
+                        r.package
+                            .permissions
+                            .get(key)
+                            .and_then(serde_json::Value::as_bool)
+                            == Some(true)
+                    })
                     .collect();
-                let _ = write!(
-                    detail,
-                    "\nUses: {}\nApps run with your user permissions.\n\nApp ID: {}",
-                    if requirements.is_empty() {
-                        "no declared services".into()
-                    } else {
-                        requirements.join(", ")
-                    },
-                    r.package.id
+                append_detail(
+                    &mut detail,
+                    format_args!(
+                        "\nUses: {}\nApps run with your user permissions.\n\nApp ID: {}",
+                        if requirements.is_empty() {
+                            "no declared services".into()
+                        } else {
+                            requirements.join(", ")
+                        },
+                        r.package.id
+                    ),
                 );
                 detail
             },
@@ -560,8 +599,7 @@ impl Center {
                 .to_ascii_uppercase();
             return Some((RowState::Updating, label));
         }
-        if let Some(error) = self.errors.get(&row.package.key()) {
-            let _ = error;
+        if self.errors.contains_key(&row.package.key()) {
             return Some((RowState::Failed, "FAILED".into()));
         }
         if self.running.contains(&row.package.id) {
@@ -795,22 +833,28 @@ impl Center {
             .is_some_and(|r| self.chosen.as_ref() == Some(&r.package.key()))
     }
     pub fn lines(&self, width: usize) -> Vec<String> {
-        let width = width.max(1);
+        let line_width = width.max(1);
         let mut lines = Vec::new();
         for line in self.details().lines() {
             let mut current = String::new();
             for word in line.split_whitespace() {
-                if !current.is_empty() && current.chars().count() + 1 + word.chars().count() > width
+                if !current.is_empty()
+                    && current
+                        .chars()
+                        .count()
+                        .saturating_add(1)
+                        .saturating_add(word.chars().count())
+                        > line_width
                 {
                     lines.push(std::mem::take(&mut current));
                 }
                 for c in word.chars() {
-                    if current.chars().count() == width {
+                    if current.chars().count() == line_width {
                         lines.push(std::mem::take(&mut current));
                     }
                     current.push(c);
                 }
-                if current.chars().count() < width {
+                if current.chars().count() < line_width {
                     current.push(' ');
                 }
             }
@@ -818,7 +862,7 @@ impl Center {
         }
         // Keep the insertion end visible while entering a long batch.
         if self.editing() && lines.len() > 3 {
-            lines.drain(1..lines.len() - 2);
+            drop(lines.drain(1..lines.len().saturating_sub(2)));
         }
         lines
     }
@@ -962,7 +1006,8 @@ impl Center {
     fn content_targets(&self, geometry: &Geometry, out: &mut Vec<(Target, String, Rect)>) {
         let width = geometry.width;
         if matches!(self.page, Page::Edit | Page::Search) {
-            let character_width = (width - 16 * geometry.scale) / 10;
+            let character_width =
+                width.saturating_sub(16_i32.saturating_mul(geometry.scale)) / 10_i32;
             let keys = if self.page == Page::Search {
                 "abcdefghijklmnopqrstuvwxyz0123456789-_/. "
             } else {
@@ -970,12 +1015,25 @@ impl Center {
             };
             // The key grid sits below the two-line hint and always fits the
             // screen: the pitch shrinks rather than overflowing the footer.
-            let grid_rows = i32::try_from(keys.len().div_ceil(10)).unwrap_or(4).max(1);
-            let top = geometry.list_top + 40 * geometry.scale;
-            let available = (geometry.footer.y - top).max(grid_rows * 16 * geometry.scale);
-            let pitch = (available / grid_rows).clamp(16 * geometry.scale, 28 * geometry.scale);
-            let key_height = (pitch - 4 * geometry.scale).max(12 * geometry.scale);
-            let key_width = character_width - 3 * geometry.scale;
+            let grid_rows = i32::try_from(keys.len().div_ceil(10))
+                .unwrap_or(4_i32)
+                .max(1_i32);
+            let top = geometry
+                .list_top
+                .saturating_add(40_i32.saturating_mul(geometry.scale));
+            let available = geometry.footer.y.saturating_sub(top).max(
+                grid_rows
+                    .saturating_mul(16_i32)
+                    .saturating_mul(geometry.scale),
+            );
+            let pitch = available.checked_div(grid_rows).unwrap_or(0_i32).clamp(
+                16_i32.saturating_mul(geometry.scale),
+                28_i32.saturating_mul(geometry.scale),
+            );
+            let key_height = pitch
+                .saturating_sub(4_i32.saturating_mul(geometry.scale))
+                .max(12_i32.saturating_mul(geometry.scale));
+            let key_width = character_width.saturating_sub(3_i32.saturating_mul(geometry.scale));
             for (i, c) in keys.chars().enumerate() {
                 out.push((
                     Target::Character(c),
@@ -985,9 +1043,14 @@ impl Center {
                         c.to_string()
                     },
                     Rect {
-                        x: 8 * geometry.scale
-                            + i32::try_from(i % 10).unwrap_or(0) * character_width,
-                        y: top + i32::try_from(i / 10).unwrap_or(0) * pitch,
+                        x: 8_i32.saturating_mul(geometry.scale).saturating_add(
+                            i32::try_from(i % 10)
+                                .unwrap_or(0_i32)
+                                .saturating_mul(character_width),
+                        ),
+                        y: top.saturating_add(
+                            i32::try_from(i / 10).unwrap_or(0_i32).saturating_mul(pitch),
+                        ),
                         w: key_width,
                         h: key_height,
                     },
@@ -997,11 +1060,11 @@ impl Center {
         }
         self.list_targets(geometry, out);
         if matches!(self.page, Page::Apps | Page::Sources) {
-            let third = geometry.pinned.w / 3;
+            let third = geometry.pinned.w / 3_i32;
             for (target, label, index) in [
-                (Target::Previous, "Previous", 0),
-                (Target::Details, "Details", 1),
-                (Target::Next, "Next", 2),
+                (Target::Previous, "Previous", 0_i32),
+                (Target::Details, "Details", 1_i32),
+                (Target::Next, "Next", 2_i32),
             ] {
                 if target == Target::Details && self.page != Page::Apps {
                     continue;
@@ -1010,9 +1073,12 @@ impl Center {
                     target,
                     label.into(),
                     Rect {
-                        x: geometry.pinned.x + index * third,
+                        x: geometry
+                            .pinned
+                            .x
+                            .saturating_add(index.saturating_mul(third)),
                         y: geometry.pinned.y,
-                        w: third - 2 * geometry.scale,
+                        w: third.saturating_sub(2_i32.saturating_mul(geometry.scale)),
                         h: geometry.pinned.h,
                     },
                 ));
@@ -1067,15 +1133,27 @@ impl Center {
             .take(geometry.rows())
         {
             let label = if self.page == Page::Apps {
-                self.rows[i].package.name.clone()
+                if let Some(row) = self.rows.get(i) {
+                    row.package.name.clone()
+                } else {
+                    continue;
+                }
             } else {
                 format!(
                     "{}{}",
                     if i == 0 { "* " } else { "" },
-                    self.sources.catalogs[i].as_str()
+                    if let Some(repository) = self.sources.catalogs.get(i) {
+                        repository.as_str()
+                    } else {
+                        continue;
+                    }
                 )
             };
-            out.push((Target::Row(i), label, geometry.row(position - self.start)));
+            out.push((
+                Target::Row(i),
+                label,
+                geometry.row(position.saturating_sub(self.start)),
+            ));
         }
     }
     fn capacity(layout: &Layout) -> usize {
@@ -1127,7 +1205,21 @@ impl Center {
                     .sources
                     .trusted(&r.package.origin, &r.package.repository)
             }),
-            _ => true,
+            Target::Check
+            | Target::Sources
+            | Target::Home
+            | Target::Row(_)
+            | Target::Previous
+            | Target::Next
+            | Target::Add
+            | Target::Save
+            | Target::Cancel
+            | Target::Character(_)
+            | Target::Delete
+            | Target::Clear
+            | Target::Search
+            | Target::Filter
+            | Target::Confirm(_) => true,
         }
     }
     pub fn event(&mut self, event: &Event, layout: &Layout) {
@@ -1136,7 +1228,8 @@ impl Center {
             .min(self.targets(layout).len().saturating_sub(1));
         if let Event::Window {
             win_event: WindowEvent::FocusLost,
-            ..
+            timestamp: _,
+            window_id: _,
         } = event
         {
             self.lost_focus();
@@ -1147,29 +1240,59 @@ impl Center {
             Event::KeyDown {
                 keycode: Some(Keycode::Backspace),
                 repeat: true,
-                ..
+                timestamp: _,
+                window_id: _,
+                scancode: _,
+                keymod: _
             }
         ) && self.editing()
             && (!self.busy || self.page == Page::Search)
         {
-            self.text.pop();
+            let _removed_character = self.text.pop();
             return;
         }
-        if let Event::TextInput { text, .. } = event {
+        if let Event::TextInput {
+            text,
+            timestamp: _,
+            window_id: _,
+        } = event
+        {
             if self.editing() && (!self.busy || self.page == Page::Search) {
                 self.append(text);
             }
             return;
         }
         let targets = self.targets(layout);
-        if matches!(event, Event::KeyDown { .. }) {
+        if matches!(
+            event,
+            Event::KeyDown {
+                timestamp: _,
+                window_id: _,
+                keycode: _,
+                scancode: _,
+                keymod: _,
+                repeat: _
+            }
+        ) {
             self.keyboard(event, layout, &targets);
             return;
         }
-        if let Event::MouseWheel { y, .. } = event {
-            if *y != 0 {
+        if let Event::MouseWheel {
+            y,
+            timestamp: _,
+            window_id: _,
+            which: _,
+            x: _,
+            direction: _,
+            precise_x: _,
+            precise_y: _,
+            mouse_x: _,
+            mouse_y: _,
+        } = event
+        {
+            if *y != 0_i32 {
                 self.activate(
-                    if *y > 0 {
+                    if *y > 0_i32 {
                         Target::Previous
                     } else {
                         Target::Next
@@ -1181,6 +1304,10 @@ impl Center {
         }
         self.pointer_event(event, layout, &targets);
     }
+    #[allow(
+        clippy::wildcard_enum_match_arm,
+        reason = "This SDL handler consumes selected keyboard, pointer or window events; unrelated controller, audio, drop and platform events intentionally have no action"
+    )]
     fn pointer_event(
         &mut self,
         event: &Event,
@@ -1193,7 +1320,9 @@ impl Center {
                 mouse_btn: MouseButton::Left,
                 x,
                 y,
-                ..
+                timestamp: _,
+                window_id: _,
+                clicks: _,
             } if which != u32::MAX => {
                 Some((i64::from(which), -1, true, f64::from(x), f64::from(y)))
             }
@@ -1202,7 +1331,9 @@ impl Center {
                 mouse_btn: MouseButton::Left,
                 x,
                 y,
-                ..
+                timestamp: _,
+                window_id: _,
+                clicks: _,
             } if which != u32::MAX => {
                 Some((i64::from(which), -1, false, f64::from(x), f64::from(y)))
             }
@@ -1211,7 +1342,10 @@ impl Center {
                 finger_id,
                 x,
                 y,
-                ..
+                timestamp: _,
+                dx: _,
+                dy: _,
+                pressure: _,
             } => Some((
                 touch_id,
                 finger_id,
@@ -1224,7 +1358,10 @@ impl Center {
                 finger_id,
                 x,
                 y,
-                ..
+                timestamp: _,
+                dx: _,
+                dy: _,
+                pressure: _,
             } => Some((
                 touch_id,
                 finger_id,
@@ -1235,20 +1372,24 @@ impl Center {
             _ => None,
         };
         if let Some((id, finger, down, x, y)) = contact {
-            let hit = targets.iter().position(|(_, _, r)| r.contains(x, y));
+            let hit = targets
+                .iter()
+                .enumerate()
+                .find(|(_, (_, _, bounds))| bounds.contains(x, y))
+                .map(|(index, (target, _, _))| (index, *target));
             if down {
                 self.contact = if self.contact.is_none() {
-                    hit.map(|i| (id, finger, targets[i].0))
+                    hit.map(|(_, target)| (id, finger, target))
                 } else {
                     None
                 };
             } else {
                 let old = self.contact.take();
-                if let Some(i) = hit
-                    && old == Some((id, finger, targets[i].0))
+                if let Some((index, target)) = hit
+                    && old == Some((id, finger, target))
                 {
-                    self.selected = i;
-                    self.activate(targets[i].0, layout);
+                    self.selected = index;
+                    self.activate(target, layout);
                 }
             }
         }
@@ -1258,7 +1399,9 @@ impl Center {
             keycode: Some(key),
             keymod,
             repeat: false,
-            ..
+            timestamp: _,
+            window_id: _,
+            scancode: _,
         } = event
         {
             self.contact = None;
@@ -1277,7 +1420,10 @@ impl Center {
                             .checked_sub(1)
                             .unwrap_or_else(|| targets.len().saturating_sub(1))
                     } else {
-                        (self.selected + 1) % targets.len().max(1)
+                        self.selected
+                            .saturating_add(1)
+                            .checked_rem(targets.len().max(1))
+                            .unwrap_or(0)
                     };
                 }
                 Keycode::Space if self.editing() => (),
@@ -1289,7 +1435,7 @@ impl Center {
                 Keycode::PageDown => self.activate(Target::Next, layout),
                 Keycode::PageUp => self.activate(Target::Previous, layout),
                 Keycode::Backspace if self.editing() => {
-                    self.text.pop();
+                    let _removed_character = self.text.pop();
                 }
                 Keycode::C if !self.editing() => self.activate(Target::Check, layout),
                 Keycode::I if !self.editing() => self.activate(Target::Install, layout),
@@ -1312,11 +1458,18 @@ impl Center {
         buttons.sort_by_key(|(_, (_, _, r))| (r.y, r.x));
         if let Some(index) = buttons.iter().position(|(i, _)| *i == self.selected) {
             let next = if forward {
-                (index + 1) % buttons.len()
+                index
+                    .checked_add(1)
+                    .filter(|next| *next < buttons.len())
+                    .unwrap_or(0)
             } else {
-                (index + buttons.len() - 1) % buttons.len()
+                index
+                    .checked_sub(1)
+                    .unwrap_or_else(|| buttons.len().saturating_sub(1))
             };
-            self.selected = buttons[next].0;
+            if let Some((target_index, _)) = buttons.get(next) {
+                self.selected = *target_index;
+            }
         }
     }
     fn vertical(&mut self, down: bool, layout: &Layout, targets: &[(Target, String, Rect)]) {
@@ -1336,16 +1489,21 @@ impl Center {
                 position.checked_sub(1)
             };
             if let Some(next) = adjacent {
+                let Some(&row_index) = indices.get(next) else {
+                    return;
+                };
                 if next < self.start {
                     self.start = next;
                 }
-                if next >= self.start + Self::capacity(layout) {
-                    self.start = next + 1 - Self::capacity(layout);
+                if next >= self.start.saturating_add(Self::capacity(layout)) {
+                    self.start = next
+                        .saturating_add(1)
+                        .saturating_sub(Self::capacity(layout));
                 }
                 if let Some(i) = self
                     .targets(layout)
                     .iter()
-                    .position(|(t, _, _)| *t == Target::Row(indices[next]))
+                    .position(|(t, _, _)| *t == Target::Row(row_index))
                 {
                     self.selected = i;
                 }
@@ -1362,13 +1520,17 @@ impl Center {
                     r.y < current.y
                 }
             })
-            .min_by_key(|(_, (_, _, r))| ((r.y - current.y).abs(), (r.x - current.x).abs()));
+            .min_by_key(|(_, (_, _, r))| (r.y.abs_diff(current.y), r.x.abs_diff(current.x)));
         if let Some((index, _)) = next {
             self.selected = index;
         }
     }
     fn append(&mut self, text: &str) {
-        if self.text.len() + text.len() <= 8192
+        if self
+            .text
+            .len()
+            .checked_add(text.len())
+            .is_some_and(|length| length <= 8192)
             && text
                 .chars()
                 .all(|c| !c.is_control() || c == '\n' || c == '\t')
@@ -1461,9 +1623,18 @@ impl Center {
                 Page::Apps => self.open = false,
                 Page::Edit => self.page(Page::Sources),
                 Page::Changelog => self.page(Page::Details),
-                _ => self.page(Page::Apps),
+                Page::Sources | Page::Details | Page::Search => self.page(Page::Apps),
             },
             Target::Row(index) => {
+                let valid = match self.page {
+                    Page::Apps => self.rows.get(index).is_some(),
+                    Page::Sources => self.sources.catalogs.get(index).is_some(),
+                    Page::Details | Page::Edit | Page::Changelog | Page::Search => false,
+                };
+                if !valid {
+                    self.message = "Selection is no longer available; refresh the list".into();
+                    return;
+                }
                 self.readout = Readout::Selection;
                 self.row = index;
                 if self.page == Page::Apps {
@@ -1492,7 +1663,7 @@ impl Center {
             Target::Save => self.save_text(),
             Target::Character(c) => self.append(&c.to_string()),
             Target::Delete => {
-                self.text.pop();
+                let _removed_character = self.text.pop();
             }
             Target::Clear => self.text.clear(),
             Target::Details => self.show_details(),
@@ -1510,7 +1681,9 @@ impl Center {
         let count = match self.page {
             Page::Apps => self.visible_rows().len(),
             Page::Sources => self.sources.catalogs.len(),
-            Page::Details | Page::Changelog => self.lines(usize::from(layout.width) / 8 - 2).len(),
+            Page::Details | Page::Changelog => self
+                .lines((usize::from(layout.width) / 8).saturating_sub(2))
+                .len(),
             Page::Edit | Page::Search => 0,
         };
         let step = if matches!(self.page, Page::Details | Page::Changelog) {
@@ -1520,8 +1693,8 @@ impl Center {
         };
         if !forward {
             self.start = self.start.saturating_sub(step);
-        } else if self.start + step < count {
-            self.start += step;
+        } else if self.start.saturating_add(step) < count {
+            self.start = self.start.saturating_add(step);
         }
         self.selected = 0;
     }
@@ -1565,7 +1738,10 @@ impl Center {
         }
     }
     fn toggle(&mut self, index: usize) {
-        let row = &self.rows[index];
+        let Some(row) = self.rows.get(index) else {
+            self.message = "App selection is no longer available; refresh the list".into();
+            return;
+        };
         let key = row.package.key();
         if self.chosen.as_ref() == Some(&key) {
             self.chosen = None;
@@ -1596,7 +1772,8 @@ impl Center {
                 Confirmation::Trust(i) if yes => {
                     if let Some(r) = self.rows.get(i) {
                         let mut next = self.sources.clone();
-                        next.approvals
+                        let _new_approval = next
+                            .approvals
                             .insert((r.package.origin.clone(), r.package.repository.clone()));
                         self.send(Command::Save(next));
                     }
@@ -1612,7 +1789,10 @@ impl Center {
                     self.row = 0;
                     self.send(Command::Save(next));
                 }
-                _ => (),
+                Confirmation::Publisher(_)
+                | Confirmation::Trust(_)
+                | Confirmation::Remove(_)
+                | Confirmation::Uninstall(_) => (),
             }
         }
         self.selected = 0;
@@ -1628,15 +1808,28 @@ impl Center {
 
 #[cfg(test)]
 impl Center {
+    fn fixture_row(&self, index: usize) -> Result<&Row, String> {
+        self.rows
+            .get(index)
+            .ok_or_else(|| format!("fixture row {index} missing"))
+    }
+    fn fixture_row_mut(&mut self, index: usize) -> Result<&mut Row, String> {
+        self.rows
+            .get_mut(index)
+            .ok_or_else(|| format!("fixture row {index} missing"))
+    }
     fn fixture() -> Result<Self, String> {
         let origin = super::sources::Repository::parse(super::sources::DEFAULT)?;
         let bytes = include_bytes!("../../tests/fixtures/app-center/catalog.json");
-        let p = super::metadata::catalog(&origin, bytes)?.remove(0);
+        let p = super::metadata::catalog(&origin, bytes)?
+            .into_iter()
+            .next()
+            .ok_or("fixture package missing")?;
         let mut center = Self {
             open: true,
             ..Self::default()
         };
-        for i in 0..9 {
+        for i in 0_i32..9_i32 {
             let mut package = p.clone();
             package.name = format!("App {i}");
             package.id = format!("org.example.app{i}");
@@ -1664,61 +1857,61 @@ impl Center {
             let mut center = Self::fixture()?;
             center.page(page);
             if matches!(page, Page::Details | Page::Changelog) {
-                center.chosen = Some(center.rows[0].package.key());
-                center.rows[0].package.changelog = Some(
+                center.chosen = Some(center.fixture_row(0)?.package.key());
+                center.fixture_row_mut(0)?.package.changelog = Some(
                     "# Changelog\n\n## 1.1.0 - 2026-09-12\n\n- Clearer app controls.\n- Reliable updates.\n\n## 1.0.0 - 2026-09-01\n\n- First release.".into(),
                 );
             }
             center.text = "example/catalog;https://github.com/my/catalog".into();
             out.push((name, center));
         }
-        let mut center = Self::fixture()?;
-        center.rows[0].installed = "1.0.0".into();
-        center.rows[0].package.name = "Bitcoin Dashboard".into();
-        out.push(("update-badge", center));
+        let mut update_sample = Self::fixture()?;
+        update_sample.fixture_row_mut(0)?.installed = "1.0.0".into();
+        update_sample.fixture_row_mut(0)?.package.name = "Bitcoin Dashboard".into();
+        out.push(("update-badge", update_sample));
         // Long catalogue and failure content exercises the explicit widening
         // policies: the row name, the state chip, the description and the
         // eight-field details page.
         let long = "A deliberately long catalogue description that has to wrap across more than one details line and still keep the field list readable on a 480x272 screen.";
-        let widest = |center: &mut Self| -> Result<(), String> {
-            center.rows[0].package.name = "Experimental Rust Application".into();
-            center.rows[0].package.description = long.into();
-            center.rows[0].package.origin =
+        let widest = |sample: &mut Self| -> Result<(), String> {
+            sample.fixture_row_mut(0)?.package.name = "Experimental Rust Application".into();
+            sample.fixture_row_mut(0)?.package.description = long.into();
+            sample.fixture_row_mut(0)?.package.origin =
                 super::sources::Repository::parse("example-org/a-long-publisher-name")?;
-            center.rows[0].package.repository = super::sources::Repository::parse(
+            sample.fixture_row_mut(0)?.package.repository = super::sources::Repository::parse(
                 "https://github.com/example-org/an-extremely-long-repository-name-for-testing",
             )?;
-            center.rows[0].package.notes =
+            sample.fixture_row_mut(0)?.package.notes =
                 "network, audio, storage, camera, location, bluetooth, notifications".into();
-            center.rows[0].installed = "0.1.0-beta4.1".into();
+            sample.fixture_row_mut(0)?.installed = "0.1.0-beta4.1".into();
             Ok(())
         };
-        let mut center = Self::fixture()?;
-        widest(&mut center)?;
-        center.page(Page::Apps);
-        out.push(("apps-long", center));
-        let mut center = Self::fixture()?;
-        widest(&mut center)?;
-        center.row = 0;
-        center.chosen = Some(center.rows[0].package.key());
-        center.errors.insert(
-            center.rows[0].package.key(),
+        let mut wide_list = Self::fixture()?;
+        widest(&mut wide_list)?;
+        wide_list.page(Page::Apps);
+        out.push(("apps-long", wide_list));
+        let mut wide_details = Self::fixture()?;
+        widest(&mut wide_details)?;
+        wide_details.row = 0;
+        wide_details.chosen = Some(wide_details.fixture_row(0)?.package.key());
+        let _previous_fixture_error = wide_details.errors.insert(
+            wide_details.fixture_row(0)?.package.key(),
             "The staged payload failed signature verification before install".into(),
         );
-        center.page(Page::Details);
-        out.push(("details-long", center));
-        let mut center = Self::fixture()?;
-        center.rows[0].installed = "1.0.0".into();
-        center.chosen = Some(center.rows[0].package.key());
-        center.page(Page::Details);
-        center.confirm_uninstall();
-        out.push(("uninstall", center));
-        let mut center = Self::fixture()?;
-        center.confirmation = Some(Confirmation::Running(
+        wide_details.page(Page::Details);
+        out.push(("details-long", wide_details));
+        let mut uninstall_sample = Self::fixture()?;
+        uninstall_sample.fixture_row_mut(0)?.installed = "1.0.0".into();
+        uninstall_sample.chosen = Some(uninstall_sample.fixture_row(0)?.package.key());
+        uninstall_sample.page(Page::Details);
+        uninstall_sample.confirm_uninstall();
+        out.push(("uninstall", uninstall_sample));
+        let mut confirmation_sample = Self::fixture()?;
+        confirmation_sample.confirmation = Some(Confirmation::Running(
             1,
             "Close and update? Unsaved work may be lost. App: Example app".into(),
         ));
-        out.push(("confirm", center));
+        out.push(("confirm", confirmation_sample));
         for (name, confirmation) in [
             ("confirm-trust", Confirmation::Trust(0)),
             ("confirm-publisher", Confirmation::Publisher(0)),
@@ -1748,8 +1941,12 @@ mod tests {
     fn center() -> Result<Center, String> {
         Center::fixture()
     }
-    fn focused(center: &Center, layout: &Layout) -> Target {
-        center.targets(layout)[center.selected].0
+    fn focused(center: &Center, layout: &Layout) -> Result<Target, String> {
+        center
+            .targets(layout)
+            .get(center.selected)
+            .map(|(target, _, _)| *target)
+            .ok_or_else(|| "focused control missing".into())
     }
     #[test]
     fn diagnostic_details_show_the_error_and_recovery_instead_of_placeholder_metadata()
@@ -1759,7 +1956,7 @@ mod tests {
             "Catalog entry has an invalid package path",
         ] {
             let mut center = center()?;
-            let origin = center.rows[0].package.origin.clone();
+            let origin = center.fixture_row(0)?.package.origin.clone();
             let diagnostic = super::super::source_error(&origin, error);
             center.rows = vec![Row::from(&diagnostic)];
             center.chosen = Some(diagnostic.package.key());
@@ -1805,35 +2002,35 @@ mod tests {
                 ];
                 for target in cycle.iter().cycle().skip(1).take(cycle.len()) {
                     center.event(&key(right), &layout);
-                    assert_eq!(focused(&center, &layout), *target);
+                    assert_eq!(focused(&center, &layout)?, *target);
                 }
                 for target in cycle.iter().rev() {
                     center.event(&key(left), &layout);
-                    assert_eq!(focused(&center, &layout), *target);
+                    assert_eq!(focused(&center, &layout)?, *target);
                 }
                 center.event(&key(down), &layout);
-                assert_eq!(focused(&center, &layout), Target::Search);
+                assert_eq!(focused(&center, &layout)?, Target::Search);
                 for index in 0..center.rows.len() {
                     center.event(&key(down), &layout);
-                    assert_eq!(focused(&center, &layout), Target::Row(index));
+                    assert_eq!(focused(&center, &layout)?, Target::Row(index));
                     assert_eq!(center.row, index);
                 }
                 assert!(center.start > 0);
                 center.event(&key(down), &layout);
-                assert_eq!(focused(&center, &layout), Target::Previous);
+                assert_eq!(focused(&center, &layout)?, Target::Previous);
                 for index in (0..center.rows.len()).rev() {
                     center.event(&key(up), &layout);
-                    assert_eq!(focused(&center, &layout), Target::Row(index));
+                    assert_eq!(focused(&center, &layout)?, Target::Row(index));
                 }
                 center.event(&key(up), &layout);
-                assert_eq!(focused(&center, &layout), Target::Search);
+                assert_eq!(focused(&center, &layout)?, Target::Search);
                 center.event(&key(up), &layout);
-                assert_eq!(focused(&center, &layout), Target::Check);
+                assert_eq!(focused(&center, &layout)?, Target::Check);
                 assert!(center.chosen.is_none());
                 center.rows.clear();
                 center.event(&key(down), &layout);
                 center.event(&key(down), &layout);
-                assert_eq!(focused(&center, &layout), Target::Previous);
+                assert_eq!(focused(&center, &layout)?, Target::Previous);
             }
         }
         Ok(())
@@ -1859,19 +2056,19 @@ mod tests {
         updates
             .send(Update::Progress("Downloading 5 / 10 bytes (50%)".into()))
             .map_err(|e| e.to_string())?;
-        center.poll();
+        assert!(center.poll(), "queued fixture update must be consumed");
         assert_eq!(center.details(), "Downloading 5 / 10 bytes (50%)");
         updates
             .send(Update::Done(Err("Download failed".into()), false))
             .map_err(|e| e.to_string())?;
-        center.poll();
+        assert!(center.poll(), "queued fixture update must be consumed");
         assert_eq!(center.details(), "Download failed");
         center.event(&key(Keycode::Down), &layout);
         assert!(center.details().ends_with(" | ready"));
         updates
             .send(Update::Done(Ok("App uninstalled".into()), true))
             .map_err(|e| e.to_string())?;
-        center.poll();
+        assert!(center.poll(), "queued fixture update must be consumed");
         assert_eq!(center.details(), "App uninstalled");
         Ok(())
     }
@@ -1882,10 +2079,12 @@ mod tests {
             .find(|(t, _, _)| *t == target)
             .ok_or("target")?
             .2;
-        let x = f32::from(u16::try_from(bounds.x + bounds.w / 2).map_err(|e| e.to_string())?)
-            / f32::from(layout.width);
-        let y = f32::from(u16::try_from(bounds.y + bounds.h / 2).map_err(|e| e.to_string())?)
-            / f32::from(layout.height);
+        let x = f32::from(
+            u16::try_from(bounds.x.saturating_add(bounds.w / 2_i32)).map_err(|e| e.to_string())?,
+        ) / f32::from(layout.width);
+        let y = f32::from(
+            u16::try_from(bounds.y.saturating_add(bounds.h / 2_i32)).map_err(|e| e.to_string())?,
+        ) / f32::from(layout.height);
         center.event(
             &Event::FingerDown {
                 timestamp: 0,
@@ -1920,10 +2119,11 @@ mod tests {
         for (w, h) in [(480, 272), (800, 480)] {
             let layout = Layout::home(w, h)?;
             let mut center = center()?;
-            center.rows[0].ready = false; // Unsupported/uninstalled apps still have readable information.
-            center.rows[8].installed = center.rows[8].package.version.to_string();
-            center.rows[8].ready = false;
-            let chosen = center.rows[8].package.key();
+            center.fixture_row_mut(0)?.ready = false; // Unsupported/uninstalled apps still have readable information.
+            center.fixture_row_mut(8)?.installed =
+                center.fixture_row(8)?.package.version.to_string();
+            center.fixture_row_mut(8)?.ready = false;
+            let chosen = center.fixture_row(8)?.package.key();
             let (send, commands) = std::sync::mpsc::channel();
             let (_updates, receive) = std::sync::mpsc::channel();
             center.worker = Some(Worker {
@@ -1960,17 +2160,17 @@ mod tests {
             assert_eq!(center.row, 0);
             center.event(&key(Keycode::Up), &layout);
             center.event(&key(Keycode::Up), &layout);
-            for _ in 0..7 {
+            for _ in 0_i32..7_i32 {
                 center.event(&key(Keycode::Right), &layout);
             }
-            assert_eq!(focused(&center, &layout), Target::Details);
+            assert_eq!(focused(&center, &layout)?, Target::Details);
             center.event(&key(Keycode::Return), &layout);
             assert!(center.details().starts_with("App 8\n"));
             assert!(!center.enabled(&Target::Install));
             assert!(center.enabled(&Target::Uninstall));
             tap(&mut center, Target::Uninstall, &layout)?;
             assert!(center.details().starts_with("Uninstall App 8?"));
-            assert_eq!(focused(&center, &layout), Target::Confirm(false));
+            assert_eq!(focused(&center, &layout)?, Target::Confirm(false));
             center.event(&key(Keycode::Return), &layout);
             assert!(commands.try_recv().is_err());
             tap(&mut center, Target::Uninstall, &layout)?;
@@ -1985,7 +2185,7 @@ mod tests {
     {
         let layout = Layout::home(480, 272)?;
         let mut center = center()?;
-        center.rows[1].installed = "1.0.0".into();
+        center.fixture_row_mut(1)?.installed = "1.0.0".into();
         center.activate(Target::Row(1), &layout);
         center.activate(Target::Row(1), &layout);
         assert!(center.chosen.is_none());
@@ -2010,8 +2210,8 @@ mod tests {
         updates
             .send(Update::Rows(replacement))
             .map_err(|e| e.to_string())?;
-        center.poll();
-        assert_eq!(center.chosen, Some(center.rows[7].package.key()));
+        assert!(center.poll(), "queued fixture update must be consumed");
+        assert_eq!(center.chosen, Some(center.fixture_row(7)?.package.key()));
         assert!(center.confirmation.is_none());
         assert!(center.enabled(&Target::Details));
         assert!(!center.enabled(&Target::Uninstall));
@@ -2025,10 +2225,11 @@ mod tests {
             for touch in [false, true] {
                 let layout = Layout::home(w, h)?;
                 let mut center = center()?;
-                center.rows[0].installed = center.rows[0].package.version.to_string();
-                center.rows[0].ready = false;
-                let current = center.rows[0].package.key();
-                let available = center.rows[1].package.key();
+                center.fixture_row_mut(0)?.installed =
+                    center.fixture_row(0)?.package.version.to_string();
+                center.fixture_row_mut(0)?.ready = false;
+                let current = center.fixture_row(0)?.package.key();
+                let available = center.fixture_row(1)?.package.key();
                 let (send, commands) = std::sync::mpsc::channel();
                 let (_updates, receive) = std::sync::mpsc::channel();
                 center.worker = Some(Worker {
@@ -2051,8 +2252,8 @@ mod tests {
                                 which: 0,
                                 mouse_btn: MouseButton::Left,
                                 clicks: 1,
-                                x: bounds.x + 1,
-                                y: bounds.y + 1,
+                                x: bounds.x + 1_i32,
+                                y: bounds.y + 1_i32,
                             }
                         } else {
                             Event::MouseButtonUp {
@@ -2061,8 +2262,8 @@ mod tests {
                                 which: 0,
                                 mouse_btn: MouseButton::Left,
                                 clicks: 1,
-                                x: bounds.x + 1,
-                                y: bounds.y + 1,
+                                x: bounds.x + 1_i32,
+                                y: bounds.y + 1_i32,
                             }
                         };
                         center.event(&event, &layout);
@@ -2105,9 +2306,9 @@ mod tests {
                 receive,
                 cancelled: std::sync::Arc::default(),
             });
-            center.rows[0].installed = "1.0.0".into();
-            center.rows[0].ready = false; // Current apps are still uninstallable.
-            let key_value = center.rows[0].package.key();
+            center.fixture_row_mut(0)?.installed = "1.0.0".into();
+            center.fixture_row_mut(0)?.ready = false; // Current apps are still uninstallable.
+            let key_value = center.fixture_row(0)?.package.key();
             center.activate(Target::Row(0), &layout);
             center.activate(Target::Details, &layout);
             assert!(center.enabled(&Target::Uninstall));
@@ -2149,8 +2350,8 @@ mod tests {
         for (w, h) in [(480, 272), (800, 480)] {
             let layout = Layout::home(w, h)?;
             let mut center = center()?;
-            center.rows[0].package.version = super::super::metadata::version("1.10.0")?;
-            center.rows[0].package.installable = true;
+            center.fixture_row_mut(0)?.package.version = super::super::metadata::version("1.10.0")?;
+            center.fixture_row_mut(0)?.package.installable = true;
             for (installed, update) in [
                 ("not installed", false),
                 ("local / unknown", false),
@@ -2158,13 +2359,13 @@ mod tests {
                 ("1.10.0", false),
                 ("2.0.0", false),
             ] {
-                center.rows[0].installed = installed.into();
+                center.fixture_row_mut(0)?.installed = installed.into();
                 let (version, badge) = center.row_versions(&Target::Row(0)).ok_or("row")?;
                 assert_eq!(version, "1.10.0");
                 assert_eq!(badge, update);
             }
-            center.rows[0].installed = "1.9.0".into();
-            center.chosen = Some(center.rows[0].package.key());
+            center.fixture_row_mut(0)?.installed = "1.9.0".into();
+            center.chosen = Some(center.fixture_row(0)?.package.key());
             center.page(Page::Details);
             assert!(
                 center
@@ -2177,10 +2378,14 @@ mod tests {
                 .find(|(t, _, _)| *t == Target::Uninstall)
                 .ok_or("Uninstall")?
                 .2;
-            let x = f32::from(u16::try_from(bounds.x + bounds.w / 2).map_err(|e| e.to_string())?)
-                / f32::from(w);
-            let y = f32::from(u16::try_from(bounds.y + bounds.h / 2).map_err(|e| e.to_string())?)
-                / f32::from(h);
+            let x = f32::from(
+                u16::try_from(bounds.x.saturating_add(bounds.w / 2_i32))
+                    .map_err(|e| e.to_string())?,
+            ) / f32::from(w);
+            let y = f32::from(
+                u16::try_from(bounds.y.saturating_add(bounds.h / 2_i32))
+                    .map_err(|e| e.to_string())?,
+            ) / f32::from(h);
             let up = Event::FingerUp {
                 timestamp: 0,
                 touch_id: 1,
@@ -2213,7 +2418,7 @@ mod tests {
             ));
             assert_eq!(center.selected, 0);
             center.answer(false);
-            center.rows[0].installed = "not installed".into();
+            center.fixture_row_mut(0)?.installed = "not installed".into();
             assert!(!center.enabled(&Target::Uninstall));
         }
         Ok(())
@@ -2233,7 +2438,7 @@ mod tests {
                     receive,
                     cancelled: std::sync::Arc::clone(&cancelled),
                 });
-                center.send(Command::Install(vec![center.rows[0].package.key()]));
+                center.send(Command::Install(vec![center.fixture_row(0)?.package.key()]));
                 center.message = "Downloading: 16384 / 40000 bytes (40%)\nSelected app".into();
                 assert!(center.details().starts_with("Downloading:"));
                 let (index, (_, label, bounds)) = center
@@ -2250,10 +2455,12 @@ mod tests {
                 assert_eq!(center.selected, index);
                 if touch {
                     let x = f32::from(
-                        u16::try_from(bounds.x + bounds.w / 2).map_err(|e| e.to_string())?,
+                        u16::try_from(bounds.x.saturating_add(bounds.w / 2_i32))
+                            .map_err(|e| e.to_string())?,
                     ) / f32::from(w);
                     let y = f32::from(
-                        u16::try_from(bounds.y + bounds.h / 2).map_err(|e| e.to_string())?,
+                        u16::try_from(bounds.y.saturating_add(bounds.h / 2_i32))
+                            .map_err(|e| e.to_string())?,
                     ) / f32::from(h);
                     center.event(
                         &Event::FingerDown {
@@ -2406,8 +2613,8 @@ mod tests {
                 let targets = center.targets(&layout);
                 for (i, (t, _, r)) in targets.iter().enumerate() {
                     assert!(
-                        r.x >= 0
-                            && r.y >= 0
+                        r.x >= 0_i32
+                            && r.y >= 0_i32
                             && r.x + r.w <= i32::from(w)
                             && r.y + r.h <= i32::from(h),
                         "{page:?} target {t:?} {r:?} outside {w}x{h}"
@@ -2449,10 +2656,10 @@ mod tests {
                 .enumerate()
                 .find(|(_, t)| t.0 == Target::Character('o'))
                 .ok_or("key")?;
-            let x =
-                f32::from(u16::try_from(r.x + r.w / 2).map_err(|e| e.to_string())?) / f32::from(w);
-            let y =
-                f32::from(u16::try_from(r.y + r.h / 2).map_err(|e| e.to_string())?) / f32::from(h);
+            let x = f32::from(u16::try_from(r.x + r.w / 2_i32).map_err(|e| e.to_string())?)
+                / f32::from(w);
+            let y = f32::from(u16::try_from(r.y + r.h / 2_i32).map_err(|e| e.to_string())?)
+                / f32::from(h);
             let up = Event::FingerUp {
                 timestamp: 0,
                 touch_id: 1,
@@ -2502,8 +2709,9 @@ mod tests {
     -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let mut center = center()?;
-        center.rows[1].package.id = center.rows[0].package.id.clone();
-        center.rows[1].package.origin = super::super::sources::Repository::parse("other/catalog")?;
+        center.fixture_row_mut(1)?.package.id = center.fixture_row(0)?.package.id.clone();
+        center.fixture_row_mut(1)?.package.origin =
+            super::super::sources::Repository::parse("other/catalog")?;
         center.toggle(0);
         assert!(center.chosen.is_none());
         assert!(matches!(
@@ -2514,11 +2722,17 @@ mod tests {
         assert_eq!(center.chosen.iter().count(), 1);
         center.toggle(1);
         center.answer(false);
-        assert_eq!(center.chosen.as_ref(), Some(&center.rows[0].package.key()));
+        assert_eq!(
+            center.chosen.as_ref(),
+            Some(&center.fixture_row(0)?.package.key())
+        );
         center.toggle(1);
         center.answer(true);
         assert_eq!(center.chosen.iter().count(), 1);
-        assert_eq!(center.chosen.as_ref(), Some(&center.rows[1].package.key()));
+        assert_eq!(
+            center.chosen.as_ref(),
+            Some(&center.fixture_row(1)?.package.key())
+        );
         let (send, receive) = std::sync::mpsc::channel();
         let (_updates, queue) = std::sync::mpsc::channel();
         center.worker = Some(Worker {
@@ -2528,7 +2742,7 @@ mod tests {
         });
         center.activate(Target::Install, &layout);
         assert!(
-            matches!(receive.try_recv(),Ok(Command::Install(keys)) if keys==vec![center.rows[1].package.key()])
+            matches!(receive.try_recv(),Ok(Command::Install(keys)) if keys==vec![center.fixture_row(1)?.package.key()])
         );
         center.activate(Target::Check, &layout);
         assert!(receive.try_recv().is_err());
@@ -2544,13 +2758,23 @@ mod tests {
 mod browsing_tests {
     use super::*;
     #[test]
+    fn stale_app_target_preserves_the_valid_selection() -> Result<(), String> {
+        let layout = Layout::home(480, 272)?;
+        let mut center = Center::fixture()?;
+        center.activate(Target::Row(usize::MAX), &layout);
+        assert_eq!(center.row, 0);
+        assert!(center.chosen.is_none(), "a missing row cannot be selected");
+        assert!(center.message.contains("no longer available"));
+        Ok(())
+    }
+    #[test]
     fn mutation_preserves_search_filter_selection_and_details_scroll() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let mut center = Center::fixture()?;
         center.search = "App".into();
         center.filter = Filter::Installed;
-        center.rows[6].installed = "1.0.0".into();
-        center.chosen = Some(center.rows[6].package.key());
+        center.fixture_row_mut(6)?.installed = "1.0.0".into();
+        center.chosen = Some(center.fixture_row(6)?.package.key());
         center.page(Page::Details);
         center.start = 8;
         let (send, _commands) = std::sync::mpsc::channel();
@@ -2565,7 +2789,7 @@ mod browsing_tests {
         updates
             .send(Update::Row(Box::new(replacement)))
             .map_err(|e| e.to_string())?;
-        center.poll();
+        assert!(center.poll(), "queued fixture update must be consumed");
         assert_eq!(center.start, 8);
         assert_eq!(center.search, "App");
         assert_eq!(center.filter, Filter::Installed);
@@ -2583,8 +2807,8 @@ mod browsing_tests {
     fn filters_and_touch_search_share_actions_and_empty_state_is_explained() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let mut center = Center::fixture()?;
-        center.rows[2].installed = "1.0.0".into();
-        center.chosen = Some(center.rows[2].package.key());
+        center.fixture_row_mut(2)?.installed = "1.0.0".into();
+        center.chosen = Some(center.fixture_row(2)?.package.key());
         center.activate(Target::Filter, &layout);
         assert_eq!(center.visible_rows(), [2]);
         center.activate(Target::Search, &layout);
@@ -2653,8 +2877,20 @@ mod browsing_tests {
                 assert_ne!(center.lines(56), Vec::<String>::new());
                 let targets = center.targets(&layout);
                 assert_eq!(targets.len(), 2);
-                assert_eq!(targets[center.selected].0, Target::Confirm(false));
-                center.activate(targets[center.selected].0, &layout);
+                assert_eq!(
+                    targets
+                        .get(center.selected)
+                        .ok_or("selected confirmation missing")?
+                        .0,
+                    Target::Confirm(false)
+                );
+                center.activate(
+                    targets
+                        .get(center.selected)
+                        .ok_or("selected confirmation missing")?
+                        .0,
+                    &layout,
+                );
                 assert!(!center.confirming());
                 assert!(!center.busy);
             }
@@ -2683,5 +2919,11 @@ mod browsing_tests {
             assert!(commands.try_recv().is_err());
         }
         Ok(())
+    }
+}
+
+fn append_detail(detail: &mut String, arguments: std::fmt::Arguments<'_>) {
+    if let Err(error) = std::fmt::Write::write_fmt(detail, arguments) {
+        eprintln!("App Center detail formatting failed: {error}");
     }
 }

@@ -6,13 +6,15 @@ pub const DEFAULT: &str = "csd113/vitrallis-apps";
 pub struct Repository(String);
 impl Repository {
     pub fn parse(input: &str) -> Result<Self, String> {
-        let s = input.trim();
-        let s = s
+        let trimmed = input.trim();
+        let repository_path = trimmed
             .strip_prefix("https://github.com/")
-            .unwrap_or(s)
+            .unwrap_or(trimmed)
             .trim_end_matches('/');
-        let s = s.strip_suffix(".git").unwrap_or(s);
-        let (owner, repo) = s
+        let slug = repository_path
+            .strip_suffix(".git")
+            .unwrap_or(repository_path);
+        let (owner, repo) = slug
             .split_once('/')
             .ok_or("Use owner/repo or https://github.com/owner/repo")?;
         if owner.is_empty()
@@ -61,7 +63,7 @@ impl Sources {
             .split(|c: char| c.is_whitespace() || c == ',' || c == ';')
             .filter(|s| !s.is_empty())
         {
-            repos.insert(Repository::parse(token)?);
+            let _new_repository = repos.insert(Repository::parse(token)?);
         }
         if repos.is_empty() {
             return Err("Enter at least one repository".into());
@@ -74,33 +76,33 @@ impl Sources {
         };
         let v = metadata::json(&file.bytes)?;
         metadata::fields(&v, "version catalogs approvals")?;
-        if v["version"].as_u64() != Some(1) {
+        if metadata::field(&v, "version")?.as_u64() != Some(1) {
             return Err("Unsupported source settings".into());
         }
         let mut result = Self::default();
-        let catalogs = v["catalogs"]
+        let catalogs = metadata::field(&v, "catalogs")?
             .as_array()
             .filter(|a| a.len() <= 32)
             .ok_or("Invalid sources")?;
-        for v in catalogs {
-            let repo = Repository::parse(metadata::text(v, 160)?)?;
+        for catalog in catalogs {
+            let repo = Repository::parse(metadata::text(catalog, 160)?)?;
             if !result.catalogs.contains(&repo) {
                 result.catalogs.push(repo);
             }
         }
-        let approvals = v["approvals"]
+        let approvals = metadata::field(&v, "approvals")?
             .as_array()
             .filter(|a| a.len() <= 128)
             .ok_or("Invalid approvals")?;
-        for v in approvals {
-            let pair = v
-                .as_array()
-                .filter(|a| a.len() == 2)
-                .ok_or("Invalid source approval")?;
-            let origin = Repository::parse(metadata::text(&pair[0], 160)?)?;
-            let source = Repository::parse(metadata::text(&pair[1], 160)?)?;
+        for approval in approvals {
+            let pair = approval.as_array().ok_or("Invalid source approval")?;
+            let [origin_value, source_value] = pair.as_slice() else {
+                return Err("Invalid source approval".into());
+            };
+            let origin = Repository::parse(metadata::text(origin_value, 160)?)?;
+            let source = Repository::parse(metadata::text(source_value, 160)?)?;
             if result.catalogs.contains(&origin) {
-                result.approvals.insert((origin, source));
+                let _new_approval = result.approvals.insert((origin, source));
             }
         }
         Ok(result)
@@ -109,7 +111,7 @@ impl Sources {
         if self.catalogs.len() > 32 || self.approvals.len() > 128 {
             return Err("Source settings limit exceeded".into());
         }
-        let v = serde_json::json!({"version":1, "catalogs": self.catalogs.iter().map(Repository::as_str).collect::<Vec<_>>(), "approvals":self.approvals.iter().map(|(a,b)| [a.as_str(),b.as_str()]).collect::<Vec<_>>()});
+        let v = serde_json::json!({"version":1_i32, "catalogs": self.catalogs.iter().map(Repository::as_str).collect::<Vec<_>>(), "approvals":self.approvals.iter().map(|(a,b)| [a.as_str(),b.as_str()]).collect::<Vec<_>>()});
         let bytes = serde_json::to_vec_pretty(&v).map_err(|e| e.to_string())?;
         storage::atomic(path, &storage::FileData { bytes, mode: 0o600 })
     }
@@ -125,11 +127,14 @@ impl Sources {
     pub fn edit(&mut self, index: Option<usize>, text: &str) -> Result<(), String> {
         let repos = Self::batch(text)?;
         let mut next = self.clone();
-        if let Some(index) = index {
-            if index == 0 {
+        if let Some(selected) = index {
+            if selected == 0 {
                 return Err("The default catalog is always included".into());
             }
-            next.remove(index);
+            if next.catalogs.get(selected).is_none() {
+                return Err("Repository selection is no longer available".into());
+            }
+            next.remove(selected);
         }
         for repo in repos {
             if !next.catalogs.contains(&repo) {
@@ -141,5 +146,18 @@ impl Sources {
         }
         *self = next;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unavailable_edit_does_not_add_or_remove_sources() {
+        let mut sources = Sources::default();
+        let before = sources.clone();
+        assert!(sources.edit(Some(usize::MAX), "example/catalog").is_err());
+        assert_eq!(sources, before);
     }
 }

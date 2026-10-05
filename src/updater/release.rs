@@ -45,7 +45,7 @@ pub(super) fn latest<'a>(
             return Err("Release version is too long".into());
         }
         let version = Version::parse(tag.strip_prefix('v').unwrap_or(tag))
-            .map_err(|_| "Release has an invalid semantic version")?;
+            .map_err(|error| format!("Release has an invalid semantic version: {error}"))?;
         if !version.pre.is_empty() && !previews {
             continue;
         }
@@ -127,12 +127,17 @@ pub(super) fn parse_digest(value: &str) -> Result<String, String> {
 }
 
 pub(super) fn checksum(bytes: &[u8], name: &str) -> Result<String, String> {
-    let text = std::str::from_utf8(bytes).map_err(|_| "Checksum is not UTF-8")?;
-    let fields: Vec<_> = text.split_whitespace().collect();
-    if fields.len() != 2 || fields[1].strip_prefix('*').unwrap_or(fields[1]) != name {
+    let text =
+        std::str::from_utf8(bytes).map_err(|error| format!("Checksum is not UTF-8: {error}"))?;
+    let mut fields = text.split_whitespace();
+    let digest = fields.next().ok_or("Checksum is missing its digest")?;
+    let file = fields
+        .next()
+        .ok_or("Checksum is missing its artifact name")?;
+    if fields.next().is_some() || file.strip_prefix('*').unwrap_or(file) != name {
         return Err("Checksum does not identify the shell artifact".into());
     }
-    parse_digest(fields[0])
+    parse_digest(digest)
 }
 
 fn field<'a>(value: &'a Value, name: &str) -> Result<&'a str, String> {

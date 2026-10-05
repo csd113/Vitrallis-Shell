@@ -169,65 +169,84 @@ fn run_probe(
         process::{Command, Stdio},
         time::{Duration, Instant},
     };
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or("Runtime/dependency deadline overflow")?;
     let mut command = Command::new(program);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        command.process_group(0);
+        let _group_options = command.process_group(0);
     }
-    command
+    let _probe_options = command
         .args(["-I", "-c", script, if tk { "tk" } else { "plain" }])
         .args(deps)
         .current_dir("/")
         .env_remove("PYTHONSTARTUP")
         .env_remove("PYTHONHOME");
-    command.env_remove("PYTHONPATH");
+    let _python_environment = command.env_remove("PYTHONPATH");
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| e.to_string())?;
-    let deadline = Instant::now() + timeout;
-    let stdout = child.stdout.take().ok_or("Missing runtime stdout")?;
-    let stderr = child.stderr.take().ok_or("Missing runtime stderr")?;
-    let outputs = [drain(stdout), drain(stderr)];
     let outcome = (|| {
-        let status = loop {
-            match child
+        let stdout = child.stdout.take().ok_or("Missing runtime stdout")?;
+        let stderr = child.stderr.take().ok_or("Missing runtime stderr")?;
+        let outputs = [drain(stdout), drain(stderr)];
+        loop {
+            #[cfg(unix)]
+            let exited = vitrallis_native::process::exited_unreaped(&mut child)
+                .map_err(|error| format!("Runtime exit probe failed: {error}"))?;
+            #[cfg(not(unix))]
+            let exited = child
                 .try_wait()
-                .map_err(|e| format!("Runtime wait failed: {e}"))?
-            {
-                Some(status) => break status,
-                None if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(20)),
-                None => return Err("Runtime/dependency process timed out".into()),
+                .map_err(|error| format!("Runtime wait failed: {error}"))?
+                .is_some();
+            if exited {
+                break;
             }
-        };
+            if Instant::now() >= deadline {
+                return Err("Runtime/dependency process timed out".into());
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
         // EOF covers inherited output pipes as well as the direct child. The
         // provisioning helper itself waits for venv and every pip subprocess.
         let mut diagnostics = String::new();
         for output in outputs {
             let bytes = output?
                 .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-                .map_err(|_| "Runtime/dependency output did not finish before deadline")??;
+                .map_err(|error| {
+                    format!("Runtime/dependency output did not finish before deadline: {error}")
+                })??;
             diagnostics.push_str(&String::from_utf8_lossy(&bytes));
         }
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!(
-                "{}\nRuntime/dependency process exited {status}: {}",
-                failure_reason(&diagnostics),
-                diagnostics.trim()
-            ))
-        }
+        Ok(diagnostics)
     })();
-    if outcome.is_err() {
-        crate::process::cleanup_group(child.id());
-        let _ = child.kill();
-        let _ = child.wait();
+    // Keep the leader waitable until output completion and group termination.
+    // A reaped child's numeric PID must never authorize descendant cleanup.
+    crate::process::cleanup_group(&mut child);
+    let diagnostics = match outcome {
+        Ok(diagnostics) => diagnostics,
+        Err(error) => {
+            crate::process::cleanup_child(&mut child);
+            return Err(error);
+        }
+    };
+    let status = child
+        .wait()
+        .map_err(|error| format!("Runtime wait failed: {error}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{}\nRuntime/dependency process exited {status}: {}",
+            failure_reason(&diagnostics),
+            diagnostics.trim()
+        ))
     }
-    outcome
 }
 
 fn failure_reason(diagnostics: &str) -> &str {
@@ -247,28 +266,36 @@ fn failure_reason(diagnostics: &str) -> &str {
 }
 
 fn drain(
-    output: impl std::io::Read + Send + 'static,
+    mut output: impl std::io::Read + Send + 'static,
 ) -> Result<std::sync::mpsc::Receiver<Result<Vec<u8>, String>>, String> {
     let (send, receive) = std::sync::mpsc::sync_channel(1);
-    std::thread::Builder::new()
+    // The receiver observes completion or a worker panic as disconnection.
+    // On cancellation the pipe closes when the owned helper group is stopped.
+    let _worker = std::thread::Builder::new()
         .name("app-runtime-output".into())
         .spawn(move || {
-            let mut output = output;
             let mut tail = Vec::new();
             let mut buffer = [0; 4096];
             let result = (|| {
                 loop {
-                    let count = output.read(&mut buffer).map_err(|e| e.to_string())?;
+                    let count = match output.read(&mut buffer) {
+                        Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                        result => result.map_err(|error| error.to_string())?,
+                    };
                     if count == 0 {
                         return Ok(tail);
                     }
-                    tail.extend_from_slice(&buffer[..count]);
+                    tail.extend_from_slice(
+                        buffer.get(..count).ok_or("Invalid runtime output length")?,
+                    );
                     if tail.len() > 8192 {
-                        tail.drain(..tail.len() - 8192);
+                        drop(tail.drain(..tail.len().saturating_sub(8192)));
                     }
                 }
             })();
-            let _ = send.send(result);
+            if send.send(result).is_err() {
+                eprintln!("level=debug event=runtime_output_cancelled");
+            }
         })
         .map_err(|e| e.to_string())?;
     Ok(receive)
@@ -288,13 +315,14 @@ pub fn launcher(runtime: &Runtime, entry: &Path) -> Result<Vec<u8>, String> {
         .program
         .to_str()
         .ok_or("Runtime path must be UTF-8")?;
-    let entry = entry.to_str().ok_or("Entry path must be UTF-8")?;
-    let _ = writeln!(
+    let entry_name = entry.to_str().ok_or("Entry path must be UTF-8")?;
+    writeln!(
         s,
         "exec {} --check-hash-based-pycs always {}",
         quote(program),
-        quote(entry)
-    );
+        quote(entry_name)
+    )
+    .map_err(|error| error.to_string())?;
     Ok(s.into_bytes())
 }
 
@@ -306,7 +334,7 @@ pub fn environment(bytes: &[u8], home: &Path, id: &str) -> Result<Vec<u8>, Strin
     let data = vitrallis_native::paths::app_data(home, id).map_err(|e| e.to_string())?;
     let documents = vitrallis_native::paths::documents(home, id).map_err(|e| e.to_string())?;
     let script = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
-    let script = script
+    let body = script
         .strip_prefix("#!/bin/sh\n")
         .ok_or("Invalid app launcher")?;
     let mut output = String::from("#!/bin/sh\numask 077\n");
@@ -316,12 +344,17 @@ pub fn environment(bytes: &[u8], home: &Path, id: &str) -> Result<Vec<u8>, Strin
         ("VITRALLIS_APP_DATA_DIR", data.as_path()),
         ("VITRALLIS_DOCUMENTS_DIR", documents.as_path()),
     ] {
-        let value = value.to_str().ok_or("App path must be UTF-8")?;
-        let _ = writeln!(output, "export {key}='{}'", value.replace('\'', "'\\''"));
+        let path_text = value.to_str().ok_or("App path must be UTF-8")?;
+        writeln!(
+            output,
+            "export {key}='{}'",
+            path_text.replace('\'', "'\\''")
+        )
+        .map_err(|error| error.to_string())?;
     }
     output.push_str("if [ -e \"$VITRALLIS_APP_DIR/.installation-pending\" ] || [ -L \"$VITRALLIS_APP_DIR/.installation-pending\" ]; then printf '%s\\n' 'Installation incomplete; repair in App Center.' >&2; exit 1; fi\n");
     output.push_str("cd \"$VITRALLIS_APP_DATA_DIR\" || { printf '%s\\n' 'App data unavailable; repair in App Center.' >&2; exit 1; }\n");
-    output.push_str(script);
+    output.push_str(body);
     Ok(output.into_bytes())
 }
 
@@ -346,13 +379,16 @@ fn compile_sources(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<()
         process::{Command, Stdio},
         time::{Duration, Instant},
     };
+    let deadline = Instant::now()
+        .checked_add(Duration::from_secs(30))
+        .ok_or("Python syntax deadline overflow")?;
     let mut command = Command::new(&runtime.program);
-    command
+    let _syntax_options = command
         .args(["-s", "-c", script])
         .current_dir("/")
         .env_remove("PYTHONSTARTUP")
         .env_remove("PYTHONHOME");
-    command.env_remove("PYTHONPATH");
+    let _syntax_environment = command.env_remove("PYTHONPATH");
     let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
@@ -360,22 +396,19 @@ fn compile_sources(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<()
         .spawn()
         .map_err(|e| e.to_string())?;
     let Some(mut stdin) = child.stdin.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
+        crate::process::cleanup_child(&mut child);
         return Err("Syntax preflight input unavailable".into());
     };
-    let writer = std::thread::Builder::new()
+    let spawned_writer = std::thread::Builder::new()
         .name("app-syntax-input".into())
         .spawn(move || stdin.write_all(&input));
-    let writer = match writer {
+    let writer = match spawned_writer {
         Ok(w) => w,
         Err(e) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            crate::process::cleanup_child(&mut child);
             return Err(e.to_string());
         }
     };
-    let deadline = Instant::now() + Duration::from_secs(30);
     let result: Result<(), String> = loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -387,15 +420,14 @@ fn compile_sources(runtime: &Runtime, input: Vec<u8>, script: &str) -> Result<()
             }
             Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
             _ => {
-                let _ = child.kill();
-                let _ = child.wait();
+                crate::process::cleanup_child(&mut child);
                 break Err("Python syntax preflight timed out".into());
             }
         }
     };
     let written = writer
         .join()
-        .map_err(|_| "Syntax input worker failed".to_owned())?
+        .map_err(|payload| format!("Syntax input worker failed: {payload:?}"))?
         .map_err(|e| e.to_string());
     result?;
     written
@@ -419,8 +451,14 @@ mod completion_tests {
         fn drop(&mut self) {
             // Apple Python's default cache lives outside the source tree. Remove
             // only the subtree containing this unique scratch-directory name.
-            if let Some(cache) = &self.external_cache {
-                let _ = std::fs::remove_dir_all(cache);
+            if let Some(cache) = &self.external_cache
+                && let Err(error) = std::fs::remove_dir_all(cache)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                eprintln!(
+                    "Cannot remove Python test cache {}: {error}",
+                    cache.display()
+                );
             }
         }
     }
@@ -453,17 +491,25 @@ mod completion_tests {
         if !compiled.status.success() {
             return Err(format!("Compile library fixture: {compiled:?}"));
         }
-        let compiled: serde_json::Value =
+        let compiled_metadata: serde_json::Value =
             serde_json::from_slice(&compiled.stdout).map_err(|e| e.to_string())?;
         let bytecode = PathBuf::from(
-            compiled["bytecode"]
-                .as_str()
-                .ok_or("Missing fixture bytecode path")?,
+            (*compiled_metadata
+                .get("bytecode")
+                .ok_or("Missing fixture element")?)
+            .as_str()
+            .ok_or("Missing fixture bytecode path")?,
         );
-        let default_prefix = match &compiled["default_prefix"] {
+        let default_prefix = match compiled_metadata
+            .get("default_prefix")
+            .ok_or("Missing fixture element")?
+        {
             serde_json::Value::Null => None,
             serde_json::Value::String(prefix) => Some(prefix.clone()),
-            _ => return Err("Invalid interpreter cache prefix".into()),
+            serde_json::Value::Bool(_)
+            | serde_json::Value::Number(_)
+            | serde_json::Value::Array(_)
+            | serde_json::Value::Object(_) => return Err("Invalid interpreter cache prefix".into()),
         };
         let external_cache = if bytecode.starts_with(&root) {
             None
@@ -527,12 +573,26 @@ mod completion_tests {
     fn launcher_reuses_valid_library_bytecode_without_writes() -> Result<(), String> {
         let fixture = cached_library(true, false)?;
         let before = std::fs::read(&fixture.bytecode).map_err(|e| e.to_string())?;
-        for _ in 0..2 {
+        for _ in 0_i32..2_i32 {
             let result = launch_cached_library(&fixture)?;
-            assert_eq!(result["value"], "old");
-            assert_eq!(result["compiles"], 0);
-            assert_eq!(result["prefix"], serde_json::json!(fixture.default_prefix));
-            assert_eq!(result["writes_disabled"], true);
+            assert_eq!(
+                (*result.get("value").ok_or("Missing fixture element")?),
+                "old"
+            );
+            assert_eq!(
+                (*result.get("compiles").ok_or("Missing fixture element")?),
+                0_i32
+            );
+            assert_eq!(
+                (*result.get("prefix").ok_or("Missing fixture element")?),
+                serde_json::json!(fixture.default_prefix)
+            );
+            assert_eq!(
+                (*result
+                    .get("writes_disabled")
+                    .ok_or("Missing fixture element")?),
+                true
+            );
             assert_eq!(
                 std::fs::read(&fixture.bytecode).map_err(|e| e.to_string())?,
                 before
@@ -548,10 +608,24 @@ mod completion_tests {
             let before = std::fs::read(&fixture.bytecode).map_err(|e| e.to_string())?;
             std::fs::write(&fixture.module, "VALUE = 'new'\n").map_err(|e| e.to_string())?;
             let result = launch_cached_library(&fixture)?;
-            assert_eq!(result["value"], "new");
-            assert_eq!(result["compiles"], 1);
-            assert_eq!(result["prefix"], serde_json::json!(fixture.default_prefix));
-            assert_eq!(result["writes_disabled"], true);
+            assert_eq!(
+                (*result.get("value").ok_or("Missing fixture element")?),
+                "new"
+            );
+            assert_eq!(
+                (*result.get("compiles").ok_or("Missing fixture element")?),
+                1_i32
+            );
+            assert_eq!(
+                (*result.get("prefix").ok_or("Missing fixture element")?),
+                serde_json::json!(fixture.default_prefix)
+            );
+            assert_eq!(
+                (*result
+                    .get("writes_disabled")
+                    .ok_or("Missing fixture element")?),
+                true
+            );
             assert_eq!(
                 std::fs::read(&fixture.bytecode).map_err(|e| e.to_string())?,
                 before
@@ -593,7 +667,7 @@ mod completion_tests {
         let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
         let marker = scratch.0.join("dependency-ready");
         let script = "import subprocess,sys; subprocess.run([sys.executable, '-c', 'import pathlib,sys,time; time.sleep(0.15); pathlib.Path(sys.argv[1]).write_text(\"installed\")', sys.argv[2]], check=True)";
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             run_probe(
                 Path::new("/usr/bin/python3"),
                 script,
@@ -643,16 +717,18 @@ mod completion_tests {
         let scratch = crate::test_support::Scratch::new().map_err(|e| e.to_string())?;
         let root = scratch.0.canonicalize().map_err(|e| e.to_string())?;
         let mut files = Files::new();
-        files.insert(
+        drop(files.insert(
             "requirements.txt".into(),
             b"vitrallis-absent-dependency>=1\n".to_vec(),
-        );
+        ));
         let target = managed(&root, &files);
         std::fs::create_dir_all(&target).map_err(|e| e.to_string())?;
         // Python's venv creates group-writable directories under umask 002.
         std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o775))
             .map_err(|e| e.to_string())?;
-        let error = ensure(&root, &files).expect_err("damaged environment");
+        let error = ensure(&root, &files)
+            .err()
+            .ok_or("damaged environment was accepted")?;
         assert!(error.contains("damaged"), "{error}");
         Ok(())
     }

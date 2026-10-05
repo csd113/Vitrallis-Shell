@@ -1,5 +1,41 @@
 # Release validation and assets
 
+## 1.0.4 — reliability hardening prerelease
+
+Authorized on 2026-10-05. This release hardens the existing shell and native
+utilities for continuous use on small Linux systems, preserving screen layouts,
+keyboard/touch controls and Documents-based application storage.
+
+- App Center now recognizes the Python interpreter options used by installed
+  launchers. Updating a running app correctly prompts before replacement;
+  Cancel keeps it open and Close and Update stops it before committing.
+- Process cleanup retains child ownership until termination and reaping complete.
+  Linux external-app closing uses process handles and rechecks executable/script
+  and start identity, preventing signals from reaching a reused PID. Unsupported
+  kernels or ambiguous process arguments require manual closing.
+- State writes, file copies, package downloads and recovery preserve original
+  failures, validate permissions and file identity, and reject unsafe files,
+  duplicate entries, oversized payloads and arithmetic overflow.
+- Stale UI selections, UTF-8 editing, image buffers and screenshots have checked
+  boundaries. Worker and cleanup failures remain visible; artwork caches and
+  idle rendering retain their bounded resource behavior.
+- All five packages inherit the permanent Rust 1.99 lint policy. The audit resolves
+  3,128 initial unique findings with zero final strict Clippy diagnostics; every
+  local exception has a documented range or API justification.
+
+Formatting, locked checks, strict Clippy, full Rust/Python suites, release builds,
+renderer references, native accelerated readback and smoke tests pass on the
+macOS/Linux hosts. Real 480×272 Linux simulations pass App Center install/update/
+uninstall/error paths, keyboard/touch shortcuts, Settings persistence and the
+Awesome/native-app lifecycle. See the [full hardening report](rust-lint-hardening.md)
+for commands, changed files, exceptions and retained qualifications.
+
+This release has no new physical PocketCHIP certification. Optional online
+catalog validation encounters a package without a compatible host binary, and
+in-process macOS GPU probes cannot initialize their video backend; process-isolated
+accelerated CLI checks pass. Linux external-app closing requires Linux 5.3+
+process handles. Release bundles retain glibc 2.36+, SDL2 2.26.5+ and Arti 2.7.0.
+
 ## 1.0.3 — authorized certification prerelease
 
 The owner approved 1.0.3 and subsequent prerelease version changes until the

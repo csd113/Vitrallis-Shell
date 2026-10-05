@@ -24,9 +24,9 @@ impl Settings {
                 self.selected = match direction {
                     Direction::Up => self.selected.saturating_sub(3),
                     Direction::Down if self.selected >= 3 => super::footer::BACK,
-                    Direction::Down => self.selected + 3,
+                    Direction::Down => self.selected.saturating_add(3),
                     Direction::Left => self.selected.saturating_sub(1),
-                    Direction::Right => (self.selected + 1).min(5),
+                    Direction::Right => (self.selected.saturating_add(1)).min(5),
                 };
             }
             Action::SelectAndActivate(index) if index < 6 => {
@@ -71,14 +71,14 @@ mod tests {
             (2, Some(Control::Restart)),
             (3, Some(Control::Mode(Mode::Disabled))),
         ] {
-            settings.input(Action::SelectAndActivate(index));
+            assert_eq!(settings.input(Action::SelectAndActivate(index)), None);
             assert_eq!(settings.tor_control.take(), expected, "control {index}");
         }
-        settings.input(Action::SelectAndActivate(5));
+        assert_eq!(settings.input(Action::SelectAndActivate(5)), None);
         assert_eq!(settings.page, Page::TorDetails);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Tor);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Wireless);
     }
 }

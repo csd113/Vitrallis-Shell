@@ -33,6 +33,11 @@ impl Keyboard {
 
     /// Translate key events in place, preserving timestamps, scancodes and repeats.
     /// Text stays supplied by the active X11 keymap, including Fn punctuation.
+    #[allow(
+        clippy::rest_pattern_accessible_field,
+        clippy::wildcard_enum_match_arm,
+        reason = "The keyboard translator only modifies key events and focus loss; other SDL events and their unrelated metadata pass through unchanged"
+    )]
     pub fn event(&mut self, event: &mut Event) {
         match event {
             Event::KeyDown {
@@ -65,7 +70,7 @@ impl Keyboard {
         if !self.pocketchip || !modifiers.intersects(fn_modifiers) {
             return;
         }
-        *key = key.map(|key| match key {
+        *key = key.map(|code| match code {
             Keycode::Num1 => Keycode::F1,
             Keycode::Num2 => Keycode::F2,
             Keycode::Num3 => Keycode::F3,
@@ -78,7 +83,7 @@ impl Keyboard {
             Keycode::Num0 => Keycode::F10,
             Keycode::Minus => Keycode::F11,
             Keycode::Equals => Keycode::F12,
-            _ => key,
+            _ => code,
         });
         modifiers.remove(fn_modifiers);
     }

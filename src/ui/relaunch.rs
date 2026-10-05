@@ -15,14 +15,14 @@ impl Services {
     ) -> Result<bool, String> {
         if !self.started {
             self.started = true;
-            let system = system.take();
-            let tor = std::mem::take(tor);
+            let stopped_system = system.take();
+            let stopped_tor = std::mem::take(tor);
             self.stopping = Some(
                 thread::Builder::new()
                     .name("shell-relaunch".into())
                     .spawn(move || {
-                        let system_result = system.map_or(Ok(()), Worker::shutdown);
-                        let tor_result = tor.shutdown();
+                        let system_result = stopped_system.map_or(Ok(()), Worker::shutdown);
+                        let tor_result = stopped_tor.shutdown();
                         system_result.and(tor_result)
                     })
                     .map_err(|error| format!("Cannot prepare shell relaunch: {error}"))?,
@@ -39,7 +39,9 @@ impl Services {
             .take()
             .ok_or("Relaunch preparation unavailable")?
             .join()
-            .map_err(|_| "Relaunch preparation stopped unexpectedly".to_owned())??;
+            .map_err(|payload| {
+                format!("Relaunch preparation stopped unexpectedly: {payload:?}")
+            })??;
         Ok(true)
     }
     pub(super) const fn active(&self) -> bool {
@@ -96,20 +98,26 @@ mod tests {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn();
-            let mut child = match child {
-                Ok(child) => child,
+            let mut spawned_child = match child {
+                Ok(process) => process,
                 Err(error) => {
-                    let _ = self.started.send(Err(error.to_string()));
+                    if let Err(send_error) = self.started.send(Err(error.to_string())) {
+                        eprintln!("Cannot report fixture spawn failure: {send_error}");
+                    }
                     return Status::default();
                 }
             };
-            let _ = self.started.send(Ok(child.id()));
+            if let Err(error) = self.started.send(Ok(spawned_child.id())) {
+                eprintln!("Cannot report fixture child PID: {error}");
+            }
             if let Ok(release) = self.release.lock() {
                 // Also releases and reaps the fixture if the test exits early.
-                let _ = release.recv_timeout(Duration::from_secs(5));
+                if let Err(error) = release.recv_timeout(Duration::from_secs(5)) {
+                    eprintln!("Relaunch fixture released by cancellation/timeout: {error}");
+                }
             }
-            let killed = child.kill();
-            let waited = child.wait();
+            let killed = spawned_child.kill();
+            let waited = spawned_child.wait();
             self.reaped
                 .store(killed.is_ok() && waited.is_ok(), Ordering::SeqCst);
             Status::default()

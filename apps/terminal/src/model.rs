@@ -56,7 +56,7 @@ impl Terminal {
             if matches!(self.sequence, Sequence::Ground) {
                 self.length = 0;
             } else {
-                self.length += 1;
+                self.length = self.length.saturating_add(1);
             }
             if self.length > 4096 {
                 self.parser.process(b"\x1b\\\x18");
@@ -91,8 +91,14 @@ impl vt100::Callbacks for Replies {
         }
         if c == 'n' && params == [&[6][..]] {
             let (row, col) = screen.cursor_position();
-            self.bytes
-                .extend_from_slice(format!("\x1b[{};{}R", row + 1, col + 1).as_bytes());
+            self.bytes.extend_from_slice(
+                format!(
+                    "\x1b[{};{}R",
+                    u32::from(row).saturating_add(1),
+                    u32::from(col).saturating_add(1)
+                )
+                .as_bytes(),
+            );
         } else if c == 'n' && params == [&[5][..]] {
             self.bytes.extend_from_slice(b"\x1b[0n");
         } else if c == 'c' {
@@ -101,11 +107,19 @@ impl vt100::Callbacks for Replies {
     }
 }
 pub fn geometry(width: i32, height: i32, scale: i32) -> (u16, u16) {
+    let text_scale = scale.max(1_i32);
+    let line_height = 9_i32.saturating_mul(text_scale);
+    let cell_width = 8_i32.saturating_mul(text_scale);
     (
-        u16::try_from((height - status_height(scale)) / (9 * scale))
-            .unwrap_or(1)
-            .clamp(1, 240),
-        u16::try_from(width / (8 * scale))
+        u16::try_from(
+            height
+                .saturating_sub(status_height(text_scale))
+                .checked_div(line_height)
+                .unwrap_or(0),
+        )
+        .unwrap_or(1)
+        .clamp(1, 240),
+        u16::try_from(width.checked_div(cell_width).unwrap_or(0))
             .unwrap_or(1)
             .clamp(1, 512),
     )
@@ -114,28 +128,15 @@ pub fn geometry(width: i32, height: i32, scale: i32) -> (u16, u16) {
 /// One compact status line at the bottom keeps the whole top of the display for
 /// terminal output while still showing the scrollback position and shortcuts.
 pub const fn status_height(scale: i32) -> i32 {
-    10 * scale
+    let text_scale = if scale < 1_i32 { 1_i32 } else { scale };
+    10_i32.saturating_mul(text_scale)
 }
 pub fn key(key: Keycode, mods: Mod, application: bool) -> Option<Vec<u8>> {
     let alt = mods.intersects(Mod::LALTMOD | Mod::RALTMOD);
-    if ui::ctrl(mods) {
-        let raw = i32::from(key);
-        let byte = if (i32::from(b'a')..=i32::from(b'z')).contains(&raw) {
-            u8::try_from(raw - i32::from(b'a') + 1).ok()
-        } else {
-            match key {
-                Keycode::Space | Keycode::At => Some(0),
-                Keycode::LeftBracket => Some(27),
-                Keycode::Backslash => Some(28),
-                Keycode::RightBracket => Some(29),
-                Keycode::Caret => Some(30),
-                Keycode::Underscore => Some(31),
-                _ => None,
-            }
-        };
-        if let Some(byte) = byte {
-            return Some(if alt { vec![27, byte] } else { vec![byte] });
-        }
+    if ui::ctrl(mods)
+        && let Some(byte) = control(key)
+    {
+        return Some(if alt { vec![27, byte] } else { vec![byte] });
     }
     let bytes: &[u8] = match key {
         Keycode::Return | Keycode::KpEnter => b"\r",
@@ -208,7 +209,8 @@ pub fn key(key: Keycode, mods: Mod, application: bool) -> Option<Vec<u8>> {
         Keycode::F12 => b"\x1b[24~",
         _ => return None,
     };
-    let mut output = Vec::with_capacity(bytes.len() + usize::from(alt));
+    let capacity = bytes.len().checked_add(usize::from(alt))?;
+    let mut output = Vec::with_capacity(capacity);
     if alt {
         output.push(27);
     }
@@ -216,12 +218,29 @@ pub fn key(key: Keycode, mods: Mod, application: bool) -> Option<Vec<u8>> {
     Some(output)
 }
 
+fn control(key: Keycode) -> Option<u8> {
+    let raw = i32::from(key);
+    if (i32::from(b'a')..=i32::from(b'z')).contains(&raw) {
+        return u8::try_from(raw.saturating_sub(i32::from(b'a')).saturating_add(1)).ok();
+    }
+    match key {
+        Keycode::Space | Keycode::At => Some(0),
+        Keycode::LeftBracket => Some(27),
+        Keycode::Backslash => Some(28),
+        Keycode::RightBracket => Some(29),
+        Keycode::Caret => Some(30),
+        Keycode::Underscore => Some(31),
+        _ => None,
+    }
+}
+
 pub fn text(text: &str, mods: Mod) -> Option<Vec<u8>> {
     if ui::ctrl(mods) {
         return None;
     }
     let alt = mods.intersects(Mod::LALTMOD | Mod::RALTMOD);
-    let mut bytes = Vec::with_capacity(text.len() + usize::from(alt));
+    let capacity = text.len().checked_add(usize::from(alt))?;
+    let mut bytes = Vec::with_capacity(capacity);
     if alt {
         bytes.push(27);
     }
@@ -233,38 +252,60 @@ pub fn text(text: &str, mods: Mod) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn malformed_geometry_stays_bounded() {
+        for (width, height, scale) in [
+            (i32::MIN, i32::MIN, i32::MIN),
+            (i32::MAX, i32::MAX, i32::MAX),
+            (480_i32, 272_i32, 0_i32),
+        ] {
+            let (rows, columns) = geometry(width, height, scale);
+            assert!((1..=240).contains(&rows), "rows must remain bounded");
+            assert!((1..=512).contains(&columns), "columns must remain bounded");
+            assert!(
+                status_height(scale) > 0_i32,
+                "status height must remain positive"
+            );
+        }
+    }
+
     /// The character grid and the status bar must never overlap, and the grid
     /// must fill its region exactly at every supported size and scale.
     #[test]
     fn grid_and_status_leave_room_for_every_cell() {
-        for scale in 1..=3 {
+        for scale in 1_i32..=3_i32 {
             let status = status_height(scale);
-            let cell = 8 * scale;
+            let cell = 8_i32 * scale;
             // The status bar centers one glyph cell with a pixel above and below.
-            assert!(status >= cell + 2 * scale, "scale={scale}");
-            assert_eq!((status - cell) / 2, scale, "scale={scale}");
-            for (width, height) in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
+            assert!(status >= cell + 2_i32 * scale, "scale={scale}");
+            assert_eq!((status - cell) / 2_i32, scale, "scale={scale}");
+            for (width, height) in [
+                (320_i32, 200_i32),
+                (480_i32, 272_i32),
+                (800_i32, 480_i32),
+                (1_280_i32, 720_i32),
+            ] {
                 let (rows, cols) = geometry(width, height, scale);
                 assert!(rows >= 1 && cols >= 1, "{width}x{height}@{scale}");
                 assert!(
-                    i32::from(rows) * 9 * scale <= height - status,
+                    i32::from(rows) * 9_i32 * scale <= height - status,
                     "{width}x{height}@{scale}: rows reach the status bar"
                 );
                 assert!(
-                    i32::from(cols) * 8 * scale <= width,
+                    i32::from(cols) * 8_i32 * scale <= width,
                     "{width}x{height}@{scale}: columns exceed the window"
                 );
                 // One more row must not fit: the grid uses its whole region.
                 assert!(
-                    i32::from(rows) * 9 * scale + 9 * scale > height - status,
+                    i32::from(rows) * 9_i32 * scale + 9_i32 * scale > height - status,
                     "{width}x{height}@{scale}: a row was dropped"
                 );
             }
         }
         // The fixed "Terminal" legend always fits the left third of the bar.
-        let legend = i32::try_from("Terminal".len()).unwrap_or(0) * 8;
-        for width in [320, 480, 800, 1280] {
-            assert!(width / 3 >= legend);
+        let legend = i32::try_from("Terminal".len()).unwrap_or(0_i32) * 8_i32;
+        for width in [320_i32, 480_i32, 800_i32, 1_280_i32] {
+            assert!(width / 3_i32 >= legend);
         }
     }
     #[test]
@@ -319,13 +360,13 @@ mod tests {
     #[test]
     fn large_output_scrollback_and_escape_strings_are_bounded() {
         let mut terminal = Terminal::new(4, 20);
-        for _ in 0..10_000 {
+        for _ in 0_i32..10_000_i32 {
             terminal.process(b"line\r\n");
         }
         terminal.parser.screen_mut().set_scrollback(usize::MAX);
         assert_eq!(terminal.parser.screen().scrollback(), SCROLLBACK);
         terminal.process(b"\x1b]52;c;");
-        for _ in 0..2000 {
+        for _ in 0_i32..2_000_i32 {
             terminal.process(&[b'x'; 8192]);
         }
         terminal.process(b"\x07\x1b[HOK");
@@ -337,8 +378,8 @@ mod tests {
     fn geometry_resize_alternate_and_unicode() {
         // One 10-pixel status line at the bottom leaves 29 text rows at 480x272.
         assert_eq!(geometry(480, 272, 1), (29, 60));
-        assert_eq!(status_height(1), 10);
-        assert!(29 * 9 <= 272 - status_height(1));
+        assert_eq!(status_height(1), 10_i32);
+        assert!(29_i32 * 9_i32 <= 272_i32 - status_height(1));
         let mut terminal = Terminal::new(3, 10);
         terminal.process("é中🙂".as_bytes());
         assert_eq!(terminal.parser.screen().cursor_position(), (0, 5));

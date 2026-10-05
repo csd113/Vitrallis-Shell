@@ -27,7 +27,7 @@ impl Broker {
     /// Reports private socket directory creation/binding errors.
     pub fn new() -> io::Result<Self> {
         let root = std::env::temp_dir();
-        for n in 0..32 {
+        for n in 0_i32..32_i32 {
             let directory = root.join(format!("vitrallis-native-{}-{n}", std::process::id()));
             match fs::DirBuilder::new().mode(0o700).create(&directory) {
                 Ok(()) => {
@@ -39,8 +39,13 @@ impl Broker {
                     return match result {
                         Ok(socket) => Ok(Self { path, socket }),
                         Err(error) => {
-                            let _ = fs::remove_file(&path);
-                            let _ = fs::remove_dir(&directory);
+                            remove_socket(&path);
+                            if let Err(cleanup) = fs::remove_dir(&directory) {
+                                eprintln!(
+                                    "Native socket directory cleanup {}: {cleanup}",
+                                    directory.display()
+                                );
+                            }
                             Err(error)
                         }
                     };
@@ -58,7 +63,12 @@ impl Broker {
     pub fn receive(&self) -> io::Result<Option<PathBuf>> {
         let mut bytes = [0; LIMIT + 1];
         match self.socket.recv(&mut bytes) {
-            Ok(count) if count > 0 && count <= LIMIT => decode(&bytes[..count]).map(Some),
+            Ok(count) if count > 0 && count <= LIMIT => decode(
+                bytes
+                    .get(..count)
+                    .ok_or_else(|| io::Error::other("Invalid datagram length"))?,
+            )
+            .map(Some),
             Ok(_) => Err(io::Error::other("Invalid native open request")),
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => Ok(None),
             Err(e) => Err(e),
@@ -85,12 +95,24 @@ pub fn clear_inbox(broker: &Path, name: &str) -> io::Result<()> {
 impl Drop for Broker {
     fn drop(&mut self) {
         if let Some(parent) = self.path.parent() {
-            let _ = fs::remove_file(&self.path);
+            remove_socket(&self.path);
             for name in ["terminal", "notepad", "files"] {
-                let _ = fs::remove_file(parent.join(name));
+                remove_socket(&parent.join(name));
             }
-            let _ = fs::remove_dir(parent);
+            if let Err(error) = fs::remove_dir(parent) {
+                eprintln!(
+                    "Native socket directory cleanup {}: {error}",
+                    parent.display()
+                );
+            }
         }
+    }
+}
+fn remove_socket(path: &Path) {
+    if let Err(error) = fs::remove_file(path)
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        eprintln!("Native socket cleanup {}: {error}", path.display());
     }
 }
 fn decode(bytes: &[u8]) -> io::Result<PathBuf> {
@@ -110,14 +132,19 @@ fn send(socket: &Path, path: &Path) -> io::Result<()> {
     }
     let sender = UnixDatagram::unbound()?;
     sender.set_nonblocking(true)?;
-    sender.send_to(bytes, socket)?;
+    let sent = sender.send_to(bytes, socket)?;
+    if sent != bytes.len() {
+        return Err(io::Error::other(
+            "Native open request was not delivered in full",
+        ));
+    }
     Ok(())
 }
 /// # Errors
 /// Reports an unavailable supervisor. Returns false only outside a shell session.
 pub fn request_notepad(path: &Path) -> io::Result<bool> {
     if let Some(socket) = std::env::var_os(ENV) {
-        directory(Path::new(&socket))?;
+        let _validated_directory = directory(Path::new(&socket))?;
         send(Path::new(&socket), path)?;
         Ok(true)
     } else {
@@ -129,7 +156,7 @@ pub fn request_notepad(path: &Path) -> io::Result<bool> {
 pub fn focus(path: &Path) -> io::Result<()> {
     let sender = UnixDatagram::unbound()?;
     sender.set_nonblocking(true)?;
-    sender.send_to(b"", path)?;
+    let _sent = sender.send_to(b"", path)?;
     Ok(())
 }
 /// Ask a native app to close only if it can do so without losing work.
@@ -139,7 +166,11 @@ pub fn focus(path: &Path) -> io::Result<()> {
 pub fn close_if_safe(path: &Path) -> io::Result<()> {
     let sender = UnixDatagram::unbound()?;
     sender.set_nonblocking(true)?;
-    sender.send_to(b"close-if-safe", path)?;
+    if sender.send_to(b"close-if-safe", path)? != b"close-if-safe".len() {
+        return Err(io::Error::other(
+            "Native close request was not delivered in full",
+        ));
+    }
     Ok(())
 }
 /// One blocking IPC thread only when launched by Vitrallis. Requests never repaint while idle.
@@ -176,7 +207,10 @@ impl Inbox {
         // A datagram wakes this blocking recv immediately; the bounded wait only
         // guarantees that a failed wake (for example a stale inbox removed by the
         // launcher) cannot hang Inbox::drop's join forever.
-        socket.set_read_timeout(Some(Duration::from_secs(1)))?;
+        if let Err(error) = socket.set_read_timeout(Some(Duration::from_secs(1))) {
+            remove_socket(&path);
+            return Err(error);
+        }
         let (send, receiver) = mpsc::sync_channel(8);
         let stopped = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&stopped);
@@ -184,7 +218,7 @@ impl Inbox {
         let dropped = Arc::clone(&overflow);
         let close_requested = Arc::new(AtomicBool::new(false));
         let close = Arc::clone(&close_requested);
-        let worker = thread::Builder::new()
+        let spawned_worker = thread::Builder::new()
             .name("native-inbox".into())
             .stack_size(128 * 1024)
             .spawn(move || {
@@ -195,23 +229,36 @@ impl Inbox {
                             if stop.load(Ordering::Acquire) {
                                 break;
                             }
-                            if &bytes[..count] == b"close-if-safe" {
+                            let Some(message) = bytes.get(..count) else {
+                                eprintln!("Native inbox returned an invalid datagram length");
+                                break;
+                            };
+                            if message == b"close-if-safe" {
                                 close.store(true, Ordering::Release);
-                                let _ = crate::ui::wake(&sender);
+                                if let Err(error) = crate::ui::wake(&sender) {
+                                    eprintln!("Native close wake: {error}");
+                                }
                                 continue;
                             }
                             if count == 0 {
-                                if !focus.swap(true, Ordering::AcqRel) {
-                                    let _ = crate::ui::wake(&sender);
+                                if !focus.swap(true, Ordering::AcqRel)
+                                    && let Err(error) = crate::ui::wake(&sender)
+                                {
+                                    eprintln!("Native focus wake: {error}");
                                 }
                                 continue;
                             }
                             if count > LIMIT {
                                 continue;
                             }
-                            if let Ok(path) = decode(&bytes[..count]) {
-                                let notify = send.try_send(path).is_ok()
-                                    || !dropped.swap(true, Ordering::AcqRel);
+                            if let Ok(requested_path) = decode(message) {
+                                let notify = match send.try_send(requested_path) {
+                                    Ok(()) => true,
+                                    Err(mpsc::TrySendError::Full(_path)) => {
+                                        !dropped.swap(true, Ordering::AcqRel)
+                                    }
+                                    Err(mpsc::TrySendError::Disconnected(_path)) => break,
+                                };
                                 if notify && let Err(e) = crate::ui::wake(&sender) {
                                     eprintln!("Notepad wake: {e}");
                                 }
@@ -227,14 +274,18 @@ impl Inbox {
                                 break;
                             }
                         }
-                        Err(_) => break,
+                        Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
+                        Err(error) => {
+                            eprintln!("Native inbox receive: {error}");
+                            break;
+                        }
                     }
                 }
             });
-        let worker = match worker {
+        let worker = match spawned_worker {
             Ok(worker) => worker,
             Err(error) => {
-                let _ = fs::remove_file(&path);
+                remove_socket(&path);
                 return Err(error);
             }
         };
@@ -259,7 +310,14 @@ impl Inbox {
         if self.overflow.swap(false, Ordering::AcqRel) {
             return Err("Notepad open queue is full; an additional file was not opened".into());
         }
-        Ok(self.receiver.try_recv().ok())
+        match self.receiver.try_recv() {
+            Ok(path) => Ok(Some(path)),
+            Err(mpsc::TryRecvError::Empty) => Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => Err(
+                "Native inbox worker stopped; restart the application to restore file requests"
+                    .into(),
+            ),
+        }
     }
 }
 fn valid_name(name: &str) -> io::Result<()> {
@@ -295,13 +353,18 @@ fn directory(broker: &Path) -> io::Result<&Path> {
 impl Drop for Inbox {
     fn drop(&mut self) {
         self.stopped.store(true, Ordering::Release);
-        if let Ok(sender) = UnixDatagram::unbound() {
-            let _ = sender.send_to(b"", &self.path);
+        match UnixDatagram::unbound().and_then(|sender| sender.send_to(b"", &self.path)) {
+            // The read timeout also wakes shutdown if the launcher removed a stale socket.
+            Ok(_) => (),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+            Err(error) => eprintln!("Native inbox shutdown wake: {error}"),
         }
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+        if let Some(worker) = self.worker.take()
+            && worker.join().is_err()
+        {
+            eprintln!("Native inbox worker panicked during shutdown");
         }
-        let _ = fs::remove_file(&self.path);
+        remove_socket(&self.path);
     }
 }
 
@@ -332,7 +395,9 @@ pub(crate) fn test_private_inbox(sdl: &sdl2::Sdl) -> Result<(), String> {
         forward(&broker.path, path)?;
         focus(&inbox.path)?;
         close_if_safe(&inbox.path)?;
-        let deadline = Instant::now() + Duration::from_secs(3);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_secs(3))
+            .ok_or("Inbox deadline overflow")?;
         let mut received = None;
         while received.is_none()
             || !raised.load(Ordering::Acquire)
@@ -372,15 +437,24 @@ pub(crate) fn test_private_inbox(sdl: &sdl2::Sdl) -> Result<(), String> {
         )?;
         fs::remove_file(&inbox.path)?;
         let (send, receive) = mpsc::channel();
-        thread::Builder::new()
+        let worker = thread::Builder::new()
             .name("inbox-drop-test".into())
             .spawn(move || {
                 drop(inbox);
-                let _ = send.send(());
+                if send.send(()).is_err() {
+                    eprintln!("Inbox-drop test receiver disconnected");
+                }
             })?;
         receive
             .recv_timeout(Duration::from_secs(3))
-            .map_err(|_| io::Error::other("Inbox drop hung after the wake datagram failed"))?;
+            .map_err(|error| {
+                io::Error::other(format!(
+                    "Inbox drop hung after the wake datagram failed: {error}"
+                ))
+            })?;
+        worker.join().map_err(|payload| {
+            io::Error::other(format!("Inbox-drop test worker panicked: {payload:?}"))
+        })?;
         Ok(())
     }
     check(sdl).map_err(|e| e.to_string())?;

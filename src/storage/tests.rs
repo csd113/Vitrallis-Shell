@@ -71,7 +71,10 @@ fn aggregation_sorting_empty_and_unknown_sizes() {
     let total = accounting::aggregate(apps.iter().map(|a| &a.total));
     assert_eq!(total.bytes, 101);
     assert!(total.incomplete);
-    assert_eq!(apps[2].total.label(), "Unavailable");
+    assert_eq!(
+        apps.get(2).map(|app| app.total.label()),
+        Some("Unavailable".into())
+    );
     assert_eq!(accounting::aggregate([].iter()), Size::default());
     accounting::sort(&mut []);
 }
@@ -203,7 +206,7 @@ fn cache_refresh_and_cancellation_keep_one_worker_and_reject_stale_results() -> 
     send.send(Update::Report(Ok(Report::default())))
         .map_err(|e| e.to_string())?;
     drop(send);
-    storage.poll(false);
+    assert!(storage.poll(false));
     assert!(!storage.busy());
     assert!(storage.report.is_none());
     storage.completed = Instant::now().checked_sub(CACHE_AGE);
@@ -241,7 +244,7 @@ fn slow_worker_poll_is_nonblocking_and_old_generations_are_discarded() -> Result
     send.send(Update::Report(Ok(Report::default())))
         .map_err(|e| e.to_string())?;
     drop(send);
-    storage.poll(false);
+    assert!(storage.poll(false));
     assert!(cancel.load(Ordering::Relaxed));
     assert!(storage.report.is_none());
     assert!(!storage.busy());

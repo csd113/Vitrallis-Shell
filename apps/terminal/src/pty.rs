@@ -47,8 +47,14 @@ impl Pty {
         }
         Self::start(spawn_child(shell, args, rows, cols)?, sender)
     }
-    fn start((master, child): (File, Child), sender: sdl2::event::EventSender) -> io::Result<Self> {
-        let mut child = OwnedChild(child);
+    fn start(
+        (master, spawned_child): (File, Child),
+        sender: sdl2::event::EventSender,
+    ) -> io::Result<Self> {
+        let mut child = OwnedChild {
+            child: spawned_child,
+            reaped: false,
+        };
         let state = Arc::new(Mutex::new(State {
             output: Vec::with_capacity(LIMIT),
             input: Vec::with_capacity(INPUT_LIMIT),
@@ -62,15 +68,15 @@ impl Pty {
             .name("terminal-pty".into())
             .stack_size(256 * 1024)
             .spawn(move || {
-                let result = pump(&master, &mut child.0, &receiver, &output, &sender);
+                let result = pump(&master, &mut child, &receiver, &output, &sender);
                 drop(child);
-                if let Ok(mut state) = output.lock() {
+                if let Ok(mut final_state) = output.lock() {
                     if let Err(error) = result {
-                        state.end = Some(format!("Terminal I/O: {error}"));
-                    } else if state.end.is_none() {
-                        state.end = Some("Shell closed".into());
+                        final_state.end = Some(format!("Terminal I/O: {error}"));
+                    } else if final_state.end.is_none() {
+                        final_state.end = Some("Shell closed".into());
                     }
-                    notify(&mut state, &sender);
+                    notify(&mut final_state, &sender);
                 }
             })?;
         Ok(Self {
@@ -83,11 +89,16 @@ impl Pty {
         let mut state = self
             .state
             .lock()
-            .map_err(|_| io::Error::other("PTY state unavailable"))?;
+            .map_err(|error| io::Error::other(format!("PTY state unavailable: {error}")))?;
         if state.end.is_some() {
             return Err(io::Error::other("Shell has exited"));
         }
-        if state.input.len() + bytes.len() > INPUT_LIMIT {
+        if state
+            .input
+            .len()
+            .checked_add(bytes.len())
+            .is_none_or(|length| length > INPUT_LIMIT)
+        {
             return Err(io::Error::other(
                 "Terminal input buffer is full; wait for the shell",
             ));
@@ -99,7 +110,7 @@ impl Pty {
     pub fn resize(&mut self, rows: u16, cols: u16) -> io::Result<()> {
         self.state
             .lock()
-            .map_err(|_| io::Error::other("PTY state unavailable"))?
+            .map_err(|error| io::Error::other(format!("PTY state unavailable: {error}")))?
             .size = Some((rows, cols));
         self.signal()
     }
@@ -107,7 +118,7 @@ impl Pty {
         let mut state = self
             .state
             .lock()
-            .map_err(|_| io::Error::other("PTY state unavailable"))?;
+            .map_err(|error| io::Error::other(format!("PTY state unavailable: {error}")))?;
         output.clear();
         std::mem::swap(output, &mut state.output);
         state.wake_pending = false;
@@ -138,7 +149,9 @@ impl Drop for Pty {
         if let Ok(mut state) = self.state.lock() {
             state.stop = true;
         }
-        let _ = self.signal();
+        if let Err(error) = self.signal() {
+            eprintln!("PTY shutdown wake failed: {error}");
+        }
         if let Some(worker) = self.worker.take()
             && worker.join().is_err()
         {
@@ -146,60 +159,60 @@ impl Drop for Pty {
         }
     }
 }
-struct OwnedChild(Child);
+struct OwnedChild {
+    child: Child,
+    reaped: bool,
+}
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         // spawn_child creates a new session/process group. Closing the terminal
         // must also stop ordinary descendants left behind by its command.
-        if let Ok(pid) = i32::try_from(self.0.id()) {
-            // SAFETY: kill takes integer IDs only; the negative ID names only
-            // the process group established for this owned PTY child.
-            if unsafe { libc::kill(-pid, libc::SIGKILL) } < 0 {
-                let error = io::Error::last_os_error();
-                if error.raw_os_error() != Some(libc::ESRCH) {
-                    eprintln!("PTY group cleanup: {error}");
-                }
-            }
+        if self.reaped {
+            return;
         }
-        if let Err(error) = self.0.kill()
+        if let Err(error) = vitrallis_native::process::kill_child_group(&mut self.child) {
+            eprintln!("PTY group cleanup: {error}");
+        }
+        if let Err(error) = self.child.kill()
             && error.kind() != io::ErrorKind::InvalidInput
         {
             eprintln!("PTY cleanup: {error}");
         }
-        if let Err(error) = self.0.wait() {
+        if let Err(error) = self.child.wait() {
             eprintln!("PTY reap: {error}");
         }
     }
 }
 fn notify(state: &mut State, sender: &sdl2::event::EventSender) {
     if !state.wake_pending {
-        state.wake_pending = vitrallis_native::ui::wake(sender).is_ok();
+        match vitrallis_native::ui::wake(sender) {
+            Ok(()) => state.wake_pending = true,
+            Err(error) => eprintln!("PTY event wake failed: {error}"),
+        }
     }
 }
 fn pump(
-    master: &File,
-    child: &mut Child,
-    signal: &UnixStream,
+    mut master: &File,
+    child: &mut OwnedChild,
+    mut signal: &UnixStream,
     state: &Mutex<State>,
     sender: &sdl2::event::EventSender,
 ) -> io::Result<()> {
     let mut buffer = [0; 8192];
-    let mut master = master;
-    let mut signal = signal;
     let mut exited = None;
     loop {
-        let mut shared = state
+        let mut pending = state
             .lock()
-            .map_err(|_| io::Error::other("PTY state unavailable"))?;
-        if shared.stop {
+            .map_err(|error| io::Error::other(format!("PTY state unavailable: {error}")))?;
+        if pending.stop {
             return Ok(());
         }
-        if let Some((rows, cols)) = shared.size.take() {
+        if let Some((rows, cols)) = pending.size.take() {
             resize(master, rows, cols)?;
         }
-        let reading = shared.output.len() < LIMIT;
-        let writing = !shared.input.is_empty();
-        drop(shared);
+        let reading = pending.output.len() < LIMIT;
+        let writing = !pending.input.is_empty();
+        drop(pending);
         let mut fds = [
             libc::pollfd {
                 fd: if reading || writing {
@@ -228,46 +241,44 @@ fn pump(
             }
             return Err(error);
         }
-        if fds[1].revents != 0 {
+        let [master_poll, signal_poll] = &fds;
+        if signal_poll.revents != 0 {
             while signal.read(&mut buffer).is_ok_and(|n| n > 0) {}
         }
         let mut shared = state
             .lock()
-            .map_err(|_| io::Error::other("PTY state unavailable"))?;
-        if fds[0].revents & libc::POLLOUT != 0 && !shared.input.is_empty() {
+            .map_err(|error| io::Error::other(format!("PTY state unavailable: {error}")))?;
+        if master_poll.revents & libc::POLLOUT != 0 && !shared.input.is_empty() {
             match master.write(&shared.input) {
                 Ok(n) => {
-                    shared.input.drain(..n);
+                    drop(shared.input.drain(..n));
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
                 Err(e) => return Err(e),
             }
         }
-        let mut eof = false;
-        if reading && fds[0].revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0 {
-            let limit = buffer.len().min(LIMIT - shared.output.len());
-            match master.read(&mut buffer[..limit]) {
-                Ok(0) => eof = true,
-                Ok(n) => {
-                    shared.output.extend_from_slice(&buffer[..n]);
-                    notify(&mut shared, sender);
-                }
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
-                Err(e) if e.raw_os_error() == Some(libc::EIO) => eof = true,
-                Err(e) => return Err(e),
-            }
+        let eof = if reading
+            && master_poll.revents & (libc::POLLIN | libc::POLLHUP | libc::POLLERR) != 0
+        {
+            read_output(master, &mut buffer, &mut shared, sender)?
+        } else {
+            false
+        };
+        if exited.is_none() && vitrallis_native::process::exited_unreaped(&mut child.child)? {
+            exited = Some(std::time::Instant::now());
         }
-        if exited.is_none() {
-            exited = child
-                .try_wait()?
-                .map(|status| (status, std::time::Instant::now()));
-        }
-        if let Some((status, time)) = &exited {
+        if let Some(time) = &exited {
             // Drain successive bounded batches through EOF. An exited shell's
             // surviving background job cannot hold the terminal open forever.
             if eof
                 || (time.elapsed() >= std::time::Duration::from_secs(1) && shared.output.is_empty())
             {
+                vitrallis_native::process::kill_child_group(&mut child.child)?;
+                let status = child
+                    .child
+                    .try_wait()?
+                    .ok_or_else(|| io::Error::other("PTY exit status disappeared"))?;
+                child.reaped = true;
                 shared.end = Some(format!("Shell exited: {status}"));
                 notify(&mut shared, sender);
                 return Ok(());
@@ -282,14 +293,42 @@ fn pump(
         drop(shared);
     }
 }
+fn read_output(
+    mut master: &File,
+    buffer: &mut [u8],
+    shared: &mut State,
+    sender: &sdl2::event::EventSender,
+) -> io::Result<bool> {
+    let limit = buffer.len().min(LIMIT.saturating_sub(shared.output.len()));
+    match master.read(
+        buffer
+            .get_mut(..limit)
+            .ok_or_else(|| io::Error::other("invalid PTY read limit"))?,
+    ) {
+        Ok(0) => return Ok(true),
+        Ok(n) => {
+            shared.output.extend_from_slice(
+                buffer
+                    .get(..n)
+                    .ok_or_else(|| io::Error::other("invalid PTY read length"))?,
+            );
+            notify(shared, sender);
+        }
+        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+        Err(e) if e.raw_os_error() == Some(libc::EIO) => return Ok(true),
+        Err(e) => return Err(e),
+    }
+    Ok(false)
+}
+
 fn spawn_child(
     shell: &Path,
     args: &[std::ffi::OsString],
     rows: u16,
     cols: u16,
 ) -> io::Result<(File, Child)> {
-    let mut master = -1;
-    let mut slave = -1;
+    let mut master_fd = -1_i32;
+    let mut slave_fd = -1_i32;
     let mut size = libc::winsize {
         ws_row: rows.max(1),
         ws_col: cols.max(1),
@@ -300,33 +339,33 @@ fn spawn_child(
     // name and termios arguments request the OS defaults.
     if unsafe {
         libc::openpty(
-            &raw mut master,
-            &raw mut slave,
+            &raw mut master_fd,
+            &raw mut slave_fd,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             &raw mut size,
         )
-    } < 0
+    } < 0_i32
     {
         return Err(io::Error::last_os_error());
     }
     // SAFETY: successful openpty returned two newly owned descriptors.
-    let master = unsafe { File::from_raw_fd(master) };
+    let master = unsafe { File::from_raw_fd(master_fd) };
     // SAFETY: slave is distinct from master and is adopted exactly once.
-    let slave = unsafe { File::from_raw_fd(slave) };
+    let slave = unsafe { File::from_raw_fd(slave_fd) };
     for file in [&master, &slave] {
         // SAFETY: descriptors are valid and fcntl receives an integer flag.
-        if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0 {
+        if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC) } < 0_i32 {
             return Err(io::Error::last_os_error());
         }
     }
     // SAFETY: master remains owned throughout; setting nonblocking affects only
     // this PTY master and prevents stalled children from blocking the SDL thread.
-    if unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) } < 0 {
+    if unsafe { libc::fcntl(master.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK) } < 0_i32 {
         return Err(io::Error::last_os_error());
     }
     let mut command = Command::new(shell);
-    command
+    let _child_options = command
         .args(args)
         .env("TERM", "xterm-256color")
         .env("COLORTERM", "truecolor")
@@ -337,7 +376,7 @@ fn spawn_child(
     // allocates nothing, and acquires no locks after fork. std has installed fd 0.
     let pre_exec = || -> io::Result<()> {
         // SAFETY: setsid is async-signal-safe and only detaches the child.
-        if unsafe { libc::setsid() } < 0 {
+        if unsafe { libc::setsid() } < 0_i32 {
             return Err(io::Error::last_os_error());
         }
         #[cfg(target_os = "macos")]
@@ -345,14 +384,14 @@ fn spawn_child(
         #[cfg(not(target_os = "macos"))]
         let request = libc::TIOCSCTTY;
         // SAFETY: the child owns the slave PTY on stdin and is session leader here.
-        if unsafe { libc::ioctl(libc::STDIN_FILENO, request, 0) } < 0 {
+        if unsafe { libc::ioctl(libc::STDIN_FILENO, request, 0) } < 0_i32 {
             return Err(io::Error::last_os_error());
         }
         Ok(())
     };
     // SAFETY: the closure above runs post-fork and touches only the OS calls it
     // documents; it captures nothing and never allocates.
-    unsafe { command.pre_exec(pre_exec) };
+    let _session_options = unsafe { command.pre_exec(pre_exec) };
     Ok((master, command.spawn()?))
 }
 fn resize(master: &File, rows: u16, cols: u16) -> io::Result<()> {
@@ -418,12 +457,16 @@ mod tests {
         loop {
             match master.read(&mut bytes) {
                 Ok(0) => break,
-                Ok(n) => output.extend_from_slice(&bytes[..n]),
+                Ok(n) => output.extend_from_slice(
+                    bytes
+                        .get(..n)
+                        .ok_or_else(|| io::Error::other("invalid PTY read length"))?,
+                ),
                 Err(e) if e.raw_os_error() == Some(libc::EIO) => break,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                     if std::time::Instant::now() >= deadline {
                         child.kill()?;
-                        child.wait()?;
+                        let _exit_status = child.wait()?;
                         return Err(io::Error::other("PTY smoke timed out"));
                     }
                     std::thread::sleep(std::time::Duration::from_millis(5));
@@ -432,9 +475,9 @@ mod tests {
             }
         }
         assert!(child.wait()?.success());
-        let output = String::from_utf8_lossy(&output);
-        assert!(output.contains("vitrallis-pty-ok"), "{output}");
-        assert!(output.contains("11 37"), "{output}");
+        let output_text = String::from_utf8_lossy(&output);
+        assert!(output_text.contains("vitrallis-pty-ok"), "{output_text}");
+        assert!(output_text.contains("11 37"), "{output_text}");
         assert!(child.try_wait()?.is_some());
         Ok(())
     }

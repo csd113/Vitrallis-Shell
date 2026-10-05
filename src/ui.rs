@@ -35,33 +35,39 @@ fn restore_shell_preferences(state: &mut Launcher) {
     }
 }
 
+fn hint(name: &str, value: &str) {
+    if !sdl2::hint::set(name, value) {
+        eprintln!("level=warn event=sdl_hint_rejected name={name} value={value}");
+    }
+}
+
 pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
     let (width, height) = config.size.unwrap_or_else(|| platform.resolution());
-    Layout::home(width, height)?;
-    sdl2::hint::set("SDL_VIDEO_ALLOW_SCREENSAVER", "1");
+    let _validated_layout = Layout::home(width, height)?;
+    hint("SDL_VIDEO_ALLOW_SCREENSAVER", "1");
     let sdl = sdl2::init().map_err(|e| format!("SDL init: {e}"))?;
     let video = sdl.video().map_err(|e| format!("SDL video: {e}"))?;
     sdl.mouse().show_cursor(false);
-    sdl2::hint::set("SDL_TOUCH_MOUSE_EVENTS", "0");
-    sdl2::hint::set("SDL_MOUSE_TOUCH_EVENTS", "0");
+    hint("SDL_TOUCH_MOUSE_EVENTS", "0");
+    hint("SDL_MOUSE_TOUCH_EVENTS", "0");
     // A touch used to focus the launcher must also deliver its matching press.
     // SDL otherwise consumes the first click after window activation.
-    sdl2::hint::set("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
-    let (canvas, info) = crate::renderer::backend::initialize(&video, config.renderer, || {
+    hint("SDL_MOUSE_FOCUS_CLICKTHROUGH", "1");
+    let (raw_canvas, info) = crate::renderer::backend::initialize(&video, config.renderer, || {
         let mut window = video.window("Vitrallis", u32::from(width), u32::from(height));
-        window.position_centered().hidden();
+        let _window_options = window.position_centered().hidden();
         if platform.fullscreen() {
-            window.fullscreen_desktop();
+            let _fullscreen_options = window.fullscreen_desktop();
         }
         window.build().map_err(|error| format!("window: {error}"))
     })?;
-    let font_creator = canvas.texture_creator();
-    let mut canvas = Screen::new(canvas, &font_creator)?;
+    let font_creator = raw_canvas.texture_creator();
+    let mut canvas = Screen::new(raw_canvas, &font_creator)?;
     eprintln!("{info}");
-    let layout = window_layout(&canvas)?;
+    let boot_layout = window_layout(&canvas)?;
     let animated = config.mode == crate::config::Mode::Launch && config.screenshot.is_none();
     let catalog = if config.mode == crate::config::Mode::Launch && config.screenshot.is_none() {
-        let Some(catalog) = crate::boot::load(&sdl, &mut canvas, &layout, || {
+        let Some(catalog) = crate::boot::load(&sdl, &mut canvas, &boot_layout, || {
             crate::discovery::load(config)
         })?
         else {
@@ -92,16 +98,21 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         }
     }
     state.renderer_info = Some(info);
-    state.settings.renderer = state
-        .renderer_info
-        .as_ref()
-        .map_or_else(String::new, |info| {
-            if info.sdl.name == info.actual.as_str() {
-                info.sdl.name.to_owned()
-            } else {
-                format!("{} {}", info.sdl.name, info.actual.as_str())
-            }
-        });
+    state.settings.renderer =
+        state
+            .renderer_info
+            .as_ref()
+            .map_or_else(String::new, |renderer_info| {
+                if renderer_info.sdl.name == renderer_info.actual.as_str() {
+                    renderer_info.sdl.name.to_owned()
+                } else {
+                    format!(
+                        "{} {}",
+                        renderer_info.sdl.name,
+                        renderer_info.actual.as_str()
+                    )
+                }
+            });
     sdl.mouse().show_cursor(state.preferences.show_cursor);
     if let Some(path) = &config.screenshot {
         let creator = canvas.texture_creator();
@@ -110,36 +121,60 @@ pub fn run(platform: &impl Platform, config: &Config) -> Result<(), String> {
         screenshot(&canvas, path)?;
         return Ok(());
     }
-    if let Some(((width, height), pixels)) = boot_frame {
-        let creator = canvas.texture_creator();
-        let textures = artwork(&creator, &state);
-        let mut overlay = creator
-            .create_texture_static(sdl2::pixels::PixelFormatEnum::RGB24, width, height)
-            .map_err(|e| e.to_string())?;
-        overlay
-            .update(
-                None,
-                &pixels,
-                usize::try_from(width).map_err(|_| "boot width")? * 3,
-            )
-            .map_err(|e| e.to_string())?;
-        overlay.set_blend_mode(sdl2::render::BlendMode::Blend);
-        for opacity in [224, 192, 160, 128, 96, 64, 32, 0] {
-            render(&mut canvas, &layout, &state, &textures)?;
-            overlay.set_alpha_mod(opacity);
-            canvas.copy(&overlay, None, None)?;
-            canvas.present();
-            std::thread::sleep(Duration::from_millis(16));
-        }
+    if let Some(((boot_width, boot_height), pixels)) = boot_frame {
+        fade_boot(
+            &mut canvas,
+            &layout,
+            &state,
+            (boot_width, boot_height),
+            &pixels,
+        )?;
     }
     event_loop(&sdl, &mut canvas, &layout, state, platform, config)
+}
+
+fn fade_boot(
+    canvas: &mut Screen,
+    layout: &Layout,
+    state: &Launcher,
+    (boot_width, boot_height): (u32, u32),
+    pixels: &[u8],
+) -> Result<(), String> {
+    let creator = canvas.texture_creator();
+    let textures = artwork(&creator, state);
+    let mut overlay = creator
+        .create_texture_static(
+            sdl2::pixels::PixelFormatEnum::RGB24,
+            boot_width,
+            boot_height,
+        )
+        .map_err(|e| e.to_string())?;
+    overlay
+        .update(
+            None,
+            pixels,
+            usize::try_from(boot_width)
+                .map_err(|error| format!("boot width: {error}"))?
+                .checked_mul(3)
+                .ok_or("boot pitch overflow")?,
+        )
+        .map_err(|e| e.to_string())?;
+    overlay.set_blend_mode(sdl2::render::BlendMode::Blend);
+    for opacity in [224, 192, 160, 128, 96, 64, 32, 0] {
+        render(canvas, layout, state, &textures)?;
+        overlay.set_alpha_mod(opacity);
+        canvas.copy(&overlay, None, None)?;
+        canvas.present();
+        std::thread::sleep(Duration::from_millis(16));
+    }
+    Ok(())
 }
 
 fn window_layout(canvas: &Screen) -> Result<Layout, String> {
     let (width, height) = canvas.window().size();
     Layout::home(
-        u16::try_from(width).map_err(|_| "window too wide")?,
-        u16::try_from(height).map_err(|_| "window too tall")?,
+        u16::try_from(width).map_err(|error| format!("window too wide: {error}"))?,
+        u16::try_from(height).map_err(|error| format!("window too tall: {error}"))?,
     )
 }
 
@@ -227,7 +262,9 @@ fn event_loop(
         last_present: Instant::now(),
         last_wait_error: None,
         next_poll: Instant::now(),
-        deadline: Instant::now() + Duration::from_secs(10),
+        deadline: Instant::now()
+            .checked_add(Duration::from_secs(10))
+            .ok_or("smoke deadline overflow")?,
         relaunch: relaunch::Services::default(),
     };
     loop {
@@ -264,8 +301,8 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
         }
         let event = queued
             .or_else(|| wait_event(self.events, self.state.phase, self.next_poll, self.dirty));
-        if let Some(event) = event
-            && self.input(event)? == Flow::Exit
+        if let Some(input_event) = event
+            && self.input(input_event)? == Flow::Exit
         {
             return Ok(Flow::Exit);
         }
@@ -340,7 +377,7 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
         if closing(&event) && !self.state.app_center.busy {
             return Ok(Flow::Exit);
         }
-        if matches!(event, Event::RenderDeviceReset { .. }) {
+        if matches!(event, Event::RenderDeviceReset { timestamp: _ }) {
             self.canvas.reset()?;
             self.textures.reset(self.creator, self.state);
             self.dirty = true;
@@ -349,14 +386,15 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
             event,
             Event::Window {
                 win_event: WindowEvent::SizeChanged(..) | WindowEvent::Resized(..),
-                ..
+                timestamp: _,
+                window_id: _
             }
         ) {
             let (width, height) = self.canvas.window().size();
             if width >= 320 && height >= 200 {
                 *self.layout = Layout::home(
-                    u16::try_from(width).map_err(|_| "window width")?,
-                    u16::try_from(height).map_err(|_| "window height")?,
+                    u16::try_from(width).map_err(|error| format!("window width: {error}"))?,
+                    u16::try_from(height).map_err(|error| format!("window height: {error}"))?,
                 )?;
                 self.pointer.clear();
                 self.desktop_input.clear();
@@ -369,7 +407,8 @@ impl<P: Platform> Heartbeat<'_, '_, '_, P> {
             event,
             Event::Window {
                 win_event: WindowEvent::FocusLost,
-                ..
+                timestamp: _,
+                window_id: _
             }
         ) {
             self.child.stop_focus_retry();
@@ -492,25 +531,52 @@ fn reorder(state: &mut Launcher, later: bool) -> Result<(), String> {
     let mut order: Vec<_> = state.apps.iter().map(|app| app.id.clone()).collect();
     let selected = state.selected;
     let next = if later {
-        (selected + 1).min(order.len().saturating_sub(1))
+        selected
+            .saturating_add(1)
+            .min(order.len().saturating_sub(1))
     } else {
         selected.saturating_sub(1)
     };
     if selected < order.len() {
-        let id = order[selected].clone();
+        let id = order
+            .get(selected)
+            .ok_or("Reorder selection disappeared")?
+            .clone();
         order.swap(selected, next);
         order.extend(
             state
                 .folders
                 .order
                 .iter()
-                .filter(|id| !state.apps.iter().any(|app| &app.id == *id))
+                .filter(|candidate| !state.apps.iter().any(|app| &app.id == *candidate))
                 .cloned(),
         );
         state.folders = crate::folders::Folders::change(crate::folders::Change::Reorder(order))?;
         state.rebuild_view(Some(&id));
     }
     Ok(())
+}
+
+fn open_desktop_menu(state: &mut Launcher, visible_index: Option<usize>) -> bool {
+    if let Some(index) = visible_index {
+        let Some(target) = state
+            .page_start()
+            .checked_add(index)
+            .filter(|target| *target < state.apps.len())
+        else {
+            return false;
+        };
+        state.selected = target;
+    }
+    state.desktop.folders = state.folders.clone();
+    state.desktop.folder_context = state
+        .apps
+        .get(state.selected)
+        .filter(|app| app.source == crate::app::AppSource::Folder)
+        .map(|app| app.id.clone())
+        .or_else(|| state.folder.clone());
+    state.desktop.menu(state.apps.get(state.selected).cloned());
+    true
 }
 
 fn desktop_event(
@@ -545,17 +611,9 @@ fn desktop_event(
             Some(DesktopAction::Focus) => (),
             Some(DesktopAction::Add) => state.desktop.add(),
             Some(DesktopAction::Menu(index)) => {
-                if let Some(index) = index {
-                    state.selected = state.page_start() + index;
+                if !open_desktop_menu(state, index) {
+                    return (false, false);
                 }
-                state.desktop.folders = state.folders.clone();
-                state.desktop.folder_context = state
-                    .apps
-                    .get(state.selected)
-                    .filter(|app| app.source == crate::app::AppSource::Folder)
-                    .map(|app| app.id.clone())
-                    .or_else(|| state.folder.clone());
-                state.desktop.menu(state.apps.get(state.selected).cloned());
             }
             None => return (false, false),
         }
@@ -584,7 +642,7 @@ fn desktop_event(
         let store = Store::current()?;
         match request {
             Request::Save => {
-                store.save(
+                let _saved_shortcut_id = store.save(
                     state.desktop.entry.as_ref().map(|app| app.id.as_str()),
                     &state.desktop.draft,
                 )?;
@@ -604,7 +662,7 @@ fn desktop_event(
             ..crate::discovery::Catalog::default()
         };
         crate::shortcuts::integrate(&mut catalog);
-        state.reload(catalog.apps)?;
+        let _reloaded_view = state.reload(catalog.apps)?;
         Ok::<_, String>(true)
     })();
     match result {
@@ -653,7 +711,13 @@ fn open_native(
             )?;
             canvas.present();
             process::activate(state, child, index);
-            state.apps[index].manifest.args.clear();
+            state
+                .apps
+                .get_mut(index)
+                .ok_or("Native app disappeared during activation")?
+                .manifest
+                .args
+                .clear();
             Ok(true)
         }
         Ok(None) => Ok(false),
@@ -668,7 +732,9 @@ fn poll_children(
     next_poll: &mut Instant,
 ) -> Result<Option<std::process::ExitStatus>, String> {
     if child.has_children() && Instant::now() >= *next_poll {
-        *next_poll = Instant::now() + Duration::from_millis(250);
+        *next_poll = Instant::now()
+            .checked_add(Duration::from_millis(250))
+            .ok_or("process poll deadline overflow")?;
         child.poll()
     } else {
         Ok(None)
@@ -682,7 +748,7 @@ fn refresh_shell(state: &mut Launcher, child: &mut ProcessSet) -> bool {
     }
     let stopped = child.background_policy(&state.settings.policy, Instant::now());
     for id in &stopped {
-        state.app_states.remove(id);
+        let _removed_app_state = state.app_states.remove(id);
     }
     if !stopped.is_empty() {
         let message = format!(
@@ -747,7 +813,9 @@ fn launch_from_center(
     if let Some(index) = state.apps.iter().position(|app| app.id == id) {
         state.app_center.open = false;
         state.selected = index;
-        let local = index - state.page_start();
+        let local = index
+            .checked_sub(state.page_start())
+            .ok_or("App selection is outside the visible page")?;
         handle_action(
             Some(Action::SelectAndActivate(local)),
             canvas,
@@ -816,7 +884,10 @@ fn terminate_selected(event: &Event, state: &mut Launcher, child: &mut impl Proc
             Event::KeyDown {
                 keycode: Some(Keycode::Escape),
                 repeat: false,
-                ..
+                timestamp: _,
+                window_id: _,
+                scancode: _,
+                keymod: _
             }
         )
     {
@@ -904,7 +975,9 @@ fn app_exited(state: &mut Launcher, status: std::process::ExitStatus, active: bo
         crate::settings::NetworkState::Open => Some(crate::settings::Page::Home),
         crate::settings::NetworkState::CalibrationOpen => Some(crate::settings::Page::Device),
         crate::settings::NetworkState::TimezoneOpen => Some(crate::settings::Page::DateTime),
-        _ => None,
+        crate::settings::NetworkState::Idle
+        | crate::settings::NetworkState::Requested
+        | crate::settings::NetworkState::CalibrationRequested => None,
     };
     if active && let Some(page) = return_page {
         state.settings.network = crate::settings::NetworkState::Idle;
@@ -944,6 +1017,10 @@ fn refresh_focus(child: &mut impl Processes, state: &mut Launcher) -> bool {
     true
 }
 
+#[allow(
+    clippy::wildcard_enum_match_arm,
+    reason = "This SDL handler consumes selected keyboard, pointer or window events; unrelated controller, audio, drop and platform events intentionally have no action"
+)]
 fn window_focus(
     event: &Event,
     state: &mut Launcher,
@@ -953,7 +1030,8 @@ fn window_focus(
     match event {
         Event::Window {
             win_event: WindowEvent::FocusLost,
-            ..
+            timestamp: _,
+            window_id: _,
         } => {
             state.opening = None;
             state.settings.lost_focus();
@@ -963,7 +1041,8 @@ fn window_focus(
         }
         Event::Window {
             win_event: WindowEvent::FocusGained,
-            ..
+            timestamp: _,
+            window_id: _,
         } => {
             state.returned_home();
             pointer.clear();
@@ -1009,24 +1088,26 @@ fn reload_catalog(config: &Config, state: &mut Launcher) -> bool {
 const fn closing(event: &Event) -> bool {
     matches!(
         event,
-        Event::Quit { .. }
+        Event::Quit { timestamp: _ }
             | Event::Window {
                 win_event: WindowEvent::Close,
-                ..
+                timestamp: _,
+                window_id: _
             }
     )
 }
 const fn exposed(event: &Event) -> bool {
     matches!(
         event,
-        Event::RenderTargetsReset { .. }
+        Event::RenderTargetsReset { timestamp: _ }
             | Event::Window {
                 win_event: WindowEvent::Exposed
                     | WindowEvent::Shown
                     | WindowEvent::Restored
                     | WindowEvent::SizeChanged(..)
                     | WindowEvent::Resized(..),
-                ..
+                timestamp: _,
+                window_id: _
             }
     )
 }
@@ -1035,13 +1116,63 @@ const fn exposed(event: &Event) -> bool {
 const fn panel_input(event: &Event) -> bool {
     matches!(
         event,
-        Event::KeyDown { .. }
-            | Event::TextInput { .. }
-            | Event::MouseButtonDown { .. }
-            | Event::MouseButtonUp { .. }
-            | Event::FingerDown { .. }
-            | Event::FingerUp { .. }
-            | Event::MouseWheel { .. }
+        Event::KeyDown {
+            timestamp: _,
+            window_id: _,
+            keycode: _,
+            scancode: _,
+            keymod: _,
+            repeat: _
+        } | Event::TextInput {
+            timestamp: _,
+            window_id: _,
+            text: _
+        } | Event::MouseButtonDown {
+            timestamp: _,
+            window_id: _,
+            which: _,
+            mouse_btn: _,
+            clicks: _,
+            x: _,
+            y: _
+        } | Event::MouseButtonUp {
+            timestamp: _,
+            window_id: _,
+            which: _,
+            mouse_btn: _,
+            clicks: _,
+            x: _,
+            y: _
+        } | Event::FingerDown {
+            timestamp: _,
+            touch_id: _,
+            finger_id: _,
+            x: _,
+            y: _,
+            dx: _,
+            dy: _,
+            pressure: _
+        } | Event::FingerUp {
+            timestamp: _,
+            touch_id: _,
+            finger_id: _,
+            x: _,
+            y: _,
+            dx: _,
+            dy: _,
+            pressure: _
+        } | Event::MouseWheel {
+            timestamp: _,
+            window_id: _,
+            which: _,
+            x: _,
+            y: _,
+            direction: _,
+            precise_x: _,
+            precise_y: _,
+            mouse_x: _,
+            mouse_y: _
+        }
     )
 }
 
@@ -1082,13 +1213,13 @@ fn translate_action(
 }
 
 fn refresh_system(
-    worker: &mut Option<crate::platform::system::Worker>,
+    workers: &mut Option<crate::platform::system::Worker>,
     settings: &mut crate::settings::Settings,
 ) -> bool {
     let mut dirty = settings.expire();
     dirty |= settings.updater.poll();
     dirty |= settings.poll_storage();
-    if let Some(worker) = worker {
+    if let Some(worker) = workers {
         if let Some(update) = worker.update() {
             dirty |= settings.system_state != crate::settings::SystemState::Ready;
             settings.system_state = crate::settings::SystemState::Ready;
@@ -1129,23 +1260,25 @@ fn refresh_system(
         settings.system_state = crate::settings::SystemState::Unavailable;
         dirty = true;
     }
-    if settings.power_transition.is_none() && worker.as_ref().is_some_and(|worker| !worker.pending)
+    if settings.power_transition.is_none() && workers.as_ref().is_some_and(|worker| !worker.pending)
     {
-        for index in 0..2 {
-            if let Some(value) = settings.queued[index].take() {
-                let command = if index == 0 {
-                    crate::platform::system::Control::Brightness(value)
-                } else {
-                    crate::platform::system::Control::Volume(value)
-                };
-                submit_setting(
-                    Some(crate::settings::Request::Control(command)),
-                    worker,
-                    settings,
-                );
-                dirty = true;
-                break;
-            }
+        let next = settings
+            .queued
+            .iter_mut()
+            .enumerate()
+            .find_map(|(index, queued)| queued.take().map(|value| (index, value)));
+        if let Some((index, value)) = next {
+            let command = if index == 0 {
+                crate::platform::system::Control::Brightness(value)
+            } else {
+                crate::platform::system::Control::Volume(value)
+            };
+            submit_setting(
+                Some(crate::settings::Request::Control(command)),
+                workers,
+                settings,
+            );
+            dirty = true;
         }
     }
     if settings.open && settings.page == crate::settings::Page::Updates {
@@ -1160,7 +1293,7 @@ fn refresh_system(
 }
 fn submit_setting(
     request: Option<crate::settings::Request>,
-    worker: &mut Option<crate::platform::system::Worker>,
+    workers: &mut Option<crate::platform::system::Worker>,
     settings: &mut crate::settings::Settings,
 ) {
     if settings.power_transition.is_some() {
@@ -1196,12 +1329,13 @@ fn submit_setting(
                 | Control::Radio(_, _) => None,
             };
             if let Some((index, value)) = slider
-                && worker.as_ref().is_some_and(|worker| worker.pending)
+                && workers.as_ref().is_some_and(|worker| worker.pending)
+                && let Some(queued) = settings.queued.get_mut(index)
             {
-                settings.queued[index] = Some(value);
+                *queued = Some(value);
                 return;
             }
-            let result = worker
+            let result = workers
                 .as_mut()
                 .ok_or_else(|| "System controls unavailable".into())
                 .and_then(|worker| worker.submit(command));
@@ -1213,7 +1347,11 @@ fn submit_setting(
                     Control::ReadTimezone => {
                         settings.timezone = crate::settings::TimezoneState::Reading;
                     }
-                    _ => {}
+                    Control::Radio(_, _)
+                    | Control::Brightness(_)
+                    | Control::Volume(_)
+                    | Control::Power(_)
+                    | Control::ScreenTimeout(_) => {}
                 }
                 settings.applying = match command {
                     Control::Brightness(value) => Some((0, value)),
@@ -1226,21 +1364,21 @@ fn submit_setting(
                 };
             }
             settings.message = result.map_or_else(|error| error, |()| "Applying...".into());
-            settings.pending = worker.as_ref().is_some_and(|worker| worker.pending);
+            settings.pending = workers.as_ref().is_some_and(|worker| worker.pending);
         }
         None => {}
     }
 }
 // Called only after presenting the acknowledgement frame, before any power command.
 fn submit_power_after_present(
-    worker: &mut Option<crate::platform::system::Worker>,
+    workers: &mut Option<crate::platform::system::Worker>,
     settings: &mut crate::settings::Settings,
 ) -> bool {
     use crate::{platform::system::Control, settings::PowerTransition};
     let Some(PowerTransition::Requested(power)) = settings.power_transition else {
         return false;
     };
-    let result = worker
+    let result = workers
         .as_mut()
         .ok_or_else(|| "System controls unavailable".to_owned())
         .and_then(|worker| worker.submit(Control::Power(power)));
@@ -1323,18 +1461,23 @@ fn open_network(state: &mut Launcher, child: &mut impl Processes) {
 }
 
 fn handle_action(
-    action: Option<Action>,
+    requested_action: Option<Action>,
     canvas: &mut Screen,
     layout: &Layout,
     state: &mut Launcher,
     icons: &[Option<Texture<'_>>],
     child: &mut impl Processes,
 ) -> Result<bool, String> {
-    let Some(mut action) = action else {
+    let Some(mut action) = requested_action else {
         return Ok(false);
     };
     if let Action::SelectAndActivate(index) = action {
-        action = Action::SelectAndActivate(state.page_start() + index);
+        action = Action::SelectAndActivate(
+            state
+                .page_start()
+                .checked_add(index)
+                .ok_or("App selection overflow")?,
+        );
     }
     let before = (
         state.selected,
@@ -1428,7 +1571,10 @@ fn open_requested(state: &mut Launcher, child: &mut impl Processes) -> bool {
     match state.settings.network {
         crate::settings::NetworkState::Requested => open_network(state, child),
         crate::settings::NetworkState::CalibrationRequested => open_calibration(state, child),
-        _ => return false,
+        crate::settings::NetworkState::Idle
+        | crate::settings::NetworkState::Open
+        | crate::settings::NetworkState::CalibrationOpen
+        | crate::settings::NetworkState::TimezoneOpen => return false,
     }
     true
 }
@@ -1456,7 +1602,11 @@ mod tests {
         }
 
         let _lock = crate::test_support::sdl_lock();
-        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        assert!(
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+            "dummy video must be available for this fixture"
+        );
         let sdl = sdl2::init()?;
         let video = sdl.video()?;
         let raw = video
@@ -1472,7 +1622,7 @@ mod tests {
         let scratch = crate::test_support::Scratch::new()?;
         let note = scratch.0.join("a saved note ! é.txt");
         std::fs::write(&note, "saved text\n")?;
-        let note = note.canonicalize()?;
+        let canonical_note = note.canonicalize()?;
         let app = AppEntry {
             id: "io.vitrallis.notepad".into(),
             source: AppSource::Native,
@@ -1487,7 +1637,10 @@ mod tests {
         let mut state = Launcher::new(vec![app], 3, 6)?;
         let broker = crate::native::broker(&mut state)?;
         let sender = UnixDatagram::unbound()?;
-        sender.send_to(note.as_os_str().as_bytes(), &broker.path)?;
+        assert_eq!(
+            sender.send_to(canonical_note.as_os_str().as_bytes(), &broker.path)?,
+            canonical_note.as_os_str().as_bytes().len()
+        );
         state.phase = Phase::Running;
         let mut child = Capture::default();
         state.settings.open = true;
@@ -1511,7 +1664,10 @@ mod tests {
         )?);
         let launched = child.0.ok_or("Notepad was not dispatched")?;
         assert_eq!(launched.id, "io.vitrallis.notepad");
-        assert_eq!(launched.manifest.args, ["--".into(), note.into_os_string()]);
+        assert_eq!(
+            launched.manifest.args,
+            ["--".into(), canonical_note.into_os_string()]
+        );
         assert_eq!(state.phase, Phase::Launching);
         Ok(())
     }
@@ -1523,7 +1679,11 @@ mod tests {
     }
 
     fn measure_idle_loop(tor_panel: bool) -> Result<(), String> {
-        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        assert!(
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+            "dummy video must be available for this fixture"
+        );
         let sdl = sdl2::init()?;
         let video = sdl.video()?;
         let window = video
@@ -1531,13 +1691,13 @@ mod tests {
             .hidden()
             .build()
             .map_err(|e| e.to_string())?;
-        let canvas = window
+        let raw_canvas = window
             .into_canvas()
             .software()
             .build()
             .map_err(|e| e.to_string())?;
-        let creator = canvas.texture_creator();
-        let mut canvas = Screen::new(canvas, &creator)?;
+        let creator = raw_canvas.texture_creator();
+        let mut canvas = Screen::new(raw_canvas, &creator)?;
         let layout = Layout::home(480, 272)?;
         let sender = sdl.event()?.event_sender();
         let stop = std::thread::spawn(move || {
@@ -1559,7 +1719,8 @@ mod tests {
             &crate::platform::generic::Generic,
             &Config::default(),
         );
-        stop.join().map_err(|_| "idle benchmark timer failed")??;
+        stop.join()
+            .map_err(|payload| format!("idle benchmark timer failed: {payload:?}"))??;
         result?;
         let counts = crate::renderer::performance::snapshot();
         eprintln!(
@@ -1593,25 +1754,25 @@ mod tests {
             window_id: 0,
             which: 0,
             mousestate: sdl2::mouse::MouseState::from_sdl_state(0),
-            x: 20,
-            y: 20,
-            xrel: 1,
-            yrel: 1,
+            x: 20_i32,
+            y: 20_i32,
+            xrel: 1_i32,
+            yrel: 1_i32,
         };
         state.settings.show();
-        for _ in 0..200 {
+        for _ in 0_i32..200_i32 {
             assert!(!translate_action(&motion, &layout, &mut state, &mut pointer, &mut worker).1);
         }
         state.settings.cancel();
         state.app_center.open = true;
-        for _ in 0..200 {
+        for _ in 0_i32..200_i32 {
             assert!(!translate_action(&motion, &layout, &mut state, &mut pointer, &mut worker).1);
         }
         assert!(!panel_input(&Event::User {
             timestamp: 0,
             window_id: 0,
             type_: 0,
-            code: 0,
+            code: 0_i32,
             data1: std::ptr::null_mut(),
             data2: std::ptr::null_mut()
         }));
@@ -1622,7 +1783,9 @@ mod tests {
     /// Start on the launch worker and wait for the owned child to exist.
     fn started(child: &mut ProcessSet, app: &crate::app::AppEntry) -> Result<(), String> {
         child.start(app)?;
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_secs(10))
+            .ok_or("Test deadline overflow")?;
         loop {
             match child.poll_launch() {
                 Some(Ok(_)) => return Ok(()),
@@ -1635,12 +1798,12 @@ mod tests {
 
     /// Poll the launch result the way the event loop does, with a bound.
     fn wait_launch(state: &mut Launcher, child: &mut impl Processes) -> bool {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let started = Instant::now();
         loop {
             if refresh_launch(state, child) {
                 return true;
             }
-            if Instant::now() >= deadline {
+            if started.elapsed() >= Duration::from_secs(5) {
                 return false;
             }
             std::thread::sleep(Duration::from_millis(2));
@@ -1660,7 +1823,8 @@ mod tests {
         struct Fake;
         impl Processes for Fake {
             fn start(&mut self, _: &AppEntry) -> Result<(), String> {
-                STARTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let _previous_start_count =
+                    STARTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
             }
             fn poll(&mut self) -> Result<Option<std::process::ExitStatus>, String> {
@@ -1671,7 +1835,7 @@ mod tests {
             }
         }
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
-        let id = apps[0].id.clone();
+        let id = apps.first().ok_or("Missing fixture element")?.id.clone();
         let mut state = Launcher::new(apps, 3, 6)?;
         STARTS.store(0, std::sync::atomic::Ordering::SeqCst);
         let mut child = ProcessSet::<Fake>::default();
@@ -1695,7 +1859,7 @@ mod tests {
         assert_eq!(state.app_state(&id), AppState::RunningForeground);
         assert_eq!(starts(), 1);
         // Returning to the main menu backgrounds the app: never terminates it.
-        state.input(Action::Back);
+        assert_eq!(state.input(Action::Back), None);
         child.returned_home();
         state.sync_states(&child);
         assert_eq!(state.phase, Phase::Ready);
@@ -1742,7 +1906,7 @@ mod tests {
             }
         }
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
-        let id = apps[0].id.clone();
+        let id = apps.first().ok_or("Missing fixture element")?.id.clone();
         let mut state = Launcher::new(apps, 3, 6)?;
         let mut child = ProcessSet::<Broken>::default();
         assert_eq!(state.input(Action::Activate), Some(0));
@@ -1772,8 +1936,14 @@ mod tests {
         }
         let mut state = Launcher::new(apps, 3, 6)?;
         let mut child = ProcessSet::default();
-        started(&mut child, &state.apps[0])?;
-        started(&mut child, &state.apps[1])?;
+        started(
+            &mut child,
+            state.apps.first().ok_or("Missing fixture element")?,
+        )?;
+        started(
+            &mut child,
+            state.apps.get(1).ok_or("Missing fixture element")?,
+        )?;
         state.sync_states(&child);
         let mut event = Event::KeyDown {
             timestamp: 0,
@@ -1785,14 +1955,27 @@ mod tests {
         };
         assert!(!terminate_selected(&event, &mut state, &mut child));
         if let Event::KeyDown {
-            keycode, repeat, ..
+            keycode,
+            repeat,
+            timestamp: _,
+            window_id: _,
+            scancode: _,
+            keymod: _,
         } = &mut event
         {
             *keycode = Some(Keycode::Escape);
             *repeat = true;
         }
         assert!(!terminate_selected(&event, &mut state, &mut child));
-        if let Event::KeyDown { repeat, .. } = &mut event {
+        if let Event::KeyDown {
+            repeat,
+            timestamp: _,
+            window_id: _,
+            keycode: _,
+            scancode: _,
+            keymod: _,
+        } = &mut event
+        {
             *repeat = false;
         }
         state.settings.open = true;
@@ -1812,11 +1995,23 @@ mod tests {
 
         assert!(terminate_selected(&event, &mut state, &mut child));
         assert_eq!(
-            state.app_state(&state.apps[1].id),
+            state.app_state(&state.apps.get(1).ok_or("Missing fixture element")?.id),
             crate::process::AppState::RunningForeground
         );
-        assert_eq!(child.running_ids(), [state.apps[1].id.clone()]);
-        assert!(!state.app_state(&state.apps[0].id).is_running());
+        assert_eq!(
+            child.running_ids(),
+            [state
+                .apps
+                .get(1)
+                .ok_or("Missing fixture element")?
+                .id
+                .clone()]
+        );
+        assert!(
+            !state
+                .app_state(&state.apps.first().ok_or("Missing fixture element")?.id)
+                .is_running()
+        );
         assert_eq!(state.selected, 0);
         assert_eq!(state.phase, Phase::Ready);
         assert!(!terminate_selected(&event, &mut state, &mut child));
@@ -1854,11 +2049,13 @@ mod tests {
                 .map_err(|error| error.to_string())?,
             Control::Brightness(Percent::new(20)?)
         );
-        let deadline = Instant::now() + Duration::from_secs(3);
-        while worker.as_ref().is_some_and(|worker| worker.pending)
+        let deadline = Instant::now()
+            .checked_add(Duration::from_secs(3))
+            .ok_or("Test deadline overflow")?;
+        while worker.as_ref().is_some_and(|backend| backend.pending)
             || settings.queued.iter().any(Option::is_some)
         {
-            refresh_system(&mut worker, &mut settings);
+            let _system_redraw = refresh_system(&mut worker, &mut settings);
             if Instant::now() >= deadline {
                 return Err("slider worker timeout".into());
             }
@@ -1889,12 +2086,12 @@ mod tests {
         }
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
         let mut state = Launcher::new(apps, 3, 6)?;
-        state.input(Action::Activate);
+        assert_eq!(state.input(Action::Activate), Some(0_usize));
         assert_eq!(state.phase, Phase::Launching);
         assert!(state.opening.is_some());
         // A window that never appears leaves the launch tracked but reports the
         // outcome without breaking the Shell.
-        refresh_focus(&mut Missing, &mut state);
+        assert!(refresh_focus(&mut Missing, &mut state));
         assert!(state.error.is_none());
         assert!(state.opening.is_none());
         assert_eq!(state.phase, Phase::Ready);
@@ -1924,7 +2121,7 @@ mod tests {
             state.settings.network = network;
             let mut pointer = PointerInput::default();
             let mut accept_after = Instant::now();
-            window_focus(
+            let _focus_redraw = window_focus(
                 &Event::Window {
                     timestamp: 0,
                     window_id: 1,
@@ -1988,7 +2185,7 @@ mod tests {
         state.launching("Test");
         state.launched("Test");
         state.settings.network = crate::settings::NetworkState::Open;
-        app_exited(&mut state, std::process::ExitStatus::from_raw(0), true);
+        let _exit_redraw = app_exited(&mut state, std::process::ExitStatus::from_raw(0), true);
         let mut pointer = PointerInput::default();
         let mut accept_after = Instant::now();
         let event = Event::Window {
@@ -1996,14 +2193,15 @@ mod tests {
             window_id: 1,
             win_event: WindowEvent::FocusLost,
         };
-        window_focus(&event, &mut state, &mut pointer, &mut accept_after);
+        let _focus_redraw = window_focus(&event, &mut state, &mut pointer, &mut accept_after);
         assert!(state.settings.open);
         assert_eq!(state.settings.network, crate::settings::NetworkState::Idle);
         state.settings.status.power_controls = true;
         state.settings.page(crate::settings::Page::Home);
-        state.settings.input(Action::SelectAndActivate(14));
+        assert_eq!(state.settings.input(Action::SelectAndActivate(14)), None);
         assert!(state.settings.confirmation.is_some());
-        window_focus(&event, &mut state, &mut pointer, &mut accept_after);
+        let _restored_focus_redraw =
+            window_focus(&event, &mut state, &mut pointer, &mut accept_after);
         assert!(state.settings.open);
         assert!(state.settings.confirmation.is_none());
         assert_eq!(state.settings.selected, 0);
@@ -2036,8 +2234,8 @@ mod tests {
             which: 0,
             mouse_btn: MouseButton::Left,
             clicks: 1,
-            x: 80,
-            y: 80,
+            x: 80_i32,
+            y: 80_i32,
         };
         assert_eq!(
             pointer.action(&release, &layout, state.visible_count()),
@@ -2049,8 +2247,8 @@ mod tests {
             which: 0,
             mouse_btn: MouseButton::Left,
             clicks: 1,
-            x: 80,
-            y: 80,
+            x: 80_i32,
+            y: 80_i32,
         };
         assert_eq!(pointer.action(&press, &layout, state.visible_count()), None);
         let action = pointer
@@ -2125,9 +2323,11 @@ mod power_tests {
                     &mut settings,
                 );
                 assert!(!submit_power_after_present(&mut worker, &mut settings));
-                let deadline = Instant::now() + Duration::from_secs(3);
+                let deadline = Instant::now()
+                    .checked_add(Duration::from_secs(3))
+                    .ok_or("Test deadline overflow")?;
                 while settings.pending {
-                    refresh_system(&mut worker, &mut settings);
+                    let _system_redraw = refresh_system(&mut worker, &mut settings);
                     if Instant::now() >= deadline {
                         return Err("power worker timeout".into());
                     }

@@ -33,7 +33,7 @@ pub fn app_data(home: &Path, id: &str) -> io::Result<PathBuf> {
 /// # Errors
 /// Rejects the same invalid home paths and identities as [`app_data`].
 pub fn app_dir(home: &Path, id: &str) -> io::Result<PathBuf> {
-    app_data(home, id)?;
+    let _validated_data_path = app_data(home, id)?;
     Ok(home.join("Documents/Vitrallis/Apps").join(id))
 }
 
@@ -83,11 +83,11 @@ fn create_at(home: &Path, id: &str) -> io::Result<PathBuf> {
         }
     }
     let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
+    let _recursive_builder = builder.recursive(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
+        let _private_builder = builder.mode(0o700);
     }
     builder.create(&path)?;
     Ok(path)

@@ -10,16 +10,16 @@ use vitrallis_native::ui::{self, Input, Ui};
 /// # Errors
 /// Reports SDL initialization errors; PTY/shell failures are shown in a dismissible dialog.
 pub fn run() -> Result<(), String> {
-    let (options, command) = command::parse(std::env::args_os().skip(1).collect())?;
-    let Some(options) = options else {
+    let (parsed_options, command) = command::parse(std::env::args_os().skip(1).collect())?;
+    let Some(options) = parsed_options else {
         return Ok(());
     };
     if options.path.is_some() {
         return Err("Terminal does not accept a file path".into());
     }
-    let session = vitrallis_native::ui::Session::new("Terminal", &options)?;
-    let creator = session.canvas.texture_creator();
-    let mut ui = Ui::new(session, &creator)?;
+    let display = vitrallis_native::ui::Session::new("Terminal", &options)?;
+    let creator = display.canvas.texture_creator();
+    let mut ui = Ui::new(display, &creator)?;
     let _inbox = ui.inbox("terminal")?;
     let (rows, cols) = model::geometry(ui.width, ui.height, ui.scale);
     let mut terminal = Terminal::new(rows, cols);
@@ -27,11 +27,11 @@ pub fn run() -> Result<(), String> {
         terminal
             .process(b"\x1b[1;36mTerminal\x1b[0m\r\nNative PTY / UTF-8 / bounded scrollback\r\n$ ");
         render(&mut ui, &terminal, false)?;
-        ui.finish_preview(&options)?;
+        let _finished_preview = ui.finish_preview(&options)?;
         return Ok(());
     }
     let (program, args) = match command::launch(command) {
-        Ok(command) => command,
+        Ok(invocation) => invocation,
         Err(e) => {
             ui.error(&e.to_string())?;
             return Ok(());
@@ -87,7 +87,7 @@ impl Session {
         if let Some(message) = end {
             render(ui, &self.terminal, self.menu)?;
             ui.present();
-            ui.choose("Terminal closed", &message, &["Close"])?;
+            let _closed_terminal = ui.choose("Terminal closed", &message, &["Close"])?;
             return Ok(None);
         }
         let replies = &mut self.terminal.parser.callbacks_mut().bytes;
@@ -126,7 +126,7 @@ impl Session {
                 )
                 .map(|choice| choice == 1);
         }
-        let rows = isize::try_from(self.terminal.parser.screen().size().0).unwrap_or(1);
+        let page_rows = isize::try_from(self.terminal.parser.screen().size().0).unwrap_or(1);
         match input {
             Input::Resize => {
                 let (rows, cols) = model::geometry(ui.width, ui.height, ui.scale);
@@ -136,9 +136,11 @@ impl Session {
                 }
             }
             Input::Key(Keycode::F10, m) if ui::shift(m) => self.menu = !self.menu,
-            Input::Key(Keycode::PageUp, m) if ui::shift(m) => self.scroll(rows),
-            Input::Key(Keycode::PageDown, m) if ui::shift(m) => self.scroll(-rows),
-            Input::Scroll(y) => self.scroll(isize::try_from(y).unwrap_or(0) * 3),
+            Input::Key(Keycode::PageUp, m) if ui::shift(m) => self.scroll(page_rows),
+            Input::Key(Keycode::PageDown, m) if ui::shift(m) => {
+                self.scroll(page_rows.saturating_neg());
+            }
+            Input::Scroll(y) => self.scroll(isize::try_from(y).unwrap_or(0).saturating_mul(3)),
             Input::Key(Keycode::Return | Keycode::KpEnter, _) if self.menu => {
                 terminal_menu(ui, &mut self.process)?;
                 self.menu = false;
@@ -147,7 +149,7 @@ impl Session {
                 if ui
                     .row_at(
                         y,
-                        ui.height - model::status_height(ui.scale),
+                        ui.height.saturating_sub(model::status_height(ui.scale)),
                         model::status_height(ui.scale),
                         1,
                     )
@@ -169,7 +171,7 @@ impl Session {
                     self.send(ui, &bytes)?;
                 }
             }
-            _ => {}
+            Input::Click(_, _) | Input::Wake | Input::Close | Input::Ignore => {}
         }
         Ok(false)
     }
@@ -195,19 +197,19 @@ fn terminal_menu(ui: &mut Ui, process: &mut pty::Pty) -> Result<(), String> {
 fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
     let scale = ui.scale;
     let status_h = model::status_height(scale);
-    let viewport = ui.height - status_h;
+    let viewport = ui.height.saturating_sub(status_h);
     ui.clear();
     let screen = terminal.parser.screen();
     let (rows, cols) = screen.size();
     // Output fills the screen top-down: no title bar, no decorative chrome.
     for row in 0..rows {
-        let y = i32::from(row) * 9 * scale;
-        if y + 8 * scale > viewport {
+        let y = i32::from(row).saturating_mul(9_i32).saturating_mul(scale);
+        if y.saturating_add(8_i32.saturating_mul(scale)) > viewport {
             break;
         }
         for col in 0..cols {
             if let Some(cell) = screen.cell(row, col) {
-                let x = i32::from(col) * ui.cell();
+                let x = i32::from(col).saturating_mul(ui.cell());
                 let mut fg = color(cell.fgcolor(), TEXT);
                 let mut bg = color(cell.bgcolor(), BACKGROUND);
                 if cell.inverse() {
@@ -215,7 +217,12 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
                 }
                 if bg != BACKGROUND {
                     ui.fill(
-                        Rect::new(x, y, ui.cell().unsigned_abs(), 9 * scale.unsigned_abs()),
+                        Rect::new(
+                            x,
+                            y,
+                            ui.cell().unsigned_abs(),
+                            9_u32.saturating_mul(scale.unsigned_abs()),
+                        ),
                         bg,
                     )?;
                 }
@@ -225,7 +232,15 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
                     }
                 }
                 if cell.underline() {
-                    ui.fill(Rect::new(x, y + 8 * scale, ui.cell().unsigned_abs(), 1), fg)?;
+                    ui.fill(
+                        Rect::new(
+                            x,
+                            y.saturating_add(8_i32.saturating_mul(scale)),
+                            ui.cell().unsigned_abs(),
+                            1,
+                        ),
+                        fg,
+                    )?;
                 }
             }
         }
@@ -234,17 +249,22 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
     // drawn only when the viewport itself is at the current output.
     if !screen.hide_cursor() && screen.scrollback() == 0 {
         let (row, col) = screen.cursor_position();
-        let y = i32::from(row) * 9 * scale;
-        if row < rows && col < cols && y + 8 * scale <= viewport {
-            let x = i32::from(col) * ui.cell();
-            let cell = screen.cell(row, col);
+        let y = i32::from(row).saturating_mul(9_i32).saturating_mul(scale);
+        if row < rows && col < cols && y.saturating_add(8_i32.saturating_mul(scale)) <= viewport {
+            let x = i32::from(col).saturating_mul(ui.cell());
+            let cursor_cell = screen.cell(row, col);
             // A filled block cursor stays visible over every cell colour, and the
             // glyph beneath it is redrawn in the inverted ink.
             ui.fill(
-                Rect::new(x, y, ui.cell().unsigned_abs(), 8 * scale.unsigned_abs()),
+                Rect::new(
+                    x,
+                    y,
+                    ui.cell().unsigned_abs(),
+                    8_u32.saturating_mul(scale.unsigned_abs()),
+                ),
                 vitrallis_native::theme::ACCENT,
             )?;
-            if let Some(cell) = cell
+            if let Some(cell) = cursor_cell
                 && !cell.is_wide_continuation()
             {
                 for ch in cell.contents().chars().filter(|c| *c != ' ') {
@@ -259,7 +279,7 @@ fn render(ui: &mut Ui, terminal: &Terminal, menu: bool) -> Result<(), String> {
 /// Lower status line: title, scrollback position and the two shortcuts that are
 /// not discoverable from the prompt.
 fn status(ui: &mut Ui, terminal: &Terminal, menu: bool, status_h: i32) -> Result<(), String> {
-    let y = ui.height - status_h;
+    let y = ui.height.saturating_sub(status_h);
     let scale = ui.scale;
     ui.fill(
         Rect::new(0, y, ui.width.unsigned_abs(), status_h.unsigned_abs()),
@@ -278,15 +298,15 @@ fn status(ui: &mut Ui, terminal: &Terminal, menu: bool, status_h: i32) -> Result
     ui.text(
         "Terminal",
         5,
-        y + scale,
+        y.saturating_add(scale),
         ui.width / 3,
         vitrallis_native::theme::ACCENT,
     )?;
     ui.text(
         &state,
-        5 + (ui.width / 3),
-        y + scale,
-        ui.width - 10 - (ui.width / 3),
+        (ui.width / 3).saturating_add(5),
+        y.saturating_add(scale),
+        ui.width.saturating_sub(10).saturating_sub(ui.width / 3),
         vitrallis_native::theme::MUTED,
     )
 }
@@ -314,13 +334,24 @@ fn color(color: vt100::Color, default: Color) -> Color {
         vt100::Color::Rgb(r, g, b) => Color::RGB(r, g, b),
         vt100::Color::Idx(index) => {
             let (r, g, b) = if index < 16 {
-                BASE[usize::from(index)]
+                BASE.get(usize::from(index))
+                    .copied()
+                    .unwrap_or((default.r, default.g, default.b))
             } else if index >= 232 {
-                let value = 8 + 10 * (index - 232);
+                let value = index
+                    .saturating_sub(232)
+                    .saturating_mul(10)
+                    .saturating_add(8);
                 (value, value, value)
             } else {
-                let n = index - 16;
-                let part = |p| if p == 0 { 0 } else { 55 + 40 * p };
+                let n = index.saturating_sub(16);
+                let part = |p: u8| {
+                    if p == 0 {
+                        0
+                    } else {
+                        p.saturating_mul(40).saturating_add(55)
+                    }
+                };
                 (part(n / 36), part(n / 6 % 6), part(n % 6))
             };
             Color::RGB(r, g, b)

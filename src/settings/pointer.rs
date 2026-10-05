@@ -13,6 +13,10 @@ enum Phase {
     Move,
     Up,
 }
+#[allow(
+    clippy::wildcard_enum_match_arm,
+    reason = "This SDL handler consumes selected keyboard, pointer or window events; unrelated controller, audio, drop and platform events intentionally have no action"
+)]
 fn contact(event: &Event, layout: &Layout) -> Option<(ContactId, Phase, f64, f64)> {
     let (id, phase, x, y) = match *event {
         Event::MouseButtonDown {
@@ -20,7 +24,9 @@ fn contact(event: &Event, layout: &Layout) -> Option<(ContactId, Phase, f64, f64
             mouse_btn: MouseButton::Left,
             x,
             y,
-            ..
+            timestamp: _,
+            window_id: _,
+            clicks: _,
         } if which != u32::MAX => (
             ContactId::Mouse(which),
             Phase::Down,
@@ -32,14 +38,25 @@ fn contact(event: &Event, layout: &Layout) -> Option<(ContactId, Phase, f64, f64
             mouse_btn: MouseButton::Left,
             x,
             y,
-            ..
+            timestamp: _,
+            window_id: _,
+            clicks: _,
         } if which != u32::MAX => (
             ContactId::Mouse(which),
             Phase::Up,
             f64::from(x),
             f64::from(y),
         ),
-        Event::MouseMotion { which, x, y, .. } if which != u32::MAX => (
+        Event::MouseMotion {
+            which,
+            x,
+            y,
+            timestamp: _,
+            window_id: _,
+            mousestate: _,
+            xrel: _,
+            yrel: _,
+        } if which != u32::MAX => (
             ContactId::Mouse(which),
             Phase::Move,
             f64::from(x),
@@ -50,7 +67,10 @@ fn contact(event: &Event, layout: &Layout) -> Option<(ContactId, Phase, f64, f64
             finger_id,
             x,
             y,
-            ..
+            timestamp: _,
+            dx: _,
+            dy: _,
+            pressure: _,
         } => (
             ContactId::Finger(touch_id, finger_id),
             Phase::Down,
@@ -62,7 +82,10 @@ fn contact(event: &Event, layout: &Layout) -> Option<(ContactId, Phase, f64, f64
             finger_id,
             x,
             y,
-            ..
+            timestamp: _,
+            dx: _,
+            dy: _,
+            pressure: _,
         } => (
             ContactId::Finger(touch_id, finger_id),
             Phase::Move,
@@ -74,7 +97,10 @@ fn contact(event: &Event, layout: &Layout) -> Option<(ContactId, Phase, f64, f64
             finger_id,
             x,
             y,
-            ..
+            timestamp: _,
+            dx: _,
+            dy: _,
+            pressure: _,
         } => (
             ContactId::Finger(touch_id, finger_id),
             Phase::Up,
@@ -92,7 +118,12 @@ impl Settings {
             Page::Wireless => i32::try_from(super::wireless::WIRELESS_ROWS).unwrap_or(4),
             Page::Applications => i32::try_from(super::preferences::APP_ROWS).unwrap_or(3),
             Page::DateTime | Page::Device => 2,
-            _ => 4,
+            Page::Home
+            | Page::Display
+            | Page::Tor
+            | Page::TorDetails
+            | Page::Storage
+            | Page::Updates => 4,
         }
     }
     fn pointer_targets<'a>(
@@ -112,20 +143,28 @@ impl Settings {
             Page::Tor => tor,
             Page::Storage => match self.storage_view {
                 super::StorageView::Overview => storage,
-                super::StorageView::Apps => &rows[..self.storage_rows()],
-                _ => &[],
+                super::StorageView::Apps => rows.get(..self.storage_rows()).unwrap_or(&[]),
+                super::StorageView::App(_) | super::StorageView::Categories => &[],
             },
             Page::Updates => &geometry.confirmation,
             Page::Display => &geometry.controls[..2],
-            Page::Timezones => &rows[..self.visible_zones()],
-            _ => rows,
+            Page::Timezones => rows.get(..self.visible_zones()).unwrap_or(&[]),
+            Page::DateTime | Page::Wireless | Page::Applications | Page::Device => rows,
         }
     }
     pub fn event(&mut self, event: &Event, layout: &Layout) -> Option<Request> {
         if !self.open {
             return None;
         }
-        if let Event::KeyDown { .. } = event {
+        if let Event::KeyDown {
+            timestamp: _,
+            window_id: _,
+            keycode: _,
+            scancode: _,
+            keymod: _,
+            repeat: _,
+        } = event
+        {
             self.clear_pointer();
             return crate::input::action(event, layout, 0).and_then(|action| self.input(action));
         }
@@ -161,7 +200,7 @@ impl Settings {
                         && self.available(i)
                 }) {
                     self.selected = index;
-                    self.preview = slider_value(x, geometry.tracks[index])
+                    self.preview = slider_value(x, geometry.tracks.get(index).copied()?)
                         .map(|value| self.normalize(index, value));
                     return self.preview.and_then(|value| self.adjust(index, value));
                 }
@@ -177,14 +216,13 @@ impl Settings {
                     && self.confirmation.is_none()
                     && self.available(index)
                 {
-                    let track = geometry.tracks[index];
+                    let track = geometry.tracks.get(index).copied()?;
                     let position =
                         ((x - f64::from(track.x)) * 100. / f64::from(track.w)).clamp(0., 100.);
                     // A small dead band stops resistive-touch jitter flipping adjacent steps.
-                    let value = if self
-                        .preview
-                        .is_some_and(|previous| (position - f64::from(previous.value())).abs() < 7.)
-                    {
+                    let value = if self.preview.is_some_and(|previous| {
+                        (position - f64::from(previous.value())).abs() < 7.0_f64
+                    }) {
                         self.preview
                     } else {
                         slider_value(x, track).map(|value| self.normalize(index, value))
@@ -195,14 +233,14 @@ impl Settings {
                         self.clear_pointer();
                     }
                     if changed {
-                        return value.and_then(|value| self.adjust(index, value));
+                        return value.and_then(|requested| self.adjust(index, requested));
                     }
                 } else if matches!(phase, Phase::Up) {
                     self.clear_pointer();
                     if hit == Some(index) {
                         if self.page == Page::Device
                             && index == 0
-                            && x < f64::from(layout.width) / 3.
+                            && x < f64::from(layout.width) / 3.0_f64
                         {
                             self.selected = 0;
                             return self.timeout(false);
@@ -220,7 +258,7 @@ fn slider_value(x: f64, track: crate::layout::Rect) -> Option<Percent> {
     // The small closed range avoids lossy float-to-integer casts for touch data.
     (0..=100)
         .step_by(10)
-        .find(|&v| position <= f64::from(v) + 5.)
+        .find(|&v| position <= f64::from(v) + 5.0_f64)
         .and_then(|v| Percent::new(v).ok())
 }
 
@@ -275,7 +313,7 @@ mod tests {
         for (width, height) in [(480, 272), (800, 480)] {
             let layout = Layout::home(width, height)?;
             let button = PanelLayout::new(&layout).confirmation[1];
-            let (x, y) = (button.x + 5, button.y + 5);
+            let (x, y) = (button.x + 5_i32, button.y + 5_i32);
             let mut settings = Settings::default();
             settings.show();
             settings.page(Page::Updates);
@@ -293,14 +331,16 @@ mod tests {
                 settings.event(&mouse(false, x, y), &layout),
                 Some(Request::RelaunchUpdate)
             );
-            let x = f32::from(u16::try_from(x).map_err(|e| e.to_string())?) / f32::from(width);
-            let y = f32::from(u16::try_from(y).map_err(|e| e.to_string())?) / f32::from(height);
+            let finger_x =
+                f32::from(u16::try_from(x).map_err(|e| e.to_string())?) / f32::from(width);
+            let finger_y =
+                f32::from(u16::try_from(y).map_err(|e| e.to_string())?) / f32::from(height);
             let down = Event::FingerDown {
                 timestamp: 0,
                 touch_id: 1,
                 finger_id: 7,
-                x,
-                y,
+                x: finger_x,
+                y: finger_y,
                 dx: 0.,
                 dy: 0.,
                 pressure: 1.,
@@ -309,8 +349,8 @@ mod tests {
                 timestamp: 0,
                 touch_id: 1,
                 finger_id: 7,
-                x,
-                y,
+                x: finger_x,
+                y: finger_y,
                 dx: 0.,
                 dy: 0.,
                 pressure: 0.,
@@ -331,30 +371,43 @@ mod tests {
         // Home option 5 is Device.
         let option = PanelLayout::home(&layout)[5];
         for down in [true, false] {
-            settings.event(&mouse(down, option.x + 10, option.y + 10), &layout);
+            assert_eq!(
+                settings.event(&mouse(down, option.x + 10, option.y + 10), &layout),
+                None
+            );
         }
         assert_eq!(settings.page, Page::Device);
         assert_eq!(settings.event(&mouse(false, 40, 80), &layout), None);
-        settings.event(&mouse(true, 40, 80), &layout);
+        assert_eq!(settings.event(&mouse(true, 40, 80), &layout), None);
         assert_eq!(
             settings.event(&mouse(false, 40, 80), &layout),
             Some(Request::Control(Control::ScreenTimeout(30)))
         );
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         // Home option 1 is Date & Time, which lists the time zone.
-        let option = PanelLayout::home(&layout)[1];
+        let date_option = PanelLayout::home(&layout)[1];
         for down in [true, false] {
-            settings.event(&mouse(down, option.x + 10, option.y + 10), &layout);
+            assert_eq!(
+                settings.event(
+                    &mouse(down, date_option.x + 10, date_option.y + 10),
+                    &layout
+                ),
+                None
+            );
         }
         assert_eq!(settings.page, Page::DateTime);
         // The Time zone row opens the bounded zone list, and a zone applies.
-        let row = PanelLayout::rows(&layout, 2)[1];
+        let row = *PanelLayout::rows(&layout, 2)
+            .get(1)
+            .ok_or("Missing fixture element")?;
         for down in [true, false] {
-            settings.event(&mouse(down, 200, row.y + 5), &layout);
+            assert_eq!(settings.event(&mouse(down, 200, row.y + 5), &layout), None);
         }
         assert_eq!(settings.page, Page::Timezones);
-        let zone = PanelLayout::rows(&layout, 5)[0];
-        settings.event(&mouse(true, 200, zone.y + 5), &layout);
+        let zone = *PanelLayout::rows(&layout, 5)
+            .first()
+            .ok_or("Missing fixture element")?;
+        assert_eq!(settings.event(&mouse(true, 200, zone.y + 5), &layout), None);
         assert_eq!(
             settings.event(&mouse(false, 200, zone.y + 5), &layout),
             Some(Request::Control(Control::Timezone(0)))
@@ -366,15 +419,15 @@ mod tests {
     fn update_buttons_require_matched_release_and_focus_cancels_touch() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let button = PanelLayout::new(&layout).confirmation[1];
-        let (x, y) = (button.x + 5, button.y + 5);
+        let (x, y) = (button.x + 5_i32, button.y + 5_i32);
         let mut settings = Settings::default();
         settings.show();
         settings.page(Page::Updates);
         assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
-        settings.event(&mouse(true, x, y), &layout);
+        assert_eq!(settings.event(&mouse(true, x, y), &layout), None);
         settings.lost_focus();
         assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
-        settings.event(&mouse(true, x, y), &layout);
+        assert_eq!(settings.event(&mouse(true, x, y), &layout), None);
         assert_eq!(
             settings.event(&mouse(false, x, y), &layout),
             Some(Request::CheckUpdates)
@@ -383,8 +436,8 @@ mod tests {
             crate::settings::UpdateConfirmation::Install,
             std::time::Instant::now(),
         ));
-        settings.event(&mouse(true, x, y), &layout);
-        settings.input(Action::Back);
+        assert_eq!(settings.event(&mouse(true, x, y), &layout), None);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
         Ok(())
     }
@@ -392,7 +445,7 @@ mod tests {
     fn restore_footer_opens_confirmation_from_mouse_and_touch() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let footer = PanelLayout::footer(&layout)[1];
-        let (x, y) = (footer.x + 5, footer.y + footer.h - 5);
+        let (x, y) = (footer.x + 5_i32, footer.y + footer.h - 5_i32);
         let mut settings = Settings::default();
         settings.updater.restore_available = true;
         settings.show();
@@ -403,7 +456,7 @@ mod tests {
         assert_eq!(settings.event(&mouse(false, x, y), &layout), None);
         assert!(settings.update_confirmation.is_some());
         assert_eq!(settings.selected, 0);
-        settings.input(Action::Activate);
+        assert_eq!(settings.input(Action::Activate), None);
         assert!(settings.update_confirmation.is_none());
         // The same control releases for a finger.
         let nx = f32::from(u16::try_from(x).map_err(|e| e.to_string())?) / f32::from(layout.width);
@@ -436,7 +489,10 @@ mod tests {
         }
         assert!(settings.update_confirmation.is_some());
         // Only a second activation of the confirm button completes the action.
-        settings.input(Action::Move(crate::navigation::Direction::Right));
+        assert_eq!(
+            settings.input(Action::Move(crate::navigation::Direction::Right)),
+            None
+        );
         assert_eq!(
             settings.input(Action::Activate),
             Some(Request::RestorePrevious)
@@ -447,7 +503,7 @@ mod tests {
     fn touch_steps_are_tens_and_jitter_does_not_reverse_a_step() -> Result<(), String> {
         let layout = Layout::home(480, 272)?;
         let track = PanelLayout::new(&layout).tracks[0];
-        for offset in 0..=track.w {
+        for offset in 0_i32..=track.w {
             let value = slider_value(f64::from(track.x + offset), track).ok_or("slider value")?;
             assert_eq!(value.value() % 10, 0);
         }
@@ -467,27 +523,50 @@ mod tests {
         );
         assert_eq!(settings.value(0), Some(Percent::new(10)?));
         settings.clear_pointer();
-        settings.event(&mouse(true, track.x + track.w / 2, track.y), &layout);
+        assert!(matches!(
+            settings.event(&mouse(true, track.x + track.w / 2, track.y), &layout),
+            Some(Request::Control(Control::Brightness(_)))
+        ));
         let mut motion = Event::MouseMotion {
             timestamp: 0,
             window_id: 1,
             which: 0,
             mousestate: sdl2::mouse::MouseState::from_sdl_state(1),
-            x: track.x + track.w * 56 / 100,
+            x: track.x + track.w * 56_i32 / 100_i32,
             y: track.y,
-            xrel: 0,
-            yrel: 0,
+            xrel: 0_i32,
+            yrel: 0_i32,
         };
         assert_eq!(settings.event(&motion, &layout), None);
-        if let Event::MouseMotion { x, .. } = &mut motion {
-            *x = track.x + track.w * 60 / 100;
+        if let Event::MouseMotion {
+            x,
+            timestamp: _,
+            window_id: _,
+            which: _,
+            mousestate: _,
+            y: _,
+            xrel: _,
+            yrel: _,
+        } = &mut motion
+        {
+            *x = track.x + track.w * 60_i32 / 100_i32;
         }
         assert_eq!(
             settings.event(&motion, &layout),
             Some(Request::Control(Control::Brightness(Percent::new(60)?)))
         );
-        if let Event::MouseMotion { x, .. } = &mut motion {
-            *x = track.x + track.w * 54 / 100;
+        if let Event::MouseMotion {
+            x,
+            timestamp: _,
+            window_id: _,
+            which: _,
+            mousestate: _,
+            y: _,
+            xrel: _,
+            yrel: _,
+        } = &mut motion
+        {
+            *x = track.x + track.w * 54_i32 / 100_i32;
         }
         assert_eq!(settings.event(&motion, &layout), None);
         assert_eq!(settings.value(0), Some(Percent::new(60)?));
@@ -530,13 +609,35 @@ mod tests {
         assert_eq!(settings.event(&up, &layout), None);
         assert!(settings.contact.is_none());
         let mut synthetic = mouse(true, 240, 80);
-        if let Event::MouseButtonDown { which, .. } = &mut synthetic {
+        if let Event::MouseButtonDown {
+            which,
+            timestamp: _,
+            window_id: _,
+            mouse_btn: _,
+            clicks: _,
+            x: _,
+            y: _,
+        } = &mut synthetic
+        {
             *which = u32::MAX;
         }
         assert_eq!(settings.event(&synthetic, &layout), None);
         assert!(settings.contact.is_none());
-        settings.event(&down, &layout);
-        if let Event::FingerUp { finger_id, .. } = &mut up {
+        assert!(matches!(
+            settings.event(&down, &layout),
+            Some(Request::Control(Control::Brightness(_)))
+        ));
+        if let Event::FingerUp {
+            finger_id,
+            timestamp: _,
+            touch_id: _,
+            x: _,
+            y: _,
+            dx: _,
+            dy: _,
+            pressure: _,
+        } = &mut up
+        {
             *finger_id = 7;
         }
         assert!(matches!(
@@ -574,10 +675,10 @@ mod tests {
                 window_id: 1,
                 which: 0,
                 mousestate: sdl2::mouse::MouseState::from_sdl_state(1),
-                x: track.x + track.w + 100,
+                x: track.x + track.w + 100_i32,
                 y: track.y,
-                xrel: 0,
-                yrel: 0,
+                xrel: 0_i32,
+                yrel: 0_i32,
             };
             assert_eq!(
                 settings.event(&motion, &layout),
@@ -592,14 +693,17 @@ mod tests {
                 settings.event(&mouse(false, track.x, track.y), &layout),
                 None
             );
-            settings.event(&mouse(true, track.x, track.y), &layout);
+            assert!(matches!(
+                settings.event(&mouse(true, track.x, track.y), &layout),
+                Some(Request::Control(Control::Brightness(_)))
+            ));
             settings.cancel();
             settings.show();
             assert_eq!(
                 settings.event(&mouse(false, track.x, track.y), &layout),
                 None
             );
-            assert!(track.w > 0);
+            assert!(track.w > 0_i32);
         }
         Ok(())
     }
@@ -616,9 +720,15 @@ mod storage_tests {
         for (index, expected) in [(0, StorageView::Apps), (1, StorageView::Categories)] {
             settings.show();
             settings.page(Page::Storage);
-            let bounds = PanelLayout::storage_actions(&layout)[index];
-            let x = f32::from(u16::try_from(bounds.x + 4).map_err(|_| "x")?) / 480.;
-            let y = f32::from(u16::try_from(bounds.y + 4).map_err(|_| "y")?) / 272.;
+            let bounds = *PanelLayout::storage_actions(&layout)
+                .get(index)
+                .ok_or("Missing fixture element")?;
+            let x =
+                f32::from(u16::try_from(bounds.x + 4_i32).map_err(|error| format!("x: {error}"))?)
+                    / 480.;
+            let y =
+                f32::from(u16::try_from(bounds.y + 4_i32).map_err(|error| format!("y: {error}"))?)
+                    / 272.;
             let down = Event::FingerDown {
                 timestamp: 0,
                 touch_id: 1,
@@ -639,10 +749,10 @@ mod storage_tests {
                 dy: 0.,
                 pressure: 0.,
             };
-            settings.event(&up, &layout);
+            assert_eq!(settings.event(&up, &layout), None);
             assert_eq!(settings.storage_view, StorageView::Overview);
-            settings.event(&down, &layout);
-            settings.event(&up, &layout);
+            assert_eq!(settings.event(&down, &layout), None);
+            assert_eq!(settings.event(&up, &layout), None);
             assert_eq!(settings.storage_view, expected);
         }
         Ok(())

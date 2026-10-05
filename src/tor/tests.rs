@@ -64,7 +64,7 @@ fn tor_actions_have_shared_keyboard_and_touch_targets() -> Result<(), String> {
     settings.page(Page::Wireless);
     // Tor is the fourth content row of Wireless Network.
     settings.selected = 3;
-    settings.input(Action::Activate);
+    assert_eq!(settings.input(Action::Activate), None);
     assert_eq!(settings.page, Page::Tor);
     for (index, control) in [
         Control::Start,
@@ -77,24 +77,28 @@ fn tor_actions_have_shared_keyboard_and_touch_targets() -> Result<(), String> {
     .enumerate()
     {
         settings.selected = index;
-        settings.input(Action::Activate);
+        assert_eq!(settings.input(Action::Activate), None);
         assert_eq!(settings.tor_control.take(), Some(control));
-        settings.input(Action::SelectAndActivate(index));
+        assert_eq!(settings.input(Action::SelectAndActivate(index)), None);
         assert_eq!(settings.tor_control.take(), Some(control));
     }
-    settings.input(Action::SelectAndActivate(5));
+    assert_eq!(settings.input(Action::SelectAndActivate(5)), None);
     assert_eq!(settings.page, Page::TorDetails);
     // Detail pages are read-only: Enter and Escape both step back one level.
-    settings.input(Action::Activate);
+    assert_eq!(settings.input(Action::Activate), None);
     assert_eq!(settings.page, Page::Tor);
-    settings.input(Action::SelectAndActivate(5));
+    assert_eq!(settings.input(Action::SelectAndActivate(5)), None);
     assert_eq!(settings.page, Page::TorDetails);
-    settings.input(Action::Back);
+    assert_eq!(settings.input(Action::Back), None);
     assert_eq!(settings.page, Page::Tor);
-    settings.input(Action::Back);
+    assert_eq!(settings.input(Action::Back), None);
     assert_eq!(settings.page, Page::Wireless);
     let geometry = PanelLayout::tor_controls(&Layout::home(480, 272)?);
-    assert!(geometry.iter().all(|rect| rect.w >= 100 && rect.h >= 30));
+    assert!(
+        geometry
+            .iter()
+            .all(|rect| rect.w >= 100_i32 && rect.h >= 30_i32)
+    );
     Ok(())
 }
 
@@ -114,7 +118,9 @@ fn drain(
     processes: &mut crate::process::ProcessSet<FakeApp>,
 ) -> Result<Option<Result<String, String>>, String> {
     use crate::process::Processes;
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now()
+        .checked_add(std::time::Duration::from_secs(5))
+        .ok_or("Test deadline overflow")?;
     loop {
         if let Some(outcome) = processes.poll_launch() {
             return Ok(Some(outcome));
@@ -165,7 +171,10 @@ fn required_launch_waits_for_readiness_and_fails_closed_while_preferred_can_cont
             // reported as "no child yet" rather than as a completed launch.
             if requirement == Requirement::None {
                 let started = launched(&mut processes)?;
-                started.map_err(|error| format!("Tor-free app must start: {error}"))?;
+                assert_eq!(
+                    started.map_err(|error| format!("Tor-free app must start: {error}"))?,
+                    app.id
+                );
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
                 continue;
             }
@@ -184,15 +193,23 @@ fn required_launch_waits_for_readiness_and_fails_closed_while_preferred_can_cont
                     state: State::Connected,
                     ..Snapshot::default()
                 };
-                processes.poll_focus()?;
+                let _completed_focus = processes.poll_focus()?;
                 let started = launched(&mut processes)?;
-                started.map_err(|error| format!("An app with ready Tor must start: {error}"))?;
+                assert_eq!(
+                    started
+                        .map_err(|error| format!("An app with ready Tor must start: {error}"))?,
+                    app.id
+                );
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
             } else {
-                result?;
+                let _completed_operation = result?;
                 let started = launched(&mut processes)?;
-                started
-                    .map_err(|error| format!("An app with connected Tor must start: {error}"))?;
+                assert_eq!(
+                    started.map_err(|error| format!(
+                        "An app with connected Tor must start: {error}"
+                    ))?,
+                    app.id
+                );
                 assert_eq!(processes.running_ids(), [app.id.clone()]);
             }
         }
@@ -242,8 +259,8 @@ fn tor_buttons_use_matched_pointer_release_and_visible_keyboard_focus() -> Resul
             which: 0,
             mouse_btn: MouseButton::Left,
             clicks: 1,
-            x: bounds.x + bounds.w / 2,
-            y: bounds.y + bounds.h / 2,
+            x: bounds.x + bounds.w / 2_i32,
+            y: bounds.y + bounds.h / 2_i32,
         };
         let up = Event::MouseButtonUp {
             timestamp: 0,
@@ -251,20 +268,23 @@ fn tor_buttons_use_matched_pointer_release_and_visible_keyboard_focus() -> Resul
             which: 0,
             mouse_btn: MouseButton::Left,
             clicks: 1,
-            x: bounds.x + bounds.w / 2,
-            y: bounds.y + bounds.h / 2,
+            x: bounds.x + bounds.w / 2_i32,
+            y: bounds.y + bounds.h / 2_i32,
         };
-        touch.event(&down, &layout);
+        assert_eq!(touch.event(&down, &layout), None);
         assert!(touch.tor_control.is_none());
-        touch.event(&up, &layout);
+        assert_eq!(touch.event(&up, &layout), None);
         let mut keyboard = Settings::default();
         keyboard.show();
         keyboard.page(Page::Tor);
         for _ in 0..index {
-            keyboard.input(Action::Move(crate::navigation::Direction::Right));
+            assert_eq!(
+                keyboard.input(Action::Move(crate::navigation::Direction::Right)),
+                None
+            );
         }
         assert_eq!(keyboard.selected, index);
-        keyboard.input(Action::Activate);
+        assert_eq!(keyboard.input(Action::Activate), None);
         assert_eq!(keyboard.tor_control, touch.tor_control);
         assert_eq!(keyboard.page, touch.page);
     }

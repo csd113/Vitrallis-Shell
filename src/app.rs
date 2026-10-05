@@ -101,7 +101,12 @@ mod tests {
         app.manifest.entry = "relative".into();
         assert!(app.validate().is_err());
         app.manifest.entry = "/bin/demo".into();
-        app.manifest.env.insert("BAD=KEY".into(), "value".into());
+        assert!(
+            app.manifest
+                .env
+                .insert("BAD=KEY".into(), "value".into())
+                .is_none()
+        );
         assert!(app.validate().is_err());
         app.manifest.env.clear();
         app.manifest.args.push("bad\0arg".into());

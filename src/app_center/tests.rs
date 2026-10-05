@@ -55,7 +55,7 @@ fn managed_discovery_keeps_canonical_authority_and_independent_custom_aliases() 
     install::install(&loc, &install::prepare(&loc, package, files)?)?;
     let mut catalog = crate::discovery::Catalog::default();
     discovery::installed(&mut catalog, &loc)?;
-    let managed = catalog.apps[0].clone();
+    let managed = (*catalog.apps.first().ok_or("Missing fixture element")?).clone();
     let mut alias = managed.clone();
     alias.source = crate::app::AppSource::PocketHome;
     alias.id = "imported-alias".into();
@@ -141,20 +141,26 @@ pub(super) fn generic() -> Result<(Package, Files), String> {
         ("requirements.txt".into(), b"# no dependencies\n".to_vec()),
         ("assets/greeting.txt".into(), b"Hello".to_vec()),
     ]);
-    let v = metadata::manifest(&files["app.toml"])?;
+    let v = metadata::manifest(files.get("app.toml").ok_or("Missing fixture element")?)?;
     let origin = sources::Repository::parse("example/catalog")?;
     let p = Package {
         runtime: metadata::RuntimeKind::Python,
         origin: origin.clone(),
         repository: origin,
-        id: v["id"].as_str().ok_or("id")?.into(),
-        name: v["name"].as_str().ok_or("name")?.into(),
+        id: (*v.get("id").ok_or("Missing fixture element")?)
+            .as_str()
+            .ok_or("id")?
+            .into(),
+        name: (*v.get("name").ok_or("Missing fixture element")?)
+            .as_str()
+            .ok_or("name")?
+            .into(),
         description: "Fixture application".into(),
         changelog: None,
         icon: None,
         version: metadata::version("0.1.0")?,
         entry: "main.py".into(),
-        permissions: v["permissions"].clone(),
+        permissions: (*v.get("permissions").ok_or("Missing fixture element")?).clone(),
         installable: true,
         notes: "Fixture".into(),
         commit: "a".repeat(40),
@@ -197,13 +203,19 @@ fn sources_normalize_persist_batch_and_keep_default() -> Result<(), String> {
     )?;
     assert_eq!(s.catalogs.len(), 3);
     s.remove(0);
-    assert_eq!(s.catalogs[0].as_str(), sources::DEFAULT);
+    assert_eq!(
+        (*s.catalogs.first().ok_or("Missing fixture element")?).as_str(),
+        sources::DEFAULT
+    );
     s.save(&loc.sources)?;
-    let mut s = Sources::load(&loc.sources)?;
-    s.edit(Some(1), "new/repo")?;
-    s.remove(1);
-    s.save(&loc.sources)?;
-    assert_eq!(Sources::load(&loc.sources)?.catalogs, s.catalogs);
+    let mut reloaded_sources = Sources::load(&loc.sources)?;
+    reloaded_sources.edit(Some(1), "new/repo")?;
+    reloaded_sources.remove(1);
+    reloaded_sources.save(&loc.sources)?;
+    assert_eq!(
+        Sources::load(&loc.sources)?.catalogs,
+        reloaded_sources.catalogs
+    );
     for input in [
         "http://github.com/a/b",
         "https://evil.test/a/b",
@@ -218,7 +230,7 @@ fn sources_normalize_persist_batch_and_keep_default() -> Result<(), String> {
         assert!(sources::Repository::parse(input).is_err(), "{input}");
     }
     let bytes = std::fs::read(&loc.sources).map_err(|e| e.to_string())?;
-    assert!(s.edit(None, "bad").is_err());
+    assert!(reloaded_sources.edit(None, "bad").is_err());
     assert_eq!(
         std::fs::read(&loc.sources).map_err(|e| e.to_string())?,
         bytes
@@ -233,8 +245,15 @@ fn default_catalog_lists_both_apps_and_respects_installation_flags() -> Result<(
         &origin,
         include_bytes!("../../tests/fixtures/app-center/catalog.json"),
     )?;
-    let mut fetch = transport(&packages[0], &Files::new())?;
-    replace_catalog(&mut fetch, &packages[0], &packages)?;
+    let mut fetch = transport(
+        packages.first().ok_or("Missing fixture element")?,
+        &Files::new(),
+    )?;
+    replace_catalog(
+        &mut fetch,
+        packages.first().ok_or("Missing fixture element")?,
+        &packages,
+    )?;
 
     let rows = check_all(&loc, &Sources::default(), &fetch, |_| ());
     assert_eq!(
@@ -258,11 +277,18 @@ fn default_catalog_lists_both_apps_and_respects_installation_flags() -> Result<(
     let mut messages = Vec::new();
     for update in receive {
         match update {
-            Update::Rows(rows) => {
-                displayed_names = rows.into_iter().map(|row| row.package.name).collect();
+            Update::Rows(updated_rows) => {
+                displayed_names = updated_rows
+                    .into_iter()
+                    .map(|row| row.package.name)
+                    .collect();
             }
             Update::Done(result, _) => messages.push(result?),
-            _ => (),
+            Update::Sources(_)
+            | Update::Progress(_)
+            | Update::Row(_)
+            | Update::Confirm(_, _)
+            | Update::SelectedInstalled(_) => (),
         }
     }
     assert_eq!(displayed_names, ["Bitcoin Dashboard", "Vitrallis Debug"]);
@@ -276,7 +302,11 @@ fn default_catalog_lists_both_apps_and_respects_installation_flags() -> Result<(
     for package in &mut packages {
         package.installable = false;
     }
-    replace_catalog(&mut fetch, &packages[0], &packages)?;
+    replace_catalog(
+        &mut fetch,
+        packages.first().ok_or("Missing fixture element")?,
+        &packages,
+    )?;
     let disabled = check_all(&loc, &Sources::default(), &fetch, |_| ());
     assert_eq!(disabled.len(), 2);
     assert!(
@@ -292,9 +322,12 @@ fn actual_catalog_and_manifest_contracts_reject_malicious_metadata() -> Result<(
     let bytes = std::fs::read(fixture("catalog.json")).map_err(|e| e.to_string())?;
     let origin = sources::Repository::parse(sources::DEFAULT)?;
     let p = metadata::catalog(&origin, &bytes)?;
-    assert_eq!(p[0].directory, "apps/bitcoin-dashboard");
-    assert_eq!(p[0].entry, "main.py");
-    assert!(p[0].installable);
+    assert_eq!(
+        p.first().ok_or("Missing fixture element")?.directory,
+        "apps/bitcoin-dashboard"
+    );
+    assert_eq!(p.first().ok_or("Missing fixture element")?.entry, "main.py");
+    assert!(p.first().ok_or("Missing fixture element")?.installable);
     assert!(metadata::json(br#"{"a":1,"a":2}"#).is_err());
     assert!(metadata::json(br#"{"nested":{"a":1,"a":2}}"#).is_err());
     for names in [
@@ -313,13 +346,18 @@ fn actual_catalog_and_manifest_contracts_reject_malicious_metadata() -> Result<(
     assert!(metadata::version("1.10.0")? > metadata::version("1.9.0")?);
     let v = metadata::json(&bytes)?;
     for (key, bad) in [
-        ("installable", serde_json::json!(1)),
+        ("installable", serde_json::json!(1_i32)),
         ("version", serde_json::json!("01.0.0")),
         ("id", serde_json::json!("../bad")),
         ("runtime", serde_json::json!("shell")),
     ] {
         let mut next = v.clone();
-        next["apps"][0][key] = bad;
+        drop(
+            next.pointer_mut("/apps/0")
+                .and_then(serde_json::Value::as_object_mut)
+                .ok_or("Missing app fixture")?
+                .insert(key.into(), bad),
+        );
         assert!(
             metadata::catalog(
                 &origin,
@@ -328,20 +366,26 @@ fn actual_catalog_and_manifest_contracts_reject_malicious_metadata() -> Result<(
             .is_err()
         );
     }
-    let (p, files) = generic()?;
-    metadata::validate_bundle(&p, &files)?;
+    let (bundle_package, files) = generic()?;
+    metadata::validate_bundle(&bundle_package, &files)?;
     let mut bad = files.clone();
     bad.get_mut("main.py").ok_or("main")?.push(0);
-    assert!(metadata::validate_bundle(&p, &bad).is_err());
-    let mut bad = files.clone();
-    bad.insert(
+    assert!(metadata::validate_bundle(&bundle_package, &bad).is_err());
+    let mut manifest_files = files.clone();
+    drop(manifest_files.insert(
         "app.toml".into(),
         b"manifest_version = 1\nmanifest_version = 1".to_vec(),
+    ));
+    assert!(
+        metadata::validate_bundle(
+            &inventory(bundle_package.clone(), &manifest_files),
+            &manifest_files
+        )
+        .is_err()
     );
-    assert!(metadata::validate_bundle(&inventory(p.clone(), &bad), &bad).is_err());
-    let mut p = p;
-    p.name = "disagreement".into();
-    assert!(metadata::validate_bundle(&p, &files).is_err());
+    let mut disagreeing_package = bundle_package;
+    disagreeing_package.name = "disagreement".into();
+    assert!(metadata::validate_bundle(&disagreeing_package, &files).is_err());
     Ok(())
 }
 struct FixtureFetch {
@@ -400,7 +444,7 @@ fn transport(p: &Package, files: &Files) -> Result<FixtureFetch, String> {
     let source = p.repository.as_str();
     let mut responses = BTreeMap::new();
     let mut add = |url: String, v: serde_json::Value| -> Result<(), String> {
-        responses.insert(url, serde_json::to_vec(&v).map_err(|e| e.to_string())?);
+        drop(responses.insert(url, serde_json::to_vec(&v).map_err(|e| e.to_string())?));
         Ok(())
     };
     add(
@@ -437,13 +481,13 @@ fn transport(p: &Package, files: &Files) -> Result<FixtureFetch, String> {
         serde_json::json!({"truncated":false,"tree":p.files.iter().map(|f|serde_json::json!({"path":f.path,"size":f.size,"type":"blob","mode":"100644"})).collect::<Vec<_>>()}),
     )?;
     for (name, bytes) in files {
-        responses.insert(
+        drop(responses.insert(
             format!(
                 "https://raw.githubusercontent.com/{source}/{}/{}/{name}",
                 p.commit, p.directory
             ),
             bytes.clone(),
-        );
+        ));
     }
     Ok(FixtureFetch {
         responses,
@@ -454,29 +498,47 @@ fn transport(p: &Package, files: &Files) -> Result<FixtureFetch, String> {
 fn branch_resolution_complete_inventory_and_partial_failures() -> Result<(), String> {
     let (mut p, files) = generic()?;
     let mut fetch = transport(&p, &files)?;
-    assert_eq!(network::catalog(&fetch, &p.origin)?[0].key(), p.key());
+    assert_eq!(
+        (*network::catalog(&fetch, &p.origin)?
+            .first()
+            .ok_or("Missing fixture element")?)
+        .key(),
+        p.key()
+    );
     assert_eq!(network::bundle(&fetch, &p, |_| Ok(()))?, files);
     let tree = format!(
         "https://api.github.com/repos/{}/git/trees/{}?recursive=1",
         p.repository.as_str(),
         "d".repeat(40)
     );
-    let original = fetch.responses[&tree].clone();
+    let original = (*fetch
+        .responses
+        .get(&tree)
+        .ok_or("Missing fixture element")?)
+    .clone();
     for change in ["symlink", "truncated", "extra"] {
         let mut v = metadata::json(&original)?;
         match change {
-            "symlink" => v["tree"][0]["mode"] = "120000".into(),
-            "truncated" => v["truncated"] = true.into(),
+            "symlink" => {
+                *v.get_mut("tree")
+                    .and_then(|entries| entries.get_mut(0))
+                    .and_then(|entry| entry.get_mut("mode"))
+                    .ok_or("Missing Git mode fixture")? = "120000".into();
+            }
+            "truncated" => {
+                *v.get_mut("truncated")
+                    .ok_or("Missing tree status fixture")? = true.into();
+            }
             _ => {
-                v["tree"].as_array_mut().ok_or("tree")?.push(
-                    serde_json::json!({"path":"hidden.py","size":0,"type":"blob","mode":"100644"}),
+                v.get_mut("tree").ok_or("Missing tree fixture")?.as_array_mut().ok_or("tree")?.push(
+                    serde_json::json!({"path":"hidden.py","size":0_i32,"type":"blob","mode":"100644"}),
                 );
             }
         }
-        fetch.responses.insert(
+        drop(fetch.responses.insert(
             tree.clone(),
             serde_json::to_vec(&v).map_err(|e| e.to_string())?,
-        );
+        ));
         assert!(network::bundle(&fetch, &p, |_| Ok(())).is_err());
     }
     let (_scratch, loc) = locations()?;
@@ -484,13 +546,29 @@ fn branch_resolution_complete_inventory_and_partial_failures() -> Result<(), Str
     sources.catalogs.push(p.origin.clone());
     // Disabled entries retain their latest version without any file requests.
     p.installable = false;
-    let mut fetch = transport(&p, &files)?;
-    fetch.responses.retain(|k, _| !k.contains("git/trees"));
-    let rows = check_all(&loc, &sources, &fetch, |_| ());
+    let mut next_fetch = transport(&p, &files)?;
+    next_fetch.responses.retain(|k, _| !k.contains("git/trees"));
+    let rows = check_all(&loc, &sources, &next_fetch, |_| ());
     assert_eq!(rows.len(), 2);
-    assert!(rows[0].status.contains("Fixture missing"));
-    assert_eq!(rows[1].package.version, p.version);
-    assert!(rows[1].status.starts_with("Disabled"));
+    assert!(
+        rows.first()
+            .ok_or("Missing fixture element")?
+            .status
+            .contains("Fixture missing")
+    );
+    assert_eq!(
+        rows.get(1)
+            .ok_or("Missing fixture element")?
+            .package
+            .version,
+        p.version
+    );
+    assert!(
+        rows.get(1)
+            .ok_or("Missing fixture element")?
+            .status
+            .starts_with("Disabled")
+    );
     assert!(rows.iter().all(|r| !r.ready));
     Ok(())
 }
@@ -513,7 +591,7 @@ fn failed_download_prioritizes_the_cause_and_leaves_installation_unchanged() -> 
     let (_scratch, loc) = locations()?;
     let (mut package, mut files) = generic()?;
     let path = "assets/environment/pool/textures/lights/pool_light_wall_01.png";
-    files.insert(path.into(), fixture_icon()?);
+    drop(files.insert(path.into(), fixture_icon()?));
     package = inventory(package, &files);
     let inner = transport(&package, &files)?;
     let sources = test_sources(&package);
@@ -536,11 +614,11 @@ fn failed_download_prioritizes_the_cause_and_leaves_installation_unchanged() -> 
         assert_eq!(install::label(&loc, &package)?, "not installed");
         drop(storage::Lock::take(&loc.state)?);
     }
-    selected_install(&loc, &sources, &row, &inner)?;
+    drop(selected_install(&loc, &sources, &row, &inner)?);
     assert_eq!(install::label(&loc, &package)?, "0.1.0");
     assert_eq!(
         std::fs::read(loc.root(&package).join(path)).map_err(|e| e.to_string())?,
-        files[path]
+        (*files.get(path).ok_or("Missing fixture element")?)
     );
     Ok(())
 }
@@ -549,23 +627,26 @@ fn install_update_repair_origin_and_local_edit_protections() -> Result<(), Strin
     let (_scratch, loc) = locations()?;
     let (p, mut files) = generic()?;
     // A headless fixture avoids a toolkit prerequisite; real runtime checks still run.
-    files.insert("main.py".into(), b"print('hello')\n".to_vec());
-    let p = inventory(p, &files);
-    let checked = install::prepare(&loc, p.clone(), files.clone())?;
-    assert_eq!(install::check(&loc, p.clone())?.installed, "not installed");
+    drop(files.insert("main.py".into(), b"print('hello')\n".to_vec()));
+    let checked_package = inventory(p, &files);
+    let checked = install::prepare(&loc, checked_package.clone(), files.clone())?;
+    assert_eq!(
+        install::check(&loc, checked_package.clone())?.installed,
+        "not installed"
+    );
     assert!(checked.prepared.is_some());
     install::install(&loc, &checked)?;
-    let root = loc.root(&p);
+    let root = loc.root(&checked_package);
     assert!(root.join(".vitrallis-receipt.json").is_file());
     assert!(
         loc.data
             .join("applications/io.vitrallis.hello.desktop")
             .is_file()
     );
-    let current = install::prepare(&loc, p.clone(), files.clone())?;
+    let current = install::prepare(&loc, checked_package.clone(), files.clone())?;
     assert!(current.prepared.is_none());
     std::fs::remove_file(root.join("icon.png")).map_err(|e| e.to_string())?;
-    let repair = install::prepare(&loc, p.clone(), files.clone())?;
+    let repair = install::prepare(&loc, checked_package.clone(), files.clone())?;
     assert!(repair.prepared.is_some());
     install::install(&loc, &repair)?;
     storage::atomic(
@@ -575,16 +656,18 @@ fn install_update_repair_origin_and_local_edit_protections() -> Result<(), Strin
             mode: 0o600,
         },
     )?;
-    let mut next = p;
+    let mut next = checked_package;
     next.version = metadata::version("0.2.0")?;
-    files.insert(
-        "app.toml".into(),
-        String::from_utf8(files["app.toml"].clone())
-            .map_err(|e| e.to_string())?
-            .replace("0.1.0", "0.2.0")
-            .into_bytes(),
+    drop(
+        files.insert(
+            "app.toml".into(),
+            String::from_utf8((*files.get("app.toml").ok_or("Missing fixture element")?).clone())
+                .map_err(|e| e.to_string())?
+                .replace("0.1.0", "0.2.0")
+                .into_bytes(),
+        ),
     );
-    files.insert("main.py".into(), b"print('updated')\n".to_vec());
+    drop(files.insert("main.py".into(), b"print('updated')\n".to_vec()));
     next = inventory(next, &files);
     let update = install::prepare(&loc, next.clone(), files.clone())?;
     install::install(&loc, &update)?;
@@ -593,7 +676,7 @@ fn install_update_repair_origin_and_local_edit_protections() -> Result<(), Strin
         b"save"
     );
     let (old, mut old_files) = generic()?;
-    old_files.insert("main.py".into(), b"print('hello')\n".to_vec());
+    drop(old_files.insert("main.py".into(), b"print('hello')\n".to_vec()));
     assert!(install::prepare(&loc, inventory(old, &old_files), old_files).is_err());
     let mut foreign = next.clone();
     foreign.origin = sources::Repository::parse("another/publisher")?;
@@ -642,7 +725,7 @@ fn launcher_customizations_pending_and_stale_check() -> Result<(), String> {
             .ok_or("time")?;
     }
     assert!(install::install(&loc, &repair).is_err());
-    let repair = install::prepare(&loc, p, files)?;
+    let next_repair = install::prepare(&loc, p, files)?;
     storage::atomic(
         &root.join("main.py"),
         &FileData {
@@ -650,7 +733,7 @@ fn launcher_customizations_pending_and_stale_check() -> Result<(), String> {
             mode: 0o644,
         },
     )?;
-    assert!(install::install(&loc, &repair).is_err());
+    assert!(install::install(&loc, &next_repair).is_err());
     Ok(())
 }
 #[cfg(unix)]
@@ -714,27 +797,44 @@ fn symlink_hardlink_and_lock_checks_fail_before_writes() -> Result<(), String> {
 }
 
 #[test]
+fn storage_read_accepts_maximum_limit_without_overflow() -> Result<(), String> {
+    let (_scratch, loc) = locations()?;
+    let path = loc.home.join("bounded-read");
+    std::fs::write(&path, b"small file").map_err(|error| error.to_string())?;
+    assert_eq!(
+        storage::read(&path, usize::MAX)?
+            .ok_or("file missing")?
+            .bytes,
+        b"small file"
+    );
+    assert!(storage::read(&path, 0).is_err());
+    Ok(())
+}
+
+#[test]
 fn syntax_preflight_never_executes_app_code_and_reports_dependencies() -> Result<(), String> {
     let (_scratch, loc) = locations()?;
     let (p, mut files) = generic()?;
     let marker = loc.home.join("must-not-exist");
-    files.insert(
-        "main.py".into(),
-        format!(
-            "open({:?}, 'w').write('unsafe')\n",
-            marker.to_str().ok_or("path")?
-        )
-        .into_bytes(),
+    drop(
+        files.insert(
+            "main.py".into(),
+            format!(
+                "open({:?}, 'w').write('unsafe')\n",
+                marker.to_str().ok_or("path")?
+            )
+            .into_bytes(),
+        ),
     );
     let runtime = runtime::detect(&loc.root(&p), &files)?;
     runtime::validate(&runtime, &files)?;
     assert!(!marker.exists());
-    files.insert("main.py".into(), b"def broken(:\n".to_vec());
+    drop(files.insert("main.py".into(), b"def broken(:\n".to_vec()));
     assert!(runtime::validate(&runtime, &files).is_err());
-    files.insert(
+    drop(files.insert(
         "requirements.txt".into(),
         b"vitrallis-test-missing-distribution-123456==99.99\n".to_vec(),
-    );
+    ));
     assert!(runtime::detect(&loc.root(&p), &files).is_err());
     Ok(())
 }
@@ -745,8 +845,7 @@ fn running_app_identity_is_rechecked_and_only_exact_script_is_closed() -> Result
     struct Child(std::process::Child);
     impl Drop for Child {
         fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
+            crate::process::cleanup_child(&mut self.0);
         }
     }
     let (_scratch, loc) = locations()?;
@@ -754,6 +853,7 @@ fn running_app_identity_is_rechecked_and_only_exact_script_is_closed() -> Result
     std::fs::write(&script, "import time\ntime.sleep(30)\n").map_err(|e| e.to_string())?;
     let mut child = Child(
         std::process::Command::new("/usr/bin/python3")
+            .args(["--check-hash-based-pycs", "always"])
             .arg(&script)
             .spawn()
             .map_err(|e| e.to_string())?,
@@ -770,14 +870,58 @@ fn running_app_identity_is_rechecked_and_only_exact_script_is_closed() -> Result
     native.terminate(&script, &stale)?;
     assert!(child.0.try_wait().map_err(|e| e.to_string())?.is_none());
     assert_eq!(native.list(&loc.home.join("other.py"))?.len(), 0);
+    #[cfg(target_os = "linux")]
     running::close(
         &native,
         &script,
         &identities,
         std::time::Duration::from_secs(8),
     )?;
+    #[cfg(not(target_os = "linux"))]
+    {
+        let error = running::close(
+            &native,
+            &script,
+            &identities,
+            std::time::Duration::from_secs(8),
+        )
+        .err()
+        .ok_or("external close must fail closed without a process handle")?;
+        assert!(error.contains("close the app manually"));
+        assert!(
+            child
+                .0
+                .try_wait()
+                .map_err(|wait_error| wait_error.to_string())?
+                .is_none()
+        );
+        child
+            .0
+            .kill()
+            .map_err(|kill_error| kill_error.to_string())?;
+    }
     let status = child.0.wait().map_err(|e| e.to_string())?;
     assert!(!status.success());
+    let mut unknown_options_child = Child(
+        std::process::Command::new("/usr/bin/python3")
+            .args(["-X", "dev"])
+            .arg(&script)
+            .spawn()
+            .map_err(|error| error.to_string())?,
+    );
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let unknown_options_error = native
+        .list(&script)
+        .err()
+        .ok_or("Unknown Python options must block app mutation")?;
+    assert!(unknown_options_error.contains("close it manually"));
+    assert!(
+        unknown_options_child
+            .0
+            .try_wait()
+            .map_err(|error| error.to_string())?
+            .is_none()
+    );
     Ok(())
 }
 
@@ -811,7 +955,12 @@ fn selected_install(
         .try_iter()
         .filter_map(|u| match u {
             Update::Progress(s) => Some(s),
-            _ => None,
+            Update::Sources(_)
+            | Update::Rows(_)
+            | Update::Row(_)
+            | Update::Confirm(_, _)
+            | Update::Done(_, _)
+            | Update::SelectedInstalled(_) => None,
         })
         .collect())
 }
@@ -830,25 +979,51 @@ fn replace_catalog(
 ) -> Result<(), String> {
     let apps = packages
         .iter()
-        .map(|p| catalog_value(p)["apps"][0].clone())
-        .collect::<Vec<_>>();
-    fetch.responses.insert(
-        format!(
-            "https://raw.githubusercontent.com/{}/{}/apps.json",
-            p.origin.as_str(),
-            "b".repeat(40)
+        .map(|package| {
+            catalog_value(package)
+                .pointer("/apps/0")
+                .cloned()
+                .ok_or("Missing catalogue app fixture")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(
+        fetch.responses.insert(
+            format!(
+                "https://raw.githubusercontent.com/{}/{}/apps.json",
+                p.origin.as_str(),
+                "b".repeat(40)
+            ),
+            serde_json::to_vec(&serde_json::json!({"schema_version":1_i32,"apps":apps}))
+                .map_err(|e| e.to_string())?,
         ),
-        serde_json::to_vec(&serde_json::json!({"schema_version":1,"apps":apps}))
-            .map_err(|e| e.to_string())?,
     );
     Ok(())
 }
+fn assert_one_download_per_file(
+    fetch: &FixtureFetch,
+    package: &Package,
+    files: &BTreeMap<String, Vec<u8>>,
+) {
+    for name in files.keys() {
+        assert_eq!(
+            fetch
+                .requests
+                .borrow()
+                .iter()
+                .filter(|url| **url == payload_url(package, name))
+                .count(),
+            1,
+            "one download per file: {name}"
+        );
+    }
+}
+
 #[test]
 fn metadata_only_check_and_selected_install_update_use_one_download_per_file() -> Result<(), String>
 {
     let (_scratch, loc) = locations()?;
     let (mut p, mut files) = generic()?;
-    files.insert("README.md".into(), vec![b'x'; 40_000]);
+    drop(files.insert("README.md".into(), vec![b'x'; 40_000]));
     p = inventory(p, &files);
     let sources = test_sources(&p);
     let mut fetch = transport(&p, &files)?;
@@ -862,8 +1037,16 @@ fn metadata_only_check_and_selected_install_update_use_one_download_per_file() -
     assert_eq!(fetch.requests.borrow().len(), 3);
     assert!(!loc.root(&p).exists());
     let total = files.values().map(Vec::len).sum::<usize>();
-    assert_eq!(Row::from(&rows[0]).download_size, total);
-    let progress = selected_install(&loc, &sources, &rows[0], &fetch)?;
+    assert_eq!(
+        Row::from(rows.first().ok_or("Missing fixture element")?).download_size,
+        total
+    );
+    let progress = selected_install(
+        &loc,
+        &sources,
+        rows.first().ok_or("Missing fixture element")?,
+        &fetch,
+    )?;
     assert!(
         progress
             .iter()
@@ -883,17 +1066,7 @@ fn metadata_only_check_and_selected_install_update_use_one_download_per_file() -
         .position(|s| s.starts_with("Installing"))
         .ok_or("install stage")?;
     assert!(verifying < installing);
-    for name in files.keys() {
-        assert_eq!(
-            fetch
-                .requests
-                .borrow()
-                .iter()
-                .filter(|u| **u == payload_url(&p, name))
-                .count(),
-            1
-        );
-    }
+    assert_one_download_per_file(&fetch, &p, &files);
     assert!(
         !fetch
             .requests
@@ -906,35 +1079,28 @@ fn metadata_only_check_and_selected_install_update_use_one_download_per_file() -
 
     p.version = metadata::version("0.2.0")?;
     p.commit = "e".repeat(40);
-    files.insert(
-        "app.toml".into(),
-        String::from_utf8(files["app.toml"].clone())
-            .map_err(|e| e.to_string())?
-            .replace("0.1.0", "0.2.0")
-            .into_bytes(),
+    drop(
+        files.insert(
+            "app.toml".into(),
+            String::from_utf8((*files.get("app.toml").ok_or("Missing fixture element")?).clone())
+                .map_err(|e| e.to_string())?
+                .replace("0.1.0", "0.2.0")
+                .into_bytes(),
+        ),
     );
-    files.insert("main.py".into(), b"print('new version')\n".to_vec());
+    drop(files.insert("main.py".into(), b"print('new version')\n".to_vec()));
     p = inventory(p, &files);
-    let mut fetch = transport(&p, &files)?;
-    replace_catalog(&mut fetch, &p, &[p.clone(), other])?;
-    let rows = check_all(&loc, &sources, &fetch, |_| ());
-    assert_eq!(rows[0].installed, "0.1.0");
-    assert!(rows[0].ready);
-    assert_eq!(fetch.requests.borrow().len(), 3);
-    selected_install(&loc, &sources, &rows[0], &fetch)?;
-    for name in files.keys() {
-        assert_eq!(
-            fetch
-                .requests
-                .borrow()
-                .iter()
-                .filter(|u| **u == payload_url(&p, name))
-                .count(),
-            1
-        );
-    }
+    let mut next_fetch = transport(&p, &files)?;
+    replace_catalog(&mut next_fetch, &p, &[p.clone(), other])?;
+    let refreshed_rows = check_all(&loc, &sources, &next_fetch, |_| ());
+    let next_row = refreshed_rows.first().ok_or("Missing refreshed row")?;
+    assert_eq!(next_row.installed, "0.1.0");
+    assert!(next_row.ready);
+    assert_eq!(next_fetch.requests.borrow().len(), 3);
+    drop(selected_install(&loc, &sources, next_row, &next_fetch)?);
+    assert_one_download_per_file(&next_fetch, &p, &files);
     assert!(
-        !fetch
+        !next_fetch
             .requests
             .borrow()
             .iter()
@@ -948,7 +1114,7 @@ fn large_catalog_is_available_without_downloading_payloads() -> Result<(), Strin
     let (_scratch, loc) = locations()?;
     let (p, files) = generic()?;
     let mut fetch = transport(&p, &files)?;
-    let packages = (0..6)
+    let packages = (0_i32..6_i32)
         .map(|i| {
             let mut next = p.clone();
             next.id = format!("org.example.app{i}");
@@ -961,7 +1127,7 @@ fn large_catalog_is_available_without_downloading_payloads() -> Result<(), Strin
     assert!(
         packages
             .iter()
-            .flat_map(|p| &p.files)
+            .flat_map(|package| &package.files)
             .map(|f| f.size)
             .sum::<usize>()
             > 64 * 1024 * 1024
@@ -988,14 +1154,23 @@ fn failed_or_corrupt_downloads_never_install_or_replace_existing_app() -> Result
         let sources = test_sources(&p);
         if existing {
             let row = install::check(&loc, p.clone())?;
-            selected_install(&loc, &sources, &row, &transport(&p, &files)?)?;
+            drop(selected_install(
+                &loc,
+                &sources,
+                &row,
+                &transport(&p, &files)?,
+            )?);
             p.version = metadata::version("0.2.0")?;
-            files.insert(
-                "app.toml".into(),
-                String::from_utf8(files["app.toml"].clone())
+            drop(
+                files.insert(
+                    "app.toml".into(),
+                    String::from_utf8(
+                        (*files.get("app.toml").ok_or("Missing fixture element")?).clone(),
+                    )
                     .map_err(|e| e.to_string())?
                     .replace("0.1.0", "0.2.0")
                     .into_bytes(),
+                ),
             );
             p = inventory(p, &files);
         }
@@ -1008,19 +1183,39 @@ fn failed_or_corrupt_downloads_never_install_or_replace_existing_app() -> Result
             let url = payload_url(&p, "main.py");
             match failure {
                 "network" => {
-                    fetch.responses.remove(&url);
+                    assert!(fetch.responses.remove(&url).is_some());
                 }
                 "hash" => {
-                    fetch.responses.get_mut(&url).ok_or("payload")?[0] ^= 1;
+                    *fetch
+                        .responses
+                        .get_mut(&url)
+                        .ok_or("payload")?
+                        .first_mut()
+                        .ok_or("Missing payload byte fixture")? ^= 1;
                 }
                 "short" => {
-                    fetch.responses.get_mut(&url).ok_or("payload")?.pop();
+                    assert!(
+                        fetch
+                            .responses
+                            .get_mut(&url)
+                            .ok_or("payload")?
+                            .pop()
+                            .is_some()
+                    );
                 }
                 _ => fetch.responses.get_mut(&url).ok_or("payload")?.push(0),
             }
             let rows = check_all(&loc, &sources, &fetch, |_| ());
-            assert!(rows[0].ready);
-            assert!(selected_install(&loc, &sources, &rows[0], &fetch).is_err());
+            assert!(rows.first().ok_or("Missing fixture element")?.ready);
+            assert!(
+                selected_install(
+                    &loc,
+                    &sources,
+                    rows.first().ok_or("Missing fixture element")?,
+                    &fetch
+                )
+                .is_err()
+            );
             assert_eq!(
                 storage::read(
                     &loc.root(&p).join(".vitrallis-receipt.json"),
@@ -1032,7 +1227,7 @@ fn failed_or_corrupt_downloads_never_install_or_replace_existing_app() -> Result
             if existing {
                 assert_eq!(
                     std::fs::read(loc.root(&p).join("main.py")).map_err(|e| e.to_string())?,
-                    files["main.py"]
+                    (*files.get("main.py").ok_or("Missing fixture element")?)
                 );
             } else {
                 assert!(!loc.root(&p).exists());
@@ -1081,9 +1276,9 @@ fn streamed_byte_progress_and_cancellation_leave_no_installation() -> Result<(),
         .is_err()
     );
     assert!(!loc.root(&p).exists());
-    let fetch = transport(&p, &files)?;
+    let next_fetch = transport(&p, &files)?;
     assert!(
-        network::download(&fetch, &p, |s| {
+        network::download(&next_fetch, &p, |s| {
             if s.starts_with("Verifying") {
                 Err("cancelled".into())
             } else {
@@ -1106,22 +1301,35 @@ fn deferred_install_rechecks_source_trust_and_manifest_agreement() -> Result<(),
     assert!(selected_install(&loc, &sources, &row, &fetch).is_err());
     assert!(fetch.requests.borrow().is_empty());
     p.repository = sources::Repository::parse("unapproved/source")?;
-    let fetch = transport(&p, &files)?;
-    let sources = test_sources(&p);
-    let rows = check_all(&loc, &sources, &fetch, |_| ());
-    assert!(!rows[0].ready);
-    assert!(rows[0].status.contains("Approval required"));
-    assert_eq!(fetch.requests.borrow().len(), 3);
+    let next_fetch = transport(&p, &files)?;
+    let reloaded_sources = test_sources(&p);
+    let rows = check_all(&loc, &reloaded_sources, &next_fetch, |_| ());
+    assert!(!rows.first().ok_or("Missing fixture element")?.ready);
+    assert!(
+        rows.first()
+            .ok_or("Missing fixture element")?
+            .status
+            .contains("Approval required")
+    );
+    assert_eq!(next_fetch.requests.borrow().len(), 3);
     let formerly_approved = install::check(&loc, p)?;
-    fetch.requests.borrow_mut().clear();
-    assert!(selected_install(&loc, &sources, &formerly_approved, &fetch).is_err());
-    assert!(fetch.requests.borrow().is_empty());
-    let (mut p, files) = generic()?;
-    p.name = "Catalog disagrees with app.toml".into();
-    let fetch = transport(&p, &files)?;
-    let row = install::check(&loc, p.clone())?;
-    assert!(selected_install(&loc, &test_sources(&p), &row, &fetch).is_err());
-    assert!(!loc.root(&p).exists());
+    next_fetch.requests.borrow_mut().clear();
+    assert!(selected_install(&loc, &reloaded_sources, &formerly_approved, &next_fetch).is_err());
+    assert!(next_fetch.requests.borrow().is_empty());
+    let (mut mismatched_package, mismatched_files) = generic()?;
+    mismatched_package.name = "Catalog disagrees with app.toml".into();
+    let verifying_fetch = transport(&mismatched_package, &mismatched_files)?;
+    let manifest_row = install::check(&loc, mismatched_package.clone())?;
+    assert!(
+        selected_install(
+            &loc,
+            &test_sources(&mismatched_package),
+            &manifest_row,
+            &verifying_fetch
+        )
+        .is_err()
+    );
+    assert!(!loc.root(&mismatched_package).exists());
     Ok(())
 }
 
@@ -1172,7 +1380,9 @@ fn stream_io_failure_discards_partial_download() {
                 return Err(std::io::Error::other("connection lost"));
             }
             self.0 = true;
-            out[..3].copy_from_slice(b"abc");
+            out.get_mut(..3)
+                .ok_or_else(|| std::io::Error::other("Missing read fixture buffer"))?
+                .copy_from_slice(b"abc");
             Ok(3)
         }
     }
@@ -1189,14 +1399,14 @@ fn stream_io_failure_discards_partial_download() {
 #[test]
 fn device_inventory_excludes_only_app_local_tests() -> Result<(), String> {
     let (p, mut files) = generic()?;
-    files.insert(
+    drop(files.insert(
         "tests/test_layout.py".into(),
         b"# development test\n".to_vec(),
-    );
-    files.insert(
+    ));
+    drop(files.insert(
         "assets/tests/example.txt".into(),
         b"runtime asset\n".to_vec(),
-    );
+    ));
     let full = inventory(p, &files);
     let fetch = transport(&full, &files)?;
     assert!(network::bundle(&fetch, &full, |_| Ok(())).is_err());
@@ -1205,7 +1415,7 @@ fn device_inventory_excludes_only_app_local_tests() -> Result<(), String> {
     device.files.retain(|f| !f.path.starts_with("tests/"));
     fetch.requests.borrow_mut().clear();
     let payload = network::bundle(&fetch, &device, |_| Ok(()))?;
-    assert!(payload.keys().all(|p| !p.starts_with("tests/")));
+    assert!(payload.keys().all(|path| !path.starts_with("tests/")));
     assert!(payload.contains_key("assets/tests/example.txt"));
     assert!(
         !fetch
@@ -1217,7 +1427,12 @@ fn device_inventory_excludes_only_app_local_tests() -> Result<(), String> {
     metadata::validate_bundle(&device, &payload)?;
     let (_scratch, loc) = locations()?;
     let row = install::check(&loc, device.clone())?;
-    selected_install(&loc, &test_sources(&device), &row, &fetch)?;
+    drop(selected_install(
+        &loc,
+        &test_sources(&device),
+        &row,
+        &fetch,
+    )?);
     assert!(!loc.root(&device).join("tests").exists());
     for omitted in ["main.py", "README.md", "assets/tests/example.txt"] {
         let mut bad = device.clone();
@@ -1235,14 +1450,19 @@ fn device_inventory_excludes_only_app_local_tests() -> Result<(), String> {
 #[test]
 fn device_inventory_rejects_unsafe_git_entries_even_in_excluded_tests() -> Result<(), String> {
     let (p, mut files) = generic()?;
-    files.insert("tests/test_main.py".into(), b"# test\n".to_vec());
+    drop(files.insert("tests/test_main.py".into(), b"# test\n".to_vec()));
     let full = inventory(p, &files);
     let mut fetch = transport(&full, &files)?;
     let mut device = full;
     device.files.retain(|f| !f.path.starts_with("tests/"));
     let (_scratch, loc) = locations()?;
     let row = install::check(&loc, device.clone())?;
-    selected_install(&loc, &test_sources(&device), &row, &fetch)?;
+    drop(selected_install(
+        &loc,
+        &test_sources(&device),
+        &row,
+        &fetch,
+    )?);
     assert!(loc.root(&device).join("main.py").is_file());
     assert!(!loc.root(&device).join("tests").exists());
     assert!(
@@ -1257,7 +1477,11 @@ fn device_inventory_rejects_unsafe_git_entries_even_in_excluded_tests() -> Resul
         device.repository.as_str(),
         "d".repeat(40)
     );
-    let original = fetch.responses[&tree].clone();
+    let original = (*fetch
+        .responses
+        .get(&tree)
+        .ok_or("Missing fixture element")?)
+    .clone();
     for (mode, kind, name) in [
         ("120000", "blob", "tests/link"),
         ("160000", "commit", "tests/submodule"),
@@ -1265,16 +1489,16 @@ fn device_inventory_rejects_unsafe_git_entries_even_in_excluded_tests() -> Resul
         ("100644", "blob", "Tests/hidden.py"),
     ] {
         let mut v = metadata::json(&original)?;
-        v["tree"]
+        (*v.get_mut("tree").ok_or("Missing fixture element")?)
             .as_array_mut()
             .ok_or("tree")?
             .push(serde_json::json!({
-                "path":name,"size":0,"type":kind,"mode":mode
+                "path":name,"size":0_i32,"type":kind,"mode":mode
             }));
-        fetch.responses.insert(
+        drop(fetch.responses.insert(
             tree.clone(),
             serde_json::to_vec(&v).map_err(|e| e.to_string())?,
-        );
+        ));
         assert!(network::bundle(&fetch, &device, |_| Ok(())).is_err());
     }
     Ok(())
@@ -1357,7 +1581,13 @@ fn uninstall_rejects_source_switches_unsafe_files_and_modified_receipts_before_r
     let receipt = root.join(".vitrallis-receipt.json");
     let before = storage::read(&receipt, metadata::CATALOG_LIMIT)?.ok_or("receipt")?;
     let mut modified = metadata::json(&before.bytes)?;
-    modified["files"]["../outside"] = "0".repeat(64).into();
+    drop(
+        modified
+            .get_mut("files")
+            .and_then(serde_json::Value::as_object_mut)
+            .ok_or("Missing receipt files fixture")?
+            .insert("../outside".into(), "0".repeat(64).into()),
+    );
     storage::atomic(
         &receipt,
         &FileData {
@@ -1387,16 +1617,18 @@ fn uninstall_refuses_a_running_app_without_removing_files() -> Result<(), String
     struct Child(std::process::Child);
     impl Drop for Child {
         fn drop(&mut self) {
-            let _ = self.0.kill();
-            let _ = self.0.wait();
+            crate::process::cleanup_child(&mut self.0);
         }
     }
     let (_scratch, loc) = locations()?;
     let (p, mut files) = generic()?;
-    files.insert("main.py".into(), b"import time\ntime.sleep(30)\n".to_vec());
-    let p = inventory(p, &files);
-    install::install(&loc, &install::prepare(&loc, p.clone(), files)?)?;
-    let entry = loc.root(&p).join("main.py");
+    drop(files.insert("main.py".into(), b"import time\ntime.sleep(30)\n".to_vec()));
+    let checked_package = inventory(p, &files);
+    install::install(
+        &loc,
+        &install::prepare(&loc, checked_package.clone(), files)?,
+    )?;
+    let entry = loc.root(&checked_package).join("main.py");
     let mut child = Child(
         std::process::Command::new("/usr/bin/python3")
             .arg(&entry)
@@ -1410,12 +1642,20 @@ fn uninstall_refuses_a_running_app_without_removing_files() -> Result<(), String
         }
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
-    let result = uninstall::uninstall(&loc, &p);
+    let result = uninstall::uninstall(&loc, &checked_package);
     assert!(result.is_err_and(|e| e.contains("Close the app")));
     assert!(child.0.try_wait().map_err(|e| e.to_string())?.is_none());
     assert!(entry.is_file());
-    assert!(loc.root(&p).join(".vitrallis-receipt.json").is_file());
-    assert!(!loc.root(&p).join(".installation-pending").exists());
+    assert!(
+        loc.root(&checked_package)
+            .join(".vitrallis-receipt.json")
+            .is_file()
+    );
+    assert!(
+        !loc.root(&checked_package)
+            .join(".installation-pending")
+            .exists()
+    );
     Ok(())
 }
 
@@ -1430,7 +1670,9 @@ fn canonical_catalog_paths_manifests_and_inventory_are_required() -> Result<(), 
         "other/hello",
     ] {
         let mut value = catalog_value(&p);
-        value["apps"][0]["source"]["path"] = path.into();
+        *value
+            .pointer_mut("/apps/0/source/path")
+            .ok_or("Missing source path fixture")? = path.into();
         assert!(
             metadata::catalog(
                 &p.origin,
@@ -1448,14 +1690,14 @@ fn canonical_catalog_paths_manifests_and_inventory_are_required() -> Result<(), 
         "assets/greeting.txt",
     ] {
         let mut incomplete = files.clone();
-        incomplete.remove(omitted);
+        assert!(incomplete.remove(omitted).is_some());
         assert!(
             metadata::validate_bundle(&inventory(p.clone(), &incomplete), &incomplete).is_err(),
             "{omitted}"
         );
     }
     let mut with_tests = files;
-    with_tests.insert("tests/test_main.py".into(), b"# test".to_vec());
+    drop(with_tests.insert("tests/test_main.py".into(), b"# test".to_vec()));
     let value = catalog_value(&inventory(p.clone(), &with_tests));
     assert!(
         metadata::catalog(
@@ -1464,15 +1706,17 @@ fn canonical_catalog_paths_manifests_and_inventory_are_required() -> Result<(), 
         )
         .is_err()
     );
-    let mut value = catalog_value(&p);
-    value["apps"][0]["files"]
+    let mut next_value = catalog_value(&p);
+    next_value
+        .pointer_mut("/apps/0/files")
+        .ok_or("Missing files fixture")?
         .as_array_mut()
         .ok_or("files")?
         .reverse();
     assert!(
         metadata::catalog(
             &p.origin,
-            &serde_json::to_vec(&value).map_err(|e| e.to_string())?
+            &serde_json::to_vec(&next_value).map_err(|e| e.to_string())?
         )
         .is_err()
     );
@@ -1539,17 +1783,30 @@ fn physical_python_first_installs() -> Result<(), String> {
         let (mut p, mut files) = generic()?;
         p.id = format!("io.vitrallis.qapython{suffix}");
         p.name = format!("Python QA {suffix}");
-        let manifest = String::from_utf8(files["app.toml"].clone()).map_err(|e| e.to_string())?;
+        let manifest =
+            String::from_utf8((*files.get("app.toml").ok_or("Missing fixture element")?).clone())
+                .map_err(|e| e.to_string())?;
         let original = metadata::manifest(manifest.as_bytes())?;
-        files.insert(
-            "app.toml".into(),
-            manifest
-                .replace(metadata::text(&original["id"], 128)?, &p.id)
-                .replace(metadata::text(&original["name"], 1000)?, &p.name)
-                .into_bytes(),
+        drop(
+            files.insert(
+                "app.toml".into(),
+                manifest
+                    .replace(
+                        metadata::text(original.get("id").ok_or("Missing fixture element")?, 128)?,
+                        &p.id,
+                    )
+                    .replace(
+                        metadata::text(
+                            original.get("name").ok_or("Missing fixture element")?,
+                            1000,
+                        )?,
+                        &p.name,
+                    )
+                    .into_bytes(),
+            ),
         );
-        files.insert("requirements.txt".into(), b"pyfiglet==1.0.2\n".to_vec());
-        files.insert("main.py".into(), b"import pyfiglet\nimport tkinter as tk\nroot = tk.Tk()\nroot.title('Python QA')\nroot.geometry('480x272')\ntk.Label(root, text=pyfiglet.figlet_format('QA'), font=('monospace', 8)).pack()\nroot.bind('<Escape>', lambda event: root.destroy())\nroot.mainloop()\n".to_vec());
+        drop(files.insert("requirements.txt".into(), b"pyfiglet==1.0.2\n".to_vec()));
+        drop(files.insert("main.py".into(), b"import pyfiglet\nimport tkinter as tk\nroot = tk.Tk()\nroot.title('Python QA')\nroot.geometry('480x272')\ntk.Label(root, text=pyfiglet.figlet_format('QA'), font=('monospace', 8)).pack()\nroot.bind('<Escape>', lambda event: root.destroy())\nroot.mainloop()\n".to_vec()));
         p = inventory(p, &files);
         if loc.root(&p).exists() {
             return Err("QA app root already exists; use a new isolated home".into());
@@ -1561,7 +1818,7 @@ fn physical_python_first_installs() -> Result<(), String> {
             "must exercise actual isolated pip installation"
         );
         assert!(!install::check(&loc, p.clone())?.ready);
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             assert!(
                 install::prepare(&loc, p.clone(), files.clone())?
                     .prepared
@@ -1613,7 +1870,7 @@ fn physical_python_managed_update() -> Result<(), String> {
     if matches.len() != 1 {
         return Err("Expected exactly one cached app; refusing ambiguous selection".into());
     }
-    let row = matches[0];
+    let row = *matches.first().ok_or("Missing fixture element")?;
     if row.package.commit != commit
         || row.installed != old
         || row.package.version.to_string() != new
@@ -1648,18 +1905,23 @@ fn tor_manifest_survives_install_discovery_and_launcher_ownership() -> Result<()
     let (package, mut files) = generic()?;
     let manifest = files.get_mut("app.toml").ok_or("manifest")?;
     manifest.extend_from_slice(b"\n[network]\ntor = \"required\"\n");
-    let package = inventory(package, &files);
+    let checked_package = inventory(package, &files);
     install::install(
         &loc,
-        &install::prepare(&loc, package.clone(), files.clone())?,
+        &install::prepare(&loc, checked_package.clone(), files.clone())?,
     )?;
     let mut catalog = crate::discovery::Catalog::default();
     discovery::installed(&mut catalog, &loc)?;
     assert_eq!(
-        catalog.apps[0].manifest.tor,
+        catalog
+            .apps
+            .first()
+            .ok_or("Missing fixture element")?
+            .manifest
+            .tor,
         crate::tor::Requirement::Required
     );
-    let launcher = std::fs::read_to_string(loc.state.join("launchers").join(&package.id))
+    let launcher = std::fs::read_to_string(loc.state.join("launchers").join(&checked_package.id))
         .map_err(|e| e.to_string())?;
     assert!(launcher.starts_with("#!/bin/sh\numask 077\n"));
     assert!(
@@ -1669,10 +1931,14 @@ fn tor_manifest_survives_install_discovery_and_launcher_ownership() -> Result<()
     );
     assert!(launcher.contains("export VITRALLIS_APP_DATA_DIR="));
     assert!(launcher.contains("'--unshare-net'"));
-    assert!(!loc.root(&package).join("arti").exists());
+    assert!(!loc.root(&checked_package).join("arti").exists());
     assert!(!loc.data.join("vitrallis/tor").exists());
     // Idempotent repair neither loses the requirement nor treats its wrapper as a user edit.
-    assert!(install::prepare(&loc, package, files)?.prepared.is_none());
+    assert!(
+        install::prepare(&loc, checked_package, files)?
+            .prepared
+            .is_none()
+    );
     Ok(())
 }
 
@@ -1691,7 +1957,10 @@ fn run_service(
     let (send, commands) = mpsc::channel();
     let (updates, receive) = mpsc::channel();
     for command in queue {
-        let _ = send.send(command);
+        assert!(
+            send.send(command).is_ok(),
+            "service fixture command receiver must remain connected"
+        );
     }
     drop(send);
     service(loc, &commands, &updates, &AtomicBool::new(false), fetch);
@@ -1700,7 +1969,12 @@ fn run_service(
         .into_iter()
         .filter_map(|update| match update {
             Update::Done(result, _) => Some(result),
-            _ => None,
+            Update::Sources(_)
+            | Update::Progress(_)
+            | Update::Rows(_)
+            | Update::Row(_)
+            | Update::Confirm(_, _)
+            | Update::SelectedInstalled(_) => None,
         })
         .collect()
 }
@@ -1716,7 +1990,7 @@ fn failed_refresh_reports_errors_preserves_cache_and_recovers() -> Result<(), St
         let (updates, receive) = mpsc::channel();
         let mut rows = Vec::new();
         if cached {
-            refresh_catalog(&loc, &online, &mut rows, &updates)?;
+            drop(refresh_catalog(&loc, &online, &mut rows, &updates)?);
         }
         let snapshot = loc.state.join("catalogs").join(format!(
             "{}.json",
@@ -1736,14 +2010,20 @@ fn failed_refresh_reports_errors_preserves_cache_and_recovers() -> Result<(), St
         if cached {
             assert!(rows.iter().any(|row| row.package.key() == package.key()));
         }
-        let (_, message) = refresh_catalog(&loc, &online, &mut rows, &updates)?;
-        assert_eq!(message, "Refresh complete: 1 entries. Select an app.");
+        let (_, refresh_message) = refresh_catalog(&loc, &online, &mut rows, &updates)?;
+        assert_eq!(
+            refresh_message,
+            "Refresh complete: 1 entries. Select an app."
+        );
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].package.key(), package.key());
-        assert!(rows[0].ready);
+        assert_eq!(
+            rows.first().ok_or("Missing fixture element")?.package.key(),
+            package.key()
+        );
+        assert!(rows.first().ok_or("Missing fixture element")?.ready);
         drop(updates);
         assert!(receive.into_iter().any(|update| {
-            matches!(update, Update::Rows(rows) if rows.iter().any(|row| row.package.entry.is_empty()))
+            matches!(update, Update::Rows(updated_rows) if updated_rows.iter().any(|row| row.package.entry.is_empty()))
         }));
     }
     Ok(())
@@ -1784,19 +2064,22 @@ impl network::Fetch for LockProbeFetch<'_> {
 struct GateFetch {
     inner: FixtureFetch,
     entered: mpsc::Sender<()>,
-    release: std::sync::Mutex<mpsc::Receiver<()>>,
+    release: std::sync::Mutex<Option<mpsc::Receiver<()>>>,
 }
 impl GateFetch {
-    fn gate(&self) {
-        let _ = self.entered.send(());
-        if let Ok(release) = self.release.lock() {
-            let _ = release.recv();
-        }
+    fn gate(&self) -> Result<(), String> {
+        let mut first_request = self.release.lock().map_err(|error| error.to_string())?;
+        let Some(receiver) = first_request.take() else {
+            return Ok(());
+        };
+        drop(first_request);
+        self.entered.send(()).map_err(|error| error.to_string())?;
+        receiver.recv().map_err(|error| error.to_string())
     }
 }
 impl network::Fetch for GateFetch {
     fn fetch(&self, url: &str, limit: usize) -> Result<Vec<u8>, String> {
-        self.gate();
+        self.gate()?;
         self.inner.fetch(url, limit)
     }
     fn fetch_progress(
@@ -1805,7 +2088,7 @@ impl network::Fetch for GateFetch {
         limit: usize,
         progress: &mut dyn FnMut(usize) -> Result<(), String>,
     ) -> Result<Vec<u8>, String> {
-        self.gate();
+        self.gate()?;
         self.inner.fetch_progress(url, limit, progress)
     }
 }
@@ -1835,7 +2118,10 @@ fn check_never_holds_lock_while_fetching() -> Result<(), String> {
     );
     let cached = cache::load(&loc, &Sources::default());
     assert_eq!(cached.len(), 1);
-    assert_eq!(cached[0].package.id, p.id);
+    assert_eq!(
+        cached.first().ok_or("Missing fixture element")?.package.id,
+        p.id
+    );
     drop(storage::Lock::take(&loc.state)?);
     Ok(())
 }
@@ -1920,10 +2206,10 @@ fn check_commit_fails_cleanly_if_lock_taken_mid_fetch() -> Result<(), String> {
 
     // Mid-fetch: seed a known-good snapshot, then hold the lock after the
     // unlocked fetch has started and verify the commit is refused cleanly.
-    let messages = run_service(&loc, &transport(&p, &files)?, vec![Command::Check]);
+    let next_messages = run_service(&loc, &transport(&p, &files)?, vec![Command::Check]);
     assert!(
-        matches!(messages.as_slice(), [Ok(_), Ok(_)]),
-        "{messages:?}"
+        matches!(next_messages.as_slice(), [Ok(_), Ok(_)]),
+        "{next_messages:?}"
     );
     let snapshot = loc.state.join("catalogs").join(format!(
         "{}.json",
@@ -1940,28 +2226,52 @@ fn check_commit_fails_cleanly_if_lock_taken_mid_fetch() -> Result<(), String> {
         release.send(()).map_err(|e| e.to_string())?;
         Ok(lock)
     });
-    let fetch = GateFetch {
+    let next_fetch = GateFetch {
         inner: transport(&p, &files)?,
         entered,
-        release: std::sync::Mutex::new(locked),
+        release: std::sync::Mutex::new(Some(locked)),
     };
-    let messages = run_service(&loc, &fetch, vec![Command::Check]);
-    match messages.as_slice() {
+    let commit_messages = run_service(&loc, &next_fetch, vec![Command::Check]);
+    match commit_messages.as_slice() {
         [Ok(_), Err(error)] => assert!(
             error.starts_with("Another Vitrallis storage operation is active"),
             "{error}"
         ),
         other => return Err(format!("unexpected updates: {other:?}")),
     }
-    drop(holder.join().map_err(|_| "lock holder panicked")??);
+    drop(
+        holder
+            .join()
+            .map_err(|payload| format!("lock holder panicked: {payload:?}"))??,
+    );
     assert_eq!(
         storage::read(&snapshot, metadata::CATALOG_LIMIT)?,
         Some(before)
     );
     let rows_after = cache::load(&loc, &Sources::default());
     assert_eq!(rows_after.len(), rows_before.len());
-    assert_eq!(rows_after[0].package.id, rows_before[0].package.id);
-    assert_eq!(rows_after[0].installed, rows_before[0].installed);
+    assert_eq!(
+        rows_after
+            .first()
+            .ok_or("Missing fixture element")?
+            .package
+            .id,
+        rows_before
+            .first()
+            .ok_or("Missing fixture element")?
+            .package
+            .id
+    );
+    assert_eq!(
+        rows_after
+            .first()
+            .ok_or("Missing fixture element")?
+            .installed,
+        rows_before
+            .first()
+            .ok_or("Missing fixture element")?
+            .installed
+    );
     drop(storage::Lock::take(&loc.state)?);
     Ok(())
 }
@@ -1978,31 +2288,34 @@ fn concurrent_install_between_download_and_commit_is_detected() -> Result<(), St
     let (entered, started) = mpsc::channel();
     let (release, unblock) = mpsc::channel();
     let installer = {
-        let loc = loc.clone();
-        let p = p.clone();
-        let files = files.clone();
+        let install_locations = loc.clone();
+        let install_package = p.clone();
+        let install_files = files.clone();
         std::thread::spawn(move || -> Result<(), String> {
             started.recv().map_err(|e| e.to_string())?;
-            let prepared = install::prepare(&loc, p.clone(), files)?;
-            install::install(&loc, &prepared)?;
+            let prepared =
+                install::prepare(&install_locations, install_package.clone(), install_files)?;
+            install::install(&install_locations, &prepared)?;
             release.send(()).map_err(|e| e.to_string())
         })
     };
     let fetch = GateFetch {
         inner: transport(&p, &files)?,
         entered,
-        release: std::sync::Mutex::new(unblock),
+        release: std::sync::Mutex::new(Some(unblock)),
     };
-    let messages = run_service(&loc, &fetch, vec![Command::Install(vec![p.key()])]);
-    installer.join().map_err(|_| "installer panicked")??;
-    match messages.as_slice() {
+    let next_messages = run_service(&loc, &fetch, vec![Command::Install(vec![p.key()])]);
+    installer
+        .join()
+        .map_err(|payload| format!("installer panicked: {payload:?}"))??;
+    match next_messages.as_slice() {
         [Ok(_), Err(error)] => assert!(error.contains("No available update"), "{error}"),
         other => return Err(format!("unexpected updates: {other:?}")),
     }
     assert_eq!(install::label(&loc, &p)?, "0.1.0");
     assert_eq!(
         std::fs::read(loc.root(&p).join("main.py")).map_err(|e| e.to_string())?,
-        files["main.py"]
+        (*files.get("main.py").ok_or("Missing fixture element")?)
     );
     assert!(!loc.root(&p).join(".installation-pending").exists());
     drop(storage::Lock::take(&loc.state)?);

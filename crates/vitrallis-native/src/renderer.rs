@@ -49,8 +49,20 @@ impl std::str::FromStr for RendererMode {
     }
 }
 
+#[allow(
+    clippy::as_conversions,
+    reason = "SDL's repr(u32) flag discriminant is the renderer's u32 bit mask"
+)]
 const ACCELERATED: u32 = SDL_RendererFlags::SDL_RENDERER_ACCELERATED as u32;
+#[allow(
+    clippy::as_conversions,
+    reason = "SDL's repr(u32) flag discriminant is the renderer's u32 bit mask"
+)]
 const SOFTWARE: u32 = SDL_RendererFlags::SDL_RENDERER_SOFTWARE as u32;
+#[allow(
+    clippy::as_conversions,
+    reason = "SDL's repr(u32) flag discriminant is the renderer's u32 bit mask"
+)]
 const VSYNC: u32 = SDL_RendererFlags::SDL_RENDERER_PRESENTVSYNC as u32;
 
 /// Startup snapshot for system/debug consumers. SDL flags describe
@@ -257,25 +269,21 @@ pub fn initialize(
     let drivers: Vec<_> = (0_u32..).zip(sdl2::render::drivers()).collect();
     // Failed attempts may destroy the last window. They must not queue a quit
     // event that closes the eventual successful renderer (notably on macOS).
-    sdl2::hint::set("SDL_QUIT_ON_LAST_WINDOW_CLOSE", "0");
+    crate::ui::hint("SDL_QUIT_ON_LAST_WINDOW_CLOSE", "0");
     // SDL/environment hints must not silently override the native UI contract.
-    sdl2::hint::set_with_priority("SDL_RENDER_VSYNC", "1", &sdl2::hint::Hint::Override);
+    vsync_hint("1");
     video.gl_attr().set_double_buffer(true);
     let ((canvas, output_size, gl), sdl, hardware_error) =
         select(requested, &drivers, |attempt| {
             // A fresh window discards any GL/Metal state from a failed backend.
             // Keep unsuccessful attempts hidden and preserve the same window policy.
-            sdl2::hint::set_with_priority(
-                "SDL_RENDER_VSYNC",
-                if attempt.vsync { "1" } else { "0" },
-                &sdl2::hint::Hint::Override,
-            );
-            let window = window()?;
-            let builder = window.into_canvas().index(attempt.index);
+            vsync_hint(if attempt.vsync { "1" } else { "0" });
+            let new_window = window()?;
+            let initial_builder = new_window.into_canvas().index(attempt.index);
             let mut builder = if attempt.mode == RendererMode::Software {
-                builder.software()
+                initial_builder.software()
             } else {
-                builder.accelerated()
+                initial_builder.accelerated()
             };
             if attempt.vsync {
                 builder = builder.present_vsync();
@@ -336,10 +344,16 @@ pub fn initialize(
     Ok((canvas, info))
 }
 
+fn vsync_hint(value: &str) {
+    if !sdl2::hint::set_with_priority("SDL_RENDER_VSYNC", value, &sdl2::hint::Hint::Override) {
+        eprintln!("SDL rejected the requested VSync hint {value:?}");
+    }
+}
+
 fn reject_software_gl(gl: Option<&graphics::GlInfo>) -> Result<(), String> {
-    gl.filter(|gl| gl.software()).map_or(Ok(()), |gl| Err(format!(
+    gl.filter(|identity| identity.software()).map_or(Ok(()), |identity| Err(format!(
         "SDL accelerated backend uses software Mesa renderer {:?}; genuine GPU acceleration is unavailable",
-        gl.renderer
+        identity.renderer
     )))
 }
 
@@ -361,7 +375,7 @@ impl PresentationClock {
             .display_index()
             .ok()
             .and_then(|index| window.subsystem().current_display_mode(index).ok())
-            .map_or(60, |mode| mode.refresh_rate);
+            .map_or(60_i32, |mode| mode.refresh_rate);
         Self {
             next_frame: std::time::Instant::now(),
             interval: std::time::Duration::from_secs_f64(1.0 / f64::from(refresh.clamp(30, 240))),
@@ -377,7 +391,8 @@ impl PresentationClock {
         if !wait.is_zero() {
             std::thread::sleep(wait);
         }
-        self.next_frame = std::time::Instant::now() + self.interval;
+        let now = std::time::Instant::now();
+        self.next_frame = now.checked_add(self.interval).unwrap_or(now);
         canvas.present();
     }
 }

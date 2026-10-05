@@ -44,9 +44,13 @@ fn acceleration_survives_vsync_failure_in_auto_and_hardware_modes() -> Result<()
             }
         })?;
         assert_eq!(attempts.len(), 3);
-        assert_eq!(attempts[1].index, 0);
-        assert!(attempts[1].vsync);
-        assert_eq!(attempts[2].index, 2);
+        let other_driver = attempts.get(1).ok_or("missing alternate driver attempt")?;
+        assert_eq!(other_driver.index, 0);
+        assert!(other_driver.vsync);
+        assert_eq!(
+            attempts.get(2).ok_or("missing unsynchronized retry")?.index,
+            2
+        );
         assert_eq!(actual.flags, ACCELERATED);
         assert!(fallback.is_none());
     }
@@ -160,7 +164,7 @@ fn diagnostics_report_actual_flags_dimensions_and_escape_fallback_errors() {
         video_driver: "x11".into(),
         window_size: (480, 272),
         output_size: (480, 272),
-        display_size: Some((480, 272)),
+        display_size: Some((480_i32, 272_i32)),
         hardware_error: None,
         gl: None,
     };
@@ -177,11 +181,14 @@ fn diagnostics_report_actual_flags_dimensions_and_escape_fallback_errors() {
     snapshot.sdl = info("software", SOFTWARE);
     snapshot.display_size = None;
     snapshot.hardware_error = Some("GPU \"failed\"\ninjected=event".into());
-    let log = snapshot.to_string();
-    assert!(log.contains("accelerated=false software=true vsync=false"));
-    assert!(log.contains("display_width=unknown display_height=unknown"));
-    assert!(log.contains("fallback=true hardware_error=\"GPU \\\"failed\\\"\\ninjected=event\""));
-    assert_eq!(log.lines().count(), 1);
+    let fallback_log = snapshot.to_string();
+    assert!(fallback_log.contains("accelerated=false software=true vsync=false"));
+    assert!(fallback_log.contains("display_width=unknown display_height=unknown"));
+    assert!(
+        fallback_log
+            .contains("fallback=true hardware_error=\"GPU \\\"failed\\\"\\ninjected=event\"")
+    );
+    assert_eq!(fallback_log.lines().count(), 1);
 }
 
 #[test]

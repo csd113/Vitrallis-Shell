@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Portable Vitrallis application launcher. Core tests run without initializing a display.
 mod app;
 mod app_center;
@@ -29,8 +30,9 @@ pub fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args_os()
         .skip(1)
         .map(|arg| {
-            arg.into_string()
-                .map_err(|_| "arguments must be valid UTF-8".to_owned())
+            arg.into_string().map_err(|argument| {
+                format!("arguments must be valid UTF-8: {}", argument.display())
+            })
         })
         .collect::<Result<_, _>>()?;
     if args.first().is_some_and(|s| s == "--demo-child") {
@@ -40,7 +42,9 @@ pub fn run() -> Result<(), String> {
         if args.len() != 2 {
             return Err("Time zone helper requires one zone".into());
         }
-        return platform::linux_handheld::authenticate_timezone(&args[1]);
+        return platform::linux_handheld::authenticate_timezone(
+            args.get(1).ok_or("Time zone helper requires one zone")?,
+        );
     }
     if args == ["--help"] {
         println!(

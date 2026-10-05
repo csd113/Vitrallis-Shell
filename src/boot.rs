@@ -74,11 +74,19 @@ impl<'a> Artwork<'a> {
 /// of fractionally scaling pixel art. The logo/name stay inside the 320x200 safe area.
 fn destination((width, height): (u32, u32)) -> Result<sdl2::rect::Rect, String> {
     let scale = (width / 480).min(height / 272).max(1);
-    let w = i32::try_from(480 * scale).map_err(|_| "boot width")?;
-    let h = i32::try_from(272 * scale).map_err(|_| "boot height")?;
+    let w = i32::try_from(480_u32.checked_mul(scale).ok_or("boot width overflow")?)
+        .map_err(|error| format!("boot width: {error}"))?;
+    let h = i32::try_from(272_u32.checked_mul(scale).ok_or("boot height overflow")?)
+        .map_err(|error| format!("boot height: {error}"))?;
     Ok(sdl2::rect::Rect::new(
-        (i32::try_from(width).map_err(|_| "display width")? - w) / 2,
-        (i32::try_from(height).map_err(|_| "display height")? - h) / 2,
+        (i32::try_from(width)
+            .map_err(|error| format!("display width: {error}"))?
+            .saturating_sub(w))
+            / 2,
+        (i32::try_from(height)
+            .map_err(|error| format!("display height: {error}"))?
+            .saturating_sub(h))
+            / 2,
         w.unsigned_abs(),
         h.unsigned_abs(),
     ))
@@ -86,11 +94,18 @@ fn destination((width, height): (u32, u32)) -> Result<sdl2::rect::Rect, String> 
 
 // Fixed frame indices make fades deliberately stepped and deterministic.
 fn sample(frame: u32) -> (Option<usize>, Option<usize>, u8, u8) {
-    let blend = |start| u8::try_from((frame - start) * 255 / 4).unwrap_or(255);
+    let blend = |start| {
+        u8::try_from(frame.saturating_sub(start).saturating_mul(255) / 4_u32).unwrap_or(255)
+    };
     match frame {
         0..=2 => (None, None, 0, 255),
-        3..=6 => (Some(0), None, 0, 20 + blend(3) / 4),
-        7..=10 => (Some(0), None, 0, 83 + (blend(7) / 3) * 2),
+        3..=6 => (Some(0), None, 0, 20_u8.saturating_add(blend(3) / 4_u8)),
+        7..=10 => (
+            Some(0),
+            None,
+            0,
+            83_u8.saturating_add((blend(7) / 3_u8).saturating_mul(2)),
+        ),
         11..=14 => (Some(0), Some(1), blend(11), 255),
         15..=18 => (Some(1), Some(2), blend(15), 255),
         19..=22 => (Some(2), Some(3), blend(19), 255),
@@ -111,16 +126,22 @@ pub fn load<T: Send>(
     std::thread::scope(|scope| {
         let (send, receive) = mpsc::sync_channel(1);
         let worker = scope.spawn(move || {
-            let _ = send.send(discover());
+            if send.send(discover()).is_err() {
+                eprintln!("level=debug event=startup_discovery_cancelled");
+            }
         });
         let result = play(sdl, canvas, layout, &receive);
         worker
             .join()
-            .map_err(|_| "startup discovery worker failed")?;
+            .map_err(|payload| format!("startup discovery worker failed: {payload:?}"))?;
         result
     })
 }
 
+#[allow(
+    clippy::wildcard_enum_match_arm,
+    reason = "This SDL handler consumes selected keyboard, pointer or window events; unrelated controller, audio, drop and platform events intentionally have no action"
+)]
 fn play<T>(
     sdl: &sdl2::Sdl,
     canvas: &mut Screen,
@@ -154,9 +175,14 @@ fn play<T>(
             draw(canvas, layout, art.as_mut(), 35)?;
             return Ok(result);
         }
-        let frame = u32::try_from(elapsed.as_nanos() / FRAME.as_nanos())
-            .unwrap_or(36)
-            .min(36);
+        let frame = u32::try_from(
+            elapsed
+                .as_nanos()
+                .checked_div(FRAME.as_nanos())
+                .ok_or("zero boot frame interval")?,
+        )
+        .unwrap_or(36)
+        .min(36);
         if drawn != Some(frame) {
             draw(canvas, layout, art.as_mut(), frame)?;
             canvas.present();
@@ -166,7 +192,9 @@ fn play<T>(
         // still allows close, reset and discovery completion without spinning.
         let wait = if frame < 36 {
             u32::try_from(
-                (FRAME * (frame + 1))
+                FRAME
+                    .checked_mul(frame.saturating_add(1))
+                    .ok_or("boot frame duration overflow")?
                     .saturating_sub(start.elapsed())
                     .as_millis(),
             )
@@ -177,24 +205,29 @@ fn play<T>(
         };
         if let Some(event) = events.wait_event_timeout(wait) {
             match event {
-                Event::Quit { .. }
+                Event::Quit { timestamp: _ }
                 | Event::Window {
                     win_event: WindowEvent::Close,
-                    ..
+                    timestamp: _,
+                    window_id: _,
                 } => return Ok(None),
                 Event::KeyDown {
                     keycode: Some(Keycode::Escape | Keycode::Home),
                     repeat: false,
-                    ..
+                    timestamp: _,
+                    window_id: _,
+                    scancode: _,
+                    keymod: _,
                 } => skip = true,
-                Event::RenderDeviceReset { .. } => {
+                Event::RenderDeviceReset { timestamp: _ } => {
                     reset_artwork(canvas, &creator, &mut art)?;
                     drawn = None;
                 }
                 Event::Window {
                     win_event:
                         WindowEvent::Exposed | WindowEvent::Shown | WindowEvent::SizeChanged(..),
-                    ..
+                    timestamp: _,
+                    window_id: _,
                 } => drawn = None,
                 _ => (),
             }
@@ -229,11 +262,12 @@ fn draw(
     art: Option<&mut Artwork<'_>>,
     frame: u32,
 ) -> Result<(), String> {
-    let (width, height) = canvas.output_size()?;
-    let width = i32::try_from(width).map_err(|_| "boot display width")?;
-    let height = i32::try_from(height).map_err(|_| "boot display height")?;
-    if let Some(art) = art {
-        art.draw(canvas, canvas.output_size()?, frame)?;
+    let (raw_width, raw_height) = canvas.output_size()?;
+    let width = i32::try_from(raw_width).map_err(|error| format!("boot display width: {error}"))?;
+    let height =
+        i32::try_from(raw_height).map_err(|error| format!("boot display height: {error}"))?;
+    if let Some(animation) = art {
+        animation.draw(canvas, canvas.output_size()?, frame)?;
     } else {
         canvas.set_draw_color(theme::BACKGROUND);
         canvas.clear();
@@ -243,9 +277,9 @@ fn draw(
             "VITRALLIS",
             Rect {
                 x: 0,
-                y: height / 2 - 16 * scale,
+                y: (height / 2_i32).saturating_sub(16_i32.saturating_mul(scale)),
                 w: width,
-                h: 32 * scale,
+                h: 32_i32.saturating_mul(scale),
             },
             scale,
             theme::TEXT,
@@ -258,9 +292,9 @@ fn draw(
             "Starting...",
             Rect {
                 x: 0,
-                y: height - 24 * scale,
+                y: height.saturating_sub(24_i32.saturating_mul(scale)),
                 w: width,
-                h: 16 * scale,
+                h: 16_i32.saturating_mul(scale),
             },
             scale,
             theme::MUTED,
@@ -285,7 +319,7 @@ mod tests {
         let mut maximum_difference = 0;
         let qa = std::env::var_os("VITRALLIS_QA_DIR").map(std::path::PathBuf::from);
         for mode in [RendererMode::Software, RendererMode::Hardware] {
-            let (canvas, info) = backend::initialize(&video, mode, || {
+            let (raw_canvas, info) = backend::initialize(&video, mode, || {
                 video
                     .window("Boot pixel validation", 480, 272)
                     .hidden()
@@ -293,8 +327,8 @@ mod tests {
                     .map_err(|e| e.to_string())
             })?;
             eprintln!("{info}");
-            let creator = canvas.texture_creator();
-            let mut canvas = Screen::new(canvas, &creator)?;
+            let creator = raw_canvas.texture_creator();
+            let mut canvas = Screen::new(raw_canvas, &creator)?;
             let mut art = Artwork::load(&creator, &ASSETS)?;
             for frame in 0..=36 {
                 art.draw(&mut canvas, (480, 272), frame)?;
@@ -308,7 +342,12 @@ mod tests {
                 if mode == RendererMode::Software {
                     reference.push(pixels);
                 } else {
-                    let expected = &reference[usize::try_from(frame).map_err(|_| "boot frame")?];
+                    let expected = reference
+                        .get(
+                            usize::try_from(frame)
+                                .map_err(|error| format!("boot frame: {error}"))?,
+                        )
+                        .ok_or("Missing fixture element")?;
                     assert_eq!(pixels.len(), expected.len());
                     let difference = pixels
                         .iter()
@@ -373,7 +412,13 @@ mod tests {
             ((1280, 720), 2),
         ] {
             let rect = destination(size)?;
-            assert_eq!((rect.width(), rect.height()), (480 * scale, 272 * scale));
+            assert_eq!(
+                (rect.width(), rect.height()),
+                (
+                    480_u32.checked_mul(scale).ok_or("boot width overflow")?,
+                    272_u32.checked_mul(scale).ok_or("boot height overflow")?
+                )
+            );
         }
         Ok(())
     }
@@ -400,13 +445,13 @@ mod tests {
             keymod: sdl2::keyboard::Mod::NOMOD,
             repeat: false,
         })?;
-        assert_eq!(load(sdl, canvas, layout, || Ok(42))?, Some(42));
+        assert_eq!(load(sdl, canvas, layout, || Ok(42_i32))?, Some(42_i32));
         assert_eq!(
             load::<()>(sdl, canvas, layout, || Err("discovery failure".into())),
             Err("discovery failure".into())
         );
         events.push_event(Event::Quit { timestamp: 0 })?;
-        assert_eq!(load(sdl, canvas, layout, || Ok(42))?, None);
+        assert_eq!(load(sdl, canvas, layout, || Ok(42_i32))?, None);
         Ok(())
     }
 

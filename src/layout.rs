@@ -15,8 +15,8 @@ impl Rect {
     pub fn contains(self, x: f64, y: f64) -> bool {
         x >= f64::from(self.x)
             && y >= f64::from(self.y)
-            && x < f64::from(self.x + self.w)
-            && y < f64::from(self.y + self.h)
+            && x < f64::from(self.x) + f64::from(self.w)
+            && y < f64::from(self.y) + f64::from(self.h)
     }
 }
 
@@ -39,6 +39,10 @@ impl Layout {
     pub fn home(width: u16, height: u16) -> Result<Self, String> {
         Self::new(width, height, 3, 2)
     }
+    #[allow(
+        clippy::arithmetic_side_effects,
+        reason = "Dimensions are validated as 320..=4096 by 200..=4096 with at most 6 columns and 4 rows before arithmetic; all i32 coordinates and products remain below 32768"
+    )]
     pub fn new(width: u16, height: u16, columns: u16, rows: u16) -> Result<Self, String> {
         if !(320..=4096).contains(&width)
             || !(200..=4096).contains(&height)
@@ -49,13 +53,13 @@ impl Layout {
         }
         let w = i32::from(width);
         let h = i32::from(height);
-        let margin = w / 40;
-        let top = h / 7;
-        let bottom = h / 8;
-        let gap = h / 30;
-        let cell_w = (w - 2 * margin - (i32::from(columns) - 1) * gap) / i32::from(columns);
-        let cell_h = (h - top - bottom - (i32::from(rows) - 1) * gap) / i32::from(rows);
-        if cell_w < 48 || cell_h < 48 {
+        let margin = w / 40_i32;
+        let top = h / 7_i32;
+        let bottom = h / 8_i32;
+        let gap = h / 30_i32;
+        let cell_w = (w - 2_i32 * margin - (i32::from(columns) - 1_i32) * gap) / i32::from(columns);
+        let cell_h = (h - top - bottom - (i32::from(rows) - 1_i32) * gap) / i32::from(rows);
+        if cell_w < 48_i32 || cell_h < 48_i32 {
             return Err("grid cells are too small".into());
         }
         let tiles = (0..rows)
@@ -136,14 +140,14 @@ mod tests {
             for (i, tile) in grid.tiles.iter().enumerate() {
                 assert_eq!(
                     grid.hit(
-                        f64::from(tile.x + tile.w / 2),
-                        f64::from(tile.y + tile.h / 2),
+                        f64::from(tile.x + tile.w / 2_i32),
+                        f64::from(tile.y + tile.h / 2_i32),
                         6
                     ),
                     Some(i)
                 );
-                assert!(tile.x >= 0 && tile.x + tile.w <= i32::from(w));
-                assert!(tile.y >= 0 && tile.y + tile.h <= i32::from(h));
+                assert!(tile.x >= 0_i32 && tile.x + tile.w <= i32::from(w));
+                assert!(tile.y >= 0_i32 && tile.y + tile.h <= i32::from(h));
                 assert!(!tile.contains(f64::from(tile.x + tile.w), f64::from(tile.y)));
             }
             assert_eq!(grid.hit(-1., 40., 6), None);

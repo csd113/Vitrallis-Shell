@@ -128,7 +128,7 @@ pub(super) fn stage(
             presentation_error(p, name, "Presentation refresh budget exhausted");
             continue;
         }
-        let Some(fetch) = fetch else {
+        let Some(client) = fetch else {
             presentation_error(p, name, "Presentation not cached");
             continue;
         };
@@ -138,7 +138,7 @@ pub(super) fn stage(
             p.commit,
             p.directory
         );
-        let result = fetch.fetch(&url, file.size).and_then(|bytes| {
+        let result = client.fetch(&url, file.size).and_then(|bytes| {
             if bytes.len() == file.size && storage::sha(&bytes) == file.sha256 {
                 Ok(bytes)
             } else {
@@ -148,7 +148,8 @@ pub(super) fn stage(
         match result {
             Ok(bytes) => {
                 *budget = budget.saturating_sub(bytes.len());
-                presentations.insert(cached, FileData { bytes, mode: 0o600 });
+                let _previous_presentation =
+                    presentations.insert(cached, FileData { bytes, mode: 0o600 });
             }
             Err(error) => presentation_error(p, name, &error),
         }
@@ -173,11 +174,11 @@ pub(super) fn store_documents(
     let mut rows = Vec::new();
     for Fetched { origin, document } in fetched {
         match document {
-            Ok(document) => {
+            Ok(fetched_document) => {
                 let result = storage::atomic(
                     &snapshot(loc, &origin),
                     &FileData {
-                        bytes: document.snapshot,
+                        bytes: fetched_document.snapshot,
                         mode: 0o600,
                     },
                 );
@@ -186,8 +187,8 @@ pub(super) fn store_documents(
                         loc,
                         sources,
                         &origin,
-                        document.entries,
-                        &document.presentations,
+                        fetched_document.entries,
+                        &fetched_document.presentations,
                     )),
                     Err(error) => retain(loc, sources, &origin, &error, previous, &mut rows),
                 }
@@ -251,7 +252,7 @@ fn parse(
             Err(error) => {
                 let mut row = source_error(origin, &error);
                 row.package.id = format!("io.vitrallis.invalid{index}");
-                row.package.name = format!("Invalid app {}", index + 1);
+                row.package.name = format!("Invalid app {}", index.saturating_add(1));
                 rows.push(row);
             }
         }
@@ -307,19 +308,36 @@ pub(super) fn icon(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let height = usize::try_from(frame.height).map_err(|e| e.to_string())?;
     let channels = frame.color_type.samples();
     let mut pixels = Vec::with_capacity(32 * 32 * 4);
-    for y in 0..32 {
-        for x in 0..32 {
-            let offset = ((y * height / 32) * width + x * width / 32) * channels;
-            let px = &data[offset..offset + channels];
-            match frame.color_type {
-                png::ColorType::Rgb => pixels.extend_from_slice(&[px[0], px[1], px[2], 255]),
-                png::ColorType::Rgba => pixels.extend_from_slice(px),
-                png::ColorType::Grayscale => pixels.extend_from_slice(&[px[0], px[0], px[0], 255]),
-                png::ColorType::GrayscaleAlpha => {
-                    pixels.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
-                }
-                png::ColorType::Indexed => return Err("Unexpanded icon".into()),
-            }
+    for y in 0_usize..32 {
+        let row = y.checked_mul(height).ok_or("Icon row overflow")? / 32;
+        for x in 0_usize..32 {
+            let column = x.checked_mul(width).ok_or("Icon column overflow")? / 32;
+            let offset = row
+                .checked_mul(width)
+                .and_then(|position| position.checked_add(column))
+                .and_then(|position| position.checked_mul(channels))
+                .ok_or("Icon pixel offset overflow")?;
+            let end = offset
+                .checked_add(channels)
+                .ok_or("Icon pixel range overflow")?;
+            let px = data
+                .get(offset..end)
+                .ok_or("Icon pixel outside decoded buffer")?;
+            let rgba = match (frame.color_type, px) {
+                (png::ColorType::Rgb, &[red, green, blue]) => [red, green, blue, 255],
+                (png::ColorType::Rgba, &[red, green, blue, alpha]) => [red, green, blue, alpha],
+                (png::ColorType::Grayscale, &[value]) => [value, value, value, 255],
+                (png::ColorType::GrayscaleAlpha, &[value, alpha]) => [value, value, value, alpha],
+                (png::ColorType::Indexed, _) => return Err("Unexpanded icon".into()),
+                (
+                    png::ColorType::Rgb
+                    | png::ColorType::Rgba
+                    | png::ColorType::Grayscale
+                    | png::ColorType::GrayscaleAlpha,
+                    _,
+                ) => return Err("Invalid icon pixel channels".into()),
+            };
+            pixels.extend_from_slice(&rgba);
         }
     }
     Ok(pixels)

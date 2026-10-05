@@ -10,6 +10,7 @@ use std::{
     path::{Path, PathBuf},
 };
 pub const MAX_BYTES: usize = 1024 * 1024;
+const MAX_FILE_BYTES: u64 = 1024 * 1024;
 #[derive(Debug)]
 pub struct Document {
     text: String,
@@ -40,15 +41,15 @@ impl Default for Document {
 impl Document {
     /// # Errors
     /// Rejects non-regular files, invalid UTF-8, changing files, and documents over 1 MiB.
-    pub fn open(path: &Path) -> io::Result<Self> {
-        let path = files::checked_path(path)?;
+    pub fn open(requested_path: &Path) -> io::Result<Self> {
+        let path = files::checked_path(requested_path)?;
         let file = files::open_regular(&path)?;
         let original = file.metadata()?;
-        if original.len() > MAX_BYTES as u64 {
+        if original.len() > MAX_FILE_BYTES {
             return Err(io::Error::other("Notepad opens files up to 1 MiB"));
         }
         let mut text = String::new();
-        file.take(MAX_BYTES as u64 + 1).read_to_string(&mut text)?;
+        let _bytes_read = file.take(MAX_FILE_BYTES + 1).read_to_string(&mut text)?;
         if text.len() > MAX_BYTES {
             return Err(io::Error::other("File grew beyond 1 MiB"));
         }
@@ -57,7 +58,7 @@ impl Document {
         }
         let newline = if text.contains("\r\n") { "\r\n" } else { "\n" };
         let starts = std::iter::once(0)
-            .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+            .chain(text.match_indices('\n').map(|(i, _)| i.saturating_add(1)))
             .collect();
         let original_digest = Some(Sha256::digest(text.as_bytes()).into());
         Ok(Self {
@@ -84,12 +85,15 @@ impl Document {
     /// `cursor` and `anchor` are part of the component API, so a malformed
     /// external write degrades to the nearest boundary instead of panicking.
     fn boundary(&self, offset: usize) -> usize {
-        let mut offset = offset.min(self.text.len());
-        while !self.text.is_char_boundary(offset) {
-            offset -= 1;
+        let mut boundary = offset.min(self.text.len());
+        while !self.text.is_char_boundary(boundary) {
+            boundary = boundary.saturating_sub(1);
         }
-        debug_assert!(self.text.is_char_boundary(offset));
-        offset
+        debug_assert!(
+            self.text.is_char_boundary(boundary),
+            "offset must end on a UTF-8 boundary"
+        );
+        boundary
     }
     #[must_use]
     pub fn row(&self) -> usize {
@@ -105,12 +109,23 @@ impl Document {
             .starts
             .partition_point(|&start| start <= cursor)
             .saturating_sub(1);
-        self.text[self.starts[row]..cursor].chars().count()
+        self.line_start(row)
+            .and_then(|start| self.text.get(start..cursor))
+            .map_or(0, |text| text.chars().count())
     }
     #[must_use]
     pub fn line(&self, row: usize) -> &str {
         self.starts.get(row).map_or("", |&start| {
-            self.text[start..self.starts.get(row + 1).copied().unwrap_or(self.text.len())]
+            self.text
+                .get(
+                    start
+                        ..self
+                            .starts
+                            .get(row.saturating_add(1))
+                            .copied()
+                            .unwrap_or(self.text.len()),
+                )
+                .unwrap_or_default()
                 .trim_end_matches(['\r', '\n'])
         })
     }
@@ -134,7 +149,14 @@ impl Document {
         {
             return Err(io::Error::other("Invalid document edit boundary"));
         }
-        if self.text.len() - (range.end - range.start) + value.len() > MAX_BYTES {
+        let removed = range.end.saturating_sub(range.start);
+        if self
+            .text
+            .len()
+            .checked_sub(removed)
+            .and_then(|remaining| remaining.checked_add(value.len()))
+            .is_none_or(|length| length > MAX_BYTES)
+        {
             return Err(io::Error::other("Document limit is 1 MiB"));
         }
         if range.is_empty() && value.is_empty() {
@@ -144,14 +166,14 @@ impl Document {
         let last = self.starts.partition_point(|&i| i <= range.end);
         let added: Vec<_> = value
             .match_indices('\n')
-            .map(|(i, _)| range.start + i + 1)
+            .map(|(i, _)| range.start.saturating_add(i).saturating_add(1))
             .collect();
-        for offset in &mut self.starts[last..] {
-            *offset = *offset - (range.end - range.start) + value.len();
+        for offset in self.starts.iter_mut().skip(last) {
+            *offset = offset.saturating_sub(removed).saturating_add(value.len());
         }
-        self.starts.splice(first..last, added);
+        drop(self.starts.splice(first..last, added));
         self.text.replace_range(range.clone(), value);
-        self.cursor = range.start + value.len();
+        self.cursor = range.start.saturating_add(value.len());
         self.anchor = None;
         self.dirty = true;
         Ok(())
@@ -169,39 +191,40 @@ impl Document {
     /// # Errors
     /// Reports invalid editing boundaries.
     pub fn backspace(&mut self) -> io::Result<()> {
+        self.cursor = self.boundary(self.cursor);
         let range = self.selection();
         if !range.is_empty() {
             return self.replace(range, "");
         }
         let previous = self.previous();
-        self.replace(previous..self.cursor, "")
+        self.replace(previous..self.boundary(self.cursor), "")
     }
     /// # Errors
     /// Reports invalid editing boundaries.
     pub fn delete(&mut self) -> io::Result<()> {
+        self.cursor = self.boundary(self.cursor);
         let range = self.selection();
         if !range.is_empty() {
             return self.replace(range, "");
         }
-        self.replace(self.cursor..self.next(), "")
+        self.replace(self.boundary(self.cursor)..self.next(), "")
     }
     fn previous(&self) -> usize {
         let cursor = self.boundary(self.cursor);
-        if self.text[..cursor].ends_with("\r\n") {
-            cursor - 2
+        let prefix = self.text.get(..cursor).unwrap_or_default();
+        if prefix.ends_with("\r\n") {
+            cursor.saturating_sub(2)
         } else {
-            self.text[..cursor]
-                .char_indices()
-                .next_back()
-                .map_or(0, |(i, _)| i)
+            prefix.char_indices().next_back().map_or(0, |(i, _)| i)
         }
     }
     fn next(&self) -> usize {
         let cursor = self.boundary(self.cursor);
-        if self.text[cursor..].starts_with("\r\n") {
-            cursor + 2
+        let suffix = self.text.get(cursor..).unwrap_or_default();
+        if suffix.starts_with("\r\n") {
+            cursor.saturating_add(2)
         } else {
-            cursor + self.text[cursor..].chars().next().map_or(0, char::len_utf8)
+            cursor.saturating_add(suffix.chars().next().map_or(0, char::len_utf8))
         }
     }
     pub fn horizontal(&mut self, right: bool, select: bool) {
@@ -214,29 +237,37 @@ impl Document {
         let row = self
             .row()
             .saturating_add_signed(delta)
-            .min(self.lines() - 1);
+            .min(self.lines().saturating_sub(1));
         self.place(row, column);
     }
     pub fn edge(&mut self, end: bool, select: bool) {
         self.prepare_selection(select);
         let row = self.row();
-        self.cursor = self.starts[row] + if end { self.line(row).len() } else { 0 };
+        self.cursor = self.line_start(row).unwrap_or(0).saturating_add(if end {
+            self.line(row).len()
+        } else {
+            0
+        });
     }
     fn prepare_selection(&mut self, select: bool) {
+        self.cursor = self.boundary(self.cursor);
         if select {
-            self.anchor.get_or_insert(self.cursor);
+            self.anchor = Some(self.boundary(self.anchor.unwrap_or(self.cursor)));
         } else {
             self.anchor = None;
         }
     }
     pub fn place(&mut self, row: usize, column: usize) {
-        let row = row.min(self.lines() - 1);
-        let line = self.line(row);
+        let target_row = row.min(self.lines().saturating_sub(1));
+        let line = self.line(target_row);
         let byte = line
             .char_indices()
             .nth(column)
             .map_or(line.len(), |(i, _)| i);
-        self.cursor = self.starts[row] + byte;
+        self.cursor = self
+            .line_start(target_row)
+            .unwrap_or(0)
+            .saturating_add(byte);
     }
     pub const fn select_all(&mut self) {
         self.anchor = Some(0);
@@ -245,8 +276,8 @@ impl Document {
     /// Save/Save As stage the entire document next to the destination and sync before rename.
     /// # Errors
     /// Rejects collisions without explicit replacement permission, symlinks, external edits and I/O errors.
-    pub fn save(&mut self, path: &Path, replace_existing: bool) -> io::Result<()> {
-        let path = files::checked_path(path)?;
+    pub fn save(&mut self, requested_path: &Path, replace_existing: bool) -> io::Result<()> {
+        let path = files::checked_path(requested_path)?;
         let existing = match fs::symlink_metadata(&path) {
             Ok(m) => Some(m),
             Err(e) if e.kind() == io::ErrorKind::NotFound => None,
@@ -325,24 +356,33 @@ impl Document {
 // identical metadata for different same-length contents written in one tick.
 fn digest_file(path: &Path) -> io::Result<[u8; 32]> {
     let mut file = files::open_regular(path)?;
-    if file.metadata()?.len() > MAX_BYTES as u64 {
+    if file.metadata()?.len() > MAX_FILE_BYTES {
         return Err(io::Error::other(
             "Save replacement exceeds the 1 MiB document limit",
         ));
     }
     let mut buffer = [0; 16 * 1024];
-    let mut total = 0;
+    let mut total = 0_usize;
     let mut digest = Sha256::new();
     loop {
-        let count = file.read(&mut buffer)?;
+        let count = match file.read(&mut buffer) {
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
         if count == 0 {
             break;
         }
-        total += count;
+        total = total
+            .checked_add(count)
+            .ok_or_else(|| io::Error::other("Save target length overflow"))?;
         if total > MAX_BYTES {
             return Err(io::Error::other("Save target grew during verification"));
         }
-        digest.update(&buffer[..count]);
+        digest.update(
+            buffer
+                .get(..count)
+                .ok_or_else(|| io::Error::other("Invalid read count"))?,
+        );
     }
     Ok(digest.finalize().into())
 }
@@ -382,6 +422,24 @@ mod tests {
         document.insert("!")?;
         assert_eq!(document.text(), "aé\n!");
         assert!(document.text().is_char_boundary(document.cursor));
+        Ok(())
+    }
+
+    #[test]
+    fn deletion_normalizes_public_cursor_without_a_selection() -> io::Result<()> {
+        let mut document = Document::default();
+        document.insert("aé\r\nb")?;
+        document.cursor = 2;
+        document.delete()?;
+        assert_eq!(document.text(), "a\r\nb");
+        assert_eq!(document.cursor, 1);
+        document.cursor = usize::MAX;
+        document.delete()?;
+        assert_eq!(document.cursor, document.text().len());
+        document.backspace()?;
+        assert_eq!(document.text(), "a\r\n");
+        document.backspace()?;
+        assert_eq!(document.text(), "a");
         Ok(())
     }
 }

@@ -61,7 +61,13 @@ impl State {
     pub const fn busy(&self) -> bool {
         matches!(
             self,
-            Self::Checking | Self::Downloading { .. } | Self::Installing | Self::Restoring
+            Self::Checking
+                | Self::Downloading {
+                    received: _,
+                    total: _
+                }
+                | Self::Installing
+                | Self::Restoring
         )
     }
     pub fn detail(&self) -> String {
@@ -88,25 +94,29 @@ impl State {
             Self::Installed {
                 version,
                 durable: true,
-                ..
+                relaunch: _,
             } => format!("Shell updated to {version}. Relaunch required."),
-            Self::Installed { durable: false, .. } => {
-                "Shell replaced; disk sync failed. Backup retained.".into()
-            }
+            Self::Installed {
+                durable: false,
+                version: _,
+                relaunch: _,
+            } => "Shell replaced; disk sync failed. Backup retained.".into(),
             Self::Restoring => "Verifying and restoring the previous shell build...".into(),
             Self::Restored {
                 version: Some(version),
                 durable: true,
-                ..
+                relaunch: _,
             } => format!("Restored Vitrallis Shell {version}. Relaunch required."),
             Self::Restored {
                 version: None,
                 durable: true,
-                ..
+                relaunch: _,
             } => "Previous shell build restored. Relaunch required.".into(),
-            Self::Restored { durable: false, .. } => {
-                "Previous shell build restored; disk sync failed. Relaunch required.".into()
-            }
+            Self::Restored {
+                durable: false,
+                version: _,
+                relaunch: _,
+            } => "Previous shell build restored; disk sync failed. Relaunch required.".into(),
             Self::Failed(error) => error.clone(),
         }
     }
@@ -143,7 +153,18 @@ impl Updater {
         detail
     }
     pub const fn request_relaunch(&mut self) {
-        if matches!(self.state, State::Installed { .. } | State::Restored { .. }) {
+        if matches!(
+            self.state,
+            State::Installed {
+                version: _,
+                durable: _,
+                relaunch: _
+            } | State::Restored {
+                version: _,
+                durable: _,
+                relaunch: _
+            }
+        ) {
             self.relaunch_requested = true;
         }
     }
@@ -166,7 +187,16 @@ impl Updater {
         if !std::mem::take(&mut self.relaunch_requested) {
             return false;
         }
-        let (State::Installed { relaunch, .. } | State::Restored { relaunch, .. }) = &self.state
+        let (State::Installed {
+            relaunch,
+            version: _,
+            durable: _,
+        }
+        | State::Restored {
+            relaunch,
+            version: _,
+            durable: _,
+        }) = &self.state
         else {
             return false;
         };
@@ -225,7 +255,18 @@ impl Updater {
         work: impl FnOnce(&Mutex<Option<State>>) -> State + Send + 'static,
     ) {
         if self.state.busy()
-            || matches!(self.state, State::Installed { .. } | State::Restored { .. })
+            || matches!(
+                self.state,
+                State::Installed {
+                    version: _,
+                    durable: _,
+                    relaunch: _
+                } | State::Restored {
+                    version: _,
+                    durable: _,
+                    relaunch: _
+                }
+            )
         {
             return;
         }
@@ -234,7 +275,18 @@ impl Updater {
     }
     pub fn check(&mut self) {
         if self.state.busy()
-            || matches!(self.state, State::Installed { .. } | State::Restored { .. })
+            || matches!(
+                self.state,
+                State::Installed {
+                    version: _,
+                    durable: _,
+                    relaunch: _
+                } | State::Restored {
+                    version: _,
+                    durable: _,
+                    relaunch: _
+                }
+            )
         {
             return;
         }
@@ -247,14 +299,14 @@ impl Updater {
         let State::Available(release) = &self.state else {
             return;
         };
-        let release = release.clone();
+        let selected_release = release.clone();
         self.start(
             State::Downloading {
                 received: 0,
-                total: release.binary.size,
+                total: selected_release.binary.size,
             },
             move |progress| {
-                install(&Curl, &release, &mut |state| {
+                install(&Curl, &selected_release, &mut |state| {
                     // Replace the previous sample so the UI always reads the latest byte count.
                     if let Ok(mut latest) = progress.lock() {
                         *latest = Some(state);
@@ -263,7 +315,7 @@ impl Updater {
                 .map_or_else(
                     |error| State::Failed(format!("Update failed: {error}")),
                     |(durable, relaunch)| State::Installed {
-                        version: release.version,
+                        version: selected_release.version,
                         durable,
                         relaunch,
                     },
@@ -285,7 +337,9 @@ impl Updater {
             .name("shell-update".into())
             .spawn(move || {
                 let result = work(&progress);
-                let _ = send.send(result);
+                if send.send(result).is_err() {
+                    eprintln!("level=debug event=shell_update_screen_closed");
+                }
             }) {
             Ok(_) => {
                 self.state = state;
@@ -327,14 +381,15 @@ impl Updater {
 
 fn check(
     transport: &impl Transport,
-    current: &str,
+    installed_version: &str,
     target: impl FnOnce() -> Result<Target, String>,
 ) -> Result<State, String> {
-    let current = Version::parse(current).map_err(|_| "Installed build has an invalid version")?;
+    let current = Version::parse(installed_version)
+        .map_err(|error| format!("Installed build has an invalid version: {error}"))?;
     let mut releases = Vec::new();
     // GitHub's /latest can designate a lower maintenance release. Inspect all
     // pages, with an explicit cap; never claim current after a partial listing.
-    for page in 1..=10 {
+    for page in 1_i32..=10_i32 {
         let mut bytes = Vec::new();
         transport.fetch(
             &format!("{}?per_page=100&page={page}", release::API),
@@ -342,7 +397,7 @@ fn check(
             &mut bytes,
         )?;
         let values: Vec<Value> = serde_json::from_slice(&bytes)
-            .map_err(|_| "GitHub returned malformed release metadata")?;
+            .map_err(|error| format!("GitHub returned malformed release metadata: {error}"))?;
         let complete = values.len() < 100;
         releases.extend(values);
         if complete {
@@ -352,7 +407,9 @@ fn check(
             }
             let available = version.to_string();
             return target()
-                .and_then(|target| release::select(latest, version, target.artifact()))
+                .and_then(|selected_target| {
+                    release::select(latest, version, selected_target.artifact())
+                })
                 .map(State::Available)
                 .map_err(|error| format!("Version {available} available; {error}"));
         }
@@ -392,7 +449,7 @@ fn install(
         .map_err(|error| format!("Cannot stage Vitrallis update: {error}"))?;
     let mut file = installation.payload()?;
     let sha256 = download(transport, release, &mut file, progress)?;
-    file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    let _rewound_offset = file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     installation.ready(file, &release.version, target, sha256)?;
     let durable = installation.commit()?;
     Ok((durable, installation.relaunch_target()?))
@@ -423,7 +480,7 @@ fn download(
         }
         expected = Some(checksum);
     }
-    let expected = expected.ok_or("No checksum available; install refused")?;
+    let expected_digest = expected.ok_or("No checksum available; install refused")?;
     transport.fetch(
         &release.binary.url,
         release.binary.size,
@@ -438,7 +495,7 @@ fn download(
         return Err("Shell download is incomplete".into());
     }
     progress(State::Installing);
-    file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
+    let _rewound_offset = file.seek(SeekFrom::Start(0)).map_err(|e| e.to_string())?;
     let mut hash = Sha256::new();
     let mut buffer = [0; 16384];
     loop {
@@ -448,16 +505,22 @@ fn download(
         if count == 0 {
             break;
         }
-        hash.update(&buffer[..count]);
+        hash.update(
+            buffer
+                .get(..count)
+                .ok_or("Invalid shell verification read length")?,
+        );
     }
     let digest: [u8; 32] = hash.finalize().into();
-    if hex_digest(&digest) != expected {
+    if hex_digest(&digest) != expected_digest {
         return Err("Shell SHA-256 verification failed; install refused".into());
     }
     Ok(digest)
 }
 fn verify_bytes(bytes: &[u8], asset: &release::Asset) -> Result<(), String> {
-    if bytes.len() as u64 != asset.size {
+    if u64::try_from(bytes.len()).map_err(|error| format!("Checksum byte count: {error}"))?
+        != asset.size
+    {
         return Err("Checksum download is incomplete".into());
     }
     if asset
@@ -471,14 +534,16 @@ fn verify_bytes(bytes: &[u8], asset: &release::Asset) -> Result<(), String> {
 }
 
 fn hex_digest(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
     bytes
         .iter()
         .flat_map(|byte| {
-            [
-                char::from(HEX[usize::from(byte >> 4)]),
-                char::from(HEX[usize::from(byte & 15)]),
-            ]
+            [byte >> 4_i32, byte & 15].map(|nibble| {
+                char::from(if nibble < 10 {
+                    b'0'.saturating_add(nibble)
+                } else {
+                    b'a'.saturating_add(nibble.saturating_sub(10))
+                })
+            })
         })
         .collect()
 }
@@ -497,8 +562,20 @@ struct DownloadWriter<'a> {
 }
 impl Write for DownloadWriter<'_> {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let length = u64::try_from(bytes.len()).map_err(io::Error::other)?;
+        let available = self
+            .total
+            .checked_sub(self.received)
+            .ok_or_else(|| io::Error::other("download length exceeds expected size"))?;
+        if length > available {
+            return Err(io::Error::other("download exceeds expected size"));
+        }
         let count = self.output.write(bytes)?;
-        self.received += count as u64;
+        self.received = self
+            .received
+            .checked_add(u64::try_from(count).map_err(io::Error::other)?)
+            .filter(|received| *received <= self.total)
+            .ok_or_else(|| io::Error::other("download byte count overflow"))?;
         if count != 0 {
             (self.progress)(State::Downloading {
                 received: self.received,

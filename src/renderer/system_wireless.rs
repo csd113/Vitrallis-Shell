@@ -10,13 +10,15 @@ pub(super) fn panel(
     layout: &Layout,
     settings: &Settings,
 ) -> Result<(), String> {
-    for (index, bounds) in PanelLayout::rows(layout, i32::try_from(WIRELESS_ROWS).unwrap_or(4))
-        .into_iter()
-        .enumerate()
+    let titles = ["Wi-Fi", "Bluetooth", "Wi-Fi connections >", "Tor >"];
+    for (index, (bounds, title)) in
+        PanelLayout::rows(layout, i32::try_from(WIRELESS_ROWS).unwrap_or(4_i32))
+            .into_iter()
+            .zip(titles)
+            .enumerate()
     {
         card(canvas, bounds, settings.selected == index)?;
         let value = settings.radio_value(index);
-        let title = ["Wi-Fi", "Bluetooth", "Wi-Fi connections >", "Tor >"][index];
         let detail = match index {
             0 if value == Some(true) => super::wifi_label(settings.status.wifi),
             0 | 1 if value == Some(false) => "Off",
@@ -26,8 +28,15 @@ pub(super) fn panel(
             _ => "Unavailable on this device",
         };
         let content = Rect {
-            x: bounds.x + 12,
-            w: bounds.w - 24 - if index < 2 { 80 * layout.text_scale } else { 0 },
+            x: bounds.x.saturating_add(12_i32),
+            w: bounds
+                .w
+                .saturating_sub(24_i32)
+                .saturating_sub(if index < 2 {
+                    80_i32.saturating_mul(layout.text_scale)
+                } else {
+                    0
+                }),
             ..bounds
         };
         label(
@@ -44,7 +53,7 @@ pub(super) fn panel(
             canvas,
             detail,
             Rect {
-                y: bounds.y + bounds.h / 2,
+                y: bounds.y.saturating_add((bounds.h) / 2_i32),
                 h: bounds.h / 2,
                 ..content
             },
@@ -53,9 +62,12 @@ pub(super) fn panel(
         )?;
         if index < 2 {
             let toggle = Rect {
-                x: bounds.x + bounds.w - 76 * layout.text_scale,
-                y: bounds.y + bounds.h / 4,
-                w: 68 * layout.text_scale,
+                x: bounds
+                    .x
+                    .saturating_add(bounds.w)
+                    .saturating_sub(76_i32.saturating_mul(layout.text_scale)),
+                y: bounds.y.saturating_add((bounds.h) / 4_i32),
+                w: 68_i32.saturating_mul(layout.text_scale),
                 h: bounds.h / 2,
             };
             text(

@@ -33,6 +33,10 @@ pub(super) enum Icon {
     Wifi,
     Bolt,
 }
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "Fallback icon dimensions are checked as 1..=4096 before multiplication and division; normalized coordinates stay in -16..=15 and translated positions saturate"
+)]
 fn icon(
     canvas: &mut Screen,
     r: Rect,
@@ -47,24 +51,37 @@ fn icon(
         Icon::Bolt => None,
     };
     if let Some(texture) = index
-        .and_then(|index| textures.get(index))
+        .and_then(|slot| textures.get(slot))
         .and_then(Option::as_ref)
     {
         return canvas.copy(texture, None, rect(r)?);
     }
+    if r.w <= 0_i32 || r.h <= 0_i32 {
+        return Ok(());
+    }
+    if r.w > 4096_i32 || r.h > 4096_i32 {
+        return Err("Fallback icon dimensions exceed screen limits".into());
+    }
     canvas.set_draw_color(color);
-    for y in 0..r.h {
-        for x in 0..r.w {
-            let dx = x * 32 / r.w - 16;
-            let dy = y * 32 / r.h - 16;
+    for y in 0_i32..r.h {
+        for x in 0_i32..r.w {
+            let dx = x * 32_i32 / r.w - 16_i32;
+            let dy = y * 32_i32 / r.h - 16_i32;
             if pixel(kind, dx, dy) {
-                canvas.draw_point((r.x + x, r.y + y))?;
+                canvas.draw_point((r.x.saturating_add(x), r.y.saturating_add(y)))?;
             }
         }
     }
     Ok(())
 }
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "The input guard bounds x and y to -16_i32..=16_i32; squared distances, absolute values and fixed offsets stay below 1024"
+)]
 fn pixel(kind: Icon, x: i32, y: i32) -> bool {
+    if !(-16_i32..=16_i32).contains(&x) || !(-16_i32..=16_i32).contains(&y) {
+        return false;
+    }
     let radius = x * x + y * y;
     match kind {
         Icon::Sun => {
@@ -89,22 +106,26 @@ fn pixel(kind: Icon, x: i32, y: i32) -> bool {
                     || (441..=529).contains(&distance)))
                 || (x * x + (y - 9) * (y - 9) <= 7)
         }
-        Icon::Bolt => polygon(
-            &[(6, -14), (-9, 3), (-1, 3), (-5, 14), (10, -5), (2, -5)],
-            x,
-            y,
-        ),
+        Icon::Bolt => polygon(x, y),
     }
 }
-fn polygon(points: &[(i32, i32)], x: i32, y: i32) -> bool {
-    let mut winding = 0;
-    for (&(ax, ay), &(bx, by)) in points.iter().zip(points.iter().cycle().skip(1)) {
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "The guard bounds the sample to -16_i32..=16_i32 and the six fixed bolt vertices share that range; cross products stay below 2048 and winding within -6..=6"
+)]
+fn polygon(x: i32, y: i32) -> bool {
+    const POINTS: [(i32, i32); 6] = [(6, -14), (-9, 3), (-1, 3), (-5, 14), (10, -5), (2, -5)];
+    if !(-16_i32..=16_i32).contains(&x) || !(-16_i32..=16_i32).contains(&y) {
+        return false;
+    }
+    let mut winding = 0_i32;
+    for (&(ax, ay), &(bx, by)) in POINTS.iter().zip(POINTS.iter().cycle().skip(1)) {
         let cross = (bx - ax) * (y - ay) - (x - ax) * (by - ay);
-        if ay <= y && by > y && cross > 0 {
-            winding += 1;
+        if ay <= y && by > y && cross > 0_i32 {
+            winding += 1_i32;
         }
-        if ay > y && by <= y && cross < 0 {
-            winding -= 1;
+        if ay > y && by <= y && cross < 0_i32 {
+            winding -= 1_i32;
         }
     }
     winding != 0
@@ -122,14 +143,24 @@ fn label(
 ) -> Result<(), String> {
     text_left(canvas, value, bounds, scale, color)
 }
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "Radius is checked as 0..=128, so squared sums stay at most 32768 and negation is safe; translated coordinates use saturation"
+)]
 fn circle(canvas: &mut Screen, x: i32, y: i32, radius: i32, color: Color) -> Result<(), String> {
     canvas.set_draw_color(color);
+    if !(0_i32..=128_i32).contains(&radius) {
+        return Err("Circle radius exceeds screen limits".into());
+    }
     for dy in -radius..=radius {
-        let dx = (0..=radius)
+        let dx = (0_i32..=radius)
             .take_while(|dx| dx * dx + dy * dy <= radius * radius)
             .last()
-            .unwrap_or(0);
-        canvas.draw_line((x - dx, y + dy), (x + dx, y + dy))?;
+            .unwrap_or(0_i32);
+        canvas.draw_line(
+            (x.saturating_sub(dx), y.saturating_add(dy)),
+            (x.saturating_add(dx), y.saturating_add(dy)),
+        )?;
     }
     Ok(())
 }
@@ -143,10 +174,14 @@ pub(super) fn status(
 ) -> Result<(), String> {
     let scale = layout.text_scale;
     let clock = preferences.clock(status.clock.as_deref());
-    let clock_width = i32::try_from(clock.len()).map_err(|_| "clock length")? * advance(scale);
+    let clock_width = i32::try_from(clock.len())
+        .map_err(|error| format!("clock length: {error}"))?
+        .saturating_mul(advance(scale));
     // Fixed slots from the right edge: battery, charge marker, radio mark, clock.
-    let width = 128 * scale + clock_width;
-    let x = i32::from(layout.width) - layout.title.x - width;
+    let width = 128_i32.saturating_mul(scale).saturating_add(clock_width);
+    let x = i32::from(layout.width)
+        .saturating_sub(layout.title.x)
+        .saturating_sub(width);
     label(
         canvas,
         &status
@@ -155,22 +190,23 @@ pub(super) fn status(
         Rect {
             x: layout.title.x,
             y: layout.title.h / 2,
-            w: x - layout.title.x - 8 * scale,
+            w: x.saturating_sub(layout.title.x)
+                .saturating_sub(8_i32.saturating_mul(scale)),
             h: layout.title.h / 2,
         },
         scale,
         MUTED,
     )?;
-    let y = layout.title.h * 3 / 4;
+    let y = layout.title.h.saturating_mul(3_i32) / 4_i32;
     battery(canvas, status, x, y, scale)?;
     if status.charging == Some(true) || status.external_power == Some(true) {
         icon(
             canvas,
             Rect {
-                x: x + 67 * scale,
-                y: y - 8 * scale,
-                w: 16 * scale,
-                h: 16 * scale,
+                x: x.saturating_add(67_i32.saturating_mul(scale)),
+                y: y.saturating_sub(8_i32.saturating_mul(scale)),
+                w: 16_i32.saturating_mul(scale),
+                h: 16_i32.saturating_mul(scale),
             },
             Icon::Bolt,
             if status.charging == Some(true) {
@@ -182,10 +218,10 @@ pub(super) fn status(
         )?;
     }
     let wifi = Rect {
-        x: x + 94 * scale,
-        y: y - 8 * scale,
-        w: 18 * scale,
-        h: 16 * scale,
+        x: x.saturating_add(94_i32.saturating_mul(scale)),
+        y: y.saturating_sub(8_i32.saturating_mul(scale)),
+        w: 18_i32.saturating_mul(scale),
+        h: 16_i32.saturating_mul(scale),
     };
     icon(
         canvas,
@@ -200,16 +236,19 @@ pub(super) fn status(
     )?;
     if matches!(status.wifi, None | Some(Wifi::Off | Wifi::Disconnected)) {
         canvas.set_draw_color(MUTED);
-        canvas.draw_line((wifi.x, wifi.y + wifi.h), (wifi.x + wifi.w, wifi.y))?;
+        canvas.draw_line(
+            (wifi.x, wifi.y.saturating_add(wifi.h)),
+            (wifi.x.saturating_add(wifi.w), wifi.y),
+        )?;
     }
     label(
         canvas,
         &clock,
         Rect {
-            x: x + 128 * scale,
-            y: y - 6 * scale,
+            x: x.saturating_add(128_i32.saturating_mul(scale)),
+            y: y.saturating_sub(6_i32.saturating_mul(scale)),
             w: clock_width,
-            h: 12 * scale,
+            h: 12_i32.saturating_mul(scale),
         },
         scale,
         INK,
@@ -219,9 +258,9 @@ pub(super) fn status(
 fn battery(canvas: &mut Screen, status: &Status, x: i32, y: i32, scale: i32) -> Result<(), String> {
     let battery = Rect {
         x,
-        y: y - 6 * scale,
-        w: 25 * scale,
-        h: 12 * scale,
+        y: y.saturating_sub(6_i32.saturating_mul(scale)),
+        w: 25_i32.saturating_mul(scale),
+        h: 12_i32.saturating_mul(scale),
     };
     let color = if status.battery.is_some_and(|p| p.value() <= 15) {
         AMBER
@@ -237,23 +276,27 @@ fn battery(canvas: &mut Screen, status: &Status, x: i32, y: i32, scale: i32) -> 
     fill(
         canvas,
         Rect {
-            x: x + battery.w,
-            y: y - 2 * scale,
-            w: 2 * scale,
-            h: 4 * scale,
+            x: x.saturating_add(battery.w),
+            y: y.saturating_sub(2_i32.saturating_mul(scale)),
+            w: 2_i32.saturating_mul(scale),
+            h: 4_i32.saturating_mul(scale),
         },
         MUTED,
     )?;
     if let Some(value) = status.battery {
-        let w = (battery.w - 4 * scale) * i32::from(value.value()) / 100;
-        if w > 0 {
+        let w = battery
+            .w
+            .saturating_sub(4_i32.saturating_mul(scale))
+            .saturating_mul(i32::from(value.value()))
+            / 100_i32;
+        if w > 0_i32 {
             fill(
                 canvas,
                 Rect {
-                    x: x + 2 * scale,
-                    y: battery.y + 2 * scale,
+                    x: x.saturating_add(2_i32.saturating_mul(scale)),
+                    y: battery.y.saturating_add(2_i32.saturating_mul(scale)),
                     w,
-                    h: battery.h - 4 * scale,
+                    h: battery.h.saturating_sub(4_i32.saturating_mul(scale)),
                 },
                 color,
             )?;
@@ -266,10 +309,10 @@ fn battery(canvas: &mut Screen, status: &Status, x: i32, y: i32, scale: i32) -> 
         canvas,
         &percent,
         Rect {
-            x: x + 34 * scale,
-            y: y - 6 * scale,
-            w: 32 * scale,
-            h: 12 * scale,
+            x: x.saturating_add(34_i32.saturating_mul(scale)),
+            y: y.saturating_sub(6_i32.saturating_mul(scale)),
+            w: 32_i32.saturating_mul(scale),
+            h: 12_i32.saturating_mul(scale),
         },
         scale,
         INK,
@@ -313,8 +356,8 @@ fn home_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Resu
             canvas,
             title,
             Rect {
-                x: bounds.x + 8,
-                w: bounds.w - 16,
+                x: bounds.x.saturating_add(8_i32),
+                w: bounds.w.saturating_sub(16_i32),
                 ..bounds
             },
             layout.text_scale,
@@ -331,8 +374,11 @@ fn home_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Resu
         canvas,
         summary,
         Rect {
-            y: layout.footer.y - 12 * layout.text_scale,
-            h: 12 * layout.text_scale,
+            y: layout
+                .footer
+                .y
+                .saturating_sub(12_i32.saturating_mul(layout.text_scale)),
+            h: 12_i32.saturating_mul(layout.text_scale),
             ..layout.footer
         },
         layout.text_scale,
@@ -346,16 +392,16 @@ fn home_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Resu
         let Some((index, title)) = control else {
             continue;
         };
-        let bounds = Rect {
-            x: bounds.x + 2,
-            w: bounds.w - 4,
+        let inset_bounds = Rect {
+            x: bounds.x.saturating_add(2_i32),
+            w: bounds.w.saturating_sub(4_i32),
             ..bounds
         };
-        card(canvas, bounds, settings.selected == index)?;
+        card(canvas, inset_bounds, settings.selected == index)?;
         text(
             canvas,
             title,
-            bounds,
+            inset_bounds,
             layout.text_scale,
             if position == 0 {
                 ACCENT
@@ -381,8 +427,8 @@ fn option_row(
 ) -> Result<(), String> {
     card(canvas, bounds, selected)?;
     let content = Rect {
-        x: bounds.x + 12,
-        w: bounds.w - 24,
+        x: bounds.x.saturating_add(12_i32),
+        w: bounds.w.saturating_sub(24_i32),
         ..bounds
     };
     label(
@@ -399,7 +445,7 @@ fn option_row(
         canvas,
         detail,
         Rect {
-            y: bounds.y + bounds.h / 2,
+            y: bounds.y.saturating_add((bounds.h) / 2_i32),
             h: bounds.h / 2,
             ..content
         },
@@ -476,7 +522,7 @@ fn preferences_panel(
 ) -> Result<(), String> {
     for (index, (bounds, (title, detail))) in PanelLayout::rows(
         layout,
-        i32::try_from(crate::settings::preferences::APP_ROWS).unwrap_or(3),
+        i32::try_from(crate::settings::preferences::APP_ROWS).unwrap_or(3_i32),
     )
     .into_iter()
     .zip(settings.preference_rows())
@@ -507,8 +553,8 @@ fn about_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Res
     {
         card(canvas, bounds, false)?;
         let content = Rect {
-            x: bounds.x + 12,
-            w: bounds.w - 24,
+            x: bounds.x.saturating_add(12_i32),
+            w: bounds.w.saturating_sub(24_i32),
             ..bounds
         };
         label(
@@ -525,7 +571,7 @@ fn about_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Res
             canvas,
             &value,
             Rect {
-                y: bounds.y + bounds.h / 2,
+                y: bounds.y.saturating_add((bounds.h) / 2_i32),
                 h: bounds.h / 2,
                 ..content
             },
@@ -598,11 +644,15 @@ fn zones_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Res
     // The "current" marker owns the right end of the row, so a long zone name
     // is shortened before it instead of growing into the marker, and the marker
     // itself always has room for its whole word.
-    let marker = 60 * scale;
-    let inset = 12 * scale;
-    let gap = 8 * scale;
+    let marker = 60_i32.saturating_mul(scale);
+    let inset = 12_i32.saturating_mul(scale);
+    let gap = 8_i32.saturating_mul(scale);
     for (index, bounds) in PanelLayout::rows(layout, 5).into_iter().enumerate() {
-        let Some(zone) = settings.status.timezones.get(settings.zone_start + index) else {
+        let Some(zone) = settings
+            .status
+            .timezones
+            .get(settings.zone_start.saturating_add(index))
+        else {
             continue;
         };
         card(canvas, bounds, settings.selected == index)?;
@@ -610,8 +660,12 @@ fn zones_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Res
             canvas,
             zone,
             Rect {
-                x: bounds.x + inset,
-                w: bounds.w - inset - marker - gap,
+                x: bounds.x.saturating_add(inset),
+                w: bounds
+                    .w
+                    .saturating_sub(inset)
+                    .saturating_sub(marker)
+                    .saturating_sub(gap),
                 ..bounds
             },
             scale,
@@ -622,7 +676,11 @@ fn zones_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Res
                 canvas,
                 "current",
                 Rect {
-                    x: bounds.x + bounds.w - marker - gap,
+                    x: bounds
+                        .x
+                        .saturating_add(bounds.w)
+                        .saturating_sub(marker)
+                        .saturating_sub(gap),
                     w: marker,
                     ..bounds
                 },
@@ -649,7 +707,7 @@ fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
         Page::Storage => &storage_hint,
         Page::Updates | Page::Tor | Page::TorDetails => "Esc: back   Enter: select",
     };
-    let hint = if matches!(
+    let display_hint = if matches!(
         settings.page,
         Page::Display | Page::Device | Page::DateTime | Page::Wireless | Page::Applications
     ) {
@@ -668,11 +726,11 @@ fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
     } else {
         hint
     };
-    let half = layout.footer.h / 2;
+    let half = layout.footer.h / 2_i32;
     text(
         canvas,
         if settings.message.is_empty() {
-            hint
+            display_hint
         } else {
             &settings.message
         },
@@ -690,15 +748,15 @@ fn panel_footer(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
         let Some((index, label)) = control else {
             continue;
         };
-        let bounds = Rect {
-            y: bounds.y + half,
+        let footer_bounds = Rect {
+            y: bounds.y.saturating_add(half),
             h: half,
             ..bounds
         };
         if settings.selected == index {
-            card(canvas, bounds, true)?;
+            card(canvas, footer_bounds, true)?;
         }
-        text(canvas, label, bounds, layout.text_scale, ACCENT)?;
+        text(canvas, label, footer_bounds, layout.text_scale, ACCENT)?;
     }
     Ok(())
 }
@@ -711,17 +769,23 @@ fn slider(
     index: usize,
     textures: &[Option<Texture<'_>>],
 ) -> Result<(), String> {
-    let r = geometry.controls[index];
+    let r = *geometry
+        .controls
+        .get(index)
+        .ok_or("Missing slider control geometry")?;
     let scale = layout.text_scale;
-    let track = geometry.tracks[index];
+    let track = *geometry
+        .tracks
+        .get(index)
+        .ok_or("Missing slider track geometry")?;
     let available = settings.value(index).is_some();
     card(canvas, r, settings.selected == index)?;
-    let size = r.h * 3 / 5;
+    let size = r.h.saturating_mul(3_i32) / 5_i32;
     icon(
         canvas,
         Rect {
-            x: r.x + (r.h - size) / 2,
-            y: r.y + (r.h - size) / 2,
+            x: r.x.saturating_add((r.h.saturating_sub(size)) / 2_i32),
+            y: r.y.saturating_add((r.h.saturating_sub(size)) / 2_i32),
             w: size,
             h: size,
         },
@@ -744,7 +808,7 @@ fn slider(
         ),
         Rect {
             x: track.x,
-            y: r.y + 3 * scale,
+            y: r.y.saturating_add(3_i32.saturating_mul(scale)),
             w: track.w,
             h: r.h / 2,
         },
@@ -761,30 +825,35 @@ fn slider(
         canvas,
         &display,
         Rect {
-            x: track.x + track.w + 10 * scale,
+            x: track
+                .x
+                .saturating_add(track.w)
+                .saturating_add(10_i32.saturating_mul(scale)),
             y: r.y,
-            w: 48 * scale,
+            w: 48_i32.saturating_mul(scale),
             h: r.h,
         },
         scale,
         if available { INK } else { MUTED },
     )?;
-    let value_width = value.map_or(0, |value| track.w * i32::from(value.value()) / 100);
+    let value_width = value.map_or(0_i32, |percent| {
+        track.w.saturating_mul(i32::from(percent.value())) / 100_i32
+    });
     progress(canvas, track, value_width, false)?;
     if value.is_some() {
         let width = value_width;
         circle(
             canvas,
-            track.x + width,
-            track.y + track.h / 2,
-            5 * scale,
+            track.x.saturating_add(width),
+            track.y.saturating_add((track.h) / 2_i32),
+            5_i32.saturating_mul(scale),
             INK,
         )?;
         circle(
             canvas,
-            track.x + width,
-            track.y + track.h / 2,
-            2 * scale,
+            track.x.saturating_add(width),
+            track.y.saturating_add((track.h) / 2_i32),
+            2_i32.saturating_mul(scale),
             ACCENT,
         )?;
     }
@@ -801,9 +870,12 @@ fn confirmation(
         .is_some_and(|(power, _)| power == Power::Shutdown);
     let bounds = Rect {
         x: layout.title.x,
-        y: layout.title.h + 8,
+        y: layout.title.h.saturating_add(8_i32),
         w: layout.title.w,
-        h: geometry.controls[2].y - layout.title.h - 16,
+        h: geometry.controls[2]
+            .y
+            .saturating_sub(layout.title.h)
+            .saturating_sub(16_i32),
     };
     text(
         canvas,
@@ -823,7 +895,7 @@ fn confirmation(
         canvas,
         "Apps will close. Save your work.",
         Rect {
-            y: bounds.y + bounds.h / 2,
+            y: bounds.y.saturating_add((bounds.h) / 2_i32),
             h: bounds.h / 2,
             ..bounds
         },
@@ -887,12 +959,14 @@ fn device_panel(
             ),
         };
         card(canvas, bounds, settings.selected == index)?;
-        let size = bounds.h * 3 / 5;
+        let size = bounds.h.saturating_mul(3_i32) / 5_i32;
         icon(
             canvas,
             Rect {
-                x: bounds.x + 10,
-                y: bounds.y + (bounds.h - size) / 2,
+                x: bounds.x.saturating_add(10_i32),
+                y: bounds
+                    .y
+                    .saturating_add((bounds.h.saturating_sub(size)) / 2_i32),
                 w: size,
                 h: size,
             },
@@ -901,8 +975,8 @@ fn device_panel(
             textures,
         )?;
         let content = Rect {
-            x: bounds.x + size + 20,
-            w: bounds.w - size - 32,
+            x: bounds.x.saturating_add(size).saturating_add(20_i32),
+            w: bounds.w.saturating_sub(size).saturating_sub(32_i32),
             ..bounds
         };
         label(
@@ -923,7 +997,7 @@ fn device_panel(
             canvas,
             &detail,
             Rect {
-                y: bounds.y + bounds.h / 2,
+                y: bounds.y.saturating_add((bounds.h) / 2_i32),
                 h: bounds.h / 2,
                 ..content
             },
@@ -951,7 +1025,7 @@ fn timeout_label(timeout: Option<u16>) -> String {
             0 => "< Never >".into(),
             30 => "< 30 seconds >".into(),
             60 => "< 1 minute >".into(),
-            seconds => format!("< {} minutes >", seconds / 60),
+            _ => format!("< {} minutes >", seconds / 60),
         },
     )
 }
@@ -976,16 +1050,35 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
         (None, _) => settings.updater.detail(),
     };
     let message = format!("Running Vitrallis Shell {}\n{detail}", display_version());
-    let top = layout.title.h + 8;
-    let line_height = 12 * layout.text_scale;
-    let capacity = usize::try_from(layout.title.w / (8 * layout.text_scale))
-        .map_err(|_| "update text width")?
-        .max(1);
-    let downloading = matches!(settings.updater.state, State::Downloading { .. });
-    let progress_height = if downloading { 20 } else { 0 };
-    let max_lines =
-        usize::try_from((geometry.controls[2].y - top - 8 - progress_height) / line_height)
-            .map_err(|_| "update text height")?;
+    let top = layout.title.h.saturating_add(8_i32);
+    let line_height = 12_i32.saturating_mul(layout.text_scale);
+    let capacity = usize::try_from(
+        layout
+            .title
+            .w
+            .checked_div(8_i32.saturating_mul(layout.text_scale))
+            .unwrap_or(0_i32),
+    )
+    .map_err(|error| format!("update text width: {error}"))?
+    .max(1);
+    let downloading = matches!(
+        settings.updater.state,
+        State::Downloading {
+            received: _,
+            total: _
+        }
+    );
+    let progress_height = if downloading { 20_i32 } else { 0_i32 };
+    let max_lines = usize::try_from(
+        geometry.controls[2]
+            .y
+            .saturating_sub(top)
+            .saturating_sub(8_i32)
+            .saturating_sub(progress_height)
+            .checked_div(line_height)
+            .unwrap_or(0_i32),
+    )
+    .map_err(|error| format!("update text height: {error}"))?;
     let lines = update_lines(&message, capacity);
     for (index, line) in lines.iter().take(max_lines).enumerate() {
         label(
@@ -993,7 +1086,11 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
             line,
             Rect {
                 x: layout.title.x,
-                y: top + i32::try_from(index).map_err(|_| "update line index")? * line_height,
+                y: top.saturating_add(
+                    i32::try_from(index)
+                        .map_err(|error| format!("update line index: {error}"))?
+                        .saturating_mul(line_height),
+                ),
                 w: layout.title.w,
                 h: line_height,
             },
@@ -1009,18 +1106,7 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
     if settings.updater.relaunch_pending() {
         return Ok(());
     }
-    let action = match confirming {
-        Some(UpdateConfirmation::Install) => "Confirm Install",
-        Some(UpdateConfirmation::Restore) => "Confirm Restore",
-        None => match settings.updater.state {
-            State::Available(_) => "Install Update",
-            State::Checking | State::Downloading { .. } | State::Installing | State::Restoring => {
-                "Please wait..."
-            }
-            State::Installed { .. } | State::Restored { .. } => "Relaunch Shell",
-            _ => "Check for Updates",
-        },
-    };
+    let action = update_action(confirming, &settings.updater.state);
     for (index, bounds) in geometry.confirmation.iter().copied().enumerate() {
         card(canvas, bounds, settings.selected == index)?;
         text(
@@ -1048,6 +1134,38 @@ fn update_panel(canvas: &mut Screen, layout: &Layout, settings: &Settings) -> Re
     panel_footer(canvas, layout, settings)
 }
 
+const fn update_action(
+    confirming: Option<crate::settings::UpdateConfirmation>,
+    state: &crate::updater::State,
+) -> &'static str {
+    use crate::{settings::UpdateConfirmation, updater::State};
+    match confirming {
+        Some(UpdateConfirmation::Install) => "Confirm Install",
+        Some(UpdateConfirmation::Restore) => "Confirm Restore",
+        None => match state {
+            State::Available(_) => "Install Update",
+            State::Checking
+            | State::Downloading {
+                received: _,
+                total: _,
+            }
+            | State::Installing
+            | State::Restoring => "Please wait...",
+            State::Installed {
+                version: _,
+                durable: _,
+                relaunch: _,
+            }
+            | State::Restored {
+                version: _,
+                durable: _,
+                relaunch: _,
+            } => "Relaunch Shell",
+            State::Idle | State::Current | State::Failed(_) => "Check for Updates",
+        },
+    }
+}
+
 fn update_progress(
     canvas: &mut Screen,
     layout: &Layout,
@@ -1057,19 +1175,24 @@ fn update_progress(
 ) -> Result<(), String> {
     let track = Rect {
         x: layout.title.x,
-        y: geometry.controls[2].y - 24,
+        y: geometry
+            .controls
+            .get(2)
+            .ok_or("Missing settings footer geometry")?
+            .y
+            .saturating_sub(24_i32),
         w: layout.title.w,
         h: 12,
     };
     let width = u64::try_from(track.w)
-        .map_err(|_| "update progress width")?
+        .map_err(|error| format!("update progress width: {error}"))?
         .saturating_mul(received.min(total))
         .checked_div(total)
         .unwrap_or(0);
     progress(
         canvas,
         track,
-        i32::try_from(width).map_err(|_| "update progress width")?,
+        i32::try_from(width).map_err(|error| format!("update progress width: {error}"))?,
         false,
     )
 }
@@ -1085,11 +1208,23 @@ pub(super) fn power_splash(
 ) -> Result<(), String> {
     canvas.set_draw_color(theme::BACKGROUND);
     canvas.clear();
-    let center = i32::from(layout.height) / 2;
+    let center = i32::from(layout.height) / 2_i32;
     for (title, y, color) in [
-        ("VITRALLIS", center - 36 * layout.text_scale, ACCENT),
-        (message, center - 8 * layout.text_scale, INK),
-        ("Please wait...", center + 20 * layout.text_scale, MUTED),
+        (
+            "VITRALLIS",
+            center.saturating_sub(36_i32.saturating_mul(layout.text_scale)),
+            ACCENT,
+        ),
+        (
+            message,
+            center.saturating_sub(8_i32.saturating_mul(layout.text_scale)),
+            INK,
+        ),
+        (
+            "Please wait...",
+            center.saturating_add(20_i32.saturating_mul(layout.text_scale)),
+            MUTED,
+        ),
     ] {
         text(
             canvas,
@@ -1098,7 +1233,7 @@ pub(super) fn power_splash(
                 x: layout.title.x,
                 y,
                 w: layout.title.w,
-                h: 16 * layout.text_scale,
+                h: 16_i32.saturating_mul(layout.text_scale),
             },
             layout.text_scale,
             color,

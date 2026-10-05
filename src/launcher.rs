@@ -89,10 +89,10 @@ impl Launcher {
         for app in &self.all_apps {
             let state = processes.state(&app.id);
             if state.is_running() {
-                self.app_center.running.insert(app.id.clone());
+                let _new_running_app = self.app_center.running.insert(app.id.clone());
             }
             if state != AppState::Stopped {
-                self.app_states.insert(app.id.clone(), state);
+                let _previous_state = self.app_states.insert(app.id.clone(), state);
             }
         }
     }
@@ -143,7 +143,8 @@ impl Launcher {
                 }
                 Action::Page(forward) => self.page(forward),
                 Action::Back if self.folder.is_some() => self.leave_folder(),
-                _ => {}
+                Action::System | Action::Activate | Action::SelectAndActivate(_) | Action::Back => {
+                }
             }
             return None;
         }
@@ -176,20 +177,22 @@ impl Launcher {
                 return self.input(Action::Activate);
             }
             Action::Activate if !self.apps.is_empty() => {
-                if self.apps[self.selected].source == crate::app::AppSource::Folder {
-                    self.folder = Some(self.apps[self.selected].id.clone());
+                self.selected = self.selected.min(self.apps.len().saturating_sub(1));
+                let app = self.apps.get(self.selected)?;
+                if app.source == crate::app::AppSource::Folder {
+                    self.folder = Some(app.id.clone());
                     self.rebuild_view(None);
                     return None;
                 }
-                if self.apps[self.selected].id == crate::app_center::TILE_ID {
+                if app.id == crate::app_center::TILE_ID {
                     self.app_center.show();
                     return None;
                 }
-                if self.apps[self.selected].is_system_settings() {
+                if app.is_system_settings() {
                     self.settings.show();
                     return None;
                 }
-                let name = self.apps[self.selected].name.clone();
+                let name = app.name.clone();
                 self.launching(&name);
                 return Some(self.selected);
             }
@@ -198,17 +201,25 @@ impl Launcher {
         None
     }
     fn page(&mut self, forward: bool) {
-        let page = self.page_start() / self.capacity;
+        let page = self.page_start().checked_div(self.capacity).unwrap_or(0);
         let target = if forward {
-            page.saturating_add(1).min(self.page_count() - 1)
+            page.saturating_add(1)
+                .min(self.page_count().saturating_sub(1))
         } else {
             page.saturating_sub(1)
         };
-        self.selected = (target * self.capacity + self.selected % self.capacity)
+        let local = self.selected.checked_rem(self.capacity).unwrap_or(0);
+        self.selected = target
+            .saturating_mul(self.capacity)
+            .saturating_add(local)
             .min(self.apps.len().saturating_sub(1));
     }
     pub const fn page_start(&self) -> usize {
-        self.selected / self.capacity * self.capacity
+        let local = match self.selected.checked_rem(self.capacity) {
+            Some(index) => index,
+            None => 0,
+        };
+        self.selected.saturating_sub(local)
     }
     pub fn page_count(&self) -> usize {
         self.apps.len().div_ceil(self.capacity).max(1)
@@ -307,40 +318,64 @@ impl Launcher {
 mod tests {
     use super::*;
     #[test]
+    fn stale_selection_is_clamped_before_activation() -> Result<(), String> {
+        let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
+        let last = apps.len().checked_sub(1).ok_or("missing demo apps")?;
+        let mut state = Launcher::new(apps, 3, 6)?;
+        state.selected = usize::MAX;
+        assert_eq!(state.input(Action::Activate), Some(last));
+        assert_eq!(state.selected, last);
+        state.finished("closed".into());
+        state.apps.clear();
+        assert_eq!(state.input(Action::Activate), None);
+        Ok(())
+    }
+    #[test]
     fn reload_preserves_identity_and_rejects_invalid_replacements() -> Result<(), String> {
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
         let mut state = Launcher::new(apps.clone(), 3, 6)?;
         state.selected = 1;
         let mut reordered = apps.clone();
         reordered.reverse();
-        state.reload(reordered)?;
-        assert_eq!(state.apps[state.selected].id, apps[1].id);
+        assert!(
+            state.reload(reordered)?,
+            "reordering must update the app view"
+        );
+        assert_eq!(
+            state
+                .apps
+                .get(state.selected)
+                .ok_or("selected app missing")?
+                .id,
+            apps.get(1).ok_or("demo app missing")?.id
+        );
         let mut invalid = apps.clone();
-        invalid[0].name.clear();
+        invalid.first_mut().ok_or("demo app missing")?.name.clear();
         assert!(state.reload(invalid).is_err());
         assert_eq!(state.apps.len(), apps.len());
         state.launching("Test");
         state.launched("Test");
         assert!(state.reload(vec![]).is_err());
         state.finished("closed".into());
-        state.reload(vec![])?;
+        assert!(state.reload(vec![])?, "clearing apps must update the view");
         assert_eq!(state.selected, 0);
         assert!(state.input(Action::Activate).is_none());
-        state.reload(apps)?;
+        assert!(state.reload(apps)?, "restoring apps must update the view");
         assert!(state.input(Action::Activate).is_some());
         Ok(())
     }
     #[test]
     fn system_settings_tile_opens_the_same_screen_without_spawning() -> Result<(), String> {
         let mut apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
-        apps[0].id = "vitrallis-wifi-settings".into();
-        apps[0].name = "System Settings".into();
+        let settings_app = apps.first_mut().ok_or("demo app missing")?;
+        settings_app.id = "vitrallis-wifi-settings".into();
+        settings_app.name = "System Settings".into();
         let mut state = Launcher::new(apps, 3, 6)?;
         assert_eq!(state.input(Action::Activate), None);
         assert!(state.settings.open);
         assert_eq!(state.phase, Phase::Ready);
-        state.settings.input(Action::Back);
-        state.settings.input(Action::System);
+        assert_eq!(state.settings.input(Action::Back), None);
+        assert_eq!(state.settings.input(Action::System), None);
         assert!(state.settings.open);
         Ok(())
     }
@@ -367,7 +402,7 @@ mod tests {
         state.launched("Test");
         assert_eq!(state.phase, Phase::Running);
         // Returning home backgrounds the app instead of terminating it.
-        state.input(Action::Back);
+        assert_eq!(state.input(Action::Back), None);
         assert_eq!(state.phase, Phase::Ready);
         assert!(state.status.contains("background"));
         state.finished("done".into());
@@ -382,7 +417,8 @@ mod tests {
         assert_eq!(empty.input(Action::Activate), None);
         assert_eq!(empty.input(Action::SelectAndActivate(0)), None);
         let mut apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
-        apps[1].id = apps[0].id.clone();
+        let duplicate_id = apps.first().ok_or("demo app missing")?.id.clone();
+        apps.get_mut(1).ok_or("second demo app missing")?.id = duplicate_id;
         assert!(Launcher::new(apps, 3, 6).is_err());
         Ok(())
     }
@@ -392,16 +428,18 @@ mod tests {
 mod pagination_tests {
     use super::*;
     use crate::{input::PointerInput, layout::Layout, navigation::Direction};
-    fn apps(count: usize) -> Vec<AppEntry> {
-        let seed =
-            crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis")).remove(0);
-        (0..count)
+    fn apps(count: usize) -> Result<Vec<AppEntry>, String> {
+        let seed = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"))
+            .into_iter()
+            .next()
+            .ok_or("demo app missing")?;
+        Ok((0..count)
             .map(|i| {
                 let mut app = seed.clone();
                 app.id = format!("app-{i}");
                 app
             })
-            .collect()
+            .collect())
     }
     #[test]
     fn every_page_keyboard_touch_hitbox_and_focus_persistence() -> Result<(), String> {
@@ -409,21 +447,21 @@ mod pagination_tests {
         for count in [0, 1, 5, 6, 7, 11, 12, 13, 61] {
             for (width, height) in [(480, 272), (800, 480), (1280, 720)] {
                 let layout = Layout::home(width, height)?;
-                let mut state = Launcher::new(apps(count), 3, 6)?;
+                let mut state = Launcher::new(apps(count)?, 3, 6)?;
                 let mut pointer = PointerInput::default();
                 assert_eq!(state.page_count(), count.div_ceil(6).max(1));
                 for page in 0..state.page_count() {
                     assert_eq!(state.page_start(), page * 6);
                     for local in 0..state.visible_count() {
-                        let tile = layout.tiles[local];
+                        let tile = layout.tiles.get(local).ok_or("visible tile missing")?;
                         let down = Event::MouseButtonDown {
                             timestamp: 0,
                             window_id: 1,
                             which: 0,
                             mouse_btn: MouseButton::Left,
                             clicks: 1,
-                            x: tile.x + tile.w / 2,
-                            y: tile.y + tile.h / 2,
+                            x: tile.x + tile.w / 2_i32,
+                            y: tile.y + tile.h / 2_i32,
                         };
                         let up = Event::MouseButtonUp {
                             timestamp: 0,
@@ -431,8 +469,8 @@ mod pagination_tests {
                             which: 0,
                             mouse_btn: MouseButton::Left,
                             clicks: 1,
-                            x: tile.x + tile.w / 2,
-                            y: tile.y + tile.h / 2,
+                            x: tile.x + tile.w / 2_i32,
+                            y: tile.y + tile.h / 2_i32,
                         };
                         assert!(
                             pointer
@@ -445,7 +483,10 @@ mod pagination_tests {
                             return Err("missing hit".into());
                         };
                         assert_eq!(hit, local);
-                        let index = state.page_start() + hit;
+                        let index = state
+                            .page_start()
+                            .checked_add(hit)
+                            .ok_or("page index overflow")?;
                         assert_eq!(state.input(Action::SelectAndActivate(index)), Some(index));
                         assert!(state.input(Action::Activate).is_none());
                         state.launching("Test");
@@ -455,27 +496,30 @@ mod pagination_tests {
                         assert_eq!(state.page_start(), page * 6);
                     }
                     if state.visible_count() < 6 {
-                        let tile = layout.tiles[state.visible_count()];
+                        let tile = layout
+                            .tiles
+                            .get(state.visible_count())
+                            .ok_or("unused tile missing")?;
                         assert_eq!(
                             layout.hit(
-                                f64::from(tile.x + 1),
-                                f64::from(tile.y + 1),
+                                f64::from(tile.x + 1_i32),
+                                f64::from(tile.y + 1_i32),
                                 state.visible_count()
                             ),
                             None
                         );
                     }
-                    state.input(Action::Page(true));
+                    assert_eq!(state.input(Action::Page(true)), None);
                 }
                 state.selected = 0;
                 for expected in 1..count {
-                    state.input(Action::Move(Direction::Right));
+                    assert_eq!(state.input(Action::Move(Direction::Right)), None);
                     assert_eq!(state.selected, expected);
                 }
-                state.input(Action::Move(Direction::Right));
+                assert_eq!(state.input(Action::Move(Direction::Right)), None);
                 assert_eq!(state.selected, count.saturating_sub(1));
                 for expected in (0..count.saturating_sub(1)).rev() {
-                    state.input(Action::Move(Direction::Left));
+                    assert_eq!(state.input(Action::Move(Direction::Left)), None);
                     assert_eq!(state.selected, expected);
                 }
             }
@@ -484,19 +528,19 @@ mod pagination_tests {
     }
     #[test]
     fn page_boundaries_and_partial_final_row_are_safe() -> Result<(), String> {
-        let mut state = Launcher::new(apps(8), 3, 6)?;
+        let mut state = Launcher::new(apps(8)?, 3, 6)?;
         state.selected = 4;
-        state.input(Action::Move(Direction::Down));
+        assert_eq!(state.input(Action::Move(Direction::Down)), None);
         assert_eq!(state.selected, 7);
-        state.input(Action::Move(Direction::Down));
+        assert_eq!(state.input(Action::Move(Direction::Down)), None);
         assert_eq!(state.selected, 7);
-        state.input(Action::Move(Direction::Up));
+        assert_eq!(state.input(Action::Move(Direction::Up)), None);
         assert_eq!(state.selected, 4);
-        state.input(Action::Page(true));
+        assert_eq!(state.input(Action::Page(true)), None);
         assert_eq!(state.selected, 7);
-        state.input(Action::Page(false));
+        assert_eq!(state.input(Action::Page(false)), None);
         assert_eq!(state.selected, 1);
-        assert!(Launcher::new(apps(1), 3, 0).is_err());
+        assert!(Launcher::new(apps(1)?, 3, 0).is_err());
         Ok(())
     }
 }
@@ -509,19 +553,42 @@ mod folder_tests {
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
         let mut state = Launcher::new(apps.clone(), 3, 6)?;
         let id = format!("{}{}", crate::folders::PREFIX, "a".repeat(64));
-        state.folders.names.insert(id.clone(), "Utilities".into());
-        state.folders.members.insert(apps[0].id.clone(), id.clone());
+        assert!(
+            state
+                .folders
+                .names
+                .insert(id.clone(), "Utilities".into())
+                .is_none()
+        );
+        let app = apps.first().ok_or("demo app missing")?;
+        assert!(
+            state
+                .folders
+                .members
+                .insert(app.id.clone(), id.clone())
+                .is_none()
+        );
         state.rebuild_view(None);
         assert!(state.input(Action::Activate).is_none());
-        assert_eq!(state.apps, apps[..1]);
+        assert_eq!(state.apps.as_slice(), std::slice::from_ref(app));
         assert_eq!(state.input(Action::Activate), Some(0));
-        assert_eq!(state.apps[0].manifest, apps[0].manifest);
+        assert_eq!(
+            state.apps.first().ok_or("folder app missing")?.manifest,
+            app.manifest
+        );
         state.launching("Test");
         state.launched("Test");
         state.returned_home();
-        state.input(Action::Back);
-        assert_eq!(state.apps[state.selected].id, id);
-        state.reveal(&apps[0].id);
+        assert_eq!(state.input(Action::Back), None);
+        assert_eq!(
+            state
+                .apps
+                .get(state.selected)
+                .ok_or("folder selection missing")?
+                .id,
+            id
+        );
+        state.reveal(&app.id);
         assert_eq!(state.folder.as_deref(), Some(id.as_str()));
         Ok(())
     }

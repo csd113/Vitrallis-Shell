@@ -27,7 +27,8 @@ pub fn run() -> Result<(), String> {
         Ok(browser) => browser,
         Err(e) => {
             ui.error(&e.to_string())?;
-            Browser::new(&vitrallis_native::home()).map_err(|e| e.to_string())?
+            Browser::new(&vitrallis_native::home())
+                .map_err(|fallback_error| fallback_error.to_string())?
         }
     };
     let mut manager = Manager {
@@ -73,12 +74,15 @@ impl Manager {
             if self.browser.hidden { "   Hidden" } else { "" }
         );
         ui.header_path(&title, &self.browser.path.to_string_lossy())?;
-        self.browser
-            .render(ui, ui.header_height() + 4, self.footer.is_none())?;
+        self.browser.render(
+            ui,
+            ui.header_height().saturating_add(4),
+            self.footer.is_none(),
+        )?;
         ui.buttons(&BUTTONS, self.footer)
     }
     fn input(&mut self, ui: &mut Ui, input: &Input) -> Result<bool, String> {
-        let rows = Browser::visible_rows(ui, ui.header_height() + 4);
+        let rows = Browser::visible_rows(ui, ui.header_height().saturating_add(4));
         let action = match *input {
             Input::Close => Some(3),
             Input::Key(Keycode::Escape, _) => {
@@ -90,13 +94,13 @@ impl Manager {
                 self.footer = match self.footer {
                     None => Some(0),
                     Some(3) => None,
-                    Some(i) => Some(i + 1),
+                    Some(i) => Some(i.saturating_add(1)),
                 };
                 None
             }
             Input::Key(key @ (Keycode::Left | Keycode::Right), _) if self.footer.is_some() => {
                 let step = if key == Keycode::Right { 1 } else { 3 };
-                self.footer = Some((self.footer.unwrap_or(0) + step) % 4);
+                self.footer = Some((self.footer.unwrap_or(0) % 4).saturating_add(step) % 4);
                 None
             }
             Input::Key(Keycode::Up, _) => {
@@ -111,7 +115,7 @@ impl Manager {
             }
             Input::Key(Keycode::PageUp, _) => {
                 self.browser
-                    .move_by(-isize::try_from(rows).unwrap_or(1), rows);
+                    .move_by(isize::try_from(rows).unwrap_or(1).saturating_neg(), rows);
                 None
             }
             Input::Key(Keycode::PageDown, _) => {
@@ -147,12 +151,17 @@ impl Manager {
             }
             Input::Key(Keycode::M, _) => Some(1),
             Input::Scroll(y) => {
-                self.browser
-                    .move_by(-isize::try_from(y).unwrap_or(0) * 3, rows);
+                self.browser.move_by(
+                    isize::try_from(y)
+                        .unwrap_or(0)
+                        .saturating_neg()
+                        .saturating_mul(3),
+                    rows,
+                );
                 None
             }
             Input::Click(x, y) => self.click(ui, x, y),
-            _ => None,
+            Input::Key(_, _) | Input::Text(_) | Input::Resize | Input::Wake | Input::Ignore => None,
         };
         match action {
             Some(0) => {
@@ -173,11 +182,11 @@ impl Manager {
         }
         let row = ui.row_at(
             y,
-            ui.header_height() + 4,
+            ui.header_height().saturating_add(4),
             Browser::row_height(ui),
-            Browser::visible_rows(ui, ui.header_height() + 4),
+            Browser::visible_rows(ui, ui.header_height().saturating_add(4)),
         )?;
-        let index = self.browser.offset + row;
+        let index = self.browser.offset.checked_add(row)?;
         if index > self.browser.entries.len() {
             return None;
         }
@@ -216,7 +225,7 @@ impl Manager {
             }
             files::Handler::Properties => {
                 let info = files::properties(&path).map_err(|e| e.to_string())?;
-                ui.choose("File properties", &info, &["Back"])?;
+                let _closed_properties = ui.choose("File properties", &info, &["Back"])?;
             }
         }
         Ok(())
@@ -237,27 +246,31 @@ impl Manager {
         let mut last = 0;
         let mut offset = 0;
         loop {
-            let top = ui.header_height() + 6;
+            let top = ui.header_height().saturating_add(6);
             let rows = Browser::visible_rows(ui, top);
             let height = Browser::row_height(ui);
             if selected < labels.len() {
                 last = selected;
                 if selected < offset {
                     offset = selected;
-                } else if selected >= offset + rows {
-                    offset = selected + 1 - rows;
+                } else if selected >= offset.saturating_add(rows) {
+                    offset = selected.saturating_add(1).saturating_sub(rows);
                 }
             }
             ui.clear();
             ui.header("Files menu", "Up / Down / Tab select   Enter activates")?;
             for (i, label) in labels.iter().enumerate().skip(offset).take(rows) {
-                let y = top + i32::try_from(i - offset).unwrap_or(0) * height;
+                let y = top.saturating_add(
+                    i32::try_from(i.saturating_sub(offset))
+                        .unwrap_or(0_i32)
+                        .saturating_mul(height),
+                );
                 if i == selected {
                     ui.fill(
                         sdl2::rect::Rect::new(
                             4,
                             y,
-                            (ui.width - 8).unsigned_abs(),
+                            ui.width.saturating_sub(8).unsigned_abs(),
                             height.unsigned_abs(),
                         ),
                         vitrallis_native::theme::SELECTED,
@@ -267,8 +280,8 @@ impl Manager {
                 ui.text(
                     label,
                     12,
-                    y + (height - ui.cell()) / 2,
-                    ui.width - 24,
+                    y.saturating_add(height.saturating_sub(ui.cell()) / 2),
+                    ui.width.saturating_sub(24),
                     vitrallis_native::theme::TEXT,
                 )?;
             }
@@ -281,7 +294,10 @@ impl Manager {
                     None
                 }
                 Input::Key(Keycode::Down | Keycode::Right | Keycode::Tab, _) => {
-                    selected = (selected + 1) % (labels.len() + 2);
+                    selected = selected
+                        .saturating_add(1)
+                        .checked_rem(labels.len().saturating_add(2))
+                        .unwrap_or(0);
                     None
                 }
                 Input::Key(Keycode::Return | Keycode::KpEnter, _) => {
@@ -296,13 +312,18 @@ impl Manager {
                     .map(|i| if i == 0 { 0 } else { last })
                     .or_else(|| {
                         ui.row_at(y, top, height, rows)
-                            .map(|row| row + offset)
+                            .and_then(|row| row.checked_add(offset))
                             .filter(|row| *row < labels.len())
                     }),
-                _ => None,
+                Input::Key(_, _)
+                | Input::Text(_)
+                | Input::Scroll(_)
+                | Input::Resize
+                | Input::Wake
+                | Input::Ignore => None,
             };
-            if let Some(action) = action {
-                return self.operation(ui, action);
+            if let Some(operation) = action {
+                return self.operation(ui, operation);
             }
         }
     }
@@ -310,7 +331,7 @@ impl Manager {
         match action {
             0 => return Ok(()),
             1 => {
-                ui.choose(
+                let _closed_properties = ui.choose(
                     "Properties",
                     &files::properties(&self.path()?).map_err(|e| e.to_string())?,
                     &["Back"],
@@ -393,50 +414,67 @@ fn copy(ui: &mut Ui, source: PathBuf, destination: PathBuf) -> Result<(), String
             let result = files::copy_entry(&source, &destination, &mut |bytes| {
                 if last.elapsed() >= Duration::from_millis(100) {
                     last = Instant::now();
-                    if let Ok(mut state) = output.lock() {
-                        state.bytes = bytes;
-                        if !state.changed {
-                            state.changed = true;
-                            let _ = vitrallis_native::ui::wake(&sender);
+                    if let Ok(mut progress_update) = output.lock() {
+                        progress_update.bytes = bytes;
+                        if !progress_update.changed {
+                            progress_update.changed = true;
+                            if let Err(error) = vitrallis_native::ui::wake(&sender) {
+                                eprintln!("Copy progress wake failed: {error}");
+                            }
+                        }
+                    } else {
+                        eprintln!("Copy progress state was poisoned");
+                        if let Err(error) = vitrallis_native::ui::wake(&sender) {
+                            eprintln!("Copy state error wake failed: {error}");
                         }
                     }
                 }
             })
             .map_err(|e| e.to_string());
-            if let Ok(mut state) = output.lock() {
-                state.result = Some(result);
-                let _ = vitrallis_native::ui::wake(&sender);
+            match output.lock() {
+                Ok(mut completed) => completed.result = Some(result),
+                Err(error) => eprintln!("Copy completion state unavailable: {error}"),
+            }
+            if let Err(error) = vitrallis_native::ui::wake(&sender) {
+                eprintln!("Copy completion wake failed: {error}");
             }
         })
         .map_err(|e| e.to_string())?;
     loop {
-        let mut state = state.lock().map_err(|_| "Copy worker state unavailable")?;
-        if let Some(result) = state.result.take() {
-            drop(state);
-            worker.join().map_err(|_| "Copy worker stopped")?;
+        let mut shared = state
+            .lock()
+            .map_err(|error| format!("Copy worker state unavailable: {error}"))?;
+        if let Some(result) = shared.result.take() {
+            drop(shared);
+            worker
+                .join()
+                .map_err(|payload| format!("Copy worker stopped: {payload:?}"))?;
             return result;
         }
-        let bytes = state.bytes;
-        state.changed = false;
-        drop(state);
+        let bytes = shared.bytes;
+        shared.changed = false;
+        drop(shared);
         ui.clear();
         ui.header("Copying", &format!("{bytes} bytes copied"))?;
         ui.text(
             "Publishing only when complete",
             8,
-            ui.header_height() + 16,
-            ui.width - 16,
+            ui.header_height().saturating_add(16),
+            ui.width.saturating_sub(16),
             vitrallis_native::theme::TEXT,
         )?;
         ui.text(
             "Please wait before closing Files",
             8,
-            ui.header_height() + ui.line() + 16,
-            ui.width - 16,
+            ui.header_height()
+                .saturating_add(ui.line())
+                .saturating_add(16),
+            ui.width.saturating_sub(16),
             vitrallis_native::theme::MUTED,
         )?;
         ui.present();
-        ui.wait()?;
+        // Copy publishes atomically and must finish before accepting another action.
+        let _deferred_input = ui.wait()?;
     }
 }
 
@@ -454,7 +492,12 @@ mod tests {
     struct Scratch(PathBuf);
     impl Drop for Scratch {
         fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
+            if let Err(error) = std::fs::remove_dir_all(&self.0) {
+                eprintln!(
+                    "Cannot remove Files test directory {}: {error}",
+                    self.0.display()
+                );
+            }
         }
     }
 
@@ -464,7 +507,11 @@ mod tests {
     fn list_rows_keep_text_inside_the_highlight_and_above_the_buttons() -> Result<(), String> {
         let _guard = sdl_lock();
         for size in [(320, 200), (480, 272), (800, 480), (1280, 720)] {
-            sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+            assert!(
+                sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                    || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+                "dummy SDL driver must be selected"
+            );
             let session = vitrallis_native::ui::Session::new(
                 "Files geometry",
                 &Options {
@@ -474,21 +521,21 @@ mod tests {
             )?;
             let creator = session.canvas.texture_creator();
             let ui = Ui::new(session, &creator)?;
-            let top = ui.header_height() + 4;
+            let top = ui.header_height().saturating_add(4_i32);
             let rows = Browser::visible_rows(&ui, top);
             let height = Browser::row_height(&ui);
             assert!(rows >= 1, "{size:?}");
             // One row holds a glyph cell inside its 2px highlight lead-in.
-            assert!(height >= ui.cell() + 2, "{size:?}");
+            assert!(height >= ui.cell() + 2_i32, "{size:?}");
             // The bottom row and its highlight stay above the buttons.
-            let highlight_bottom = top + i32::try_from(rows).unwrap_or(0) * height - 2;
+            let highlight_bottom = top + i32::try_from(rows).unwrap_or(0_i32) * height - 2_i32;
             assert!(
                 highlight_bottom <= ui.height - ui.footer_height(),
                 "{size:?}: rows reach the button row"
             );
             // The tag column never grows into the name column.
-            assert!(8 + 32 * ui.scale <= 40 * ui.scale, "{size:?}");
-            assert!(ui.width - 48 * ui.scale > 0, "{size:?}");
+            assert!(8_i32 + 32_i32 * ui.scale <= 40_i32 * ui.scale, "{size:?}");
+            assert!(ui.width - 48_i32 * ui.scale > 0_i32, "{size:?}");
             assert!(top >= ui.header_height(), "{size:?}");
         }
         Ok(())
@@ -498,7 +545,11 @@ mod tests {
     fn keyboard_controls_and_cancel_default_delete_preserve_selection()
     -> Result<(), Box<dyn std::error::Error>> {
         let _guard = sdl_lock();
-        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        assert!(
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+            "dummy SDL driver must be selected"
+        );
         let session = vitrallis_native::ui::Session::new(
             "Files test",
             &Options {
@@ -541,17 +592,26 @@ mod tests {
         }
         manager.footer = None;
         for i in 0..4 {
-            manager.input(&mut ui, &Input::Key(Keycode::Tab, Mod::NOMOD))?;
+            assert!(
+                !manager.input(&mut ui, &Input::Key(Keycode::Tab, Mod::NOMOD))?,
+                "Tab must keep Files open"
+            );
             assert_eq!(manager.footer, Some(i));
         }
         assert!(manager.input(&mut ui, &Input::Key(Keycode::Return, Mod::NOMOD))?);
         manager.footer = None;
-        manager.input(&mut ui, &Input::Key(Keycode::End, Mod::NOMOD))?;
+        assert!(
+            !manager.input(&mut ui, &Input::Key(Keycode::End, Mod::NOMOD))?,
+            "End must keep Files open"
+        );
         assert_eq!(manager.browser.selected, manager.browser.entries.len());
-        manager.input(&mut ui, &Input::Key(Keycode::Home, Mod::NOMOD))?;
+        assert!(
+            !manager.input(&mut ui, &Input::Key(Keycode::Home, Mod::NOMOD))?,
+            "Home must keep Files open"
+        );
         assert_eq!(manager.browser.selected, 0);
         manager.render(&mut ui)?;
-        assert!(Browser::row_height(&ui) >= 20);
+        assert!(Browser::row_height(&ui) >= 20_i32);
         ui.sdl.event()?.push_event(Event::KeyDown {
             timestamp: 0,
             window_id: 0,

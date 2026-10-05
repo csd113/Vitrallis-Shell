@@ -54,8 +54,8 @@ fn extract(
         .read_exact(&mut size)
         .and_then(|()| input.read_exact(&mut expected))
         .map_err(|e| e.to_string())?;
-    let size = u64::from_le_bytes(size);
-    if !(64..=MAX_BINARY).contains(&size) {
+    let binary_size = u64::from_le_bytes(size);
+    if !(64..=MAX_BINARY).contains(&binary_size) {
         return Err("Bundle executable has an invalid size".into());
     }
     let mut output = OpenOptions::new()
@@ -66,22 +66,30 @@ fn extract(
         .map_err(|e| e.to_string())?;
     let mut buffer = [0; 16384];
     let mut hash = Sha256::new();
-    let mut remaining = size;
+    let mut remaining = binary_size;
     let mut header = [0; 64];
     input.read_exact(&mut header).map_err(|e| e.to_string())?;
     verify(&header)?;
     output.write_all(&header).map_err(|e| e.to_string())?;
     hash.update(header);
-    remaining -= 64;
+    remaining = remaining
+        .checked_sub(64)
+        .ok_or("Bundle header exceeds executable size")?;
+    let buffer_size = u64::try_from(buffer.len()).map_err(|error| error.to_string())?;
     while remaining > 0 {
-        let count =
-            usize::try_from(remaining.min(buffer.len() as u64)).map_err(|_| "Bundle size")?;
+        let count = usize::try_from(remaining.min(buffer_size))
+            .map_err(|error| format!("Bundle size: {error}"))?;
+        let chunk = buffer
+            .get_mut(..count)
+            .ok_or("Bundle read exceeds buffer")?;
         input
-            .read_exact(&mut buffer[..count])
-            .and_then(|()| output.write_all(&buffer[..count]))
+            .read_exact(chunk)
+            .and_then(|()| output.write_all(chunk))
             .map_err(|e| e.to_string())?;
-        hash.update(&buffer[..count]);
-        remaining -= count as u64;
+        hash.update(chunk);
+        remaining = remaining
+            .checked_sub(u64::try_from(count).map_err(|error| error.to_string())?)
+            .ok_or("Bundle read exceeds remaining executable size")?;
     }
     let digest: [u8; 32] = hash.finalize().into();
     if digest != expected {
@@ -98,7 +106,11 @@ fn extract(
 pub fn fixture(payloads: &[Vec<u8>; 5]) -> Vec<u8> {
     let mut bytes = MAGIC.to_vec();
     for payload in payloads {
-        bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(
+            &u64::try_from(payload.len())
+                .unwrap_or(u64::MAX)
+                .to_le_bytes(),
+        );
         bytes.extend_from_slice(&Sha256::digest(payload));
         bytes.extend_from_slice(payload);
     }
@@ -119,7 +131,7 @@ mod tests {
         let scratch = crate::test_support::Scratch::new()?;
         let target = scratch.0.join("valid");
         std::fs::create_dir(&target)?;
-        unpack(&mut data.as_slice(), &target, |_| Ok(()))?;
+        let _package_digest = unpack(&mut data.as_slice(), &target, |_| Ok(()))?;
         for (i, name) in BINARIES.iter().enumerate() {
             assert_eq!(
                 std::fs::read(target.join(name))?,
@@ -127,7 +139,10 @@ mod tests {
             );
         }
         for (i, bad) in [
-            data[..data.len() - 1].to_vec(),
+            (*data
+                .get(..data.len().checked_sub(1).ok_or("Empty package fixture")?)
+                .ok_or("Missing fixture element")?)
+            .to_vec(),
             {
                 let mut d = data.clone();
                 d.push(1);
@@ -135,7 +150,7 @@ mod tests {
             },
             {
                 let mut d = data.clone();
-                d[56] ^= 1;
+                *d.get_mut(56).ok_or("Missing checksum fixture")? ^= 1;
                 d
             },
         ]

@@ -29,38 +29,38 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
     {
         // The exported launcher owns its namespace, but missing prerequisites
         // must be diagnosed before spawning it rather than only on stderr.
-        crate::tor::required_command()?;
+        drop(crate::tor::required_command()?);
     }
     let program = m.runtime.as_ref().unwrap_or(&m.entry);
     let mut command = if m.tor == crate::tor::Requirement::Required
         && app.source != crate::app::AppSource::AppCenter
     {
         let mut command = crate::tor::required_command()?;
-        command.arg(program);
+        let _program_argument = command.arg(program);
         command
     } else {
         Command::new(program)
     };
     if m.runtime.is_some() {
-        command.arg(&m.entry);
+        let _entry_argument = command.arg(&m.entry);
     }
-    command.envs(&m.env);
-    command.env("VITRALLIS_APP_ID", &app.id);
-    command.env(
+    let _manifest_environment = command.envs(&m.env);
+    let _identity_environment = command.env("VITRALLIS_APP_ID", &app.id);
+    let _data_environment = command.env(
         "VITRALLIS_APP_DATA_DIR",
         vitrallis_native::paths::app_data(&vitrallis_native::home(), &app.id)
             .map_err(|e| e.to_string())?,
     );
     if app.source == crate::app::AppSource::AppCenter {
-        command.env(
+        let _package_environment = command.env(
             "VITRALLIS_APP_DIR",
             vitrallis_native::paths::app_dir(&vitrallis_native::home(), &app.id)
                 .map_err(|e| e.to_string())?,
         );
     } else {
-        command.env_remove("VITRALLIS_APP_DIR");
+        let _cleared_package_environment = command.env_remove("VITRALLIS_APP_DIR");
     }
-    command.env(
+    let _documents_environment = command.env(
         "VITRALLIS_DOCUMENTS_DIR",
         vitrallis_native::paths::documents(&vitrallis_native::home(), &app.id)
             .map_err(|e| e.to_string())?,
@@ -68,15 +68,15 @@ pub fn command(app: &AppEntry) -> Result<Command, String> {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        command.process_group(0);
+        let _group_options = command.process_group(0);
     }
-    command
+    let _process_options = command
         .args(&app.manifest.args)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
     if let Some(cwd) = &app.manifest.cwd {
-        command.current_dir(cwd);
+        let _working_directory = command.current_dir(cwd);
     }
     Ok(command)
 }
@@ -195,7 +195,11 @@ const DISCOVERY_GRACE: Duration = Duration::from_secs(5);
 /// Delay before the next retry: 250 ms, 500 ms, then 1 s for the rest.
 fn retry_interval(attempts: u32) -> Duration {
     let index = usize::try_from(attempts).unwrap_or(usize::MAX);
-    DISCOVERY_BACKOFF[index.min(DISCOVERY_BACKOFF.len() - 1)]
+    DISCOVERY_BACKOFF
+        .get(index)
+        .or_else(|| DISCOVERY_BACKOFF.last())
+        .copied()
+        .unwrap_or(Duration::from_secs(1))
 }
 #[derive(Debug)]
 struct Resume {
@@ -248,10 +252,10 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
         if self.active.as_deref() == Some(id) {
             self.active = None;
         }
-        self.background_since.remove(id);
-        self.waiting_windows.remove(id);
-        self.discovery.remove(id);
-        self.members.remove(index);
+        let _background = self.background_since.remove(id);
+        let _was_waiting = self.waiting_windows.remove(id);
+        let _discovery = self.discovery.remove(id);
+        drop(self.members.remove(index));
         true
     }
     /// Leaving the launch view cancels focus retries, never process/window tracking.
@@ -296,12 +300,12 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
         let mut stopped: Vec<String> = Vec::new();
         for (id, process) in &mut self.members {
             if self.active.as_ref() == Some(id) {
-                self.background_since.remove(id);
+                let _foreground_policy = self.background_since.remove(id);
                 continue;
             }
             let Some(timeout) = policy.timeout(id) else {
                 // No configured lifetime: keep the app running indefinitely.
-                self.background_since.remove(id);
+                let _disabled_policy = self.background_since.remove(id);
                 continue;
             };
             let (since, requested) = self
@@ -351,7 +355,7 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
         if self.failures.len() >= 64 && !self.failures.contains_key(id) {
             self.failures.clear();
         }
-        self.failures.insert(id.into(), error.into());
+        let _previous_failure = self.failures.insert(id.into(), error.into());
     }
 
     fn poll_tor_launch(&mut self) -> Result<Option<FocusResult>, String> {
@@ -370,7 +374,7 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
             return Ok(None);
         };
         if !ready && app.manifest.tor == Requirement::Required {
-            self.tor_apps.remove(&app.id);
+            let _was_pending = self.tor_apps.remove(&app.id);
             self.tor
                 .request(crate::tor::Control::Demand(self.tor_apps.len()))?;
             return Err(format!(
@@ -395,10 +399,12 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
                     .as_ref()
                     .is_some_and(|(app, _)| &app.id == id)
         });
-        if self.tor_apps.len() != previous {
-            let _ = self
+        if self.tor_apps.len() != previous
+            && let Err(error) = self
                 .tor
-                .request(crate::tor::Control::Demand(self.tor_apps.len()));
+                .request(crate::tor::Control::Demand(self.tor_apps.len()))
+        {
+            eprintln!("level=error event=tor_demand_sync message={error:?}");
         }
     }
     /// Adopts a started process: records ownership and starts focus tracking.
@@ -409,8 +415,8 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
             process.focus()?;
             self.resume = Some(Resume {
                 app: app.clone(),
-                deadline: now + DISCOVERY_WINDOW,
-                next_attempt: now + DISCOVERY_BACKOFF[0],
+                deadline: now.checked_add(DISCOVERY_WINDOW).unwrap_or(now),
+                next_attempt: now.checked_add(retry_interval(0)).unwrap_or(now),
                 attempts: 0,
                 relaunch_on_exit: false,
                 last_error: None,
@@ -422,12 +428,14 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
     }
     /// Records or refreshes bounded window tracking for one member.
     fn track_window(&mut self, id: &str, now: Instant) {
-        self.waiting_windows.insert(id.into());
-        self.discovery.insert(
+        let _newly_waiting = self.waiting_windows.insert(id.into());
+        let _previous_budget = self.discovery.insert(
             id.into(),
             DiscoveryBudget {
-                next: now + DISCOVERY_BACKOFF[0],
-                deadline: now + DISCOVERY_WINDOW + DISCOVERY_GRACE,
+                next: now.checked_add(retry_interval(0)).unwrap_or(now),
+                deadline: now
+                    .checked_add(DISCOVERY_WINDOW.saturating_add(DISCOVERY_GRACE))
+                    .unwrap_or(now),
                 attempts: 0,
                 given_up: false,
                 last_error: None,
@@ -440,33 +448,45 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
     fn request_start(app: &AppEntry) -> Result<PendingStart<P>, String> {
         let request = app.clone();
         let (send, receiver) = mpsc::sync_channel(1);
-        std::thread::Builder::new()
+        // The receiver reports completion or disconnection; a cancelled send
+        // drops the owned process, whose destructor terminates and reaps it.
+        let _worker = std::thread::Builder::new()
             .name("app-launch".into())
             .spawn(move || {
                 let mut process = P::default();
                 let result = process.start(&request).map(|()| process);
-                let _ = send.send(result);
+                if send.send(result).is_err() {
+                    eprintln!("level=debug event=app_launch_cancelled app={}", request.id);
+                }
             })
             .map_err(|error| format!("launch worker: {error}"))?;
         Ok(PendingStart {
             app: app.clone(),
             receiver,
-            deadline: Instant::now() + LAUNCH_DEADLINE,
+            deadline: {
+                let now = Instant::now();
+                now.checked_add(LAUNCH_DEADLINE).unwrap_or(now)
+            },
         })
     }
     fn start_ready(&mut self, app: &AppEntry) -> Result<(), String> {
         if let Some(index) = self.members.iter().position(|(id, _)| id == &app.id) {
             // A window can close before the next scheduled child poll. Reap it
             // now so activation does not try to resume an already exited app.
-            if self.members[index].1.poll()?.is_none() {
-                self.members[index].1.deliver(app)?;
-                self.members[index].1.focus()?;
+            let (_, process) = self
+                .members
+                .get_mut(index)
+                .ok_or("Application owner disappeared")?;
+            if process.poll()?.is_none() {
+                process.deliver(app)?;
+                process.focus()?;
                 self.active = Some(app.id.clone());
-                self.background_since.remove(&app.id);
+                let _background_policy = self.background_since.remove(&app.id);
+                let now = Instant::now();
                 self.resume = Some(Resume {
                     app: app.clone(),
-                    deadline: Instant::now() + DISCOVERY_WINDOW,
-                    next_attempt: Instant::now() + DISCOVERY_BACKOFF[0],
+                    deadline: now.checked_add(DISCOVERY_WINDOW).unwrap_or(now),
+                    next_attempt: now.checked_add(retry_interval(0)).unwrap_or(now),
                     attempts: 0,
                     relaunch_on_exit: true,
                     last_error: None,
@@ -481,7 +501,7 @@ impl<P: Processes + Default + Send + 'static> ProcessSet<P> {
                 self.completed = Some(Ok(app.id.clone()));
                 return Ok(());
             }
-            self.members.remove(index);
+            drop(self.members.remove(index));
             // A stopped Tor app must re-enter the readiness gate before relaunch.
             if app.manifest.tor != crate::tor::Requirement::None {
                 return self.start(app);
@@ -511,21 +531,25 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
             return Err("Another application is waiting for Tor".into());
         }
         app.validate()?;
-        self.tor_apps.insert(app.id.clone());
+        let _new_demand = self.tor_apps.insert(app.id.clone());
         if let Err(error) = self
             .tor
             .request(crate::tor::Control::Demand(self.tor_apps.len()))
         {
-            self.tor_apps.remove(&app.id);
+            let _cancelled_demand = self.tor_apps.remove(&app.id);
             return Err(error);
         }
-        self.tor_pending = Some((app.clone(), Instant::now() + Duration::from_secs(190)));
+        let now = Instant::now();
+        self.tor_pending = Some((
+            app.clone(),
+            now.checked_add(Duration::from_secs(190)).unwrap_or(now),
+        ));
         Ok(())
     }
     fn poll_launch(&mut self) -> Option<Result<String, String>> {
         if let Some(outcome) = self.completed.take() {
             if let Ok(id) = &outcome {
-                self.failures.remove(id);
+                let _previous_failure = self.failures.remove(id);
             }
             return Some(outcome);
         }
@@ -546,7 +570,7 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
         match outcome {
             Ok(process) => match self.adopt(&app, process) {
                 Ok(()) => {
-                    self.failures.remove(&app.id);
+                    let _previous_failure = self.failures.remove(&app.id);
                     eprintln!(
                         "level=info event=launch_completed app={} running={}",
                         app.id,
@@ -560,10 +584,10 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
                 }
             },
             Err(error) => {
-                let error = format!("{}: {error}", app.name);
-                eprintln!("level=error event=launch_failed message={error:?}");
-                self.record_failure(&app.id, &error);
-                Some(Err(error))
+                let diagnostic = format!("{}: {error}", app.name);
+                eprintln!("level=error event=launch_failed message={diagnostic:?}");
+                self.record_failure(&app.id, &diagnostic);
+                Some(Err(diagnostic))
             }
         }
     }
@@ -594,7 +618,7 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
                     eprintln!(
                         "level=warn event=window_discovery_given_up app={id:?} attempts={} window_secs={} last_error={:?}",
                         budget.attempts,
-                        (DISCOVERY_WINDOW + DISCOVERY_GRACE).as_secs(),
+                        DISCOVERY_WINDOW.saturating_add(DISCOVERY_GRACE).as_secs(),
                         budget.last_error
                     );
                 }
@@ -605,51 +629,54 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
             }
             let interval = retry_interval(budget.attempts);
             budget.attempts = budget.attempts.saturating_add(1);
-            budget.next = now + interval;
+            budget.next = now.checked_add(interval).unwrap_or(now);
             match process.discover_window() {
                 Ok(true) => {
-                    self.waiting_windows.remove(id);
-                    self.discovery.remove(id);
+                    let _was_waiting = self.waiting_windows.remove(id);
+                    let _completed_budget = self.discovery.remove(id);
                 }
                 Ok(false) => {
-                    if let Some(budget) = self.discovery.get_mut(id) {
-                        budget.last_error = None;
-                    }
+                    budget.last_error = None;
                 }
                 Err(error) => {
-                    if let Some(budget) = self.discovery.get_mut(id) {
-                        budget.last_error = Some(error);
-                    }
+                    budget.last_error = Some(error);
                 }
             }
         }
-        for index in 0..self.members.len() {
+        let mut exited = None;
+        for (index, (id, process)) in self.members.iter_mut().enumerate() {
             // A pending activation owns its exit/restart transition. Do not reap
             // it here and lose the user's request between window close and exit.
-            if self.resume.as_ref().is_some_and(|resume| {
-                resume.relaunch_on_exit && resume.app.id == self.members[index].0
-            }) {
+            if self
+                .resume
+                .as_ref()
+                .is_some_and(|resume| resume.relaunch_on_exit && &resume.app.id == id)
+            {
                 continue;
             }
-            let result = self.members[index].1.poll();
+            let result = process.poll();
             if let Err(error) = result {
                 failure = Some(error);
             } else if let Ok(Some(status)) = result {
-                let (id, _) = self.members.remove(index);
-                if self
-                    .resume
-                    .as_ref()
-                    .is_some_and(|resume| resume.app.id == id)
-                {
-                    self.resume = None;
-                }
-                self.exited_active = self.active.as_ref() == Some(&id);
-                if self.exited_active {
-                    self.active = None;
-                }
-                self.exited_id = Some(id);
-                return Ok(Some(status));
+                exited = Some((index, status));
+                break;
             }
+        }
+        if let Some((index, status)) = exited {
+            let (id, _owner) = self.members.remove(index);
+            if self
+                .resume
+                .as_ref()
+                .is_some_and(|resume| resume.app.id == id)
+            {
+                self.resume = None;
+            }
+            self.exited_active = self.active.as_ref() == Some(&id);
+            if self.exited_active {
+                self.active = None;
+            }
+            self.exited_id = Some(id);
+            return Ok(Some(status));
         }
         failure.map_or(Ok(None), Err)
     }
@@ -665,26 +692,34 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
         if self.tor_pending.is_some() {
             return self.poll_tor_launch();
         }
-        let Some(resume) = &self.resume else {
+        let Some(pending_resume) = &self.resume else {
             return Ok(None);
         };
-        let Some(index) = self.members.iter().position(|(id, _)| id == &resume.app.id) else {
+        let Some(index) = self
+            .members
+            .iter()
+            .position(|(id, _)| id == &pending_resume.app.id)
+        else {
             self.resume = None;
             return Ok(None);
         };
-        if resume.relaunch_on_exit && self.members[index].1.poll()?.is_some() {
-            self.members.remove(index);
-            let Some(resume) = self.resume.take() else {
+        let (id, process) = self
+            .members
+            .get_mut(index)
+            .ok_or("Application owner disappeared")?;
+        if pending_resume.relaunch_on_exit && process.poll()?.is_some() {
+            drop(self.members.remove(index));
+            let Some(completed_resume) = self.resume.take() else {
                 return Ok(None);
             };
             // Only spawn after the former child has been reaped and its group
             // cleaned. A disappearing window alone never authorizes a duplicate.
-            self.start(&resume.app)?;
+            self.start(&completed_resume.app)?;
             return Ok(Some(FocusResult::Focused));
         }
-        match self.members[index].1.poll_focus() {
+        match process.poll_focus() {
             Ok(Some(FocusResult::Focused)) => {
-                self.waiting_windows.remove(&self.members[index].0);
+                let _was_waiting = self.waiting_windows.remove(id);
                 self.resume = None;
                 Ok(Some(FocusResult::Focused))
             }
@@ -694,7 +729,9 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
                 };
                 match result {
                     Err(error) => resume.last_error = Some(error),
-                    Ok(Some(_)) => resume.last_error = None,
+                    Ok(Some(FocusResult::Focused | FocusResult::Missing)) => {
+                        resume.last_error = None;
+                    }
                     Ok(None) => {}
                 }
                 if Instant::now() >= resume.deadline {
@@ -703,13 +740,14 @@ impl<P: Processes + Default + Send + 'static> Processes for ProcessSet<P> {
                     return error.map_or(Ok(Some(FocusResult::Missing)), Err);
                 }
                 if Instant::now() >= resume.next_attempt {
-                    self.members[index].1.focus()?;
-                    if let Some(resume) = &mut self.resume {
-                        // Escalating retries keep a slow window from spawning a
-                        // focus worker every 250 ms until the deadline.
-                        resume.attempts = resume.attempts.saturating_add(1);
-                        resume.next_attempt = Instant::now() + retry_interval(resume.attempts);
-                    }
+                    process.focus()?;
+                    // Escalating retries keep a slow window from spawning a
+                    // focus worker every 250 ms until the deadline.
+                    resume.attempts = resume.attempts.saturating_add(1);
+                    let now = Instant::now();
+                    resume.next_attempt = now
+                        .checked_add(retry_interval(resume.attempts))
+                        .unwrap_or(now);
                 }
                 Ok(None)
             }
@@ -744,9 +782,9 @@ impl Processes for NativeProcess {
         }
         if let Some(result) = &self.discovery_result {
             match result.try_recv() {
-                Ok(result) => {
+                Ok(discovery) => {
                     self.discovery_result = None;
-                    return result.map(|r| r == FocusResult::Focused);
+                    return discovery.map(|r| r == FocusResult::Focused);
                 }
                 Err(mpsc::TryRecvError::Empty) => return Ok(false),
                 Err(mpsc::TryRecvError::Disconnected) => self.discovery_result = None,
@@ -824,11 +862,11 @@ impl Processes for NativeProcess {
         Ok(())
     }
     fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
-        let Some(result) = &self.focus_result else {
+        let Some(receiver) = &self.focus_result else {
             return Ok(None);
         };
-        let result = match result.try_recv() {
-            Ok(result) => result.map(Some),
+        let result = match receiver.try_recv() {
+            Ok(focused) => focused.map(Some),
             Err(mpsc::TryRecvError::Empty) => return Ok(None),
             Err(mpsc::TryRecvError::Disconnected) => Err("focus worker stopped".into()),
         };
@@ -867,10 +905,10 @@ impl Processes for NativeProcess {
                 .executable
                 .strip_prefix("vitrallis-")
                 .ok_or("Invalid native executable identity")?;
-            let broker = std::path::Path::new(broker);
-            vitrallis_native::ipc::clear_inbox(broker, name).map_err(|e| e.to_string())?;
+            let broker_path = std::path::Path::new(broker);
+            vitrallis_native::ipc::clear_inbox(broker_path, name).map_err(|e| e.to_string())?;
             self.native_socket = Some(
-                broker
+                broker_path
                     .parent()
                     .ok_or("Invalid native broker directory")?
                     .join(name),
@@ -892,18 +930,28 @@ impl Processes for NativeProcess {
         let Some(child) = &mut self.child else {
             return Ok(None);
         };
-        let status = child
+        #[cfg(unix)]
+        {
+            if !vitrallis_native::process::exited_unreaped(child)
+                .map_err(|error| format!("child exit probe failed: {error}"))?
+            {
+                return Ok(None);
+            }
+            // WNOWAIT keeps the leader's PID reserved until group cleanup has
+            // completed; try_wait below is the only operation that reaps it.
+            cleanup_group(child);
+        }
+        let outcome = child
             .try_wait()
             .map_err(|e| format!("child wait failed: {e}"))?;
-        if let Some(status) = status {
+        if let Some(status) = outcome {
             eprintln!(
                 "level=info event=child_reaped pid={} status={status:?}",
                 child.id()
             );
-            cleanup_group(child.id());
             self.child = None;
         }
-        Ok(status)
+        Ok(outcome)
     }
 }
 
@@ -911,10 +959,13 @@ fn request_focus(
     operation: impl FnOnce() -> Result<FocusResult, String> + Send + 'static,
 ) -> Result<mpsc::Receiver<Result<FocusResult, String>>, String> {
     let (send, receive) = mpsc::sync_channel(1);
-    std::thread::Builder::new()
+    // Completion and panic/disconnection are observed through the receiver.
+    let _worker = std::thread::Builder::new()
         .name("app-focus".into())
         .spawn(move || {
-            let _ = send.send(operation());
+            if send.send(operation()).is_err() {
+                eprintln!("level=debug event=app_focus_cancelled");
+            }
         })
         .map_err(|error| format!("focus worker: {error}"))?;
     Ok(receive)
@@ -922,16 +973,19 @@ fn request_focus(
 impl Drop for NativeProcess {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
-            // Signal only the process group created for our child.
-            match child.try_wait() {
-                Ok(Some(_)) => {
-                    cleanup_group(child.id());
+            // Validate wait ownership without releasing the PID. A running or
+            // unreaped exited child keeps this process group's identity reserved.
+            #[cfg(unix)]
+            match vitrallis_native::process::exited_unreaped(&mut child) {
+                Ok(_) => cleanup_group(&mut child),
+                Err(error) => {
+                    eprintln!("level=error event=group_cleanup_skipped message={error:?}");
+                    if let Err(wait_error) = child.wait() {
+                        eprintln!("level=error event=child_reap message={wait_error:?}");
+                    }
                     return;
                 }
-                Ok(None) => {}
-                Err(error) => eprintln!("level=error event=child_wait message={error:?}"),
             }
-            cleanup_group(child.id());
             if let Err(error) = child.kill()
                 && error.kind() != io::ErrorKind::InvalidInput
             {
@@ -947,28 +1001,39 @@ impl Drop for NativeProcess {
 // Apps must remain in their launcher-created group. Daemons that call setsid
 // escape this scope and require a later session supervisor. The OS reaps orphaned
 // descendants; this launcher always waits for its own direct child.
-pub fn cleanup_group(pid: u32) {
+pub fn cleanup_group(child: &mut Child) {
     #[cfg(unix)]
-    {
-        match Command::new(crate::config::KILL_HELPER)
-            .args(["-KILL", "--", &format!("-{pid}")])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-        {
-            Ok(status) => eprintln!(
-                "level=info event=group_cleanup pgid={pid} helper_status={status} (nonzero_can_mean_group_already_gone)"
-            ),
-            Err(error) => {
-                eprintln!(
-                    "level=warn event=group_cleanup_unavailable pgid={pid} message={error:?}"
-                );
-            }
-        }
+    if let Err(error) = vitrallis_native::process::kill_child_group(child) {
+        eprintln!(
+            "level=warn event=group_cleanup_unavailable pgid={} message={error:?}",
+            child.id()
+        );
     }
     #[cfg(not(unix))]
-    let _ = pid;
+    if let Err(error) = child.kill()
+        && error.kind() != io::ErrorKind::InvalidInput
+    {
+        eprintln!("level=warn event=child_cleanup_unavailable message={error:?}");
+    }
+}
+
+/// Stop and reap an owned helper after its primary operation failed. Cleanup
+/// diagnostics are logged separately so they cannot replace that original error.
+pub fn cleanup_child(child: &mut Child) {
+    if let Err(error) = child.kill()
+        && error.kind() != io::ErrorKind::InvalidInput
+    {
+        eprintln!(
+            "level=error event=helper_kill pid={} message={error:?}",
+            child.id()
+        );
+    }
+    if let Err(error) = child.wait() {
+        eprintln!(
+            "level=error event=helper_reap pid={} message={error:?}",
+            child.id()
+        );
+    }
 }
 
 /// One place coordinates the process boundary with renderer-independent state.
@@ -1018,7 +1083,9 @@ mod tests {
     pub(super) fn settle<P: Processes + Default + Send + 'static>(
         processes: &mut ProcessSet<P>,
     ) -> Result<(), String> {
-        let deadline = Instant::now() + Duration::from_secs(10);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_secs(10))
+            .ok_or("Test deadline overflow")?;
         loop {
             if processes.launching().is_none() && processes.completed.is_none() {
                 return Ok(());
@@ -1058,7 +1125,10 @@ mod tests {
         let mut processes = ProcessSet::<NativeProcess>::default();
         start_blocking(&mut processes, &first)?;
         start_blocking(&mut processes, &second)?;
-        let pid = processes.members[0]
+        let pid = processes
+            .members
+            .first()
+            .ok_or("Missing fixture element")?
             .1
             .child
             .as_ref()
@@ -1078,7 +1148,15 @@ mod tests {
         assert!(processes.resume.is_none());
         assert_eq!(processes.active.as_deref(), Some("second"));
         assert_eq!(processes.running_ids(), ["second"]);
-        assert!(processes.members[0].1.poll()?.is_none());
+        assert!(
+            processes
+                .members
+                .get_mut(0)
+                .ok_or("Missing fixture element")?
+                .1
+                .poll()?
+                .is_none()
+        );
         let result = Command::new("ps")
             .args(["-p", &pid.to_string(), "-o", "pid="])
             .output()?;
@@ -1156,7 +1234,9 @@ mod tests {
         };
         assert_eq!(process.poll_focus()?, None);
         release.send(()).map_err(|error| error.to_string())?;
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_secs(5))
+            .ok_or("Test deadline overflow")?;
         loop {
             if let Err(error) = process.poll_focus() {
                 assert_eq!(error, "window manager unavailable");
@@ -1180,11 +1260,11 @@ mod tests {
         }
         impl Processes for Fake {
             fn start(&mut self, _: &AppEntry) -> Result<(), String> {
-                self.starts += 1;
+                self.starts = self.starts.saturating_add(1);
                 Ok(())
             }
             fn focus(&mut self) -> Result<(), String> {
-                self.focuses += 1;
+                self.focuses = self.focuses.saturating_add(1);
                 Ok(())
             }
             fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
@@ -1200,32 +1280,62 @@ mod tests {
         second.id = "second".into();
         let mut state = crate::launcher::Launcher::new(vec![first, second], 2, 2)?;
         let mut processes = ProcessSet::<Fake>::default();
-        state.input(crate::input::Action::Activate);
+        assert_eq!(state.input(crate::input::Action::Activate), Some(0_usize));
         activate(&mut state, &mut processes, 0);
         settle(&mut processes)?;
         state.returned_home();
-        state.input(crate::input::Action::SelectAndActivate(1));
+        assert_eq!(
+            state.input(crate::input::Action::SelectAndActivate(1)),
+            None
+        );
         activate(&mut state, &mut processes, 1);
         settle(&mut processes)?;
         assert_eq!(processes.running_ids(), ["test", "second"]);
-        start_blocking(&mut processes, &state.apps[0])?;
-        assert_eq!(processes.members[0].1.starts, 1);
-        assert_eq!(processes.members[0].1.focuses, 1);
-        processes.poll_focus()?;
-        processes.members[0].1.exited = true;
+        start_blocking(
+            &mut processes,
+            state.apps.first().ok_or("Missing fixture element")?,
+        )?;
+        let initial_child = &processes
+            .members
+            .first()
+            .ok_or("Missing process fixture")?
+            .1;
+        assert_eq!(initial_child.starts, 1);
+        assert_eq!(initial_child.focuses, 1);
+        let _completed_focus = processes.poll_focus()?;
+        processes
+            .members
+            .get_mut(0)
+            .ok_or("Missing process fixture")?
+            .1
+            .exited = true;
         // Activation arriving before the scheduled exit poll starts a fresh
         // process rather than dispatching focus to a dead window.
-        start_blocking(&mut processes, &state.apps[0])?;
-        assert!(!processes.members[1].1.exited);
-        assert_eq!(processes.members[1].1.starts, 1);
-        assert_eq!(processes.members[1].1.focuses, 0);
+        start_blocking(
+            &mut processes,
+            state.apps.first().ok_or("Missing fixture element")?,
+        )?;
+        let restarted_child = &processes.members.get(1).ok_or("Missing process fixture")?.1;
+        assert!(!restarted_child.exited);
+        assert_eq!(restarted_child.starts, 1);
+        assert_eq!(restarted_child.focuses, 0);
         processes.members.swap(0, 1);
-        processes.members[1].1.exited = true;
+        processes
+            .members
+            .get_mut(1)
+            .ok_or("Missing process fixture")?
+            .1
+            .exited = true;
         assert!(processes.poll()?.is_some());
         assert!(!processes.exited_active);
         assert_eq!(processes.exited_id.as_deref(), Some("second"));
         assert_eq!(processes.running_ids(), ["test"]);
-        processes.members[0].1.exited = true;
+        processes
+            .members
+            .get_mut(0)
+            .ok_or("Missing process fixture")?
+            .1
+            .exited = true;
         assert!(processes.poll()?.is_some());
         assert!(processes.exited_active);
         assert_eq!(processes.exited_id.as_deref(), Some("test"));
@@ -1244,15 +1354,15 @@ mod tests {
     }
     impl Processes for ClosingWindow {
         fn close_if_safe(&mut self) -> Result<(), String> {
-            self.close_requests += 1;
+            self.close_requests = self.close_requests.saturating_add(1);
             Ok(())
         }
         fn discover_window(&mut self) -> Result<bool, String> {
-            self.discoveries += 1;
+            self.discoveries = self.discoveries.saturating_add(1);
             Ok(self.window_ready)
         }
         fn start(&mut self, _: &AppEntry) -> Result<(), String> {
-            self.starts += 1;
+            self.starts = self.starts.saturating_add(1);
             Ok(())
         }
         fn poll(&mut self) -> Result<Option<ExitStatus>, String> {
@@ -1260,7 +1370,7 @@ mod tests {
             Ok(self.exited.then(|| ExitStatus::from_raw(0)))
         }
         fn focus(&mut self) -> Result<(), String> {
-            self.focuses += 1;
+            self.focuses = self.focuses.saturating_add(1);
             Ok(())
         }
         fn poll_focus(&mut self) -> Result<Option<FocusResult>, String> {
@@ -1308,7 +1418,13 @@ mod tests {
                 processes.resume.as_mut().ok_or("missing launch")?.deadline = Instant::now();
                 assert_eq!(processes.poll_focus()?, Some(FocusResult::Missing));
             }
-            processes.members[0].1.0.window_ready = true;
+            processes
+                .members
+                .get_mut(0)
+                .ok_or("Missing process fixture")?
+                .1
+                .0
+                .window_ready = true;
             if navigated_away {
                 // Leaving the launch view ends discovery: ownership continues,
                 // but a window that appears later is no longer probed for, so
@@ -1317,7 +1433,16 @@ mod tests {
                 assert!(processes.discovery.is_empty());
                 assert!(processes.waiting_windows.is_empty());
                 assert_eq!(processes.poll()?, None);
-                assert_eq!(processes.members[0].1.0.discoveries, 0);
+                assert_eq!(
+                    processes
+                        .members
+                        .first()
+                        .ok_or("Missing fixture element")?
+                        .1
+                        .0
+                        .discoveries,
+                    0
+                );
             } else {
                 // The expired resume no longer owns discovery; the scheduled
                 // probe still notices the window without relaunching or
@@ -1330,10 +1455,37 @@ mod tests {
                 assert_eq!(processes.poll()?, None);
                 assert!(processes.waiting_windows.is_empty());
                 assert!(!processes.discovery.contains_key("test"));
-                assert_eq!(processes.members[0].1.0.discoveries, 1);
+                assert_eq!(
+                    processes
+                        .members
+                        .first()
+                        .ok_or("Missing fixture element")?
+                        .1
+                        .0
+                        .discoveries,
+                    1
+                );
             }
-            assert_eq!(processes.members[0].1.0.starts, 1);
-            assert_eq!(processes.members[0].1.0.focuses, 1); // Only the original launch request.
+            assert_eq!(
+                processes
+                    .members
+                    .first()
+                    .ok_or("Missing fixture element")?
+                    .1
+                    .0
+                    .starts,
+                1
+            );
+            assert_eq!(
+                processes
+                    .members
+                    .first()
+                    .ok_or("Missing fixture element")?
+                    .1
+                    .0
+                    .focuses,
+                1
+            ); // Only the original launch request.
             assert_eq!(processes.poll_focus()?, None);
         }
         Ok(())
@@ -1358,7 +1510,7 @@ mod tests {
                 true
             }
             fn discover_window(&mut self) -> Result<bool, String> {
-                self.discoveries += 1;
+                self.discoveries = self.discoveries.saturating_add(1);
                 Ok(false)
             }
         }
@@ -1368,7 +1520,15 @@ mod tests {
         processes.resume = None;
         // The first probe is scheduled after the launch delay, not immediately.
         assert_eq!(processes.poll()?, None);
-        assert_eq!(processes.members[0].1.discoveries, 0);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .discoveries,
+            0
+        );
         let budget = processes
             .discovery
             .get_mut("test")
@@ -1376,11 +1536,19 @@ mod tests {
         assert!(budget.next > Instant::now());
         budget.next = Instant::now();
         assert_eq!(processes.poll()?, None);
-        assert_eq!(processes.members[0].1.discoveries, 1);
-        let budget = processes.discovery.get("test").ok_or("missing discovery")?;
-        assert_eq!(budget.attempts, 1);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .discoveries,
+            1
+        );
+        let available_budget = processes.discovery.get("test").ok_or("missing discovery")?;
+        assert_eq!(available_budget.attempts, 1);
         assert!(
-            budget.next > Instant::now(),
+            available_budget.next > Instant::now(),
             "the next probe must be delayed"
         );
         // The bounded window expiring stops probing for good.
@@ -1390,16 +1558,32 @@ mod tests {
             .ok_or("missing discovery")?
             .deadline = Instant::now();
         assert_eq!(processes.poll()?, None);
-        assert_eq!(processes.members[0].1.discoveries, 1);
-        let budget = processes.discovery.get("test").ok_or("missing discovery")?;
-        assert!(budget.given_up);
-        assert_eq!(budget.attempts, 1);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .discoveries,
+            1
+        );
+        let expired_budget = processes.discovery.get("test").ok_or("missing discovery")?;
+        assert!(expired_budget.given_up);
+        assert_eq!(expired_budget.attempts, 1);
         // Leaving the launch view drops the budget and the pending window mark.
         processes.returned_home();
         assert!(processes.discovery.is_empty());
         assert!(processes.waiting_windows.is_empty());
         assert_eq!(processes.poll()?, None);
-        assert_eq!(processes.members[0].1.discoveries, 1);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .discoveries,
+            1
+        );
         Ok(())
     }
     #[test]
@@ -1432,11 +1616,11 @@ mod tests {
         assert!(processes.waiting_windows.contains("test"));
         // Re-activating a still-waiting member starts a fresh bounded window.
         processes.start_ready(&app())?;
-        let budget = processes.discovery.get("test").ok_or("missing discovery")?;
-        assert!(!budget.given_up);
-        assert_eq!(budget.attempts, 0);
-        assert!(budget.deadline > Instant::now());
-        assert!(budget.next > Instant::now());
+        let available_budget = processes.discovery.get("test").ok_or("missing discovery")?;
+        assert!(!available_budget.given_up);
+        assert_eq!(available_budget.attempts, 0);
+        assert!(available_budget.deadline > Instant::now());
+        assert!(available_budget.next > Instant::now());
         Ok(())
     }
     #[test]
@@ -1455,31 +1639,72 @@ mod tests {
             processes.background_policy(&policy, now),
             Vec::<String>::new()
         );
-        assert_eq!(processes.members[0].1.close_requests, 0);
-        processes.background_policy(&policy, now + Duration::from_secs(59));
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .close_requests,
+            0
+        );
+        assert_eq!(
+            processes.background_policy(&policy, now + Duration::from_secs(59)),
+            Vec::<String>::new()
+        );
         assert!(!processes.background_requested("test"));
-        assert_eq!(processes.members[0].1.close_requests, 0);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .close_requests,
+            0
+        );
         // The configured lifetime expires: ask the app to close safely first.
-        processes.background_policy(&policy, now + Duration::from_secs(60));
+        assert_eq!(
+            processes.background_policy(&policy, now + Duration::from_secs(60)),
+            Vec::<String>::new()
+        );
         assert!(processes.background_requested("test"));
-        assert_eq!(processes.members[0].1.close_requests, 1);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .close_requests,
+            1
+        );
         assert_eq!(processes.members.len(), 1);
         // An app that ignores the request is stopped only after the grace period,
         // so a save-to-disk has time to finish.
         let stopped = processes.background_policy(&policy, now + Duration::from_secs(60 + 29));
         assert_eq!(stopped, Vec::<String>::new());
         assert_eq!(processes.members.len(), 1);
-        let stopped =
+        let forced_exit =
             processes.background_policy(&policy, now + Duration::from_secs(60) + BACKGROUND_GRACE);
-        assert_eq!(stopped, ["test"]);
+        assert_eq!(forced_exit, ["test"]);
         assert!(!processes.has_children());
         // An essential app keeps its background bookkeeping cleared.
         start_blocking(&mut processes, &app())?;
         processes.returned_home();
-        policy.essential.insert("test".into());
-        processes.background_policy(&policy, now + Duration::from_secs(120));
+        assert!(policy.essential.insert("test".into()));
+        assert_eq!(
+            processes.background_policy(&policy, now + Duration::from_secs(120)),
+            Vec::<String>::new()
+        );
         assert!(processes.background_since.is_empty());
-        assert_eq!(processes.members[0].1.close_requests, 0);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .close_requests,
+            0
+        );
         assert_eq!(processes.members.len(), 1);
         Ok(())
     }
@@ -1496,7 +1721,15 @@ mod tests {
                 Vec::<String>::new()
             );
         }
-        assert_eq!(processes.members[0].1.close_requests, 0);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .close_requests,
+            0
+        );
         assert_eq!(processes.members.len(), 1);
         // Explicit termination still works promptly.
         assert!(processes.terminate("test"));
@@ -1510,15 +1743,51 @@ mod tests {
         start_blocking(&mut processes, &app())?;
         assert_eq!(processes.poll_focus()?, None); // Window gone; process still exits asynchronously.
         assert_eq!(processes.members.len(), 1);
-        assert_eq!(processes.members[0].1.starts, 1);
-        processes.members[0].1.exited = true;
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .starts,
+            1
+        );
+        processes
+            .members
+            .get_mut(0)
+            .ok_or("Missing process fixture")?
+            .1
+            .exited = true;
         assert_eq!(processes.poll()?, None); // Preserve the pending activation.
         assert_eq!(processes.poll_focus()?, Some(FocusResult::Focused));
         settle(&mut processes)?; // The replacement child is created by the worker.
         assert_eq!(processes.members.len(), 1);
-        assert!(!processes.members[0].1.exited);
-        assert_eq!(processes.members[0].1.starts, 1);
-        assert_eq!(processes.members[0].1.focuses, 0);
+        assert!(
+            !processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .exited
+        );
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .starts,
+            1
+        );
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .focuses,
+            0
+        );
         assert_eq!(processes.poll_focus()?, None);
         Ok(())
     }
@@ -1529,15 +1798,41 @@ mod tests {
         start_blocking(&mut processes, &app())?;
         start_blocking(&mut processes, &app())?;
         assert_eq!(processes.poll_focus()?, None);
-        processes.members[0].1.window_ready = true;
+        processes
+            .members
+            .get_mut(0)
+            .ok_or("Missing process fixture")?
+            .1
+            .window_ready = true;
         assert_eq!(processes.poll_focus()?, Some(FocusResult::Focused));
-        assert_eq!(processes.members[0].1.starts, 1);
-        processes.members[0].1.window_ready = false;
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .starts,
+            1
+        );
+        processes
+            .members
+            .get_mut(0)
+            .ok_or("Missing process fixture")?
+            .1
+            .window_ready = false;
         start_blocking(&mut processes, &app())?;
         processes.resume.as_mut().ok_or("missing resume")?.deadline = Instant::now();
         assert_eq!(processes.poll_focus()?, Some(FocusResult::Missing));
         assert_eq!(processes.members.len(), 1);
-        assert_eq!(processes.members[0].1.starts, 1);
+        assert_eq!(
+            processes
+                .members
+                .first()
+                .ok_or("Missing fixture element")?
+                .1
+                .starts,
+            1
+        );
         assert!(processes.resume.is_none());
         Ok(())
     }
@@ -1546,7 +1841,12 @@ mod tests {
         let mut processes = ProcessSet::<ClosingWindow>::default();
         start_blocking(&mut processes, &app())?;
         start_blocking(&mut processes, &app())?;
-        processes.members[0].1.focus_error = Some("temporary transport failure".into());
+        processes
+            .members
+            .get_mut(0)
+            .ok_or("Missing process fixture")?
+            .1
+            .focus_error = Some("temporary transport failure".into());
         assert_eq!(processes.poll_focus()?, None);
         processes
             .resume
@@ -1567,7 +1867,12 @@ mod tests {
             .as_mut()
             .ok_or("missing activation")?
             .relaunch_on_exit = false;
-        processes.members[0].1.exited = true;
+        processes
+            .members
+            .get_mut(0)
+            .ok_or("Missing process fixture")?
+            .1
+            .exited = true;
         assert!(processes.poll()?.is_some());
         assert!(processes.resume.is_none());
         assert!(!processes.has_children());
@@ -1586,13 +1891,19 @@ mod tests {
             .ok_or("no activation")?;
         activate(&mut state, &mut process, index);
         assert_eq!(state.phase, crate::launcher::Phase::Launching);
-        assert!(process.start(&state.apps[0]).is_err());
+        assert!(
+            process
+                .start(state.apps.first().ok_or("Missing fixture element")?)
+                .is_err()
+        );
         state.launched("Test");
         assert_eq!(state.phase, crate::launcher::Phase::Running);
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_secs(5))
+            .ok_or("Test deadline overflow")?;
         loop {
             if let Some(status) = process.poll()? {
-                assert_eq!(status.code(), Some(7));
+                assert_eq!(status.code(), Some(7_i32));
                 state.finished(format!("{status}"));
                 break;
             }
@@ -1612,11 +1923,13 @@ mod tests {
         app.manifest.entry = "/vitrallis-missing-test/application".into();
         let mut state = crate::launcher::Launcher::new(vec![app], 1, 1)?;
         let mut process = ProcessSet::<NativeProcess>::default();
-        state.input(crate::input::Action::Activate);
+        assert_eq!(state.input(crate::input::Action::Activate), Some(0_usize));
         activate(&mut state, &mut process, 0);
         // The spawn failure arrives from the launch worker, never inline.
         assert_eq!(state.phase, crate::launcher::Phase::Launching);
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now()
+            .checked_add(Duration::from_secs(5))
+            .ok_or("Test deadline overflow")?;
         let error = loop {
             match process.poll_launch() {
                 Some(Ok(_)) => return Err("missing entry must not start".into()),
@@ -1698,19 +2011,28 @@ mod lifecycle_tests {
     -> Result<(), String> {
         let mut state = Launcher::new(vec![fixture()], 1, 1)?;
         let mut processes = ProcessSet::<NativeProcess>::default();
-        for _ in 0..40 {
+        for _ in 0_i32..40_i32 {
             assert_eq!(state.input(Action::Activate), Some(0));
             activate(&mut state, &mut processes, 0);
             assert_eq!(state.phase, Phase::Launching);
             // A repeated activation while starting never spawns a second child.
             assert!(state.input(Action::Activate).is_none());
-            assert!(processes.start(&state.apps[0]).is_ok());
-            super::tests::start_blocking(&mut processes, &state.apps[0])?;
+            assert!(
+                processes
+                    .start(state.apps.first().ok_or("Missing fixture element")?)
+                    .is_ok()
+            );
+            super::tests::start_blocking(
+                &mut processes,
+                state.apps.first().ok_or("Missing fixture element")?,
+            )?;
             assert_eq!(processes.state("cycles"), AppState::RunningForeground);
             assert_eq!(processes.running_ids(), ["cycles"]);
             state.launched("Cycles");
             assert_eq!(state.phase, Phase::Running);
-            let deadline = Instant::now() + Duration::from_secs(5);
+            let deadline = Instant::now()
+                .checked_add(Duration::from_secs(5))
+                .ok_or("Test deadline overflow")?;
             let status = loop {
                 if let Some(status) = processes.poll()? {
                     break status;
@@ -1741,9 +2063,12 @@ mod lifecycle_tests {
         app.manifest.entry = script;
         app.manifest.args = vec!["literal ; $(false)".into()];
         app.manifest.cwd = Some(scratch.0.clone());
-        app.manifest
-            .env
-            .insert("VITRALLIS_TEST".into(), "per-child".into());
+        assert!(
+            app.manifest
+                .env
+                .insert("VITRALLIS_TEST".into(), "per-child".into())
+                .is_none()
+        );
         let output = command(&app)?.stdout(Stdio::piped()).output()?;
         assert!(output.status.success());
         let text = String::from_utf8(output.stdout)?;
@@ -1791,7 +2116,7 @@ mod lifecycle_tests {
         }
         let mut state = Launcher::new(vec![fixture()], 1, 1)?;
         let mut process = WaitFailure;
-        state.input(Action::Activate);
+        assert_eq!(state.input(Action::Activate), Some(0_usize));
         activate(&mut state, &mut process, 0);
         assert_eq!(state.phase, Phase::Launching);
         assert!(process.poll().is_err());
@@ -1839,7 +2164,9 @@ mod native_tests {
             process.focus()?;
             let mut bytes = [0; 1024];
             assert_eq!(socket.recv(&mut bytes)?, 0);
-            let deadline = Instant::now() + Duration::from_secs(3);
+            let deadline = Instant::now()
+                .checked_add(Duration::from_secs(3))
+                .ok_or("Test deadline overflow")?;
             loop {
                 if let Some(result) = process.poll_focus()? {
                     assert_eq!(result, FocusResult::Focused);
@@ -1855,7 +2182,10 @@ mod native_tests {
                 app.manifest.args = vec!["--".into(), path.into()];
                 process.deliver(&app)?;
                 let count = socket.recv(&mut bytes)?;
-                assert_eq!(&bytes[..count], path.as_os_str().as_bytes());
+                assert_eq!(
+                    bytes.get(..count).ok_or("Missing fixture element")?,
+                    path.as_os_str().as_bytes()
+                );
             }
             assert_eq!(
                 process.child.as_ref().ok_or("Lost process ownership")?.id(),
@@ -1863,9 +2193,11 @@ mod native_tests {
             );
             assert!(process.start(&app).is_err());
             process.child.as_mut().ok_or("Missing child")?.kill()?;
-            let deadline = Instant::now() + Duration::from_secs(3);
+            let cleanup_deadline = Instant::now()
+                .checked_add(Duration::from_secs(3))
+                .ok_or("Test deadline overflow")?;
             while process.poll()?.is_none() {
-                if Instant::now() >= deadline {
+                if Instant::now() >= cleanup_deadline {
                     return Err("Native child was not reaped".into());
                 }
                 std::thread::sleep(Duration::from_millis(1));

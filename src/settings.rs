@@ -85,12 +85,8 @@ const HOME: [Page; HOME_ROWS] = [
 ];
 
 #[must_use]
-pub const fn home_page(index: usize) -> Option<Page> {
-    if index < HOME_ROWS {
-        Some(HOME[index])
-    } else {
-        None
-    }
+pub fn home_page(index: usize) -> Option<Page> {
+    HOME.get(index).copied()
 }
 
 /// Parent page for the shared back behaviour: dismiss a modal first, otherwise
@@ -103,7 +99,15 @@ pub const fn parent(page: Page) -> Page {
         Page::Timezones => Page::DateTime,
         Page::TorDetails => Page::Tor,
         Page::Tor => Page::Wireless,
-        _ => Page::Home,
+        Page::Home
+        | Page::Display
+        | Page::DateTime
+        | Page::Wireless
+        | Page::Applications
+        | Page::Storage
+        | Page::Device
+        | Page::Updates
+        | Page::About => Page::Home,
     }
 }
 
@@ -292,7 +296,7 @@ impl Settings {
                 };
             }
             Action::Move(_) if self.selected >= HOME_ROWS => {
-                self.footer_input(action);
+                let _handled_movement = self.footer_input(action);
             }
             Action::Move(direction) => {
                 self.selected = grid_move(self.selected, direction, HOME_ROWS, HOME_COLUMNS);
@@ -386,7 +390,7 @@ impl Settings {
                     .position(|zone| Some(zone) == self.status.timezone.as_ref())
                     .unwrap_or(0);
                 self.page(Page::Timezones);
-                self.zone_start = index / 5 * 5;
+                self.zone_start = index.checked_div(5).unwrap_or(0).saturating_mul(5);
                 self.selected = index % 5;
             }
             Action::Activate => self.message = "Time zone unavailable on this device".into(),
@@ -415,29 +419,29 @@ impl Settings {
             return None;
         }
         self.selected = index;
-        let value = self.normalize(index, value);
+        let normalized = self.normalize(index, value);
         match index {
-            0 => Some(Request::Control(Control::Brightness(value))),
-            1 => Some(Request::Control(Control::Volume(value))),
+            0 => Some(Request::Control(Control::Brightness(normalized))),
+            1 => Some(Request::Control(Control::Volume(normalized))),
             _ => None,
         }
     }
     pub const fn normalize(&self, index: usize, value: Percent) -> Percent {
-        let value = value.snapped();
+        let snapped = value.snapped();
         if index == 0
             && let Some(minimum) = self.status.brightness_minimum
-            && value.value() < minimum.value()
+            && snapped.value() < minimum.value()
         {
             return minimum;
         }
-        value
+        snapped
     }
     pub fn value(&self, index: usize) -> Option<Percent> {
         if self.selected == index && self.preview.is_some() {
             return self.preview;
         }
-        if index < 2 && self.queued[index].is_some() {
-            return self.queued[index];
+        if let Some(queued) = self.queued.get(index).copied().flatten() {
+            return Some(queued);
         }
         if let Some((control, value)) = self.applying
             && control == index
@@ -469,7 +473,7 @@ impl Settings {
     /// the category; the second shows the setting a user is most likely to want.
     pub fn home_rows(&self) -> [(String, String); HOME_ROWS] {
         let percent = |value: Option<Percent>| {
-            value.map_or_else(|| "--".into(), |value| format!("{}%", value.value()))
+            value.map_or_else(|| "--".into(), |percent| format!("{}%", percent.value()))
         };
         [
             (
@@ -564,15 +568,24 @@ impl Settings {
                     .unwrap_or(0)
             ),
             State::Installing => "Installing update...".into(),
-            State::Installed { version, .. } => format!("Version {version} installed"),
+            State::Installed {
+                version,
+                durable: _,
+                relaunch: _,
+            } => format!("Version {version} installed"),
             State::Restoring => "Restoring previous build...".into(),
             State::Restored {
                 version: Some(version),
-                ..
+                durable: _,
+                relaunch: _,
             } => {
                 format!("Restored version {version}")
             }
-            State::Restored { version: None, .. } => "Previous build restored".into(),
+            State::Restored {
+                version: None,
+                durable: _,
+                relaunch: _,
+            } => "Previous build restored".into(),
             State::Failed(_) => "Last update failed - open for details".into(),
         }
     }
@@ -586,16 +599,16 @@ const fn tor_word(state: crate::tor::State) -> &'static str {
         State::Connected => "connected",
         State::Bootstrapping => "starting",
         State::Error => "error",
-        _ => "idle",
+        State::Stopped | State::Starting | State::Stopping => "idle",
     }
 }
 
 fn minutes(seconds: u32) -> String {
     match seconds {
         0 => "never".into(),
-        seconds if seconds % 3600 == 0 => format!("{}h", seconds / 3600),
-        seconds if seconds % 60 == 0 => format!("{} min", seconds / 60),
-        seconds => format!("{seconds} sec"),
+        _ if seconds.is_multiple_of(3600) => format!("{}h", seconds / 3600),
+        _ if seconds.is_multiple_of(60) => format!("{} min", seconds / 60),
+        _ => format!("{seconds} sec"),
     }
 }
 
@@ -614,12 +627,13 @@ fn grid_move(index: usize, direction: Direction, rows: usize, columns: usize) ->
     if rows == 0 || columns == 0 {
         return 0;
     }
-    let last = rows - 1;
+    let last = rows.saturating_sub(1);
+    let current = index.min(last);
     match direction {
-        Direction::Left => index.saturating_sub(1),
-        Direction::Right => (index + 1).min(last),
-        Direction::Up => index.saturating_sub(columns),
-        Direction::Down => (index + columns).min(last),
+        Direction::Left => current.saturating_sub(1),
+        Direction::Right => current.saturating_add(1).min(last),
+        Direction::Up => current.saturating_sub(columns),
+        Direction::Down => current.saturating_add(columns).min(last),
     }
 }
 
@@ -642,15 +656,21 @@ mod tests {
         );
         assert!(settings.confirmation.is_some());
         assert_eq!(settings.input(Action::Activate), None);
-        settings.input(Action::SelectAndActivate(footer::RESTART));
-        settings.input(Action::Move(Direction::Right));
+        assert_eq!(
+            settings.input(Action::SelectAndActivate(footer::RESTART)),
+            None
+        );
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
         assert_eq!(
             settings.input(Action::Activate),
             Some(Request::Control(Control::Power(Power::Reboot)))
         );
-        settings.input(Action::SelectAndActivate(footer::SHUTDOWN));
-        settings.input(Action::Move(Direction::Right));
-        settings.input(Action::Back);
+        assert_eq!(
+            settings.input(Action::SelectAndActivate(footer::SHUTDOWN)),
+            None
+        );
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
+        assert_eq!(settings.input(Action::Back), None);
         assert!(settings.confirmation.is_none());
         assert!(settings.open);
         assert_eq!(settings.page, Page::Home);
@@ -667,20 +687,32 @@ mod tests {
     fn power_confirmation_rechecks_availability_and_left_returns_to_cancel() {
         let mut settings = Settings::default();
         settings.show();
-        settings.input(Action::SelectAndActivate(footer::RESTART));
+        assert_eq!(
+            settings.input(Action::SelectAndActivate(footer::RESTART)),
+            None
+        );
         assert!(settings.confirmation.is_none());
         settings.status.power_controls = true;
         settings.pending = true;
-        settings.input(Action::SelectAndActivate(footer::RESTART));
+        assert_eq!(
+            settings.input(Action::SelectAndActivate(footer::RESTART)),
+            None
+        );
         assert!(settings.confirmation.is_none());
         settings.pending = false;
-        settings.input(Action::SelectAndActivate(footer::RESTART));
-        settings.input(Action::Move(Direction::Right));
-        settings.input(Action::Move(Direction::Left));
+        assert_eq!(
+            settings.input(Action::SelectAndActivate(footer::RESTART)),
+            None
+        );
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
+        assert_eq!(settings.input(Action::Move(Direction::Left)), None);
         assert_eq!(settings.selected, 0);
         assert_eq!(settings.input(Action::Activate), None);
-        settings.input(Action::SelectAndActivate(footer::RESTART));
-        settings.input(Action::Move(Direction::Right));
+        assert_eq!(
+            settings.input(Action::SelectAndActivate(footer::RESTART)),
+            None
+        );
+        assert_eq!(settings.input(Action::Move(Direction::Right)), None);
         settings.status.power_controls = false;
         assert_eq!(settings.input(Action::Activate), None);
         assert!(settings.confirmation.is_none());
@@ -702,12 +734,12 @@ mod tests {
             settings.input(Action::Move(Direction::Right)),
             Some(Request::Control(Control::Brightness(Percent::new(100)?)))
         );
-        settings.input(Action::Move(Direction::Down));
+        assert_eq!(settings.input(Action::Move(Direction::Down)), None);
         assert_eq!(
             settings.input(Action::Move(Direction::Left)),
             Some(Request::Control(Control::Volume(Percent::new(0)?)))
         );
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Home);
         assert_eq!(settings.input(Action::SelectAndActivate(2)), None);
         assert_eq!(settings.page, Page::Wireless);
@@ -715,15 +747,15 @@ mod tests {
             settings.input(Action::SelectAndActivate(2)),
             Some(Request::Network)
         );
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         settings.pending = true;
         assert_eq!(
             settings.adjust(0, Percent::new(50)?),
             Some(Request::Control(Control::Brightness(Percent::new(50)?)))
         );
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Home);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert!(!settings.open);
         Ok(())
     }
@@ -735,7 +767,7 @@ mod tests {
             assert_eq!(settings.input(Action::SelectAndActivate(index)), None);
             let page = home_page(index).ok_or_else(|| format!("home option {index}"))?;
             assert_eq!(settings.page, page, "home option {index}");
-            settings.input(Action::Back);
+            assert_eq!(settings.input(Action::Back), None);
             assert_eq!(settings.page, parent(page));
             if page != Page::Home {
                 // A single action returns to the home menu, never out of Settings.
@@ -745,7 +777,7 @@ mod tests {
         // Only the home menu closes Settings.
         let mut settings = Settings::default();
         settings.show();
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert!(!settings.open);
         Ok(())
     }
@@ -771,9 +803,9 @@ mod tests {
         let mut settings = Settings::default();
         settings.show();
         settings.page(Page::About);
-        settings.input(Action::Move(Direction::Down));
+        assert_eq!(settings.input(Action::Move(Direction::Down)), None);
         assert_eq!(settings.selected, BACK);
-        settings.input(Action::Activate);
+        assert_eq!(settings.input(Action::Activate), None);
         assert_eq!(settings.page, Page::Home);
         assert!(settings.open);
     }
@@ -783,7 +815,7 @@ mod tests {
         settings.show();
         settings.page(Page::DateTime);
         let before = settings.policy.ampm;
-        settings.input(Action::Activate);
+        assert_eq!(settings.input(Action::Activate), None);
         // The default policy path is unavailable under a test HOME, so the page
         // reports the failure instead of silently discarding the change.
         if settings.policy.ampm == before {

@@ -69,7 +69,9 @@ impl Worker {
         let (updates, receive) = mpsc::channel();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = Arc::clone(&cancelled);
-        thread::Builder::new()
+        // The service exits when its command sender is dropped; installs observe
+        // cancellation before commit and finish any transaction already begun.
+        let _worker = thread::Builder::new()
             .name("app-center".into())
             .spawn(move || service(&loc, &commands, &updates, &worker_cancelled, &network::Curl))
             .map_err(|e| e.to_string())?;
@@ -78,6 +80,19 @@ impl Worker {
             receive,
             cancelled,
         })
+    }
+}
+impl Drop for Worker {
+    fn drop(&mut self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+}
+/// Informational updates may outlive a closed screen. Log delivery failure and
+/// let any in-progress commit finish; interactive confirmations and download
+/// progress remain fallible so disconnects stop work before the commit boundary.
+fn notify(updates: &Sender<Update>, update: Update) {
+    if let Err(error) = updates.send(update) {
+        eprintln!("level=debug event=app_center_update_disconnected message={error}");
     }
 }
 fn service(
@@ -92,13 +107,13 @@ fn service(
     let mut expected_sources = initial.as_ref().ok().cloned();
     if let Ok(sources) = &initial {
         rows = cache::load(loc, sources);
-        let _ = updates.send(Update::Sources(sources.clone()));
-        let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+        notify(updates, Update::Sources(sources.clone()));
+        notify(updates, Update::Rows(rows.iter().map(Row::from).collect()));
     }
-    let _ = updates.send(Update::Done(
-        initial.map(|_| initial_message(&rows).into()),
-        false,
-    ));
+    notify(
+        updates,
+        Update::Done(initial.map(|_| initial_message(&rows).into()), false),
+    );
     while let Ok(command) = commands.recv() {
         let mut changed = false;
         let mut selected_installed = None;
@@ -106,7 +121,10 @@ fn service(
             Command::Save(_) => "Sources saved. Refresh to load available apps",
             Command::Uninstall(_) => "App uninstalled. Other data kept; removed files backed up.",
             Command::Install(_) => "Complete. The installed version is ready to open.",
-            _ => "Ready. Select an app to continue.",
+            Command::Check
+            | Command::Scan
+            | Command::SelectInstalled(_)
+            | Command::Answer(_, _) => "Ready. Select an app to continue.",
         });
         let result = (|| {
             match command {
@@ -136,8 +154,8 @@ fn service(
                     for row in &mut rows {
                         refresh_local(loc, &sources, row);
                     }
-                    let _ = updates.send(Update::Sources(sources));
-                    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+                    notify(updates, Update::Sources(sources));
+                    notify(updates, Update::Rows(rows.iter().map(Row::from).collect()));
                 }
                 Command::Install(keys) => {
                     let (attempted, result) =
@@ -151,14 +169,14 @@ fn service(
                         .iter_mut()
                         .find(|r| r.package.key() == key)
                         .ok_or("Check is no longer valid")?;
-                    let _ = updates.send(Update::Progress(format!(
-                        "Uninstalling {}",
-                        row.package.name
-                    )));
+                    notify(
+                        updates,
+                        Update::Progress(format!("Uninstalling {}", row.package.name)),
+                    );
                     let result = uninstall::uninstall(loc, &row.package);
                     changed = true;
                     refresh_after_uninstall(loc, row);
-                    let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
+                    notify(updates, Update::Row(Box::new(Row::from(&*row))));
                     result?;
                 }
                 Command::Answer(_, _) => {
@@ -169,7 +187,7 @@ fn service(
         })();
         finish_storage_operation(updates, result.map(|()| success), changed);
         if let Some(key) = selected_installed {
-            let _ = updates.send(Update::SelectedInstalled(key));
+            notify(updates, Update::SelectedInstalled(key));
         }
     }
 }
@@ -201,7 +219,7 @@ fn install_keys(
                 errors.push(format!("{}: {e}", row.package.name));
             }
             refresh_local(loc, &sources, row);
-            let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
+            notify(updates, Update::Row(Box::new(Row::from(&*row))));
         }
         if errors.is_empty() {
             Ok(())
@@ -221,9 +239,9 @@ fn finish_storage_operation(
         eprintln!("level=warn event=app_center_operation error={error:?}");
     }
     if changed {
-        STORAGE_REVISION.fetch_add(1, Ordering::Relaxed);
+        let _previous_revision = STORAGE_REVISION.fetch_add(1, Ordering::Relaxed);
     }
-    let _ = updates.send(Update::Done(result, changed));
+    notify(updates, Update::Done(result, changed));
 }
 
 fn scan_local(
@@ -234,7 +252,7 @@ fn scan_local(
     let sources = Sources::load(&loc.sources)?;
     for row in rows {
         refresh_local(loc, &sources, row);
-        let _ = updates.send(Update::Row(Box::new(Row::from(&*row))));
+        notify(updates, Update::Row(Box::new(Row::from(&*row))));
     }
     Ok(())
 }
@@ -278,7 +296,7 @@ fn select_installed(
         ready: false,
         package,
     });
-    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+    notify(updates, Update::Rows(rows.iter().map(Row::from).collect()));
     Ok(key)
 }
 const fn initial_message(rows: &[Checked]) -> &'static str {
@@ -300,9 +318,9 @@ fn refresh_catalog(
         let _probe = storage::Lock::take(&loc.state)?;
     }
     let sources = Sources::load(&loc.sources)?;
-    let _ = updates.send(Update::Sources(sources.clone()));
+    notify(updates, Update::Sources(sources.clone()));
     let fetched = cache::fetch_documents(loc, &sources, fetch, |s| {
-        let _ = updates.send(Update::Progress(s));
+        notify(updates, Update::Progress(s));
     });
     let _lock = storage::Lock::take(&loc.state)?;
     if Sources::load(&loc.sources)? != sources {
@@ -316,7 +334,7 @@ fn refresh_catalog(
     } else {
         format!("Refresh complete: {} entries. Select an app.", rows.len())
     };
-    let _ = updates.send(Update::Rows(rows.iter().map(Row::from).collect()));
+    notify(updates, Update::Rows(rows.iter().map(Row::from).collect()));
     Ok((sources, success))
 }
 fn install_one(
@@ -355,7 +373,10 @@ fn install_one(
                 ),
             ))
             .map_err(|e| e.to_string())?;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let now = std::time::Instant::now();
+        let deadline = now
+            .checked_add(std::time::Duration::from_secs(120))
+            .ok_or("Confirmation deadline overflow")?;
         loop {
             match commands
                 .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
@@ -397,9 +418,9 @@ fn install_one(
     })?;
     // Phase D: reacquire and revalidate, then prepare and commit under the lock.
     let _lock = storage::Lock::take(&loc.state)?;
-    let sources = Sources::load(&loc.sources)?;
-    if !sources.catalogs.contains(&row.package.origin)
-        || !sources.trusted(&row.package.origin, &row.package.repository)
+    let current_sources = Sources::load(&loc.sources)?;
+    if !current_sources.catalogs.contains(&row.package.origin)
+        || !current_sources.trusted(&row.package.origin, &row.package.repository)
     {
         return Err("Source removed or approval revoked; check again".into());
     }
@@ -407,21 +428,24 @@ fn install_one(
     if !checked.ready {
         return Err("No available update".into());
     }
-    let entry = uninstall::installed_entry(&loc.root(&row.package), &row.package)?;
-    if !running::Native.list(&entry)?.is_empty() {
+    let current_entry = uninstall::installed_entry(&loc.root(&row.package), &row.package)?;
+    if !running::Native.list(&current_entry)?.is_empty() {
         return Err("App started again; update skipped".into());
     }
     let planned =
         install::prepare_with_modes(loc, row.package.clone(), bundle.files, &bundle.modes)?;
-    if !running::Native.list(&entry)?.is_empty() {
+    if !running::Native.list(&current_entry)?.is_empty() {
         return Err("App started again; update skipped".into());
     }
     cancellation(cancelled)?;
     // Once commit begins, let the transaction finish or roll back without interruption.
-    let _ = updates.send(Update::Progress(format!(
-        "Installing {}: {}",
-        row.package.name, planned.status
-    )));
+    notify(
+        updates,
+        Update::Progress(format!(
+            "Installing {}: {}",
+            row.package.name, planned.status
+        )),
+    );
     install::install(loc, &planned).map_err(|e| format!("Installation failed: {e}"))
 }
 fn cancellation(cancelled: &AtomicBool) -> Result<(), String> {

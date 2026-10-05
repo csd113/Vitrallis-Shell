@@ -82,7 +82,8 @@ pub(super) fn apply(
     if actual == Some(enabled) {
         Ok(())
     } else {
-        result.map_err(|_| format!("{} change denied or unavailable", radio.label()))?;
+        let _command_output = result
+            .map_err(|error| format!("{} change denied or unavailable: {error}", radio.label()))?;
         Err(format!(
             "{} change not confirmed; check adapter / radio block",
             radio.label()

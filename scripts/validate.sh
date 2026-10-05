@@ -4,7 +4,7 @@ set -eu
 cd "$(dirname "$0")/.."
 cargo fmt --all --check
 cargo check --workspace --all-targets --all-features --locked
-cargo clippy --locked --workspace --all-targets --all-features -- -D warnings -D clippy::all -D clippy::pedantic -D clippy::nursery -D clippy::cargo
+cargo clippy --locked --workspace --all-targets --all-features
 cargo test --locked --workspace --all-features
 python3 -m unittest discover -s tests -p 'test_*.py'
 cargo build --locked --release --workspace --all-features

@@ -24,7 +24,7 @@ impl Scratch {
         #[cfg(unix)]
         {
             use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
+            let _configured_builder = builder.mode(0o700);
         }
         builder.create(&path)?;
         Ok(Self(path))

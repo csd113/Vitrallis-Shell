@@ -4,8 +4,11 @@ use vitrallis_native::ui::Options;
 
 pub fn parse(mut args: Vec<OsString>) -> Result<(Option<Options>, Vec<OsString>), String> {
     let command = if let Some(index) = args.iter().position(|arg| arg == "--command") {
-        let command = args.split_off(index + 1);
-        args.pop();
+        let tail = index
+            .checked_add(1)
+            .ok_or("command argument index overflow")?;
+        let command = args.split_off(tail);
+        let _removed_separator = args.pop();
         if command.first().is_none_or(|arg| arg.is_empty()) {
             return Err("Use --command EXECUTABLE [ARG ...]".into());
         }
@@ -22,11 +25,11 @@ pub fn launch(command: Vec<OsString>) -> Result<(PathBuf, Vec<OsString>), std::i
         let preferred = std::env::var_os("SHELL").map(PathBuf::from);
         return Ok((super::pty::shell(preferred.as_deref())?, vec!["-i".into()]));
     }
-    let mut command = command.into_iter();
-    let program = command
+    let mut arguments = command.into_iter();
+    let program = arguments
         .next()
         .ok_or_else(|| std::io::Error::other("Missing command"))?;
-    Ok((program.into(), command.collect()))
+    Ok((program.into(), arguments.collect()))
 }
 
 #[cfg(test)]

@@ -23,7 +23,7 @@ impl GlInfo {
 }
 
 fn software_renderer(renderer: &str) -> bool {
-    let renderer = renderer.to_ascii_lowercase();
+    let lowercase = renderer.to_ascii_lowercase();
     [
         "llvmpipe",
         "softpipe",
@@ -33,10 +33,10 @@ fn software_renderer(renderer: &str) -> bool {
     ]
     .iter()
     .any(|name| {
-        renderer
+        lowercase
             .split(|c: char| !c.is_ascii_alphanumeric())
             .any(|word| word == *name)
-            || (*name == "software rasterizer" && renderer.contains(name))
+            || (*name == "software rasterizer" && lowercase.contains(name))
     })
 }
 
@@ -46,7 +46,7 @@ pub(super) fn current_gl(canvas: &Canvas<Window>) -> Option<GlInfo> {
     if !matches!(canvas.info().name, "opengl" | "opengles" | "opengles2") {
         return None;
     }
-    canvas
+    let _activation_pixel = canvas
         .read_pixels(Rect::new(0, 0, 1, 1), PixelFormatEnum::RGBA32)
         .ok()?;
     // SAFETY: SDL video and this canvas live on the calling thread. The current
@@ -119,7 +119,7 @@ pub fn report(info: &RendererInfo) -> String {
         info.output_size.1,
     );
     out.push_str("Buffering: SDL complete-frame backbuffer\n");
-    let _ = writeln!(
+    if let Err(error) = writeln!(
         out,
         "Presentation: {}",
         if info.vsync() && !info.software() {
@@ -127,37 +127,49 @@ pub fn report(info: &RendererInfo) -> String {
         } else {
             "synchronization unavailable/unverified; frame rate bounded, tearing possible"
         }
-    );
-    if let Some((w, h)) = info.display_size {
-        let _ = writeln!(out, "Display: {w}x{h}");
+    ) {
+        eprintln!("Renderer report formatting failed: {error}");
+    }
+    if let Some((w, h)) = info.display_size
+        && let Err(error) = writeln!(out, "Display: {w}x{h}")
+    {
+        eprintln!("Renderer report formatting failed: {error}");
     }
     if let Some(gl) = &info.gl {
-        let _ = writeln!(
+        if let Err(error) = writeln!(
             out,
             "GL vendor: {:?}\nMesa/OpenGL renderer: {:?}\nGL version: {:?}\nKnown software rasterizer: {}",
             gl.vendor,
             gl.renderer,
             gl.version,
             gl.software()
-        );
-        if let Some(version) = &gl.egl_version {
-            let _ = writeln!(out, "EGL version (active display): {version:?}");
+        ) {
+            eprintln!("Renderer report formatting failed: {error}");
         }
-        if let Some(driver) = &gl.egl_display_driver {
-            let _ = writeln!(
+        if let Some(version) = &gl.egl_version
+            && let Err(error) = writeln!(out, "EGL version (active display): {version:?}")
+        {
+            eprintln!("Renderer report formatting failed: {error}");
+        }
+        if let Some(driver) = &gl.egl_display_driver
+            && let Err(error) = writeln!(
                 out,
                 "EGL display driver (EGL_MESA_query_driver; not necessarily GPU driver): {driver:?}"
-            );
+            )
+        {
+            eprintln!("Renderer report formatting failed: {error}");
         }
         out.push_str("GPU execution: requires corroborating device/driver evidence; GL identity alone is not proof\n");
     } else {
         out.push_str("GL identity: unavailable for this renderer\n");
     }
-    if let Some(error) = &info.hardware_error {
-        let _ = writeln!(
+    if let Some(hardware_error) = &info.hardware_error
+        && let Err(error) = writeln!(
             out,
-            "Hardware failure: {error:?}\nContinuing with SDL software rendering."
-        );
+            "Hardware failure: {hardware_error:?}\nContinuing with SDL software rendering."
+        )
+    {
+        eprintln!("Renderer report formatting failed: {error}");
     }
     out
 }
@@ -168,7 +180,9 @@ pub fn report(info: &RendererInfo) -> String {
 pub fn capabilities() -> String {
     let mut out = String::from("Available SDL renderers:\n");
     for driver in sdl2::render::drivers() {
-        let _ = writeln!(out, "  {} flags={:#x}", driver.name, driver.flags);
+        if let Err(error) = writeln!(out, "  {} flags={:#x}", driver.name, driver.flags) {
+            eprintln!("Renderer report formatting failed: {error}");
+        }
     }
     #[cfg(target_os = "linux")]
     linux_report(&mut out);
@@ -178,13 +192,21 @@ pub fn capabilities() -> String {
 #[cfg(target_os = "linux")]
 fn linux_report(out: &mut String) {
     match std::fs::read_dir("/dev/dri") {
-        Ok(entries) => {
+        Ok(directory_entries) => {
             out.push_str("DRM devices (/dev/dri): present (not proof of acceleration)\n");
-            let mut entries: Vec<_> = entries.flatten().collect();
+            let mut entries: Vec<_> = directory_entries
+                .filter_map(|result| match result {
+                    Ok(entry) => Some(entry),
+                    Err(error) => {
+                        eprintln!("Cannot inspect DRM device entry: {error}");
+                        None
+                    }
+                })
+                .collect();
             entries.sort_by_key(std::fs::DirEntry::file_name);
             for entry in entries {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
+                let file_name = entry.file_name();
+                let name = file_name.to_string_lossy();
                 if !drm_node(&name) {
                     continue;
                 }
@@ -201,22 +223,26 @@ fn linux_report(out: &mut String) {
                     .ok()
                     .map(|path| {
                         // SAFETY: path is a live NUL-terminated CString; access retains no pointer.
-                        unsafe { libc::access(path.as_ptr(), libc::R_OK | libc::W_OK) == 0 }
+                        unsafe { libc::access(path.as_ptr(), libc::R_OK | libc::W_OK) == 0_i32 }
                     });
-                let _ = writeln!(
+                if let Err(error) = writeln!(
                     out,
                     "  {} kernel DRM driver={} read/write access={}",
                     entry.path().display(),
                     driver.as_deref().unwrap_or("unknown"),
                     access.map_or("unknown", |allowed| if allowed { "yes" } else { "no" }),
-                );
+                ) {
+                    eprintln!("Renderer report formatting failed: {error}");
+                }
             }
         }
-        Err(error) => {
-            let _ = writeln!(
+        Err(directory_error) => {
+            if let Err(error) = writeln!(
                 out,
-                "DRM devices: {error} (software rendering remains available)"
-            );
+                "DRM devices: {directory_error} (software rendering remains available)"
+            ) {
+                eprintln!("Renderer report formatting failed: {error}");
+            }
         }
     }
     // Report loaded libraries as evidence only, never equate a loaded DRI module
@@ -233,7 +259,9 @@ fn linux_report(out: &mut String) {
             .collect();
         out.push_str("Loaded graphics libraries (not active-driver identification):\n");
         for path in paths {
-            let _ = writeln!(out, "  {path}");
+            if let Err(error) = writeln!(out, "  {path}") {
+                eprintln!("Renderer report formatting failed: {error}");
+            }
         }
     }
     out.push_str("If hardware fails: check Mesa DRI/EGL/GLES packages, display access and DRM node permissions. Do not run as root. Preserve the SDL error above.\n");
@@ -281,17 +309,24 @@ pub fn self_test(canvas: &mut Canvas<Window>) -> Result<(), String> {
     let pixels = canvas.read_pixels(Rect::new(0, 0, 32, 16), PixelFormatEnum::RGB24)?;
     let expected_glyph =
         font8x8::UnicodeFonts::get(&font8x8::BASIC_FONTS, 'A').ok_or("missing test glyph")?;
-    for y in 0..16 {
-        for x in 0..32 {
+    for y in 0_usize..16 {
+        for x in 0_usize..32 {
             let expected = if x < 2 && y < 2 {
-                [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]][y * 2 + x]
-            } else if (8..16).contains(&x) && y < 8 && expected_glyph[y] & (1 << (x - 8)) != 0 {
+                *[[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 255]]
+                    .get(y.saturating_mul(2).saturating_add(x))
+                    .ok_or("Invalid texture sample")?
+            } else if (8..16).contains(&x)
+                && y < 8
+                && expected_glyph
+                    .get(y)
+                    .is_some_and(|bits| bits & (1 << x.saturating_sub(8)) != 0)
+            {
                 [255, 255, 255]
             } else {
                 [17, 29, 40]
             };
-            let offset = (y * 32 + x) * 3;
-            if pixels.get(offset..offset + 3) != Some(expected.as_slice()) {
+            let offset = y.saturating_mul(32).saturating_add(x).saturating_mul(3);
+            if pixels.get(offset..offset.saturating_add(3)) != Some(expected.as_slice()) {
                 return Err(format!(
                     "graphics readback mismatch at ({x}, {y}); texture/fill/atlas colors or orientation failed"
                 ));

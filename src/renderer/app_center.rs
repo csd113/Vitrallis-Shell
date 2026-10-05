@@ -33,8 +33,11 @@ fn header(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<(
         canvas,
         center.title(),
         Rect {
-            x: geometry.title.x + 6 * scale,
-            w: geometry.title.w - 12 * scale,
+            x: geometry.title.x.saturating_add(6_i32.saturating_mul(scale)),
+            w: geometry
+                .title
+                .w
+                .saturating_sub(12_i32.saturating_mul(scale)),
             h: geometry.title.h,
             ..geometry.title
         },
@@ -46,12 +49,19 @@ fn header(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<(
         count => format!("{count} apps"),
     };
     if !count.is_empty() {
-        let width = i32::try_from(count.chars().count()).unwrap_or(0) * advance(scale);
+        let width = i32::try_from(count.chars().count())
+            .unwrap_or(0_i32)
+            .saturating_mul(advance(scale));
         text(
             canvas,
             &count,
             Rect {
-                x: geometry.title.x + geometry.title.w - width - 6 * scale,
+                x: geometry
+                    .title
+                    .x
+                    .saturating_add(geometry.title.w)
+                    .saturating_sub(width)
+                    .saturating_sub(6_i32.saturating_mul(scale)),
                 w: width,
                 h: geometry.title.h,
                 ..geometry.title
@@ -76,9 +86,9 @@ fn header(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<(
             canvas,
             Rect {
                 x: geometry.title.x,
-                y: geometry.title.h + scale,
+                y: geometry.title.h.saturating_add(scale),
                 w: geometry.title.w,
-                h: 2 * scale,
+                h: 2_i32.saturating_mul(scale),
             },
             geometry.title.w,
             false,
@@ -102,7 +112,7 @@ fn targets(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<
                 fill(
                     canvas,
                     Rect {
-                        w: 3 * geometry.scale,
+                        w: 3_i32.saturating_mul(geometry.scale),
                         ..bounds
                     },
                     theme::ACCENT,
@@ -135,9 +145,13 @@ fn body(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<(),
                     message,
                     Rect {
                         x: geometry.title.x,
-                        y: geometry.list_top + 8 * geometry.scale,
-                        w: geometry.width - 16 * geometry.scale,
-                        h: 24 * geometry.scale,
+                        y: geometry
+                            .list_top
+                            .saturating_add(8_i32.saturating_mul(geometry.scale)),
+                        w: geometry
+                            .width
+                            .saturating_sub(16_i32.saturating_mul(geometry.scale)),
+                        h: 24_i32.saturating_mul(geometry.scale),
                     },
                     geometry.scale,
                     theme::MUTED,
@@ -154,19 +168,36 @@ pub(super) fn text_body(
     geometry: &Geometry,
     center: &Center,
 ) -> Result<(), String> {
-    let width = fit_columns(geometry.title.w - 4 * geometry.scale, geometry.scale);
+    let width = fit_columns(
+        geometry
+            .title
+            .w
+            .saturating_sub(4_i32.saturating_mul(geometry.scale)),
+        geometry.scale,
+    );
     let lines = center.lines(width.max(1));
     let line = detail_line(geometry.scale);
     let bottom = if center.confirming() {
-        geometry.pinned.y - 4 * geometry.scale
+        geometry
+            .pinned
+            .y
+            .saturating_sub(4_i32.saturating_mul(geometry.scale))
     } else if center.editing() {
-        geometry.list_top + 40 * geometry.scale
+        geometry
+            .list_top
+            .saturating_add(40_i32.saturating_mul(geometry.scale))
     } else {
         geometry.footer.y
     };
-    let capacity = usize::try_from((bottom - geometry.list_top).max(0) / line.max(1))
-        .unwrap_or(1)
-        .max(1);
+    let capacity = usize::try_from(
+        bottom
+            .saturating_sub(geometry.list_top)
+            .max(0_i32)
+            .checked_div(line.max(1_i32))
+            .unwrap_or(0_i32),
+    )
+    .unwrap_or(1)
+    .max(1);
     for (index, line_text) in lines
         .iter()
         .skip(center.detail_start())
@@ -177,9 +208,17 @@ pub(super) fn text_body(
             canvas,
             line_text,
             Rect {
-                x: geometry.title.x + 2 * geometry.scale,
-                y: geometry.list_top + i32::try_from(index).unwrap_or(0) * line,
-                w: geometry.title.w - 4 * geometry.scale,
+                x: geometry
+                    .title
+                    .x
+                    .saturating_add(2_i32.saturating_mul(geometry.scale)),
+                y: geometry
+                    .list_top
+                    .saturating_add(i32::try_from(index).unwrap_or(0_i32).saturating_mul(line)),
+                w: geometry
+                    .title
+                    .w
+                    .saturating_sub(4_i32.saturating_mul(geometry.scale)),
                 h: line,
             },
             geometry.scale,
@@ -191,12 +230,12 @@ pub(super) fn text_body(
 
 /// Height of one text body or details line, in pixels.
 const fn detail_line(scale: i32) -> i32 {
-    DETAIL_LINE * scale
+    DETAIL_LINE.saturating_mul(scale)
 }
 
 /// Leading between two details lines, in pixels.
 const fn detail_pitch(scale: i32) -> i32 {
-    DETAIL_PITCH * scale
+    DETAIL_PITCH.saturating_mul(scale)
 }
 
 /// Single details/text body line height, in pixels per scale step.
@@ -216,7 +255,7 @@ fn details(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<
     let line = detail_line(scale);
     let pitch = detail_pitch(scale);
     let mut y = geometry.list_top;
-    let icon = 40 * scale;
+    let icon = 40_i32.saturating_mul(scale);
     let name = center.chosen_row_name().unwrap_or_else(|| "App".into());
     let icon_bounds = Rect {
         x: geometry.title.x,
@@ -234,21 +273,29 @@ fn details(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<
             canvas,
             &name.chars().take(1).collect::<String>(),
             icon_bounds,
-            scale + 1,
+            scale.saturating_add(1_i32),
             theme::TEXT,
         )?;
     }
     let name_bounds = Rect {
-        x: geometry.title.x + icon + 8 * scale,
+        x: geometry
+            .title
+            .x
+            .saturating_add(icon)
+            .saturating_add(8_i32.saturating_mul(scale)),
         y,
-        w: geometry.title.w - icon - 8 * scale,
+        w: geometry
+            .title
+            .w
+            .saturating_sub(icon)
+            .saturating_sub(8_i32.saturating_mul(scale)),
         h: icon,
     };
     text_left(
         canvas,
         &name,
         Rect {
-            h: 20 * scale,
+            h: 20_i32.saturating_mul(scale),
             ..name_bounds
         },
         scale,
@@ -261,9 +308,12 @@ fn details(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<
             canvas,
             Rect {
                 x: name_bounds.x,
-                y: name_bounds.y + icon - 13 * scale,
+                y: name_bounds
+                    .y
+                    .saturating_add(icon)
+                    .saturating_sub(13_i32.saturating_mul(scale)),
                 w: width.min(name_bounds.w),
-                h: 10 * scale + 2,
+                h: 10_i32.saturating_mul(scale).saturating_add(2_i32),
             },
             &label,
             scale,
@@ -271,7 +321,7 @@ fn details(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<
             surface,
         )?;
     }
-    y += icon + 4 * scale;
+    y = y.saturating_add(icon.saturating_add(4_i32.saturating_mul(scale)));
     let description = wrap(
         &center.detail_description(),
         fit_columns(geometry.title.w, scale).max(1),
@@ -291,9 +341,9 @@ fn details(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<
             scale,
             theme::MUTED,
         )?;
-        y += pitch;
+        y = y.saturating_add(pitch);
     }
-    y += 2 * scale;
+    y = y.saturating_add(2_i32.saturating_mul(scale));
     detail_fields_body(canvas, geometry, y, &plan, &fields)
 }
 
@@ -310,13 +360,13 @@ fn detail_fields_body(
     let line = detail_line(scale);
     let pitch = detail_pitch(scale);
     let bounds = Rect {
-        x: geometry.title.x + 2 * scale,
+        x: geometry.title.x.saturating_add(2_i32.saturating_mul(scale)),
         y: 0,
-        w: geometry.title.w - 4 * scale,
+        w: geometry.title.w.saturating_sub(4_i32.saturating_mul(scale)),
         h: line,
     };
     for index in drawn_fields(plan, fields) {
-        let (label, value) = &fields[index];
+        let (label, value) = fields.get(index).ok_or("Missing App Center detail field")?;
         text_left(
             canvas,
             &format!("{label}: {value}"),
@@ -328,7 +378,7 @@ fn detail_fields_body(
                 theme::TEXT
             },
         )?;
-        y += pitch;
+        y = y.saturating_add(pitch);
     }
     if plan.omitted {
         text_left(canvas, "...", Rect { y, ..bounds }, scale, theme::MUTED)?;
@@ -348,7 +398,7 @@ pub(super) fn drawn_fields(plan: &DetailPlan, fields: &[(String, String)]) -> Ve
         && failure >= indices.len()
         && !indices.is_empty()
     {
-        indices.pop();
+        let _clipped_character = indices.pop();
         indices.push(failure);
     }
     indices
@@ -372,19 +422,35 @@ pub(super) fn detail_plan(
 ) -> DetailPlan {
     let scale = geometry.scale;
     let pitch = detail_pitch(scale);
-    let limit = geometry.pinned.y - 2 * scale;
+    let limit = geometry
+        .pinned
+        .y
+        .saturating_sub(2_i32.saturating_mul(scale));
     let description_lines = (0..=description.min(2))
         .rev()
         .find(|lines| {
             let needed = top
-                + i32::try_from(*lines).unwrap_or(0) * pitch
-                + 2 * scale
-                + i32::try_from(fields).unwrap_or(0) * pitch;
+                .saturating_add(i32::try_from(*lines).unwrap_or(0_i32).saturating_mul(pitch))
+                .saturating_add(2_i32.saturating_mul(scale))
+                .saturating_add(i32::try_from(fields).unwrap_or(0_i32).saturating_mul(pitch));
             needed <= limit
         })
         .unwrap_or(0);
-    let first_field = top + i32::try_from(description_lines).unwrap_or(0) * pitch + 2 * scale;
-    let capacity = usize::try_from((limit - first_field).max(0) / pitch).unwrap_or(0);
+    let first_field = top
+        .saturating_add(
+            i32::try_from(description_lines)
+                .unwrap_or(0_i32)
+                .saturating_mul(pitch),
+        )
+        .saturating_add(2_i32.saturating_mul(scale));
+    let capacity = usize::try_from(
+        limit
+            .saturating_sub(first_field)
+            .max(0_i32)
+            .checked_div(pitch)
+            .unwrap_or(0_i32),
+    )
+    .unwrap_or(0);
     let omitted = fields > capacity;
     DetailPlan {
         description_lines,
@@ -418,9 +484,15 @@ fn footer(canvas: &mut Screen, geometry: &Geometry, center: &Center) -> Result<(
         canvas,
         message,
         Rect {
-            x: geometry.footer.x + 2 * scale,
+            x: geometry
+                .footer
+                .x
+                .saturating_add(2_i32.saturating_mul(scale)),
             y: geometry.footer.y,
-            w: geometry.footer.w - 4 * scale,
+            w: geometry
+                .footer
+                .w
+                .saturating_sub(4_i32.saturating_mul(scale)),
             h: geometry.footer.h,
         },
         scale,
@@ -447,10 +519,12 @@ fn app_row(
     let scale = geometry.scale;
     let name_scale = scale;
     let icon_bounds = Rect {
-        x: bounds.x + 4 * scale,
-        y: bounds.y + (bounds.h - 22 * scale) / 2,
-        w: 22 * scale,
-        h: 22 * scale,
+        x: bounds.x.saturating_add(4_i32.saturating_mul(scale)),
+        y: bounds
+            .y
+            .saturating_add((bounds.h.saturating_sub(22_i32.saturating_mul(scale))) / 2_i32),
+        w: 22_i32.saturating_mul(scale),
+        h: 22_i32.saturating_mul(scale),
     };
     if let Some(pixels) = icon {
         draw_icon(canvas, pixels, icon_bounds)?;
@@ -469,13 +543,22 @@ fn app_row(
         .unwrap_or((RowState::Available, String::new()));
     let chip_width = super::chip_width(&label, scale);
     let text_bounds = Rect {
-        x: icon_bounds.x + icon_bounds.w + 6 * scale,
-        y: bounds.y + 3 * scale,
+        x: icon_bounds
+            .x
+            .saturating_add(icon_bounds.w)
+            .saturating_add(6_i32.saturating_mul(scale)),
+        y: bounds.y.saturating_add(3_i32.saturating_mul(scale)),
         // One cell of clearance keeps a shortened name from touching the state
         // chip that shares the row.
-        w: (bounds.w - icon_bounds.w - 14 * scale - chip_width - advance(scale)).max(0),
+        w: bounds
+            .w
+            .saturating_sub(icon_bounds.w)
+            .saturating_sub(14_i32.saturating_mul(scale))
+            .saturating_sub(chip_width)
+            .saturating_sub(advance(scale))
+            .max(0_i32),
         // Names and descriptions use the same readable scale, on separate lines.
-        h: theme::CELL * name_scale,
+        h: theme::CELL.saturating_mul(name_scale),
     };
     text_left(canvas, name, text_bounds, name_scale, theme::TEXT)?;
     if !label.is_empty() {
@@ -483,10 +566,14 @@ fn app_row(
         super::chip(
             canvas,
             Rect {
-                x: bounds.x + bounds.w - chip_width - 4 * scale,
-                y: bounds.y + 3 * scale,
+                x: bounds
+                    .x
+                    .saturating_add(bounds.w)
+                    .saturating_sub(chip_width)
+                    .saturating_sub(4_i32.saturating_mul(scale)),
+                y: bounds.y.saturating_add(3_i32.saturating_mul(scale)),
                 w: chip_width,
-                h: 10 * scale + 2,
+                h: 10_i32.saturating_mul(scale).saturating_add(2_i32),
             },
             &label,
             scale,
@@ -499,8 +586,14 @@ fn app_row(
         description,
         Rect {
             x: text_bounds.x,
-            y: bounds.y + bounds.h - detail_line(scale),
-            w: bounds.w - icon_bounds.w - 14 * scale,
+            y: bounds
+                .y
+                .saturating_add(bounds.h)
+                .saturating_sub(detail_line(scale)),
+            w: bounds
+                .w
+                .saturating_sub(icon_bounds.w)
+                .saturating_sub(14_i32.saturating_mul(scale)),
             h: detail_pitch(scale),
         },
         scale,
@@ -541,7 +634,11 @@ mod tests {
     #[test]
     fn confirmation_text_is_visible_and_never_reaches_buttons() -> Result<(), String> {
         let _guard = crate::test_support::sdl_lock();
-        sdl2::hint::set("SDL_VIDEODRIVER", "dummy");
+        assert!(
+            sdl2::hint::set("SDL_VIDEODRIVER", "dummy")
+                || sdl2::hint::get("SDL_VIDEODRIVER").as_deref() == Some("dummy"),
+            "dummy video must be available for this fixture"
+        );
         let sdl = sdl2::init()?;
         let video = sdl.video()?;
         for (width, height) in [(480, 272), (800, 480), (1280, 720)] {
@@ -552,13 +649,13 @@ mod tests {
                 .hidden()
                 .build()
                 .map_err(|e| e.to_string())?;
-            let canvas = window
+            let raw_canvas = window
                 .into_canvas()
                 .software()
                 .build()
                 .map_err(|e| e.to_string())?;
-            let creator = canvas.texture_creator();
-            let mut canvas = Screen::new(canvas, &creator)?;
+            let creator = raw_canvas.texture_creator();
+            let mut canvas = Screen::new(raw_canvas, &creator)?;
             for (name, center) in Center::qa_samples()?
                 .into_iter()
                 .filter(|(_, center)| center.confirming())
@@ -572,10 +669,10 @@ mod tests {
                     theme::BACKGROUND.g,
                     theme::BACKGROUND.b,
                 ];
-                let mut ink = 0;
+                let mut ink = 0_i32;
                 for (index, pixel) in pixels.as_chunks::<3>().0.iter().enumerate() {
                     if *pixel != background {
-                        ink += 1;
+                        ink += 1_i32;
                         let y =
                             i32::try_from(index / usize::from(width)).map_err(|e| e.to_string())?;
                         assert!(
@@ -584,7 +681,7 @@ mod tests {
                         );
                     }
                 }
-                assert!(ink > 0, "{name}: confirmation warning is blank");
+                assert!(ink > 0_i32, "{name}: confirmation warning is blank");
             }
         }
         Ok(())

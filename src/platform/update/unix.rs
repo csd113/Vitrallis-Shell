@@ -107,7 +107,7 @@ impl Installation {
         safe_directory(&stage, original.uid(), false)?;
         let lock_path = stage.join("lock");
         let mut options = OpenOptions::new();
-        options
+        let _configured_builder = options
             .read(true)
             .write(true)
             .create(true)
@@ -116,8 +116,11 @@ impl Installation {
             .custom_flags(libc_flags());
         let lock = options.open(lock_path)?;
         safe_file(&lock.metadata()?, original.uid(), false)?;
-        lock.try_lock()
-            .map_err(|_| io::Error::other("Another installation or update is in progress"))?;
+        lock.try_lock().map_err(|error| {
+            io::Error::other(format!(
+                "Another installation or update is in progress: {error}"
+            ))
+        })?;
         let installation = Self {
             target: target.to_path_buf(),
             root,
@@ -457,19 +460,25 @@ fn generation_digest(directory: &Path, uid: u32) -> io::Result<([u8; 32], [u8; 3
         whole.update(digest);
         let mut file = vitrallis_native::files::open_regular(&path)?;
         let mut buffer = [0; 16384];
-        let mut total = 0;
+        let mut total = 0_u64;
         loop {
             let count = file.read(&mut buffer)?;
             if count == 0 {
                 break;
             }
-            total += count as u64;
+            total = total
+                .checked_add(u64::try_from(count).map_err(io::Error::other)?)
+                .ok_or_else(|| io::Error::other("retained executable size overflow"))?;
             if total > metadata.len() {
                 return Err(io::Error::other(
                     "Retained executable grew during verification",
                 ));
             }
-            whole.update(&buffer[..count]);
+            whole.update(
+                buffer
+                    .get(..count)
+                    .ok_or_else(|| io::Error::other("invalid executable read length"))?,
+            );
         }
         if !vitrallis_native::files::same_snapshot(&metadata, &file.metadata()?) {
             return Err(io::Error::other(
@@ -499,12 +508,18 @@ fn remove_file(path: &Path) -> io::Result<()> {
     }
 }
 fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write;
-    let mut result = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(result, "{byte:02x}");
-    }
-    result
+    bytes
+        .iter()
+        .flat_map(|byte| {
+            [byte >> 4_i32, byte & 15].map(|nibble| {
+                char::from(if nibble < 10 {
+                    b'0'.saturating_add(nibble)
+                } else {
+                    b'a'.saturating_add(nibble.saturating_sub(10))
+                })
+            })
+        })
+        .collect()
 }
 fn hash_file(path: &Path) -> io::Result<[u8; 32]> {
     use std::io::Read;
@@ -515,19 +530,25 @@ fn hash_file(path: &Path) -> io::Result<[u8; 32]> {
     }
     let mut hash = Sha256::new();
     let mut buffer = [0; 16384];
-    let mut total = 0;
+    let mut total = 0_u64;
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
-        total += count as u64;
+        total = total
+            .checked_add(u64::try_from(count).map_err(io::Error::other)?)
+            .ok_or_else(|| io::Error::other("installed executable size overflow"))?;
         if total > metadata.len() {
             return Err(io::Error::other(
                 "Installed executable grew during verification",
             ));
         }
-        hash.update(&buffer[..count]);
+        hash.update(
+            buffer
+                .get(..count)
+                .ok_or_else(|| io::Error::other("invalid executable read length"))?,
+        );
     }
     if !vitrallis_native::files::same_snapshot(&metadata, &file.metadata()?) {
         return Err(io::Error::other(
@@ -546,7 +567,7 @@ fn relaunch_command(
     }
     installation.unchanged().map_err(|e| e.to_string())?;
     let mut command = std::process::Command::new(&installation.target);
-    command.args(args);
+    let _configured_builder = command.args(args);
     Ok((installation, command))
 }
 pub(super) fn relaunch(

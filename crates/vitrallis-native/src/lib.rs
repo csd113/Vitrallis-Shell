@@ -6,6 +6,8 @@ pub mod font;
 pub mod ipc;
 pub mod keyboard;
 pub mod paths;
+#[cfg(unix)]
+pub mod process;
 pub mod renderer;
 pub mod theme;
 pub mod ui;

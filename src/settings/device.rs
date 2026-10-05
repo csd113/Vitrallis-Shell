@@ -118,40 +118,50 @@ impl Settings {
             Action::Back | Action::System => {
                 self.page(Page::DateTime);
             }
-            Action::SelectAndActivate(index) if index < 5 && self.zone_start + index < count => {
+            Action::SelectAndActivate(index)
+                if index < 5 && self.zone_start.saturating_add(index) < count =>
+            {
                 self.selected = index;
                 return self.zone_input(Action::Activate);
             }
             Action::SelectAndActivate(BACK) => self.page(Page::DateTime),
             Action::Activate if !self.pending => {
-                let index = self.zone_start + self.selected;
+                let index = self.zone_start.saturating_add(self.selected);
                 self.page(Page::DateTime);
                 return (index < count).then_some(Request::Control(Control::Timezone(index)));
             }
             Action::Move(direction) => {
-                if direction == Direction::Down && self.selected + 1 >= self.visible_zones() {
+                if direction == Direction::Down
+                    && self.selected.saturating_add(1) >= self.visible_zones()
+                {
                     self.selected = BACK;
                     return None;
                 }
-                let current = self.zone_start + self.selected;
+                let current = self.zone_start.saturating_add(self.selected);
                 let index = match direction {
                     Direction::Up => current.saturating_sub(1),
-                    Direction::Down => (current + 1).min(count - 1),
+                    Direction::Down => (current.saturating_add(1)).min(count.saturating_sub(1)),
                     Direction::Left => current.saturating_sub(5),
-                    Direction::Right => (current + 5).min(count - 1),
+                    Direction::Right => (current.saturating_add(5)).min(count.saturating_sub(1)),
                 };
-                self.zone_start = index / 5 * 5;
+                self.zone_start = index.checked_div(5).unwrap_or(0).saturating_mul(5);
                 self.selected = index % 5;
             }
             Action::Page(next) => {
                 self.zone_start = if next {
-                    (self.zone_start + 5).min((count - 1) / 5 * 5)
+                    (self.zone_start.saturating_add(5)).min(
+                        count
+                            .saturating_sub(1)
+                            .checked_div(5)
+                            .unwrap_or(0)
+                            .saturating_mul(5),
+                    )
                 } else {
                     self.zone_start.saturating_sub(5)
                 };
                 self.selected = 0;
             }
-            _ => {}
+            Action::Activate | Action::SelectAndActivate(_) => {}
         }
         None
     }
@@ -177,20 +187,20 @@ mod tests {
             settings.input(Action::Move(Direction::Left)),
             Some(Request::Control(Control::ScreenTimeout(300)))
         );
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Home);
         settings.page(Page::DateTime);
         settings.status.timezones = vec!["America/Vancouver".into(), "UTC".into()];
         settings.status.timezone = Some("America/Vancouver".into());
-        settings.input(Action::SelectAndActivate(1));
+        assert_eq!(settings.input(Action::SelectAndActivate(1)), None);
         assert_eq!(settings.page, Page::Timezones);
-        settings.input(Action::Move(Direction::Down));
+        assert_eq!(settings.input(Action::Move(Direction::Down)), None);
         assert_eq!(
             settings.input(Action::Activate),
             Some(Request::Control(Control::Timezone(1)))
         );
         assert_eq!(settings.page, Page::DateTime);
-        settings.input(Action::Back);
+        assert_eq!(settings.input(Action::Back), None);
         assert_eq!(settings.page, Page::Home);
         assert!(settings.open);
     }

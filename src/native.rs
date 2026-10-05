@@ -17,7 +17,7 @@ pub fn integrate(catalog: &mut Catalog) -> Result<(), String> {
     catalog
         .apps
         .retain(|entry| !APPLICATIONS.iter().any(|app| entry.id == app.id));
-    catalog.apps.splice(0..0, apps);
+    drop(catalog.apps.splice(0..0, apps));
     Ok(())
 }
 fn entries(directory: &Path) -> Vec<AppEntry> {
@@ -76,7 +76,7 @@ pub fn icon(app: &AppEntry) -> Option<&'static [u8]> {
 pub fn configure(apps: &mut [AppEntry], broker: &Broker) {
     for app in apps {
         if app.source == AppSource::Native {
-            app.manifest.env.insert(
+            let _previous_broker = app.manifest.env.insert(
                 vitrallis_native::ipc::ENV.into(),
                 broker.path.clone().into_os_string(),
             );
@@ -129,7 +129,12 @@ pub fn requested(broker: &Broker, state: &mut Launcher) -> Result<Option<usize>,
         .iter()
         .position(|app| app.source == AppSource::Native && app.id == "io.vitrallis.notepad")
         .ok_or("Bundled Notepad is unavailable")?;
-    state.apps[index].manifest.args = vec!["--".into(), path.into_os_string()];
+    state
+        .apps
+        .get_mut(index)
+        .ok_or("Bundled Notepad disappeared")?
+        .manifest
+        .args = vec!["--".into(), path.into_os_string()];
     state.returned_home();
     Ok(state.input(crate::input::Action::SelectAndActivate(index)))
 }
@@ -199,7 +204,7 @@ mod tests {
                 unavailable: None,
             });
         }
-        for _ in 0..4 {
+        for _ in 0_i32..4_i32 {
             integrate(&mut catalog)?;
             assert_eq!(catalog.apps.len(), 6);
             assert_eq!(
@@ -228,11 +233,14 @@ mod tests {
         let scratch = crate::test_support::Scratch::new()?;
         let note = scratch.0.join("note with spaces.txt");
         fs::write(&note, "text\n")?;
-        let note = note.canonicalize()?;
+        let canonical_note = note.canonicalize()?;
         let mut state = Launcher::new(entries(&scratch.0), 3, 6)?;
         let broker = broker(&mut state)?;
         let sender = UnixDatagram::unbound()?;
-        sender.send_to(note.as_os_str().as_bytes(), &broker.path)?;
+        assert_eq!(
+            sender.send_to(canonical_note.as_os_str().as_bytes(), &broker.path)?,
+            canonical_note.as_os_str().as_bytes().len()
+        );
         state.failed("Existing error must be acknowledged".into());
         assert_eq!(requested(&broker, &mut state)?, None);
         state.finished("Ready".into());
@@ -240,8 +248,16 @@ mod tests {
         assert_eq!(state.phase, crate::launcher::Phase::Launching);
         assert_eq!(state.opening.as_deref(), Some("Notepad"));
         assert_eq!(
-            state.apps[1].manifest.args,
-            [std::ffi::OsString::from("--"), note.into_os_string()]
+            state
+                .apps
+                .get(1)
+                .ok_or("Missing fixture element")?
+                .manifest
+                .args,
+            [
+                std::ffi::OsString::from("--"),
+                canonical_note.into_os_string()
+            ]
         );
         Ok(())
     }

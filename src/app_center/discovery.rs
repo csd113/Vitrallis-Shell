@@ -64,7 +64,7 @@ pub(super) fn manifests(
         Err(e) => return Err(e.to_string()),
     };
     let mut manifests = Vec::new();
-    for (index, item) in entries.enumerate() {
+    for (index, entry_result) in entries.enumerate() {
         if !keep_going() {
             return Err("App discovery cancelled or limit reached".into());
         }
@@ -73,14 +73,16 @@ pub(super) fn manifests(
             break;
         }
         let result = (|| {
-            let item = item.map_err(|e| e.to_string())?;
+            let item = entry_result.map_err(|e| e.to_string())?;
             let path = item.path();
             storage::safe(&path)?;
             let Some(file) = storage::read(&path.join("app.toml"), metadata::FILE_LIMIT)? else {
                 return Ok(None);
             };
             let value = metadata::manifest(&file.bytes)?;
-            if item.file_name() != std::ffi::OsStr::new(metadata::text(&value["id"], 128)?) {
+            if item.file_name()
+                != std::ffi::OsStr::new(metadata::text(metadata::field(&value, "id")?, 128)?)
+            {
                 return Err("App directory must match app ID".into());
             }
             Ok(Some((path, value)))
@@ -97,11 +99,11 @@ pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), St
     for manifest in manifests(loc, || true)? {
         let result = (|| {
             let (path, v) = manifest?;
-            let id = metadata::text(&v["id"], 128)?;
+            let id = metadata::text(metadata::field(&v, "id")?, 128)?;
             let entry = path.join(metadata::manifest_entry(&v)?);
             let executable = storage::read(&entry, metadata::FILE_LIMIT)?;
-            let native_ready =
-                executable.is_some_and(|file| v["runtime"] != "rust" || file.mode & 0o111 != 0);
+            let native = metadata::field(&v, "runtime")? == "rust";
+            let native_ready = executable.is_some_and(|file| !native || file.mode & 0o111 != 0);
             let launch = loc.state.join("launchers").join(id);
             let available =
                 storage::read(&launch, metadata::FILE_LIMIT)?.is_some_and(|d| d.mode & 0o111 != 0);
@@ -109,7 +111,7 @@ pub(super) fn installed(catalog: &mut Catalog, loc: &Locations) -> Result<(), St
             Ok(Some(AppEntry {
                 source: crate::app::AppSource::AppCenter,
                 id: id.into(),
-                name: metadata::text(&v["name"], 1000)?.into(),
+                name: metadata::text(metadata::field(&v, "name")?, 1000)?.into(),
                 icon: Some(path.join("icon.png")),
                 manifest: AppManifest {
                     entry: launch,
@@ -198,7 +200,14 @@ mod tests {
         installed(&mut catalog, &loc)?;
         installed(&mut catalog, &loc)?;
         assert_eq!(catalog.apps.len(), 1);
-        assert!(catalog.apps[0].unavailable.is_some());
+        assert!(
+            catalog
+                .apps
+                .first()
+                .ok_or("Missing fixture element")?
+                .unavailable
+                .is_some()
+        );
         Ok(())
     }
 }
@@ -213,27 +222,34 @@ mod integration_tests {
         let (_scratch, loc) = tests::locations()?;
         let (mut package, mut files) = tests::generic()?;
         package.entry = "tools/start.py".into();
-        let manifest = String::from_utf8(files["app.toml"].clone()).map_err(|e| e.to_string())?;
-        files.insert(
-            "app.toml".into(),
-            manifest
-                .replace("entry = \"main.py\"", "entry = \"tools/start.py\"")
-                .into_bytes(),
+        let manifest =
+            String::from_utf8((*files.get("app.toml").ok_or("Missing fixture element")?).clone())
+                .map_err(|e| e.to_string())?;
+        drop(
+            files.insert(
+                "app.toml".into(),
+                manifest
+                    .replace("entry = \"main.py\"", "entry = \"tools/start.py\"")
+                    .into_bytes(),
+            ),
         );
-        files.insert(
+        drop(files.insert(
             "tools/start.py".into(),
             b"print('manifest entry')\n".to_vec(),
-        );
-        let package = tests::inventory(package, &files);
-        install::install(&loc, &install::prepare(&loc, package.clone(), files)?)?;
+        ));
+        let checked_package = tests::inventory(package, &files);
+        install::install(
+            &loc,
+            &install::prepare(&loc, checked_package.clone(), files)?,
+        )?;
         let mut catalog = Catalog::default();
         installed(&mut catalog, &loc)?;
         assert_eq!(catalog.diagnostics, Vec::<String>::new());
         assert_eq!(catalog.apps.len(), 1);
-        let app = &catalog.apps[0];
-        assert_eq!(app.id, package.id);
-        assert_eq!(app.name, package.name);
-        assert_eq!(app.icon, Some(loc.root(&package).join("icon.png")));
+        let app = catalog.apps.first().ok_or("Missing fixture element")?;
+        assert_eq!(app.id, checked_package.id);
+        assert_eq!(app.name, checked_package.name);
+        assert_eq!(app.icon, Some(loc.root(&checked_package).join("icon.png")));
         assert!(app.unavailable.is_none());
         let output = std::process::Command::new(&app.manifest.entry)
             .current_dir(&loc.home)

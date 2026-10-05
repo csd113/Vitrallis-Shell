@@ -30,11 +30,17 @@ fn execute(
     limit: u64,
     no_matches_ok: bool,
 ) -> Result<String, String> {
+    let deadline = Instant::now()
+        .checked_add(Duration::from_secs(2))
+        .ok_or("command deadline overflow")?;
+    let sentinel = limit
+        .checked_add(1)
+        .ok_or("command output limit overflow")?;
     let mut command = Command::new(program);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
-        command.process_group(0);
+        let _group_command = command.process_group(0);
     }
     let mut child = command
         .args(args)
@@ -45,61 +51,81 @@ fn execute(
         .spawn()
         .map_err(|e| format!("{program}: {e}"))?;
     let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
+        crate::process::cleanup_child(&mut child);
         return Err("missing command output".into());
     };
     let (send, receive) = mpsc::sync_channel(1);
-    let reader = thread::Builder::new()
+    let spawned_reader = thread::Builder::new()
         .name("system-output".into())
         .spawn(move || {
             let mut bytes = Vec::new();
-            let result = stdout
-                .take(limit.saturating_add(1))
-                .read_to_end(&mut bytes)
-                .map(|_| bytes);
-            let _ = send.send(result);
-        });
-    if let Err(error) = reader {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(error.to_string());
-    }
-    let deadline = Instant::now() + Duration::from_secs(2);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(10)),
-            result => {
-                crate::process::cleanup_group(child.id());
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!("{program}: timeout or wait failure ({result:?})"));
+            let result = stdout.take(sentinel).read_to_end(&mut bytes).map(|_| bytes);
+            if send.send(result).is_err() {
+                eprintln!("level=debug event=command_output_cancelled");
             }
+        });
+    // On an error the reader is detached after group termination, rather than
+    // risking an unbounded join on an inherited pipe. Success below joins it.
+    let reader = match spawned_reader {
+        Ok(reader) => reader,
+        Err(error) => {
+            crate::process::cleanup_child(&mut child);
+            return Err(error.to_string());
         }
     };
-    if !(status.success() || no_matches_ok && status.code() == Some(1)) {
-        crate::process::cleanup_group(child.id());
+    let output = (|| {
+        loop {
+            #[cfg(unix)]
+            let exited = vitrallis_native::process::exited_unreaped(&mut child)
+                .map_err(|error| format!("{program}: exit probe failed: {error}"))?;
+            #[cfg(not(unix))]
+            let exited = child
+                .try_wait()
+                .map_err(|error| error.to_string())?
+                .is_some();
+            if exited {
+                break;
+            }
+            if Instant::now() >= deadline {
+                return Err(format!("{program}: command timed out"));
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        receive
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .map_err(|error| format!("command output timed out: {error}"))?
+            .map_err(|error| error.to_string())
+    })();
+    // System helpers are bounded tasks, not app launchers. Retain the child's
+    // PID until any remaining descendants are stopped, then reap it. In
+    // particular, an inherited stdout cannot authorize killing a reused PID.
+    crate::process::cleanup_group(&mut child);
+    if output.is_err() {
+        crate::process::cleanup_child(&mut child);
+        return output.map(|_| String::new());
+    }
+    let status = child
+        .wait()
+        .map_err(|error| format!("{program}: wait failed: {error}"))?;
+    if !(status.success() || no_matches_ok && status.code() == Some(1_i32)) {
         return Err(format!("{program}: {status}"));
     }
-    let bytes = receive
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .map_err(|_| {
-            crate::process::cleanup_group(child.id());
-            "command output timed out".to_owned()
-        })?
-        .map_err(|e| e.to_string())?;
+    let bytes = output?;
+    reader
+        .join()
+        .map_err(|payload| format!("command output worker panicked: {payload:?}"))?;
     if u64::try_from(bytes.len()).map_err(|e| e.to_string())? > limit {
         return Err(format!("command output exceeds {limit} bytes"));
     }
-    String::from_utf8(bytes).map_err(|_| "command output is not UTF-8".into())
+    String::from_utf8(bytes)
+        .map_err(|error| format!("command output is not UTF-8: {}", error.utf8_error()))
 }
 pub fn clock() -> Option<String> {
     let value = run("/bin/date", &["+%H:%M"]).ok()?;
-    let value = value.trim();
-    let (hours, minutes) = value.split_once(':')?;
-    if value.len() == 5 && hours.parse::<u8>().ok()? < 24 && minutes.parse::<u8>().ok()? < 60 {
-        Some(value.into())
+    let clock = value.trim();
+    let (hours, minutes) = clock.split_once(':')?;
+    if clock.len() == 5 && hours.parse::<u8>().ok()? < 24 && minutes.parse::<u8>().ok()? < 60 {
+        Some(clock.into())
     } else {
         None
     }

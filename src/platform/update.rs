@@ -52,20 +52,21 @@ impl Target {
             .trim()
             .strip_prefix("glibc ")
             .ok_or("Unsupported C library")?;
-        let (major, minor) = version.split_once('.').ok_or("Invalid C library version")?;
-        let major = major
+        let (major_text, minor_text) =
+            version.split_once('.').ok_or("Invalid C library version")?;
+        let major = major_text
             .parse::<u32>()
-            .map_err(|_| "Invalid C library version")?;
-        let minor = minor
+            .map_err(|error| format!("Invalid C library version: {error}"))?;
+        let minor = minor_text
             .parse::<u32>()
-            .map_err(|_| "Invalid C library version")?;
+            .map_err(|error| format!("Invalid C library version: {error}"))?;
         if (major, minor) < (2, 36) {
             return Err("Shell releases require glibc 2.36 or newer".into());
         }
         Ok(target)
     }
-    pub fn for_triple(triple: &str) -> Result<Self, String> {
-        let (triple, class, machine) = match triple {
+    pub fn for_triple(requested_triple: &str) -> Result<Self, String> {
+        let (triple, class, machine) = match requested_triple {
             "x86_64-unknown-linux-gnu" => ("x86_64-unknown-linux-gnu", 2, 62),
             "aarch64-unknown-linux-gnu" => ("aarch64-unknown-linux-gnu", 2, 183),
             "armv7-unknown-linux-gnueabihf" => ("armv7-unknown-linux-gnueabihf", 1, 40),
@@ -81,15 +82,19 @@ impl Target {
         format!("vitrallis-{}-glibc2.36-v2.vtrbundle", self.triple)
     }
     pub fn verify_header(self, bytes: &[u8]) -> Result<(), String> {
+        let invalid = || "Downloaded executable does not match this platform".to_owned();
+        let Some([0x7f, b'E', b'L', b'F', binary_class, 1, 1]) = bytes.get(..7) else {
+            return Err(invalid());
+        };
+        let Some([kind_low, kind_high, machine_low, machine_high]) = bytes.get(16..20) else {
+            return Err(invalid());
+        };
         if bytes.len() < 52
-            || &bytes[..4] != b"\x7fELF"
-            || bytes[4] != self.class
-            || bytes[5] != 1
-            || bytes[6] != 1
-            || !matches!(u16::from_le_bytes([bytes[16], bytes[17]]), 2 | 3)
-            || u16::from_le_bytes([bytes[18], bytes[19]]) != self.machine
+            || *binary_class != self.class
+            || !matches!(u16::from_le_bytes([*kind_low, *kind_high]), 2 | 3)
+            || u16::from_le_bytes([*machine_low, *machine_high]) != self.machine
         {
-            return Err("Downloaded executable does not match this platform".into());
+            return Err(invalid());
         }
         Ok(())
     }

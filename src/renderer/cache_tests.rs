@@ -8,7 +8,15 @@ fn png(path: &std::path::Path, size: u32, color: [u8; 4]) -> Result<(), String> 
     encoder
         .write_header()
         .map_err(|e| e.to_string())?
-        .write_image_data(&color.repeat(usize::try_from(size * size).map_err(|_| "size")?))
+        .write_image_data(
+            &color.repeat(
+                usize::try_from(
+                    size.checked_mul(size)
+                        .ok_or("Fixture pixel count overflow")?,
+                )
+                .map_err(|error| format!("size: {error}"))?,
+            ),
+        )
         .map_err(|e| e.to_string())
 }
 
@@ -21,7 +29,7 @@ pub(super) fn lifecycle(
     png(&path, 32, [1, 2, 3, 255])?;
     let mut apps = crate::platform::generic::demo_apps(std::path::Path::new("/fixture"));
     apps.truncate(2);
-    apps[0].icon = Some(path.clone());
+    apps.first_mut().ok_or("Missing app fixture")?.icon = Some(path.clone());
     let mut state = Launcher::new(apps, 3, 6)?;
     let mut textures = artwork(creator, &state);
     performance::reset();
@@ -64,27 +72,34 @@ pub(super) fn lifecycle(
     // More artwork than the 512 MiB-class device budget permits.
     state.preferences.wallpaper = None;
     for index in 0..17_u8 {
-        let path = scratch.0.join(format!("{index}.png"));
-        png(&path, 512, [index, 0, 0, 255])?;
+        let budget_path = scratch.0.join(format!("{index}.png"));
+        png(&budget_path, 512, [index, 0, 0, 255])?;
         let mut app =
             crate::platform::generic::demo_apps(std::path::Path::new("/fixture")).remove(0);
         app.id = format!("budget-{index}");
-        app.icon = Some(path);
+        app.icon = Some(budget_path);
         state.apps.push(app);
     }
     textures.refresh(creator, &state);
-    let bytes: u32 = textures
+    let bytes = textures
         .iter()
         .take(17)
         .flatten()
         .map(|t| {
             let size = t.query();
-            size.width * size.height * 4
+            size.width
+                .checked_mul(size.height)
+                .and_then(|pixels| pixels.checked_mul(4))
+                .ok_or("Fixture texture size overflow")
         })
-        .sum();
+        .try_fold(0_u32, |total, bytes| {
+            total
+                .checked_add(bytes?)
+                .ok_or("Fixture texture budget overflow")
+        })?;
     assert_eq!(bytes, 16 * 1024 * 1024);
-    assert!(textures[16].is_none());
-    state.apps.remove(0);
+    assert!((*textures.get(16).ok_or("Missing fixture element")?).is_none());
+    drop(state.apps.remove(0));
     textures.refresh(creator, &state);
     assert!(
         textures.iter().take(16).all(Option::is_some),
@@ -118,15 +133,15 @@ pub(super) fn lifecycle(
 fn accelerated_atlas_survives_unchanged_artwork_refresh() -> Result<(), String> {
     let sdl = sdl2::init()?;
     let video = sdl.video()?;
-    let (canvas, _) = backend::initialize(&video, backend::RendererMode::Hardware, || {
+    let (raw_canvas, _) = backend::initialize(&video, backend::RendererMode::Hardware, || {
         video
             .window("Atlas refresh regression", 480, 272)
             .hidden()
             .build()
             .map_err(|e| e.to_string())
     })?;
-    let creator = canvas.texture_creator();
-    let mut canvas = Screen::new(canvas, &creator)?;
+    let creator = raw_canvas.texture_creator();
+    let mut canvas = Screen::new(raw_canvas, &creator)?;
     let layout = Layout::home(480, 272)?;
     let mut state = Launcher::new(Vec::new(), 3, 6)?;
     state.app_center = crate::app_center::Center::qa_samples()?.remove(0).1;
@@ -134,7 +149,7 @@ fn accelerated_atlas_survives_unchanged_artwork_refresh() -> Result<(), String> 
     render(&mut canvas, &layout, &state, &textures)?;
     let expected = canvas.read_pixels(None, PixelFormatEnum::RGBA32)?;
     canvas.present();
-    for _ in 0..5 {
+    for _ in 0_i32..5_i32 {
         textures.refresh(&creator, &state);
         render(&mut canvas, &layout, &state, &textures)?;
         assert_eq!(canvas.read_pixels(None, PixelFormatEnum::RGBA32)?, expected);

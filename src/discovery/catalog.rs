@@ -29,7 +29,8 @@ impl Discovery for CatalogFile<'_> {
             return Err("app config must be a regular file".into());
         }
         let mut text = String::new();
-        file.take(1024 * 1024 + 1)
+        let _bytes_read = file
+            .take(1024 * 1024 + 1)
             .read_to_string(&mut text)
             .map_err(|e| format!("config {}: {e}", path.display()))?;
         if text.len() > 1024 * 1024 {
@@ -59,17 +60,25 @@ mod tests {
             br#"{"pages":[{"name":"Apps","items":[{"name":"Default","shell":"sh","icon":""}]}]}"#;
         std::fs::write(root.join("config.json"), default)?;
         let backend = CatalogFile { paths: &paths };
-        assert_eq!(backend.discover()?.apps[0].name, "Default");
+        assert_eq!(
+            backend
+                .discover()?
+                .apps
+                .first()
+                .ok_or("Missing fixture element")?
+                .name,
+            "Default"
+        );
         assert!(!root.join("user.json").exists());
         paths.explicit_catalog = Some(root.join("user.json"));
-        let backend = CatalogFile { paths: &paths };
+        let explicit_backend = CatalogFile { paths: &paths };
         let user = br#"{"pages":[{"name":"Apps","items":[]}]}"#;
         std::fs::write(root.join("user.json"), user)?;
-        assert_eq!(backend.discover()?.apps.len(), 0);
+        assert_eq!(explicit_backend.discover()?.apps.len(), 0);
         assert_eq!(std::fs::read(root.join("user.json"))?, user);
         assert_eq!(std::fs::read(root.join("config.json"))?, default);
         std::fs::write(root.join("user.json"), "broken")?;
-        assert!(backend.discover().is_err()); // Never silently replace broken user config.
+        assert!(explicit_backend.discover().is_err()); // Never silently replace broken user config.
         std::fs::remove_file(root.join("user.json"))?;
         assert!(CatalogFile { paths: &paths }.discover().is_err());
         Ok(())

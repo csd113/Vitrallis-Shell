@@ -12,20 +12,21 @@ const WIDTH: u32 = 128;
 const HEIGHT: u32 = 176;
 const GLYPHS: u32 = 352;
 
-const fn index(ch: char) -> u32 {
-    match ch as u32 {
+fn index(ch: char) -> u32 {
+    match u32::from(ch) {
         value @ 0..=127 => value,
-        value @ 160..=255 => 128 + value - 160,
-        value @ 0x2500..=0x257f => 224 + value - 0x2500,
-        _ => b'?' as u32,
+        value @ 160..=255 => value.saturating_sub(160).saturating_add(128),
+        value @ 0x2500..=0x257f => value.saturating_sub(0x2500).saturating_add(224),
+        _ => u32::from(b'?'),
     }
 }
 
 fn bitmap(slot: u32) -> [u8; 8] {
     let code = match slot {
         0..=127 => slot,
-        128..=223 => slot - 128 + 160,
-        _ => slot - 224 + 0x2500,
+        128..=223 => slot.saturating_sub(128).saturating_add(160),
+        224..=351 => slot.saturating_sub(224).saturating_add(0x2500),
+        _ => return [0; 8],
     };
     char::from_u32(code)
         .and_then(|ch| {
@@ -37,21 +38,31 @@ fn bitmap(slot: u32) -> [u8; 8] {
         .unwrap_or([0; 8])
 }
 
-fn pixels() -> Vec<u8> {
-    let mut pixels = vec![0; (WIDTH * HEIGHT * 4) as usize];
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "The immutable 352-glyph atlas is 128x176 RGBA; slots, rows, and columns are bounded by these constants, and offsets fit usize on every supported host"
+)]
+fn pixels() -> Result<Vec<u8>, String> {
+    let width = usize::try_from(WIDTH).map_err(|error| error.to_string())?;
+    let height = usize::try_from(HEIGHT).map_err(|error| error.to_string())?;
+    let mut pixels = vec![0; width * height * 4];
     for slot in 0..GLYPHS {
+        let slot_index = usize::try_from(slot).map_err(|error| error.to_string())?;
         for (row, bits) in bitmap(slot).into_iter().enumerate() {
             for col in 0..8 {
                 if bits & (1 << col) != 0 {
-                    let x = (slot as usize % 16) * 8 + col;
-                    let y = (slot as usize / 16) * 8 + row;
-                    let offset = (y * WIDTH as usize + x) * 4;
-                    pixels[offset..offset + 4].fill(255);
+                    let x = (slot_index % 16) * 8 + col;
+                    let y = (slot_index / 16) * 8 + row;
+                    let offset = (y * width + x) * 4;
+                    pixels
+                        .get_mut(offset..offset + 4)
+                        .ok_or("Glyph lies outside the font atlas")?
+                        .fill(255);
                 }
             }
         }
     }
-    pixels
+    Ok(pixels)
 }
 
 /// One immutable pixel-art texture. The creator must outlive it; no raw GPU handles.
@@ -67,7 +78,14 @@ impl<'a> Atlas<'a> {
             .create_texture_static(PixelFormatEnum::RGBA32, WIDTH, HEIGHT)
             .map_err(|e| e.to_string())?;
         texture
-            .update(None, &pixels(), WIDTH as usize * 4)
+            .update(
+                None,
+                &pixels()?,
+                usize::try_from(WIDTH)
+                    .map_err(|error| error.to_string())?
+                    .checked_mul(4)
+                    .ok_or("Font pitch overflow")?,
+            )
             .map_err(|e| e.to_string())?;
         texture.set_scale_mode(ScaleMode::Nearest);
         texture.set_blend_mode(BlendMode::Blend);
@@ -98,8 +116,10 @@ impl<'a> Atlas<'a> {
             self.color = color;
         }
         let source = Rect::new(
-            i32::try_from((slot % 16) * 8).map_err(|_| "glyph column")?,
-            i32::try_from((slot / 16) * 8).map_err(|_| "glyph row")?,
+            i32::try_from((slot % 16).saturating_mul(8))
+                .map_err(|error| format!("glyph column: {error}"))?,
+            i32::try_from((slot / 16).saturating_mul(8))
+                .map_err(|error| format!("glyph row: {error}"))?,
             8,
             8,
         );
@@ -112,40 +132,52 @@ pub(crate) mod tests {
     use super::*;
 
     pub fn pixel_parity(canvas: &mut Canvas<Window>, atlas: &mut Atlas<'_>) -> Result<(), String> {
-        for scale in 1..=3 {
-            let draw = |canvas: &mut Canvas<Window>,
-                        atlas: Option<&mut Atlas<'_>>|
+        for scale in 1_i32..=3_i32 {
+            let draw = |target: &mut Canvas<Window>,
+                        mut font: Option<&mut Atlas<'_>>|
              -> Result<Vec<u8>, String> {
-                canvas.set_clip_rect(None);
-                canvas.set_draw_color(Color::RGB(17, 29, 40));
-                canvas.clear();
-                canvas.set_clip_rect(Rect::new(3, 5, 440, 650));
-                let mut atlas = atlas;
+                target.set_clip_rect(None);
+                target.set_draw_color(Color::RGB(17, 29, 40));
+                target.clear();
+                target.set_clip_rect(Rect::new(3, 5, 440, 650));
                 for slot in 0..GLYPHS {
                     let code = match slot {
                         0..=127 => slot,
-                        128..=223 => slot - 128 + 160,
-                        _ => slot - 224 + 0x2500,
+                        128..=223 => slot.saturating_sub(128).saturating_add(160),
+                        _ => slot.saturating_sub(224).saturating_add(0x2500),
                     };
                     let ch = char::from_u32(code).ok_or("test code point")?;
-                    let x = i32::try_from(slot % 16).map_err(|_| "column")? * 8 * scale - 2;
-                    let y = i32::try_from(slot / 16).map_err(|_| "row")? * 8 * scale - 1;
+                    let x = i32::try_from(slot % 16)
+                        .map_err(|error| format!("column: {error}"))?
+                        .saturating_mul(8)
+                        .saturating_mul(scale)
+                        .saturating_sub(2);
+                    let y = i32::try_from(slot / 16)
+                        .map_err(|error| format!("row: {error}"))?
+                        .saturating_mul(8)
+                        .saturating_mul(scale)
+                        .saturating_sub(1);
                     let color = if slot % 2 == 0 {
                         Color::RGB(93, 218, 201)
                     } else {
                         Color::RGB(235, 242, 249)
                     };
                     let size = scale.unsigned_abs();
-                    if let Some(atlas) = atlas.as_deref_mut() {
-                        atlas.draw(canvas, ch, Rect::new(x, y, 8 * size, 8 * size), color)?;
+                    if let Some(active_font) = font.as_deref_mut() {
+                        active_font.draw(
+                            target,
+                            ch,
+                            Rect::new(x, y, 8_u32.saturating_mul(size), 8_u32.saturating_mul(size)),
+                            color,
+                        )?;
                     } else {
-                        canvas.set_draw_color(color);
-                        for (row, bits) in (0..8).zip(bitmap(slot)) {
-                            for col in 0..8 {
+                        target.set_draw_color(color);
+                        for (row, bits) in (0_i32..8_i32).zip(bitmap(slot)) {
+                            for col in 0_i32..8_i32 {
                                 if bits & (1 << col) != 0 {
-                                    canvas.fill_rect(Rect::new(
-                                        x + col * scale,
-                                        y + row * scale,
+                                    target.fill_rect(Rect::new(
+                                        x.saturating_add(col.saturating_mul(scale)),
+                                        y.saturating_add(row.saturating_mul(scale)),
                                         size,
                                         size,
                                     ))?;
@@ -154,8 +186,8 @@ pub(crate) mod tests {
                         }
                     }
                 }
-                canvas.set_clip_rect(None);
-                canvas.read_pixels(None, PixelFormatEnum::RGBA32)
+                target.set_clip_rect(None);
+                target.read_pixels(None, PixelFormatEnum::RGBA32)
             };
             let expected = draw(canvas, None)?;
             let actual = draw(canvas, Some(atlas))?;
@@ -166,7 +198,7 @@ pub(crate) mod tests {
 
     #[test]
     fn atlas_pixels_cover_every_supported_glyph_and_fallback() -> Result<(), String> {
-        let pixels = pixels();
+        let pixels = pixels()?;
         assert_eq!(pixels.len(), 88 * 1024);
         for (first, last) in [(0, 127), (160, 255), (0x2500, 0x257f)] {
             for code in first..=last {
@@ -176,12 +208,17 @@ pub(crate) mod tests {
                 let expected = bitmap(slot);
                 for (row, bits) in expected.into_iter().enumerate() {
                     for col in 0..8 {
-                        let x = slot as usize % 16 * 8 + col;
-                        let y = slot as usize / 16 * 8 + row;
-                        let offset = (y * WIDTH as usize + x) * 4;
+                        let slot_index =
+                            usize::try_from(slot).map_err(|error| error.to_string())?;
+                        let x = (slot_index % 16).saturating_mul(8).saturating_add(col);
+                        let y = (slot_index / 16).saturating_mul(8).saturating_add(row);
+                        let width = usize::try_from(WIDTH).map_err(|error| error.to_string())?;
+                        let offset = y.saturating_mul(width).saturating_add(x).saturating_mul(4);
                         let value = if bits & (1 << col) != 0 { 255 } else { 0 };
                         assert_eq!(
-                            &pixels[offset..offset + 4],
+                            pixels
+                                .get(offset..offset.saturating_add(4))
+                                .ok_or("Missing test glyph pixel")?,
                             &[value; 4],
                             "{ch:?} {row} {col}"
                         );

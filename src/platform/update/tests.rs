@@ -8,7 +8,7 @@ use std::io::{Seek, SeekFrom, Write};
 fn secure_directory(path: &Path) -> io::Result<()> {
     use std::os::unix::fs::DirBuilderExt;
     let mut builder = fs::DirBuilder::new();
-    builder.recursive(true).mode(0o755);
+    let _configured_builder = builder.recursive(true).mode(0o755);
     builder.create(path)
 }
 
@@ -173,7 +173,7 @@ fn corrupt_bundle_and_foreign_binary_never_become_ready() -> Result<(), Box<dyn 
     let mut installation = Installation::open(&target)?;
     let mut file = installation.payload()?;
     file.write_all(b"not a bundle")?;
-    file.seek(SeekFrom::Start(0))?;
+    assert_eq!(file.seek(SeekFrom::Start(0))?, 0_u64);
     assert!(
         installation
             .ready(
@@ -239,11 +239,11 @@ fn relaunch_exec_helper() -> Result<(), Box<dyn std::error::Error>> {
     let Some(target) = std::env::var_os("VITRALLIS_TEST_RELAUNCH_TARGET") else {
         return Ok(());
     };
-    let target = PathBuf::from(target);
-    let hash = hash_file(&target)?;
+    let target_path = PathBuf::from(target);
+    let hash = hash_file(&target_path)?;
     relaunch(
         &super::super::Relaunch {
-            executable: target,
+            executable: target_path,
             sha256: hash,
         },
         ["argument with spaces".into()],
@@ -320,8 +320,8 @@ fn release_bundle_upgrade_probe() -> Result<(), Box<dyn std::error::Error>> {
     let mut installation = Installation::open(&target)?;
     let mut payload = installation.payload()?;
     let mut source = File::open(bundle_path)?;
-    io::copy(&mut source, &mut payload)?;
-    payload.seek(SeekFrom::Start(0))?;
+    let _copied_fixture_bytes = io::copy(&mut source, &mut payload)?;
+    assert_eq!(payload.seek(SeekFrom::Start(0))?, 0_u64);
     installation.ready(payload, &version, super::super::Target::current()?, [9; 32])?;
     assert!(installation.commit()?);
     assert!(scratch.0.join("current/arti").is_file());
@@ -419,7 +419,7 @@ fn restore_activates_the_validated_previous_generation() -> Result<(), Box<dyn s
     assert!(fixture.retains_both());
     drop(installation);
     // The restored generation is now the active, openable installation.
-    Installation::open(&fixture.previous_target())?;
+    drop(Installation::open(&fixture.previous_target())?);
     Ok(())
 }
 
@@ -469,12 +469,11 @@ fn restore_refuses_an_identical_or_escaping_previous_pointer()
 fn restore_refuses_an_incomplete_unsafe_or_modified_previous()
 -> Result<(), Box<dyn std::error::Error>> {
     type Damage = Box<dyn Fn(&RestoreFixture) -> std::io::Result<()>>;
-    for (label, structural, damage) in [
+    let cases: [(&str, bool, Damage); 4] = [
         (
             "missing companion",
             true,
-            Box::new(|fixture: &RestoreFixture| fs::remove_file(fixture.previous_file("arti")))
-                as Damage,
+            Box::new(|fixture: &RestoreFixture| fs::remove_file(fixture.previous_file("arti"))),
         ),
         (
             "group-writable executable",
@@ -504,7 +503,8 @@ fn restore_refuses_an_incomplete_unsafe_or_modified_previous()
                 fs::write(fixture.previous_file("vitrallis"), b"tampered")
             }),
         ),
-    ] {
+    ];
+    for (label, structural, damage) in cases {
         let fixture = RestoreFixture::new()?;
         damage(&fixture)?;
         assert_eq!(
@@ -531,7 +531,10 @@ fn restore_refuses_when_the_active_build_changed_under_the_lock()
         fixture.root.join(&fixture.active).join("vitrallis"),
         b"changed",
     )?;
-    let error = installation.rollback().expect_err("changed build");
+    let error = installation
+        .rollback()
+        .err()
+        .ok_or("changed build was accepted")?;
     assert!(error.contains("Active build changed"), "{error}");
     assert_eq!(fixture.current()?, fixture.active);
     assert_eq!(fixture.previous_pointer()?, fixture.previous);
@@ -542,10 +545,14 @@ fn restore_refuses_when_the_active_build_changed_under_the_lock()
 fn restore_ping_pongs_between_the_two_retained_generations()
 -> Result<(), Box<dyn std::error::Error>> {
     let fixture = RestoreFixture::new()?;
-    Installation::open(&fixture.target())?.rollback()?;
+    assert!(Installation::open(&fixture.target())?.rollback()?.durable);
     assert_eq!(fixture.current()?, fixture.previous);
     // Relaunching the restored generation keeps the displaced build available.
-    Installation::open(&fixture.previous_target())?.rollback()?;
+    assert!(
+        Installation::open(&fixture.previous_target())?
+            .rollback()?
+            .durable
+    );
     assert_eq!(fixture.current()?, fixture.active);
     assert_eq!(fixture.previous_pointer()?, fixture.previous);
     assert!(fixture.retains_both());
@@ -564,7 +571,8 @@ fn restore_keeps_the_active_build_when_the_previous_pointer_cannot_be_written()
     fs::create_dir(&blocker)?;
     let error = installation
         .rollback()
-        .expect_err("pointer write must fail");
+        .err()
+        .ok_or("pointer write must fail")?;
     assert!(error.contains("active build was kept"), "{error}");
     assert_eq!(fixture.current()?, fixture.active);
     assert_eq!(fixture.previous_pointer()?, fixture.previous);
@@ -599,7 +607,7 @@ fn restore_runs_under_the_existing_update_lock() -> Result<(), Box<dyn std::erro
     // Another installation cannot open while the lock is held.
     assert!(Installation::open(&fixture.target()).is_err());
     // The lock owner can still restore, and the lock releases with it.
-    installation.rollback()?;
+    assert!(installation.rollback()?.durable);
     drop(installation);
     assert!(Installation::open(&fixture.previous_target()).is_ok());
     Ok(())

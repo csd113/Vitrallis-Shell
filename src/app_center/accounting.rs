@@ -32,16 +32,16 @@ pub fn installed(
     });
     let mut apps = Vec::new();
     let mut issue = None;
-    for manifest in manifests {
-        let (root, manifest) = match manifest {
+    for result in manifests {
+        let (root, manifest) = match result {
             Ok(app) => app,
             Err(error) => {
-                issue.get_or_insert(error);
+                let _first_issue = issue.get_or_insert(error);
                 continue;
             }
         };
-        let id = metadata::text(&manifest["id"], 128)?.to_owned();
-        let name = metadata::text(&manifest["name"], 1000)?.to_owned();
+        let id = metadata::text(metadata::field(&manifest, "id")?, 128)?.to_owned();
+        let name = metadata::text(metadata::field(&manifest, "name")?, 1000)?.to_owned();
         let receipt = if scanner.stopped() {
             Err("Scan cancelled or limit reached".into())
         } else {
@@ -55,7 +55,7 @@ pub fn installed(
         };
         let mut parts = std::array::from_fn(|_| Size::default());
         let mut owned: BTreeSet<String> = match receipt {
-            Ok(Some(ref receipt)) => receipt["files"]
+            Ok(Some(ref install_receipt)) => install_receipt["files"]
                 .as_object()
                 .map(|files| files.keys().cloned().collect())
                 .unwrap_or_default(),
@@ -68,20 +68,26 @@ pub fn installed(
                 BTreeSet::new()
             }
         };
-        let issue = scanner.walk(&root, false, &mut |path, bytes| {
+        let scan_issue = scanner.walk(&root, false, &mut |path, bytes| {
             let relative = path.strip_prefix(&root).unwrap_or(path);
             let index = category(relative, &owned);
-            if let Some(name) = relative.to_str() {
-                owned.remove(name);
+            if let Some(relative_name) = relative.to_str() {
+                let _was_owned = owned.remove(relative_name);
             }
-            parts[index].bytes = parts[index].bytes.saturating_add(bytes);
+            if let Some(part) = parts.get_mut(index) {
+                part.bytes = part.bytes.saturating_add(bytes);
+            } else {
+                for part in &mut parts {
+                    part.fail("Invalid storage category");
+                }
+            }
         });
         if !owned.is_empty() {
             parts[0].fail("Some installed files are missing or unreadable");
         }
-        if let Some(issue) = issue {
+        if let Some(scan_error) = scan_issue {
             for part in &mut parts {
-                part.fail(&issue);
+                part.fail(&scan_error);
             }
         }
         for path in managed_locations(loc, &id, receipt.as_ref().ok().and_then(Option::as_ref)) {
@@ -172,8 +178,8 @@ fn managed_locations(
     receipt: Option<&serde_json::Value>,
 ) -> Vec<PathBuf> {
     let mut paths = vec![loc.state.join("launchers").join(id)];
-    if let Some(receipt) = receipt
-        && let Some(origin) = receipt["origin"].as_str()
+    if let Some(install_receipt) = receipt
+        && let Some(origin) = install_receipt["origin"].as_str()
         && metadata::identity(id).is_ok()
     {
         paths.push(
@@ -366,12 +372,18 @@ mod tests {
         let root = loc.apps().join("io.test.python");
         fs::remove_file(root.join(".vitrallis-receipt.json")).map_err(|e| e.to_string())?;
         fs::remove_file(root.join("main.py")).map_err(|e| e.to_string())?;
-        let (apps, _) = installed(&loc, &mut Scanner::new(&cancel))?;
-        assert_eq!(apps.len(), 1);
-        assert!(apps[0].total.incomplete);
+        let (incomplete_apps, _) = installed(&loc, &mut Scanner::new(&cancel))?;
+        assert_eq!(incomplete_apps.len(), 1);
+        assert!(
+            incomplete_apps
+                .first()
+                .ok_or("Missing fixture element")?
+                .total
+                .incomplete
+        );
         fs::write(root.join("app.toml"), "bad manifest").map_err(|e| e.to_string())?;
-        let (apps, issue) = installed(&loc, &mut Scanner::new(&cancel))?;
-        assert!(apps.is_empty() && issue.is_some());
+        let (corrupt_apps, manifest_issue) = installed(&loc, &mut Scanner::new(&cancel))?;
+        assert!(corrupt_apps.is_empty() && manifest_issue.is_some());
         Ok(())
     }
 }

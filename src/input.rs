@@ -13,6 +13,11 @@ mod sdl {
     use super::Action;
     use crate::{layout::Layout, navigation::Direction};
     use sdl2::{event::Event, keyboard::Keycode, mouse::MouseButton};
+    #[allow(
+        clippy::wildcard_enum_match_arm,
+        clippy::rest_pattern_accessible_field,
+        reason = "SDL metadata is intentionally ignored. This SDL handler consumes selected keyboard, pointer or window events; unrelated controller, audio, drop and platform events intentionally have no action"
+    )]
     pub fn action(event: &Event, layout: &Layout, count: usize) -> Option<Action> {
         match *event {
             Event::KeyDown {
@@ -74,12 +79,25 @@ mod sdl {
                 repeat: false,
             };
             assert!(matches!(action(&key, &layout, 6), Some(Action::Activate)));
-            if let Event::KeyDown { repeat, .. } = &mut key {
+            if let Event::KeyDown {
+                repeat,
+                timestamp: _,
+                window_id: _,
+                keycode: _,
+                scancode: _,
+                keymod: _,
+            } = &mut key
+            {
                 *repeat = true;
             }
             assert!(action(&key, &layout, 6).is_none());
             if let Event::KeyDown {
-                keycode, repeat, ..
+                keycode,
+                repeat,
+                timestamp: _,
+                window_id: _,
+                scancode: _,
+                keymod: _,
             } = &mut key
             {
                 *repeat = false;
@@ -106,8 +124,8 @@ mod sdl {
                 which: u32::MAX,
                 mouse_btn: MouseButton::Left,
                 clicks: 1,
-                x: 240,
-                y: 80,
+                x: 240_i32,
+                y: 80_i32,
             };
             assert!(action(&mouse, &layout, 6).is_none());
             Ok(())
@@ -131,6 +149,11 @@ impl DesktopInput {
     pub const fn clear(&mut self) {
         self.contact = None;
     }
+    #[allow(
+        clippy::wildcard_enum_match_arm,
+        clippy::rest_pattern_accessible_field,
+        reason = "SDL metadata is intentionally ignored. This SDL handler consumes selected keyboard, pointer or window events; unrelated controller, audio, drop and platform events intentionally have no action"
+    )]
     pub fn event(
         &mut self,
         event: &sdl2::event::Event,
@@ -301,6 +324,11 @@ impl PointerInput {
     pub const fn clear(&mut self) {
         self.pressed = None;
     }
+    #[allow(
+        clippy::wildcard_enum_match_arm,
+        clippy::rest_pattern_accessible_field,
+        reason = "SDL metadata is intentionally ignored. This SDL handler consumes selected keyboard, pointer or window events; unrelated controller, audio, drop and platform events intentionally have no action"
+    )]
     pub fn action(
         &mut self,
         event: &sdl2::event::Event,
@@ -321,7 +349,7 @@ impl PointerInput {
                 if let Event::MouseButtonDown {
                     timestamp,
                     window_id,
-                    which,
+                    which: mouse_id,
                     mouse_btn,
                     clicks,
                     x,
@@ -331,7 +359,7 @@ impl PointerInput {
                     release = Event::MouseButtonUp {
                         timestamp,
                         window_id,
-                        which,
+                        which: mouse_id,
                         mouse_btn,
                         clicks,
                         x,
@@ -441,18 +469,32 @@ mod gesture_tests {
             pointer.action(&up, &layout, 6),
             Some(Action::SelectAndActivate(1))
         );
-        pointer.action(&down, &layout, 6);
-        if let Event::FingerUp { finger_id, .. } = &mut up {
+        assert_eq!(pointer.action(&down, &layout, 6), None);
+        if let Event::FingerUp {
+            finger_id,
+            timestamp: _,
+            touch_id: _,
+            x: _,
+            y: _,
+            dx: _,
+            dy: _,
+            pressure: _,
+        } = &mut up
+        {
             *finger_id = 2;
         }
         assert!(pointer.action(&up, &layout, 6).is_none());
-        pointer.action(&down, &layout, 6);
+        assert_eq!(pointer.action(&down, &layout, 6), None);
         pointer.clear();
         assert!(pointer.action(&up, &layout, 6).is_none());
         for (tile, forward) in [(layout.previous, false), (layout.next, true)] {
-            let x = f32::from(u16::try_from(tile.x + tile.w / 2).map_err(|_| "x")?) / 480.;
-            let y = f32::from(u16::try_from(tile.y + tile.h / 2).map_err(|_| "y")?) / 272.;
-            let down = Event::FingerDown {
+            let x = f32::from(
+                u16::try_from(tile.x + tile.w / 2_i32).map_err(|error| format!("x: {error}"))?,
+            ) / 480.;
+            let y = f32::from(
+                u16::try_from(tile.y + tile.h / 2_i32).map_err(|error| format!("y: {error}"))?,
+            ) / 272.;
+            let footer_down = Event::FingerDown {
                 timestamp: 0,
                 touch_id: 1,
                 finger_id: 1,
@@ -462,7 +504,7 @@ mod gesture_tests {
                 dy: 0.,
                 pressure: 1.,
             };
-            let up = Event::FingerUp {
+            let footer_up = Event::FingerUp {
                 timestamp: 0,
                 touch_id: 1,
                 finger_id: 1,
@@ -472,8 +514,11 @@ mod gesture_tests {
                 dy: 0.,
                 pressure: 0.,
             };
-            assert!(pointer.action(&down, &layout, 6).is_none());
-            assert_eq!(pointer.action(&up, &layout, 6), Some(Action::Page(forward)));
+            assert!(pointer.action(&footer_down, &layout, 6).is_none());
+            assert_eq!(
+                pointer.action(&footer_up, &layout, 6),
+                Some(Action::Page(forward))
+            );
         }
         Ok(())
     }

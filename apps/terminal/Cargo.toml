@@ -15,3 +15,6 @@ vitrallis-native.workspace = true
 sdl2.workspace = true
 libc.workspace = true
 vt100.workspace = true
+
+[lints]
+workspace = true

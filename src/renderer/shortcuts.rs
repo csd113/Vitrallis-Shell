@@ -36,7 +36,7 @@ fn char_span(value: &str, start: usize, count: usize) -> Range<usize> {
         .map_or(value.len(), |(index, _)| index);
     let end = value
         .char_indices()
-        .nth(start + count)
+        .nth(start.saturating_add(count))
         .map_or(value.len(), |(index, _)| index);
     begin..end
 }
@@ -44,41 +44,52 @@ fn char_span(value: &str, start: usize, count: usize) -> Range<usize> {
 pub fn panel(canvas: &mut Screen, layout: &Layout, desktop: &Desktop) -> Result<(), String> {
     canvas.set_draw_color(theme::BACKGROUND);
     canvas.clear();
-    let scale = layout.text_scale.max(1);
+    let scale = layout.text_scale.max(1_i32);
     let width = i32::from(layout.width);
     text(
         canvas,
         desktop.title(),
         Rect {
-            x: 40 * scale,
+            x: 40_i32.saturating_mul(scale),
             y: 0,
-            w: width - 80 * scale,
-            h: 24 * scale,
+            w: width.saturating_sub(80_i32.saturating_mul(scale)),
+            h: 24_i32.saturating_mul(scale),
         },
         scale,
         theme::ACCENT,
     )?;
     let description = desktop.description();
-    let columns = fit_columns(width - 16 * scale, scale).max(1);
+    let columns = fit_columns(width.saturating_sub(16_i32.saturating_mul(scale)), scale).max(1);
     let count = description.chars().count();
     let start = if desktop.editing() {
-        count.saturating_sub(columns * 2)
+        count.saturating_sub(columns.saturating_mul(2_usize))
     } else {
         0
     };
-    for line in 0..2 {
-        let span = char_span(&description, start + line * columns, columns);
+    for line in 0_usize..2_usize {
+        let span = char_span(
+            &description,
+            start.saturating_add(line.saturating_mul(columns)),
+            columns,
+        );
         if span.is_empty() {
             break;
         }
         text_left(
             canvas,
-            &description[span],
+            description
+                .get(span)
+                .ok_or("Invalid shortcut description character span")?,
             Rect {
-                x: 8 * scale,
-                y: 26 * scale + i32::try_from(line).unwrap_or(0) * 14 * scale,
-                w: width - 16 * scale,
-                h: 14 * scale,
+                x: 8_i32.saturating_mul(scale),
+                y: 26_i32.saturating_mul(scale).saturating_add(
+                    i32::try_from(line)
+                        .unwrap_or(0_i32)
+                        .saturating_mul(14_i32)
+                        .saturating_mul(scale),
+                ),
+                w: width.saturating_sub(16_i32.saturating_mul(scale)),
+                h: 14_i32.saturating_mul(scale),
             },
             scale,
             if desktop.error.is_empty() {
@@ -93,10 +104,10 @@ pub fn panel(canvas: &mut Screen, layout: &Layout, desktop: &Desktop) -> Result<
         text(canvas, label, *bounds, scale, theme::TEXT)?;
     }
     let preview = Rect {
-        x: width - 36 * scale,
+        x: width.saturating_sub(36_i32.saturating_mul(scale)),
         y: 0,
-        w: 28 * scale,
-        h: 28 * scale,
+        w: 28_i32.saturating_mul(scale),
+        h: 28_i32.saturating_mul(scale),
     };
     // The preview texture is cached inside Screen; only a changed icon is
     // decoded and uploaded again. Undecodable bytes keep the placeholder.

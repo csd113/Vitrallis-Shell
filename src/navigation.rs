@@ -14,7 +14,7 @@ pub const fn moved(current: usize, direction: Direction, columns: usize, count: 
         Direction::Down => current.checked_add(columns),
     };
     match next {
-        Some(next) if next < count => next,
+        Some(destination) if destination < count => destination,
         _ => current,
     }
 }

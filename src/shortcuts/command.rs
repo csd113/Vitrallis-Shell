@@ -61,7 +61,7 @@ pub fn parse(command: &str) -> Result<Vec<OsString>, String> {
     if started {
         words.push(word.into());
     }
-    if words.first().is_none_or(|word| word.is_empty()) {
+    if words.first().is_none_or(|first_word| first_word.is_empty()) {
         return Err("Enter an executable and optional arguments".into());
     }
     Ok(words)
@@ -95,8 +95,8 @@ pub fn manifest(
     })
 }
 
-pub fn quote(path: &Path) -> Result<String, String> {
-    let path = path.to_str().ok_or("Path must be valid UTF-8")?;
+pub fn quote(input_path: &Path) -> Result<String, String> {
+    let path = input_path.to_str().ok_or("Path must be valid UTF-8")?;
     if path.chars().any(char::is_control) {
         return Err("Path contains control characters".into());
     }

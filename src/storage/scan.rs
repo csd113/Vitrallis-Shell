@@ -135,15 +135,16 @@ impl<'a> Scanner<'a> {
         issue: &mut Option<String>,
     ) {
         if self.stopped() || depth >= MAX_DEPTH {
-            issue.get_or_insert_with(|| "Scan cancelled or limit reached; Refresh to retry".into());
+            let _first_issue = issue
+                .get_or_insert_with(|| "Scan cancelled or limit reached; Refresh to retry".into());
             return;
         }
-        self.entries += 1;
+        self.entries = self.entries.saturating_add(1);
         if self.roots.iter().any(|root| path.starts_with(root)) {
             return;
         }
         if identity(metadata).0 != device {
-            issue.get_or_insert_with(|| "Nested mount skipped".into());
+            let _first_issue = issue.get_or_insert_with(|| "Nested mount skipped".into());
             return;
         }
         if metadata.is_file() && multiple_links(metadata) && !self.links.insert(identity(metadata))
@@ -162,30 +163,37 @@ impl<'a> Scanner<'a> {
         let entries = match fs::read_dir(path) {
             Ok(entries) => entries,
             Err(e) => {
-                issue.get_or_insert_with(|| e.to_string());
+                let _first_issue = issue.get_or_insert_with(|| e.to_string());
                 return;
             }
         };
         for item in entries {
             if self.stopped() {
-                issue.get_or_insert_with(|| {
+                let _first_issue = issue.get_or_insert_with(|| {
                     "Scan cancelled or limit reached; Refresh to retry".into()
                 });
                 break;
             }
-            let result = item.and_then(|item| {
+            let result = item.and_then(|entry| {
                 // Recheck the directory before descending if it changed into a link/mount.
                 let current = fs::symlink_metadata(path)?;
                 if !current.is_dir() || identity(&current) != identity(metadata) {
                     return Err(std::io::Error::other("Directory changed during scan"));
                 }
-                let child = item.path();
-                let metadata = fs::symlink_metadata(&child)?;
-                self.entry(&child, &metadata, device, depth + 1, visit, issue);
+                let child = entry.path();
+                let child_metadata = fs::symlink_metadata(&child)?;
+                self.entry(
+                    &child,
+                    &child_metadata,
+                    device,
+                    depth.saturating_add(1),
+                    visit,
+                    issue,
+                );
                 Ok(())
             });
             if let Err(e) = result {
-                issue.get_or_insert_with(|| e.to_string());
+                let _first_issue = issue.get_or_insert_with(|| e.to_string());
             }
         }
     }

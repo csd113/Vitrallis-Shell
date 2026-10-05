@@ -54,8 +54,14 @@ impl Transport for Curl {
             .take()
             .ok_or_else(|| "Download output unavailable".to_owned())
             .and_then(|stdout| copy_bounded(stdout, output, limit));
-        if result.is_err() {
-            let _ = child.kill();
+        if result.is_err()
+            && let Err(error) = child.kill()
+            && error.kind() != std::io::ErrorKind::InvalidInput
+        {
+            eprintln!(
+                "level=error event=download_kill pid={} message={error:?}",
+                child.id()
+            );
         }
         let status = child
             .wait()
@@ -76,8 +82,8 @@ impl Transport for Curl {
     }
 }
 
-fn copy_bounded(input: impl Read, output: &mut dyn Write, limit: u64) -> Result<(), String> {
-    let mut input = input.take(limit.saturating_add(1));
+fn copy_bounded(source: impl Read, output: &mut dyn Write, limit: u64) -> Result<(), String> {
+    let mut input = source.take(limit.saturating_add(1));
     // Do not write even the extra sentinel byte into staging.
     let copied = io::copy(&mut input.by_ref().take(limit), output)
         .map_err(|e| format!("Download read/write failed: {e}"))?;

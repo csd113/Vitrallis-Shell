@@ -2,7 +2,7 @@
 use super::{Control, Mode, Paths, Snapshot, State};
 use crate::app_center::storage;
 use std::{
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex, mpsc},
     time::{Duration, Instant},
@@ -37,7 +37,7 @@ impl Worker {
         self.snapshot.progress = None;
         self.snapshot.diagnostic.clear();
         let mut command = Command::new("/usr/bin/python3");
-        command
+        let _configured_builder = command
             .args(["-I", "-u", "-c", super::HELPER])
             .arg(&self.paths.root)
             .arg(
@@ -51,40 +51,29 @@ impl Worker {
         self.spawn(&mut command, tx)
     }
     fn spawn(&mut self, command: &mut Command, tx: &mpsc::SyncSender<Event>) -> Result<(), String> {
+        let generation = self
+            .generation
+            .checked_add(1)
+            .ok_or("Tor worker generation exhausted")?;
         let mut child = command
             .spawn()
             .map_err(|e| format!("Tor supervisor: {e}"))?;
-        let stdout = child.stdout.take().ok_or("Missing Tor status pipe")?;
-        self.generation += 1;
-        let generation = self.generation;
-        let tx = tx.clone();
-        self.reader = Some(std::thread::spawn(move || {
-            // The embedded helper emits bounded JSON, never raw Arti logs.
-            for line in BufReader::new(stdout).lines() {
-                let Ok(line) = line else {
-                    break;
-                };
-                let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
-                    continue;
-                };
-                let state = match v["state"].as_str() {
-                    Some("connected") => State::Connected,
-                    Some("bootstrapping") => State::Bootstrapping,
-                    Some("error") => State::Error,
-                    _ => continue,
-                };
-                let progress = v["progress"]
-                    .as_u64()
-                    .and_then(|p| u8::try_from(p.min(100)).ok());
-                let diagnostic = v["diagnostic"]
-                    .as_str()
-                    .unwrap_or("")
-                    .chars()
-                    .take(160)
-                    .collect();
-                let _ = tx.try_send(Event::Status(generation, state, progress, diagnostic));
+        let Some(stdout) = child.stdout.take() else {
+            crate::process::cleanup_child(&mut child);
+            return Err("Missing Tor status pipe".into());
+        };
+        let events = tx.clone();
+        let reader = std::thread::Builder::new()
+            .name("tor-status".into())
+            .spawn(move || read_status(stdout, generation, &events));
+        match reader {
+            Ok(handle) => self.reader = Some(handle),
+            Err(error) => {
+                crate::process::cleanup_child(&mut child);
+                return Err(format!("Tor status reader: {error}"));
             }
-        }));
+        }
+        self.generation = generation;
         self.child = Some(child);
         Ok(())
     }
@@ -92,13 +81,21 @@ impl Worker {
         self.snapshot.state = State::Stopping;
         if let Some(mut child) = self.child.take() {
             drop(child.stdin.take()); // EOF makes the guardian stop and reap Arti.
-            let deadline = Instant::now() + Duration::from_secs(5);
+            let now = Instant::now();
+            let deadline = now.checked_add(Duration::from_secs(5)).unwrap_or(now);
             loop {
-                if child.try_wait().ok().flatten().is_some() {
-                    break;
+                match child.try_wait() {
+                    Ok(Some(_)) => break,
+                    Ok(None) => (),
+                    Err(error) => {
+                        eprintln!("level=error event=tor_child_wait message={error:?}");
+                        break;
+                    }
                 }
                 if Instant::now() >= deadline {
-                    let _ = child.kill();
+                    if let Err(error) = child.kill() {
+                        eprintln!("level=error event=tor_child_kill message={error:?}");
+                    }
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(25));
@@ -106,10 +103,26 @@ impl Worker {
             // A failed kill must not turn into an unbounded `Child::wait`.
             if !reap(&mut child) {
                 eprintln!("level=error event=tor_child_stuck message=reaping timed out");
+                // Retain ownership and refuse to advertise Stopped or launch a
+                // replacement while this supervisor is still unreaped.
+                self.child = Some(child);
+                self.inhibited = true;
+                self.error("Tor supervisor could not stop; cleanup is still pending".into());
+                return;
             }
         }
         if let Some(reader) = self.reader.take() {
-            let _ = reader.join();
+            if reader.is_finished() {
+                if let Err(payload) = reader.join() {
+                    eprintln!("level=error event=tor_reader_panicked payload={payload:?}");
+                }
+            } else {
+                // Never join a reader waiting to send into this worker's full
+                // queue. The terminated guardian closes stdout; queued old
+                // generations are discarded, and receiver shutdown releases a
+                // blocked send. No detached reader owns a child process.
+                eprintln!("level=debug event=tor_reader_finishing");
+            }
         }
         self.snapshot.state = if self.snapshot.mode == Mode::Disabled {
             State::Disabled
@@ -159,6 +172,9 @@ impl Worker {
             Control::Start | Control::Restart => {
                 if matches!(control, Control::Restart) {
                     self.stop();
+                    if self.child.is_some() {
+                        return Err("Tor cleanup is still pending; restart refused".into());
+                    }
                 }
                 self.inhibited = false;
                 self.failures = 0;
@@ -170,7 +186,9 @@ impl Worker {
                 self.manual = false;
                 self.inhibited = true;
                 self.stop();
-                self.snapshot.diagnostic = "Stopped by user".into();
+                if self.child.is_none() {
+                    self.snapshot.diagnostic = "Stopped by user".into();
+                }
             }
             Control::Shutdown => (),
         }
@@ -192,7 +210,10 @@ impl Worker {
                     if self.failures <= 3 {
                         self.retry = Some(
                             Instant::now()
-                                + Duration::from_secs(2_u64.pow(u32::from(self.failures))),
+                                .checked_add(Duration::from_secs(
+                                    2_u64.pow(u32::from(self.failures)),
+                                ))
+                                .unwrap_or_else(Instant::now),
                         );
                     }
                 }
@@ -213,9 +234,10 @@ impl Worker {
             self.retry = None;
         }
         if self.child.is_some() && !self.wanted() {
-            let idle = self
-                .idle
-                .get_or_insert_with(|| Instant::now() + Duration::from_secs(30));
+            let idle = self.idle.get_or_insert_with(|| {
+                let now = Instant::now();
+                now.checked_add(Duration::from_secs(30)).unwrap_or(now)
+            });
             if Instant::now() >= *idle {
                 self.stop();
             }
@@ -227,10 +249,71 @@ impl Worker {
         }
     }
 }
+impl Drop for Worker {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            // This destructor runs on the service worker, never the event loop.
+            // Retain the owned child through its final wait if bounded shutdown
+            // failed; a relaunch cannot succeed before this worker finishes.
+            crate::process::cleanup_child(&mut child);
+        }
+    }
+}
+fn read_status(stdout: std::process::ChildStdout, generation: u64, tx: &mpsc::SyncSender<Event>) {
+    const LINE_LIMIT: u64 = 4096;
+    let mut input = BufReader::new(stdout);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match input
+            .by_ref()
+            .take(LINE_LIMIT.saturating_add(1))
+            .read_until(b'\n', &mut line)
+        {
+            Ok(0) => break,
+            Ok(_) if u64::try_from(line.len()).is_ok_and(|size| size <= LINE_LIMIT) => (),
+            Ok(_) => {
+                eprintln!("level=error event=tor_status_oversized");
+                break;
+            }
+            Err(error) => {
+                eprintln!("level=error event=tor_status_read message={error:?}");
+                break;
+            }
+        }
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let state = match value.get("state").and_then(serde_json::Value::as_str) {
+            Some("connected") => State::Connected,
+            Some("bootstrapping") => State::Bootstrapping,
+            Some("error") => State::Error,
+            _ => continue,
+        };
+        let progress = value
+            .get("progress")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|p| u8::try_from(p.min(100)).ok());
+        let diagnostic = value
+            .get("diagnostic")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .chars()
+            .take(160)
+            .collect();
+        // Preserve terminal transitions even when the bounded queue is full.
+        // stop() never joins an unfinished sender, so shutdown cannot deadlock.
+        if let Err(error) = tx.send(Event::Status(generation, state, progress, diagnostic)) {
+            eprintln!("level=debug event=tor_status_disconnected message={error}");
+            break;
+        }
+    }
+}
 /// Reap an already stopped or killed child without risking an unbounded
 /// `Child::wait`. Returns false when the child is still alive after the grace period.
 fn reap(child: &mut Child) -> bool {
-    let deadline = Instant::now() + Duration::from_secs(1);
+    let now = Instant::now();
+    let deadline = now.checked_add(Duration::from_secs(1)).unwrap_or(now);
     loop {
         if child.try_wait().is_ok_and(|status| status.is_some()) {
             return true;
@@ -261,9 +344,9 @@ pub(super) fn run(
         inhibited: false,
     };
     match mode {
-        Ok(mode) => {
-            worker.snapshot.mode = mode;
-            if mode == Mode::Disabled {
+        Ok(loaded_mode) => {
+            worker.snapshot.mode = loaded_mode;
+            if loaded_mode == Mode::Disabled {
                 worker.snapshot.state = State::Disabled;
             }
         }
@@ -287,7 +370,10 @@ pub(super) fn run(
         let event = if worker.child.is_some() || worker.retry.is_some() {
             rx.recv_timeout(Duration::from_secs(1))
         } else {
-            rx.recv().map_err(|_| mpsc::RecvTimeoutError::Disconnected)
+            match rx.recv() {
+                Ok(event) => Ok(event),
+                Err(mpsc::RecvError) => Err(mpsc::RecvTimeoutError::Disconnected),
+            }
         };
         match event {
             Ok(Event::Control(Control::Shutdown)) | Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -307,7 +393,9 @@ pub(super) fn run(
                 }
             }
             Ok(Event::Status(generation, state, progress, diagnostic))
-                if worker.child.is_some() && generation == worker.generation =>
+                if worker.child.is_some()
+                    && generation == worker.generation
+                    && !worker.inhibited =>
             {
                 worker.snapshot.state = state;
                 worker.snapshot.progress = progress;
@@ -347,7 +435,7 @@ mod tests {
     }
     fn fake(worker: &mut Worker, tx: &mpsc::SyncSender<Event>) -> Result<(), String> {
         let mut command = Command::new("/usr/bin/python3");
-        command
+        let _configured_builder = command
             .args([
                 "-I",
                 "-u",
@@ -381,7 +469,7 @@ mod tests {
         worker.tick(&tx);
         assert!(worker.child.is_none());
         assert_eq!(worker.snapshot.state, State::Stopped);
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             fake(&mut worker, &tx)?;
             worker.stop();
             assert!(worker.child.is_none());
@@ -401,7 +489,7 @@ mod tests {
             fake(&mut worker, &tx)?;
             let child = worker.child.as_mut().ok_or("no child")?;
             child.kill().map_err(|e| e.to_string())?;
-            child.wait().map_err(|e| e.to_string())?;
+            let _reaped_status = child.wait().map_err(|e| e.to_string())?;
             worker.tick(&tx);
             assert_eq!(worker.failures, failures);
             assert_eq!(worker.snapshot.state, State::Error);
@@ -411,6 +499,36 @@ mod tests {
         worker.tick(&tx);
         assert!(worker.retry.is_none());
         assert!(worker.child.is_none());
+        Ok(())
+    }
+    #[test]
+    fn full_status_queue_preserves_terminal_events_and_does_not_block_stop() -> Result<(), String> {
+        let (_scratch, mut worker) = fixture()?;
+        let (tx, rx) = mpsc::sync_channel(1);
+        let mut command = Command::new("/usr/bin/python3");
+        let _pipe_options = command.args(["-I", "-u", "-c", "import sys\nprint('{\"state\":\"bootstrapping\"}')\nprint('{\"state\":\"connected\",\"progress\":100}')\nprint('{\"state\":\"connected\",\"progress\":100}')\nsys.stdin.read()"])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null());
+        worker.spawn(&mut command, &tx)?;
+        assert!(matches!(
+            rx.recv_timeout(Duration::from_secs(3)),
+            Ok(Event::Status(_, State::Bootstrapping, None, _))
+        ));
+        let stopping = Instant::now();
+        worker.stop();
+        assert!(
+            stopping.elapsed() < Duration::from_secs(3),
+            "shutdown must not join a sender blocked on a full status queue"
+        );
+        assert!(worker.child.is_none(), "shutdown must reap the supervisor");
+        for _ in 0_i32..2_i32 {
+            assert!(
+                matches!(
+                    rx.recv_timeout(Duration::from_secs(3)),
+                    Ok(Event::Status(_, State::Connected, Some(100_u8), _))
+                ),
+                "connected transitions must survive a full queue"
+            );
+        }
         Ok(())
     }
     #[test]

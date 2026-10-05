@@ -40,7 +40,7 @@ impl Folders {
         let value = crate::app_center::metadata::json(&file.bytes)?;
         crate::app_center::metadata::fields(&value, "folders members order")?;
         let decode = |key: &str| -> Result<BTreeMap<String, String>, String> {
-            value[key]
+            crate::app_center::metadata::field(&value, key)?
                 .as_object()
                 .filter(|m| m.len() <= 1000)
                 .ok_or("Invalid folder state")?
@@ -141,24 +141,26 @@ impl Folders {
                 if self.names.contains_key(&id) {
                     return Err("Folder ID collision".into());
                 }
-                self.names.insert(id, name);
+                if self.names.insert(id, name).is_some() {
+                    return Err("Folder ID collision".into());
+                }
             }
             Change::Rename(id, name) => {
                 Self::name(&name)?;
                 *self.names.get_mut(&id).ok_or("Folder no longer exists")? = name;
             }
             Change::Delete(id) => {
-                self.names.remove(&id).ok_or("Folder no longer exists")?;
+                let _removed_name = self.names.remove(&id).ok_or("Folder no longer exists")?;
                 self.members.retain(|_, folder| folder != &id);
             }
             Change::Move(app, folder) => {
-                if let Some(folder) = folder {
-                    if !self.names.contains_key(&folder) {
+                if let Some(destination) = folder {
+                    if !self.names.contains_key(&destination) {
                         return Err("Folder no longer exists".into());
                     }
-                    self.members.insert(app, folder);
+                    let _previous_folder = self.members.insert(app, destination);
                 } else {
-                    self.members.remove(&app);
+                    let _previous_folder = self.members.remove(&app);
                 }
             }
         }
@@ -190,7 +192,7 @@ impl Folders {
             // full menu; first occurrence still wins, as `position` did.
             let mut ranks: HashMap<&str, usize> = HashMap::new();
             for (rank, id) in self.order.iter().enumerate() {
-                ranks.entry(id.as_str()).or_insert(rank);
+                let _first_rank = ranks.entry(id.as_str()).or_insert(rank);
             }
             visible.sort_by(|a, b| {
                 let rank =
@@ -217,28 +219,48 @@ mod tests {
         let mut state = Folders::write_change(&path, Change::Create("Tools".into()))?;
         let folder = state.names.keys().next().ok_or("missing folder")?.clone();
         let order = vec![
-            apps[1].id.clone(),
+            apps.get(1).ok_or("Missing fixture element")?.id.clone(),
             folder.clone(),
-            apps[0].id.clone(),
+            apps.first().ok_or("Missing fixture element")?.id.clone(),
             "missing-app".into(),
         ];
         state = Folders::write_change(&path, Change::Reorder(order.clone()))?;
         assert_eq!(Folders::read(&path)?, state);
         let visible = state.view(&apps, None);
         assert_eq!(
-            visible[..3]
+            (*visible.get(..3).ok_or("Missing fixture element")?)
                 .iter()
                 .map(|a| a.id.as_str())
                 .collect::<Vec<_>>(),
-            [&apps[1].id, &folder, &apps[0].id]
+            [
+                &apps.get(1).ok_or("Missing fixture element")?.id,
+                &folder,
+                &apps.first().ok_or("Missing fixture element")?.id
+            ]
         );
         let mut refreshed = apps.clone();
         refreshed.reverse();
-        refreshed.retain(|a| a.id != apps[0].id);
-        refreshed[0].name = "Renamed".into();
-        let visible = state.view(&refreshed, None);
-        assert_eq!(visible[0].id, apps[1].id);
-        assert_eq!(visible[1].id, folder);
+        let removed_id = &apps.first().ok_or("Missing original app fixture")?.id;
+        refreshed.retain(|a| &a.id != removed_id);
+        refreshed
+            .first_mut()
+            .ok_or("Missing refreshed app fixture")?
+            .name = "Renamed".into();
+        let refreshed_visible = state.view(&refreshed, None);
+        assert_eq!(
+            refreshed_visible
+                .first()
+                .ok_or("Missing fixture element")?
+                .id,
+            apps.get(1).ok_or("Missing fixture element")?.id
+        );
+        assert_eq!(
+            refreshed_visible
+                .get(1)
+                .ok_or("Missing fixture element")?
+                .id,
+            folder
+        );
         assert_eq!(state.order, order);
         assert!(
             Folders::write_change(&path, Change::Reorder(vec!["same".into(), "same".into()]))
@@ -258,13 +280,22 @@ mod tests {
         let mut state = Folders::write_change(&path, Change::Create("Tools".into()))?;
         let id = state.names.keys().next().ok_or("folder missing")?.clone();
         let apps = crate::platform::generic::demo_apps(std::path::Path::new("/vitrallis"));
-        state = Folders::write_change(&path, Change::Move(apps[0].id.clone(), Some(id.clone())))?;
-        assert_eq!(state.view(&apps, Some(&id)), apps[..1]);
+        state = Folders::write_change(
+            &path,
+            Change::Move(
+                apps.first().ok_or("Missing fixture element")?.id.clone(),
+                Some(id.clone()),
+            ),
+        )?;
+        assert_eq!(
+            state.view(&apps, Some(&id)),
+            (*apps.get(..1).ok_or("Missing fixture element")?)
+        );
         assert!(
             !state
                 .view(&apps, None)
                 .iter()
-                .any(|app| app.id == apps[0].id)
+                .any(|app| apps.first().is_some_and(|original| app.id == original.id))
         );
         state = Folders::write_change(&path, Change::Rename(id.clone(), "Utilities".into()))?;
         assert_eq!(Folders::read(&path)?, state);
