@@ -16,12 +16,16 @@ transitive versions remain required by upstream SDL2/PNG; see the
 [dependency review](dependencies.md#upstream-transitive-constraints).
 
 Full canonical validation passes on macOS and Linux, including strict Clippy,
-380/382 Rust tests, 181 Python cases with platform exclusions, renderer goldens,
+380/383 Rust tests, 181 Python cases with platform exclusions, renderer goldens,
 SDL smokes and documentation checks. The real Awesome/X11 focus regression
 passes with the refreshed dependencies. ARMv7 build and five-executable packaging
 pass. Exact tagged assets, clean public installation and final owner cold-power
 acceptance of this complete candidate remain to be recorded.
-Public 1.0.2 and earlier release bytes remain immutable.
+The process scanner also handles Linux ESRCH when a process disappears during
+inspection; permission and other I/O errors still fail closed. Its regression
+and renewed canonical validation pass. Prepared device install/reinstall retains
+all 93 saved entries and eight settings, and all 15 Tor cases pass with real
+Arti 2.7.0 bootstrap and cleanup. Public 1.0.2 and earlier release bytes remain immutable.
 
 ## 1.0.2 — certification prerelease
 

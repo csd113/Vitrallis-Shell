@@ -91,6 +91,23 @@ have complete retained notices: 426 ARMv7 and 427 x86-64 packages, zero unresolv
 selected rows. Exact tag assets, the renewed clean public installer and final
 physical acceptance remain open.
 
+The first exact-source push check failed the existing live process-identity test
+with Linux ESRCH (`No such process`) while scanning procfs. The two PR jobs pass
+on the same source; this is a process-exit race, not grounds to discard the
+failed check. The scanner now ignores only ENOENT/ESRCH for disappeared entries
+and preserves permission and other I/O errors. A targeted regression checks
+both outcomes; complete renewed Mac/Linux canonical validation passes with
+380/383 Rust tests. The Shell reuses the existing workspace libc crate for the
+errno constant; no registry crate is added.
+
+Prepared 1.0.3 installation and repeat installation pass on PocketCHIP with the
+new dependencies, retaining all 93 tracked entries and all eight settings. The
+480×272 launcher owns actual X focus, with no PocketHome or owned zombie. All 15
+Tor cases pass on the device, including real Arti 2.7.0 bootstrap and clean stop.
+An initial test packet omitted sandbox.py; that fixture error and its corrected
+complete rerun are retained. These prepared checks do not replace the exact
+tagged/public candidate checks.
+
 ## Authorized 1.0.1 recovery correction
 
 The owner approved Shell 1.0.1 after the published 1.0.0 reinstall recovery defect
