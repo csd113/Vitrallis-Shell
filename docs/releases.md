@@ -1,5 +1,28 @@
 # Release validation and assets
 
+## 1.0.3 — authorized certification prerelease
+
+The owner approved 1.0.3 and subsequent prerelease version changes until the
+actual full release. This candidate repairs actual X keyboard focus after a
+background app exits, including exits observed after foreground ownership has
+already cleared. Another focused app keeps its focus.
+
+At the owner's request, development, the declared minimum and release builds
+use Rust 1.99.0. Current dependency requirements and the workspace lockfile are
+refreshed; libc advances to 0.2.190, lazy_static to 1.5.1, and the separately
+bundled Arti advances to 2.7.0 with matching consumers and verified notices.
+Current direct crates are at their latest stable releases. Three older
+transitive versions remain required by upstream SDL2/PNG; see the
+[dependency review](dependencies.md#upstream-transitive-constraints).
+
+Full canonical validation passes on macOS and Linux, including strict Clippy,
+380/382 Rust tests, 181 Python cases with platform exclusions, renderer goldens,
+SDL smokes and documentation checks. The real Awesome/X11 focus regression
+passes with the refreshed dependencies. ARMv7 build and five-executable packaging
+pass. Exact tagged assets, clean public installation and final owner cold-power
+acceptance of this complete candidate remain to be recorded.
+Public 1.0.2 and earlier release bytes remain immutable.
+
 ## 1.0.2 — certification prerelease
 
 The owner authorized Shell 1.0.2 on 2026-10-04. The
@@ -350,10 +373,10 @@ older standalone layouts remain outside the managed updater contract. See the
 The tag workflow builds on Debian 12 with Rust 1.99.0 and runs
 `sh scripts/validate.sh`: formatting, locked workspace check, strict Clippy,
 complete Rust/Python tests, native release build, SDL smoke checks and
-repository/documentation validation. Separate host CI also validates Rust 1.91.0 and latest stable.
+repository/documentation validation. Separate host CI also validates the declared Rust 1.99.0 minimum and latest stable.
 
 Packaging checks each executable's target and version: the four Vitrallis binaries
-match the workspace version; Arti independently reports 2.6.0. ARMv7
+match the workspace version; Arti independently reports 2.7.0. ARMv7
 cross-builds are checked under QEMU with the Cortex-A8 CPU model, including
 version probes, a 480×272 shell frame and native-app smokes. Both architecture
 bundles require glibc 2.36+ and SDL2 2.26.5+.

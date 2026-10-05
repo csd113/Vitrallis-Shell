@@ -8,8 +8,8 @@ behavior or architecture change. See [SECURITY.md](SECURITY.md) for sensitive re
 ## Build and check
 
 Install Rust through rustup, SDL2 development libraries, and pkg-config on your
-**development host**. The repository pins Rust 1.91.1; all workspace packages
-support Rust 1.91. On Debian/Ubuntu the native development packages are
+**development host**. The repository pins Rust 1.99.0; all workspace packages
+require Rust 1.99. On Debian/Ubuntu the native development packages are
 `libsdl2-dev` and `pkg-config`; `python3-tk`, `python3-venv` and
 `python3-packaging` support runtime inspection and offline dependency tests.
 An available Lua interpreter (`lua5.3` on Debian/Ubuntu, `lua` in Homebrew) runs

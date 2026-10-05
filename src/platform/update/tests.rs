@@ -281,13 +281,13 @@ fn arti_version_is_independent_and_other_companions_remain_exact() -> Result<(),
     assert!(version_matches(
         "arti",
         &version,
-        "Arti 2.6.0\nRuntime: tokio\n"
+        "Arti 2.7.0\nRuntime: tokio\n"
     ));
     for wrong in [
         "arti 0.1.0-beta4",
         "Arti 2.5.0",
-        "Arti 2.6.0-extra",
-        "\nArti 2.6.0",
+        "Arti 2.7.0-extra",
+        "\nArti 2.7.0",
     ] {
         assert!(!version_matches("arti", &version, wrong));
     }

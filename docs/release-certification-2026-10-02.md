@@ -1,7 +1,8 @@
 # Public-release certification — 2026-10-02
 
-**NOT RELEASE READY. Public 1.0.2 has an app-exit keyboard-focus blocker; the
-prepared correction passes Mac/Linux and physical-device regression checks.** This record distinguishes
+**NOT RELEASE READY. Authorized 1.0.3 preparation is underway, including the
+app-exit focus correction and requested compiler/dependency refresh. Exact
+public-candidate installation and physical acceptance remain open.** This record distinguishes
 published beta testing from development testing and will be updated as the
 remaining gates are exercised. The owner authorized preparation of Shell 1.0.0,
 Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
@@ -49,6 +50,46 @@ No stable release is declared.
 and 1.0.0 is published as a certification prerelease.
 Raw logs, receipts, checksums and screenshots are retained locally under
 `target/release-certification/2026-10-02/`; they are not published release assets.
+
+## Authorized 1.0.3 and dependency refresh
+
+The owner approved Shell 1.0.3 and gave standing authorization for prerelease
+version changes until the actual full release. This supersedes the named-version
+approval constraint for the ongoing certification work. The owner also requested
+Rust 1.99 and the newest dependencies. The workspace now declares Rust 1.99 as
+its minimum; host and release pins remain exact 1.99.0, and the official Debian
+12 Rust 1.99.0 container is available. CI validates 1.99.0 and latest stable.
+
+The live crates.io review checks all ten direct dependencies and 51 locked
+registry entries. libc updates to 0.2.190 and lazy_static to 1.5.1; remaining
+direct crates are current. Three older transitive versions remain constrained
+by upstream SDL2/PNG requirements, as documented in the dependency review.
+Arti updates to latest stable 2.7.0 using its publisher's locked graph and the
+existing feature set. Every current version consumer and fixture is updated.
+The selected ARMv7 normal/build graph contains 426 packages; 106 new or updated
+license rows are reconciled against cached source texts and exact registry VCS
+revisions. Workspace RustSec audit reports no vulnerabilities or warnings.
+
+Private evidence is recorded in `v103-authorization.json`,
+`v103-registry-index-audit.json`, `v103-dependency-upgrade-final.log`,
+`v103-cargo-update.log`, `v103-cargo-audit.json`,
+`v103-dependency-license-proof.json` and
+`v103-arti-license-reconciliation.json`. Full `sh scripts/validate.sh` passes
+on macOS and Linux: formatting, locked all-target/all-feature checks, unchanged
+strict Clippy policy, 380/382 Rust tests, 181 Python cases with nine/eight platform
+exclusions, release builds, renderer goldens, SDL smokes and documentation links.
+The real Awesome/X11 suite also passes on the new build, including actual-focus
+recovery after a background exit and preservation of another app's focus. ARMv7
+build and five-executable packaging pass with Arti 2.7.0.
+
+The first Linux Python pass failed because Docker's 95 GiB filesystem was full;
+free-space preflights stopped seven tests before their intended paths. The failed
+log is retained. Clearing only Vitrallis compiler incremental caches restored
+3.9 GiB free; the complete unchanged canonical sequence and X11 suite then pass.
+No unrelated volume, image or test evidence was removed. Both Arti target graphs
+have complete retained notices: 426 ARMv7 and 427 x86-64 packages, zero unresolved
+selected rows. Exact tag assets, the renewed clean public installer and final
+physical acceptance remain open.
 
 ## Authorized 1.0.1 recovery correction
 

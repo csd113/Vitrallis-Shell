@@ -1,4 +1,4 @@
-# Dependency license inventory — 2026-10-02
+# Dependency license inventory — refreshed 2026-10-04
 
 Generated from the checked-in workspace lockfile and the pinned upstream Arti
 crate's lock, plus locally cached registry crate metadata and notice files. Includes optional, build and other-target dependencies;
@@ -6,7 +6,11 @@ it is a conservative inventory, not a claim that every crate is linked. License
 expressions are upstream declarations, not replacement project terms. Text IDs
 refer to verbatim deduplicated texts in `../THIRD_PARTY_LICENSES.txt`.
 
-Also includes the separately installed Arti 2.6.0 crate and its upstream Cargo.lock.
+Includes the separately installed Arti 2.7.0 crate's selected ARMv7 normal/build
+graph and its upstream Cargo.lock, with historical 2.6.0 rows retained. The
+1.0.3 refresh verifies 106 new or updated graph rows; exact Tor and derive-deftly
+MIT texts match their registry VCS revisions. Workspace libc 0.2.190 and
+lazy_static 1.5.1 are included with their exact upstream notice files.
 The Shell workspace lock alone does not cover Arti or its bundled native code.
 The separate [Rust binary runtime inventory](rust-runtime-licenses.md) covers
 the matching Rust 1.99.0 standard library and compiler intrinsics.
@@ -19,6 +23,7 @@ inside that graph must still be resolved before a binary release is cleared
 | --- | --- | --- | --- |
 | adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | 861399f8c21c042b, 8ada45cd9f843acf, 23f18e03dc49df91 |
 | aes | 0.9.2 | MIT OR Apache-2.0 | a9040321c3712d8f, 25f77efa393854f7 |
+| aes | 0.9.3 | MIT OR Apache-2.0 | 25f77efa393854f7, a9040321c3712d8f |
 | aho-corasick | 1.1.5 | Unlicense OR MIT | 01c266bced4a434d, 0f96a83840e146e4, 7e12e5df4bae12cb |
 | amplify | 4.9.0 | MIT | b657a3cfbfc77ab8 |
 | amplify_derive | 4.0.1 | Apache-2.0 | a7173d3ff287d45c |
@@ -34,7 +39,9 @@ inside that graph must still be resolved before a binary release is cleared
 | arbitrary | 1.4.2 | MIT OR Apache-2.0 | a60eea8175145316, 15656cc11a8331f2 |
 | arrayvec | 0.7.8 | MIT OR Apache-2.0 | a60eea8175145316, 4da95ec4ecb65b73 |
 | arti | 2.6.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| arti | 2.7.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | arti-client | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| arti-client | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | ascii | 1.1.0 | Apache-2.0 OR MIT | fabba0cb7d00a4b3, 7e4b8a17b118d3d7 |
 | asn1-rs | 0.7.2 | MIT OR Apache-2.0 | a60eea8175145316, a5c61b93b6ee1d10 |
 | asn1-rs-derive | 0.6.0 | MIT OR Apache-2.0 | a60eea8175145316, a5c61b93b6ee1d10 |
@@ -54,6 +61,7 @@ inside that graph must still be resolved before a binary release is cleared
 | async-std | 1.13.2 | Apache-2.0 OR MIT | a60eea8175145316, 23f18e03dc49df91 |
 | async-task | 4.7.1 | Apache-2.0 OR MIT | a60eea8175145316, 23f18e03dc49df91 |
 | async-trait | 0.1.91 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
+| async-trait | 0.1.92 | MIT OR Apache-2.0 | 23f18e03dc49df91, 62c7a1e35f564068 |
 | async_executors | 0.7.0 | Unlicense | 88d9b4eb60579c19 |
 | asynchronous-codec | 0.7.0 | MIT | c0d9430a95a7361e |
 | atomic | 0.5.3 | Apache-2.0/MIT | a60eea8175145316, c9a75f18b9ab2927 |
@@ -78,13 +86,16 @@ inside that graph must still be resolved before a binary release is cleared
 | blocking | 1.6.2 | Apache-2.0 OR MIT | a60eea8175145316, 23f18e03dc49df91 |
 | bs58 | 0.5.1 | MIT/Apache-2.0 | a60eea8175145316, 42d3bf7e7d4d49d7 |
 | bstr | 1.13.0 | MIT OR Apache-2.0 | 68653aaa727a2bfa, a60eea8175145316, 6b7374c39a57e57f |
+| bstr | 1.13.1 | MIT OR Apache-2.0 | 68653aaa727a2bfa, 6b7374c39a57e57f, a60eea8175145316 |
 | bumpalo | 3.20.3 | MIT OR Apache-2.0 | a60eea8175145316, 65f94e99ddaf4f5d |
 | by_address | 1.2.1 | MIT OR Apache-2.0 | a60eea8175145316, daa94322de7eab88 |
 | bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | e3ba223bb1423f0a, 9df9ba60a11af705, 84b34dd7608f7fb9 |
 | byteorder | 1.5.0 | Unlicense OR MIT | 01c266bced4a434d, 0f96a83840e146e4, 7e12e5df4bae12cb |
 | bytes | 1.12.1 | MIT | 45f522cacecb1023 |
 | caret | 0.10.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| caret | 0.11.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | cc | 1.4.0 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
+| cc | 1.4.4 | MIT OR Apache-2.0 | 378f5840b258e277, a60eea8175145316 |
 | cfg-if | 1.0.4 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | cfg_aliases | 0.2.2 | MIT | 31b94860253d8ec7, 1e2b7ade3fb22813 |
@@ -93,7 +104,9 @@ inside that graph must still be resolved before a binary release is cleared
 | cipher | 0.4.4 | MIT OR Apache-2.0 | a9040321c3712d8f, 5c7bd92d1f096f12 |
 | cipher | 0.5.2 | MIT OR Apache-2.0 | a9040321c3712d8f, 950d712c518a02fc |
 | clap | 4.6.5 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
+| clap | 4.6.6 | MIT OR Apache-2.0 | 6efb0476a1cc0850, c6596eb7be8581c1 |
 | clap_builder | 4.6.5 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
+| clap_builder | 4.6.6 | MIT OR Apache-2.0 | 6efb0476a1cc0850, c6596eb7be8581c1 |
 | clap_derive | 4.6.4 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
 | clap_lex | 1.1.0 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
 | cmake | 0.1.58 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
@@ -113,8 +126,9 @@ inside that graph must still be resolved before a binary release is cleared
 | cpubits | 0.1.1 | MIT OR Apache-2.0 | a9040321c3712d8f, 003736bc98408b53 |
 | cpufeatures | 0.2.17 | MIT OR Apache-2.0 | a9040321c3712d8f, ae9baa7beea91027 |
 | cpufeatures | 0.3.0 | MIT OR Apache-2.0 | a9040321c3712d8f, ae9baa7beea91027 |
-| cpufeatures | 0.3.1 | MIT OR Apache-2.0 | a9040321c3712d8f, 73b9dc2e79c73089 |
+| cpufeatures | 0.3.1 | MIT OR Apache-2.0 | 73b9dc2e79c73089, a9040321c3712d8f |
 | crc32fast | 1.5.0 | MIT OR Apache-2.0 | c6596eb7be8581c1, 61d383b05b87d78f |
+| crc32fast | 1.5.1 | MIT OR Apache-2.0 | 61d383b05b87d78f, c6596eb7be8581c1 |
 | crc32fast | 1.5.2 | MIT OR Apache-2.0 | c6596eb7be8581c1, 61d383b05b87d78f |
 | crossbeam-channel | 0.5.16 | MIT OR Apache-2.0 | a60eea8175145316, 5734ed989dfca1f6, b16db96b93b1d7cf |
 | crossbeam-queue | 0.3.13 | MIT OR Apache-2.0 | a60eea8175145316, 5734ed989dfca1f6 |
@@ -143,7 +157,9 @@ inside that graph must still be resolved before a binary release is cleared
 | der_derive | 0.7.3 | Apache-2.0 OR MIT | a9040321c3712d8f, bada9e7ed8dc00d6 |
 | deranged | 0.5.8 | MIT OR Apache-2.0 | edd65bdd88957a20, 231c837c45eb53f1 |
 | derive-deftly | 1.11.5 | MIT | 8ca14a71ccb997fc |
+| derive-deftly | 1.12.0 | MIT | 8ca14a71ccb997fc |
 | derive-deftly-macros | 1.11.5 | MIT | 8ca14a71ccb997fc |
+| derive-deftly-macros | 1.12.0 | MIT | 8ca14a71ccb997fc |
 | derive_arbitrary | 1.4.2 | MIT OR Apache-2.0 | a60eea8175145316, 15656cc11a8331f2 |
 | derive_builder_core_fork_arti | 0.11.2 | MIT/Apache-2.0 | c6596eb7be8581c1, 8c9612877aacfa1b |
 | derive_builder_fork_arti | 0.11.2 | MIT/Apache-2.0 | c6596eb7be8581c1, 8c9612877aacfa1b |
@@ -167,6 +183,7 @@ inside that graph must still be resolved before a binary release is cleared
 | ed25519-dalek | 2.2.0 | BSD-3-Clause | 7a313964a6e05079 |
 | educe | 0.4.23 | MIT | 6182f32e16ddbf33 |
 | either | 1.17.0 | MIT OR Apache-2.0 | a60eea8175145316, 7576269ea71f767b |
+| either | 1.18.0 | MIT OR Apache-2.0 | 7576269ea71f767b, a60eea8175145316 |
 | elliptic-curve | 0.13.8 | Apache-2.0 OR MIT | a9040321c3712d8f, d27687b51f287482 |
 | enum-ordinalize | 3.1.15 | MIT | 6182f32e16ddbf33 |
 | enum_dispatch | 0.3.13 | MIT OR Apache-2.0 | 1e5d3ddaf5cbc111 |
@@ -189,9 +206,10 @@ inside that graph must still be resolved before a binary release is cleared
 | figment | 0.10.19 | MIT OR Apache-2.0 | 62c7a1e35f564068, 361df454e66f5cd7 |
 | filetime | 0.2.29 | MIT/Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | find-msvc-tools | 0.1.9 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
+| find-msvc-tools | 0.1.11 | MIT OR Apache-2.0 | 378f5840b258e277, a60eea8175145316 |
 | fixed-capacity-vec | 1.0.1 | MIT OR Apache-2.0 | cfc7749b96f63bd3, 9d1a840ab8c72979 |
 | flagset | 0.4.7 | Apache-2.0 | cfc7749b96f63bd3 |
-| flate2 | 1.1.10 | MIT OR Apache-2.0 | a60eea8175145316, 025436edff4cfcdd |
+| flate2 | 1.1.10 | MIT OR Apache-2.0 | 025436edff4cfcdd, a60eea8175145316 |
 | flate2 | 1.1.9 | MIT OR Apache-2.0 | a60eea8175145316, 025436edff4cfcdd |
 | fluid-let | 1.0.0 | MIT | 340690752c0edc17 |
 | fnv | 1.0.7 | Apache-2.0 / MIT | a60eea8175145316, 65fdb6c76cd61612 |
@@ -200,23 +218,35 @@ inside that graph must still be resolved before a binary release is cleared
 | font8x8 | 0.3.1 | MIT | 47d9e9e9a4c54af1 |
 | form_urlencoded | 1.2.2 | MIT OR Apache-2.0 | a60eea8175145316, 20c7855c364d57ea |
 | fs-mistrust | 0.15.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| fs-mistrust | 0.16.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | fs_extra | 1.3.0 | MIT | 251ea8ccb1205ce5 |
 | fslock-guard | 0.8.2 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| fslock-guard | 0.9.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | funty | 2.0.0 | MIT | f790cc576999f599 |
 | futures | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | futures-await-test | 0.3.0 | MIT | MISSING |
 | futures-await-test-macro | 0.3.0 | MIT | MISSING |
 | futures-channel | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures-channel | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | futures-copy | 0.4.2 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| futures-copy | 0.5.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | futures-core | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures-core | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | futures-executor | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures-executor | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | futures-io | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures-io | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | futures-lite | 2.6.1 | Apache-2.0 OR MIT | a60eea8175145316, 23f18e03dc49df91, 6226d0632e2e1a80 |
 | futures-macro | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures-macro | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | futures-rustls | 0.26.0 | MIT/Apache-2.0 | 99864c445c106e20, 8ef00f37f3b49f38 |
 | futures-sink | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures-sink | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | futures-task | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures-task | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | futures-util | 0.3.33 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
+| futures-util | 0.3.34 | MIT OR Apache-2.0 | 275c491d6d116055, 6652c868f35dfe5e |
 | generic-array | 0.14.7 | MIT | ad4fcfaf8d5b12b9 |
 | getrandom | 0.2.17 | MIT OR Apache-2.0 | aaff376532ea30a0, 42fa16951ce7f24b |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 | aaff376532ea30a0, 29e9fe5074bd27e0 |
@@ -253,20 +283,29 @@ inside that graph must still be resolved before a binary release is cleared
 | iana-time-zone | 0.1.65 | MIT OR Apache-2.0 | 696759d65dfe558f, da28ccc6b158fc2d |
 | iana-time-zone-haiku | 0.1.2 | MIT OR Apache-2.0 | 696759d65dfe558f, da28ccc6b158fc2d |
 | icu_collections | 2.2.0 | Unicode-3.0 | f367c1b8e1aa2624 |
+| icu_collections | 2.3.0 | Unicode-3.0 | f367c1b8e1aa2624 |
 | icu_locale_core | 2.2.0 | Unicode-3.0 | f367c1b8e1aa2624 |
+| icu_locale_core | 2.3.0 | Unicode-3.0 | f367c1b8e1aa2624 |
 | icu_normalizer | 2.2.0 | Unicode-3.0 | f367c1b8e1aa2624 |
+| icu_normalizer | 2.3.0 | Unicode-3.0 | f367c1b8e1aa2624 |
 | icu_normalizer_data | 2.2.0 | Unicode-3.0 | f367c1b8e1aa2624 |
+| icu_normalizer_data | 2.3.0 | Unicode-3.0 | f367c1b8e1aa2624 |
 | icu_properties | 2.2.0 | Unicode-3.0 | f367c1b8e1aa2624 |
+| icu_properties | 2.3.0 | Unicode-3.0 | f367c1b8e1aa2624 |
 | icu_properties_data | 2.2.0 | Unicode-3.0 | f367c1b8e1aa2624 |
+| icu_properties_data | 2.3.0 | Unicode-3.0 | f367c1b8e1aa2624 |
 | icu_provider | 2.2.0 | Unicode-3.0 | f367c1b8e1aa2624 |
+| icu_provider | 2.3.1 | Unicode-3.0 | f367c1b8e1aa2624 |
 | ident_case | 1.0.1 | MIT/Apache-2.0 | 508a77d2e7b51d98 |
 | idna | 1.1.0 | MIT OR Apache-2.0 | a60eea8175145316, b38f11f6096706e6 |
 | idna_adapter | 1.2.2 | Apache-2.0 OR MIT | a60eea8175145316, 8b43ce8accd61e9d |
 | imara-diff | 0.2.0 | Apache-2.0 | a60eea8175145316 |
 | indexmap | 1.9.3 | Apache-2.0 OR MIT | a60eea8175145316, ecc269ef87fd38a1 |
+| indexmap | 2.14.1 | Apache-2.0 OR MIT | a60eea8175145316, ecc269ef87fd38a1 |
 | indexmap | 2.14.0 | Apache-2.0 OR MIT | a60eea8175145316, ecc269ef87fd38a1 |
 | indexmap | 2.14.2 | Apache-2.0 OR MIT | a60eea8175145316, ecc269ef87fd38a1 |
 | inotify | 0.11.4 | ISC | 7f78b31de4e7a3e2 |
+| inotify | 0.11.5 | ISC | 7f78b31de4e7a3e2 |
 | inotify-sys | 0.1.8 | ISC | f68878c9ca61b25d |
 | inout | 0.1.4 | MIT OR Apache-2.0 | a9040321c3712d8f, 304b898acad7f02e |
 | inout | 0.2.2 | MIT OR Apache-2.0 | a9040321c3712d8f, a07fcacc3c60de4d |
@@ -285,21 +324,28 @@ inside that graph must still be resolved before a binary release is cleared
 | js-sys | 0.3.103 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | k12 | 0.3.0 | Apache-2.0 OR MIT | a9040321c3712d8f, 0b287b0c9672e85c |
 | keccak | 0.1.6 | Apache-2.0 OR MIT | a9040321c3712d8f, bdebaf9156a298f8 |
+| keccak | 0.2.2 | Apache-2.0 OR MIT | 8c7516d4b27b1e49, a9040321c3712d8f |
 | keccak | 0.2.0 | Apache-2.0 OR MIT | a9040321c3712d8f, bdebaf9156a298f8 |
 | kqueue | 1.2.0 | MIT | 9dc7535841863372 |
 | kqueue-sys | 1.1.2 | MIT | 9dc7535841863372 |
 | kv-log-macro | 1.0.7 | MIT OR Apache-2.0 | b00ec75cd7ef2a62, ce688e08d0454a03 |
 | lazy_static | 1.5.0 | MIT OR Apache-2.0 | a60eea8175145316, 0621878e61f0d0fd |
+| lazy_static | 1.5.1 | MIT OR Apache-2.0 | a60eea8175145316, 23f18e03dc49df91 |
 | libc | 0.2.189 | MIT OR Apache-2.0 | 62c7a1e35f564068, 123a331b5dbf04c3 |
+| libc | 0.2.190 | MIT OR Apache-2.0 | 62c7a1e35f564068, 123a331b5dbf04c3 |
 | liblzma | 0.4.7 | MIT OR Apache-2.0 | a60eea8175145316, a90e2da47bdc152c |
+| liblzma | 0.4.8 | MIT OR Apache-2.0 | a60eea8175145316, a90e2da47bdc152c |
 | liblzma-sys | 0.4.7 | MIT OR Apache-2.0 | a60eea8175145316, a90e2da47bdc152c, 616a3ad264ce29b8, 0b01625d853911cd, edaef632cbb643e4, 3972dc9744f6499f, 20e50fe7aae3e563, 2b3fa1d23cb2ab08 |
+| liblzma-sys | 0.4.8 | MIT OR Apache-2.0 | 01e6df90d71d591f, 0b01625d853911cd, 20e50fe7aae3e563, 2b3fa1d23cb2ab08, 3972dc9744f6499f, 616a3ad264ce29b8, a60eea8175145316, a90e2da47bdc152c, edaef632cbb643e4 |
 | libm | 0.2.16 | MIT | 3823dda7cf046602 |
 | libredox | 0.1.19 | MIT | 8d073a6a80d1ef2d |
 | libsqlite3-sys | 0.37.0 | MIT | c10c1f2733754647, ea4fcb309f14a220 |
 | linux-raw-sys | 0.12.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 3290ae0fbc9ddb77, a60eea8175145316, 268872b9816f90fd, 23f18e03dc49df91 |
 | litemap | 0.8.2 | Unicode-3.0 | f367c1b8e1aa2624 |
+| litemap | 0.8.3 | Unicode-3.0 | f367c1b8e1aa2624 |
 | lock_api | 0.4.14 | MIT OR Apache-2.0 | a60eea8175145316, c9a75f18b9ab2927 |
 | log | 0.4.33 | MIT OR Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03 |
+| log | 0.4.34 | MIT OR Apache-2.0 | 6485b8ed310d3f03, a60eea8175145316 |
 | matchers | 0.2.0 | MIT | a47129d738752a6a |
 | matchit | 0.8.4 | MIT AND BSD-3-Clause | de701d0618d694fe, 162ce11ad71338d0 |
 | memchr | 2.8.3 | Unlicense OR MIT | 01c266bced4a434d, 0f96a83840e146e4, 7e12e5df4bae12cb |
@@ -309,7 +355,7 @@ inside that graph must still be resolved before a binary release is cleared
 | mime | 0.3.17 | MIT OR Apache-2.0 | a60eea8175145316, df9cfd06d8a44d9a |
 | minimal-lexical | 0.2.1 | MIT/Apache-2.0 | 8173d5c29b4f956d, 23f18e03dc49df91, dbe1fff0fb1314b6 |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 | 4108245a1f2df9d4, 0d542e0c8804e39a, 799e9ca9d179295e, 0a54e647fe541046 |
-| miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 | 4108245a1f2df9d4, 0d542e0c8804e39a, 799e9ca9d179295e, 0a54e647fe541046 |
+| miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 | 0a54e647fe541046, 0d542e0c8804e39a, 4108245a1f2df9d4, 799e9ca9d179295e |
 | mio | 1.2.2 | MIT | 07919255c7e04793 |
 | native-tls | 0.2.18 | MIT OR Apache-2.0 | c6596eb7be8581c1, f2ad7982ddbfa8c4 |
 | nix | 0.31.3 | MIT | 66e3ee1fa7f909ad |
@@ -323,6 +369,7 @@ inside that graph must still be resolved before a binary release is cleared
 | num-bigint-dig | 0.8.6 | MIT/Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03 |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 | 0d542e0c8804e39a, e2e245f2b566d0bf |
 | num-integer | 0.1.46 | MIT OR Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03 |
+| num-integer | 0.1.47 | MIT OR Apache-2.0 | 6485b8ed310d3f03, a60eea8175145316 |
 | num-iter | 0.1.46 | MIT OR Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03 |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03 |
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | 62c7a1e35f564068, 0be96d891d00e0ae, 23f18e03dc49df91 |
@@ -334,6 +381,7 @@ inside that graph must still be resolved before a binary release is cleared
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | a60eea8175145316, 23f18e03dc49df91 |
 | once_cell_polyfill | 1.70.2 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
 | oneshot-fused-workaround | 0.7.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| oneshot-fused-workaround | 0.8.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | openssl-probe | 0.2.1 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | option-ext | 0.2.0 | MPL-2.0 | 66a3107d5ad6a058 |
 | ordered-float | 2.10.1 | MIT | f7715d38a3fa1b4a |
@@ -360,12 +408,13 @@ inside that graph must still be resolved before a binary release is cleared
 | pkcs1 | 0.7.5 | Apache-2.0 OR MIT | a9040321c3712d8f, c995204cc6bad2ed |
 | pkcs8 | 0.10.2 | Apache-2.0 OR MIT | a9040321c3712d8f, ad64fcb9589f1627 |
 | pkg-config | 0.3.33 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
-| pkg-config | 0.3.34 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
+| pkg-config | 0.3.34 | MIT OR Apache-2.0 | 378f5840b258e277, a60eea8175145316 |
 | png | 0.18.1 | MIT OR Apache-2.0 | a60eea8175145316, eaf40297c75da471 |
 | polling | 3.11.0 | Apache-2.0 OR MIT | a60eea8175145316, 23f18e03dc49df91 |
 | polyval | 0.7.3 | Apache-2.0 OR MIT | a9040321c3712d8f, b8c6939380a400f5 |
 | postage | 0.5.0 | MIT | d4a0afb0c4ac483f |
 | potential_utf | 0.1.5 | Unicode-3.0 | f367c1b8e1aa2624 |
+| potential_utf | 0.1.6 | Unicode-3.0 | f367c1b8e1aa2624 |
 | powerfmt | 0.2.0 | MIT OR Apache-2.0 | 155420c6403d4e0f, 070dbc7dda03a292 |
 | ppv-lite86 | 0.2.21 | MIT OR Apache-2.0 | 0218327e7a480793, 4cada0bd02ea3692 |
 | primeorder | 0.13.6 | Apache-2.0 OR MIT | a9040321c3712d8f, 233b95ccbf90dc67 |
@@ -380,6 +429,7 @@ inside that graph must still be resolved before a binary release is cleared
 | r-efi | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | MISSING |
 | radium | 0.7.0 | MIT | 13f4cc9fbc8d4a44 |
 | rand | 0.10.2 | MIT OR Apache-2.0 | 90eb64f0279b0d94, 35242e7a83f69875, 209fbbe0ad52d923 |
+| rand | 0.8.8 | MIT OR Apache-2.0 | 209fbbe0ad52d923, 35242e7a83f69875 |
 | rand | 0.8.7 | MIT OR Apache-2.0 | 90eb64f0279b0d94, 35242e7a83f69875, 209fbbe0ad52d923 |
 | rand | 0.9.5 | MIT OR Apache-2.0 | 90eb64f0279b0d94, 35242e7a83f69875, 209fbbe0ad52d923 |
 | rand_chacha | 0.10.0 | MIT OR Apache-2.0 | 90eb64f0279b0d94, 35242e7a83f69875, 209fbbe0ad52d923 |
@@ -390,6 +440,7 @@ inside that graph must still be resolved before a binary release is cleared
 | rand_core | 0.9.5 | MIT OR Apache-2.0 | 90eb64f0279b0d94, 6df43f6f4b5d4587, 209fbbe0ad52d923 |
 | rand_jitter | 0.6.1 | MIT OR Apache-2.0 | 90eb64f0279b0d94, 35242e7a83f69875, 209fbbe0ad52d923 |
 | rangemap | 1.7.1 | MIT/Apache-2.0 | 1c7745cc26c7294b, 29a4c3823ee29ee5 |
+| rangemap | 1.8.0 | MIT/Apache-2.0 | 1c7745cc26c7294b, 29a4c3823ee29ee5 |
 | rdrand | 0.9.0 | ISC | 00d7b0c8bf95ea93 |
 | redox_syscall | 0.5.18 | MIT | efcfee7981ff7243 |
 | redox_users | 0.5.2 | MIT | e6a8ae2d79608378 |
@@ -397,10 +448,12 @@ inside that graph must still be resolved before a binary release is cleared
 | ref-cast-impl | 1.0.26 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
 | regex | 1.13.1 | MIT OR Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03 |
 | regex-automata | 0.4.16 | MIT OR Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03 |
+| regex-automata | 0.4.18 | MIT OR Apache-2.0 | 6485b8ed310d3f03, a60eea8175145316 |
 | regex-syntax | 0.8.11 | MIT OR Apache-2.0 | a60eea8175145316, 6485b8ed310d3f03, 74db5baf44a41b10 |
 | reqwest | 0.13.4 | MIT OR Apache-2.0 | 751963a8b88c0e3a, dd87e27dfbaa888c |
 | reseeding_rng | 0.10.7 | Apache-2.0 | c71d239df91726fc |
 | retry-error | 0.13.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| retry-error | 0.14.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | rfc6979 | 0.4.0 | Apache-2.0 OR MIT | 78779d420019e6b4, bdebaf9156a298f8 |
 | ring | 0.17.14 | Apache-2.0 AND ISC | b3d734001a94efff, 005fc765ddc5115d, f025ccfb7dfb6bdf, a60eea8175145316, 6ee2ed6c77710de9, 9eacbcb81be66084 |
 | rlimit | 0.11.0 | MIT | c7dc98fff98de123 |
@@ -412,13 +465,17 @@ inside that graph must still be resolved before a binary release is cleared
 | rustix | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 377c2e7c53250cc5, a60eea8175145316, 268872b9816f90fd, 23f18e03dc49df91 |
 | rustix-linux-procfs | 0.1.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 23f18e03dc49df91, d415a86ccfd79412 |
 | rustls | 0.23.43 | Apache-2.0 OR ISC OR MIT | a60eea8175145316, 7cfafc877eccc46c, 709e3175b4212f7b |
+| rustls | 0.23.45 | Apache-2.0 OR ISC OR MIT | 709e3175b4212f7b, 7cfafc877eccc46c, a60eea8175145316 |
 | rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 | 45fd05c4865e7c35, 9117d922e6671255 |
 | rustls-webpki | 0.103.13 | ISC | 5b698ca13897be3a |
+| rustls-webpki | 0.103.15 | ISC | 5b698ca13897be3a |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
 | safelog | 0.9.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| safelog | 0.10.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | same-file | 1.0.6 | Unlicense/MIT | 01c266bced4a434d, cb3c929a05e6cbc9, 7e12e5df4bae12cb |
 | sanitize-filename | 0.6.0 | MIT | a249b5a876d5dd10 |
 | saturating-time | 0.4.0 | MIT OR Apache-2.0 | c71d239df91726fc, b5a44cc0b356a4dc |
+| saturating-time | 0.5.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | schannel | 0.1.29 | MIT | aa72991ac35b4de0 |
 | schemars | 0.9.0 | MIT | 1954992a2b32e8a2 |
 | schemars | 1.2.2 | MIT | 1954992a2b32e8a2 |
@@ -441,7 +498,9 @@ inside that graph must still be resolved before a binary release is cleared
 | serde_spanned | 0.6.9 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
 | serde_spanned | 1.1.1 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
 | serde_with | 3.21.0 | MIT OR Apache-2.0 | a60eea8175145316, 7576269ea71f767b |
+| serde_with | 3.22.0 | MIT OR Apache-2.0 | 7576269ea71f767b, a60eea8175145316 |
 | serde_with_macros | 3.21.0 | MIT OR Apache-2.0 | a60eea8175145316, 7576269ea71f767b |
+| serde_with_macros | 3.22.0 | MIT OR Apache-2.0 | 7576269ea71f767b, a60eea8175145316 |
 | sha1 | 0.10.7 | MIT OR Apache-2.0 | a9040321c3712d8f, b4eb00df6e2a4d22 |
 | sha2 | 0.10.9 | MIT OR Apache-2.0 | a9040321c3712d8f, b4eb00df6e2a4d22 |
 | sha2 | 0.11.0 | MIT OR Apache-2.0 | a9040321c3712d8f, 831e0f43ad0bf014 |
@@ -459,7 +518,9 @@ inside that graph must still be resolved before a binary release is cleared
 | slab | 0.4.12 | MIT | 8ce0830173fdac60 |
 | slotmap | 1.1.1 | Zlib | 6cec81441b2ab2b5 |
 | slotmap-careful | 0.8.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| slotmap-careful | 0.9.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | smallvec | 1.15.2 | MIT OR Apache-2.0 | a60eea8175145316, 0b28172679e0009b |
+| smallvec | 1.16.0 | MIT OR Apache-2.0 | 0b28172679e0009b, a60eea8175145316 |
 | socket2 | 0.6.5 | MIT OR Apache-2.0 | a60eea8175145316, 378f5840b258e277 |
 | spin | 0.9.9 | MIT | 6ac8711fb340c62c |
 | spki | 0.7.3 | Apache-2.0 OR MIT | a9040321c3712d8f, c995204cc6bad2ed |
@@ -477,6 +538,7 @@ inside that graph must still be resolved before a binary release is cleared
 | subtle | 2.6.1 | BSD-3-Clause | d1fc1bc0d155df60 |
 | symlink | 0.1.0 | MIT/Apache-2.0 | edb9885b41e48517, a60eea8175145316, b85cb7b51c3f8d60 |
 | syn | 1.0.109 | MIT OR Apache-2.0 | a60eea8175145316, 23f18e03dc49df91 |
+| syn | 3.0.4 | MIT OR Apache-2.0 | 23f18e03dc49df91, 62c7a1e35f564068 |
 | syn | 2.0.119 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
 | syn | 3.0.3 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
 | syn | 3.0.6 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
@@ -488,14 +550,17 @@ inside that graph must still be resolved before a binary release is cleared
 | terminal_size | 0.4.4 | MIT OR Apache-2.0 | c6596eb7be8581c1, bc8dcbbd559a61b8 |
 | test-temp-dir | 0.8.1 | MIT OR Apache-2.0 | MISSING |
 | thiserror | 1.0.69 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
+| thiserror | 2.0.20 | MIT OR Apache-2.0 | 23f18e03dc49df91, 62c7a1e35f564068 |
 | thiserror | 2.0.19 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
 | thiserror-impl | 1.0.69 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
+| thiserror-impl | 2.0.20 | MIT OR Apache-2.0 | 23f18e03dc49df91, 62c7a1e35f564068 |
 | thiserror-impl | 2.0.19 | MIT OR Apache-2.0 | 62c7a1e35f564068, 23f18e03dc49df91 |
 | thread_local | 1.1.10 | MIT OR Apache-2.0 | a60eea8175145316, c9a75f18b9ab2927 |
 | time | 0.3.55 | MIT OR Apache-2.0 | 0d542e0c8804e39a, 2537228d9a1b44a5 |
 | time-core | 0.1.9 | MIT OR Apache-2.0 | 0d542e0c8804e39a, 2537228d9a1b44a5 |
 | time-macros | 0.2.32 | MIT OR Apache-2.0 | 0d542e0c8804e39a, 2537228d9a1b44a5 |
 | tinystr | 0.8.3 | Unicode-3.0 | f367c1b8e1aa2624 |
+| tinystr | 0.8.4 | Unicode-3.0 | f367c1b8e1aa2624 |
 | tinyvec | 1.12.0 | Zlib OR Apache-2.0 OR MIT | cfc7749b96f63bd3, fd80a26fbb3f644a, 84b34dd7608f7fb9 |
 | tinyvec_macros | 0.1.1 | MIT OR Apache-2.0 OR Zlib | 4f44572785f35152, 1dd8eca0f83669e7, 41ace205715d9f19 |
 | tls_codec | 0.4.2 | Apache-2.0 OR MIT | a9040321c3712d8f, 904801faf3f18503 |
@@ -514,44 +579,81 @@ inside that graph must still be resolved before a binary release is cleared
 | toml_write | 0.1.2 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
 | toml_writer | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 | c6596eb7be8581c1, 6efb0476a1cc0850 |
 | tor-async-utils | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-async-utils | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-basic-utils | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-basic-utils | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-bytes | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-bytes | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-cell | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-cell | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-cert | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-cert | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-chanmgr | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-chanmgr | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-checkable | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-checkable | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-circmgr | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-circmgr | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-config | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-config | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-config-path | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-config-path | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-config-shared | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-config-shared | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-consdiff | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-consdiff | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-dirclient | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-dirclient | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-dircommon | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-dircommon | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-dirmgr | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-dirmgr | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-error | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-error | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-general-addr | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-general-addr | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-geoip-db | 0.1.0-pre2 | MIT OR Apache-2.0 | MISSING |
 | tor-guardmgr | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-guardmgr | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-hsclient | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-hsclient | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-hscrypto | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-hscrypto | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-hsservice | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-key-forge | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-key-forge | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-keymgr | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-keymgr | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-linkspec | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-linkspec | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-llcrypto | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-llcrypto | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-log-ratelim | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-log-ratelim | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-memquota | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-memquota | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-memquota-cost | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-memquota-cost | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-netdir | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-netdir | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-netdoc | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-netdoc | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-persist | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-persist | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-proto | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-proto | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-protover | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-protover | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-relay-selection | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-relay-selection | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-rtcompat | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-rtcompat | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-rtmock | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-rtmock | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-socksproto | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-socksproto | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tor-units | 0.46.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| tor-units | 0.47.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | tower | 0.5.3 | MIT | 4249c8e6c5ebb85f |
 | tower-http | 0.6.11 | MIT | 5049cf464977eff4 |
 | tower-layer | 0.3.3 | MIT | 4249c8e6c5ebb85f |
@@ -600,6 +702,7 @@ inside that graph must still be resolved before a binary release is cleared
 | weak-table | 0.4.0 | MIT | c33c7d26bc415a90 |
 | web-time | 1.1.0 | MIT OR Apache-2.0 | 54a744942eb3fa63, f428305bbf2e70fb |
 | web-time-compat | 0.2.1 | MIT OR Apache-2.0 | e40081d18f17b678 |
+| web-time-compat | 0.3.0 | MIT OR Apache-2.0 | e40081d18f17b678 |
 | winapi | 0.3.9 | MIT/Apache-2.0 | b40930bbcf80744c, ce7bc3499fee93d5 |
 | winapi-i686-pc-windows-gnu | 0.4.0 | MIT/Apache-2.0 | MISSING |
 | winapi-util | 0.1.11 | Unlicense OR MIT | 01c266bced4a434d, cb3c929a05e6cbc9, 7e12e5df4bae12cb |
@@ -641,6 +744,7 @@ inside that graph must still be resolved before a binary release is cleared
 | winnow | 1.0.4 | MIT | cb5aedb296c5246d |
 | wit-bindgen | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | a60eea8175145316, 268872b9816f90fd, 23f18e03dc49df91 |
 | writeable | 0.6.3 | Unicode-3.0 | f367c1b8e1aa2624 |
+| writeable | 0.6.4 | Unicode-3.0 | f367c1b8e1aa2624 |
 | wyz | 0.5.1 | MIT | 411781fd38700f23 |
 | x25519-dalek | 2.0.1 | BSD-3-Clause | bebc725b8cb1ba1e |
 | x509-cert | 0.2.5 | Apache-2.0 OR MIT | a9040321c3712d8f, 90c503b61dee04e1 |
@@ -648,13 +752,17 @@ inside that graph must still be resolved before a binary release is cleared
 | yoke | 0.8.3 | Unicode-3.0 | f367c1b8e1aa2624 |
 | yoke-derive | 0.8.2 | Unicode-3.0 | f367c1b8e1aa2624 |
 | zerocopy | 0.8.55 | BSD-2-Clause OR Apache-2.0 OR MIT | 9d185ac6703c4b04, 83c1763356e822ad, 1a2f5c12ddc934d5 |
+| zerocopy | 0.8.56 | BSD-2-Clause OR Apache-2.0 OR MIT | 1a2f5c12ddc934d5, 83c1763356e822ad, 9d185ac6703c4b04 |
 | zerofrom | 0.1.8 | Unicode-3.0 | f367c1b8e1aa2624 |
 | zerofrom-derive | 0.1.7 | Unicode-3.0 | f367c1b8e1aa2624 |
 | zeroize | 1.9.0 | Apache-2.0 OR MIT | cfc7749b96f63bd3, 8c7516d4b27b1e49 |
 | zeroize_derive | 1.5.0 | Apache-2.0 OR MIT | cfc7749b96f63bd3, b8c6939380a400f5 |
 | zerotrie | 0.2.4 | Unicode-3.0 | f367c1b8e1aa2624 |
+| zerotrie | 0.2.5 | Unicode-3.0 | f367c1b8e1aa2624 |
 | zerovec | 0.11.6 | Unicode-3.0 | f367c1b8e1aa2624 |
+| zerovec | 0.11.8 | Unicode-3.0 | f367c1b8e1aa2624 |
 | zerovec-derive | 0.11.3 | Unicode-3.0 | f367c1b8e1aa2624 |
+| zerovec-derive | 0.11.6 | Unicode-3.0 | f367c1b8e1aa2624 |
 | zlib-rs | 0.6.8 | Zlib | e72111c52b7d96eb |
 | zmij | 1.0.23 | MIT | 23f18e03dc49df91 |
 | zstd | 0.13.3 | MIT | 129e8edef29e9abc |

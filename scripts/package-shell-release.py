@@ -53,7 +53,7 @@ def inventory(directory, target, version, runner):
             digest = hashlib.file_digest(stream, 'sha256').digest()
         command = ([str(runner)] if runner is not None else []) + [str(binary.resolve()), '--version']
         output = subprocess.check_output(command, timeout=5, text=True).strip()
-        valid = output.splitlines()[:1] == ['Arti 2.6.0'] if name == 'arti' else output == name + ' ' + version
+        valid = output.splitlines()[:1] == ['Arti 2.7.0'] if name == 'arti' else output == name + ' ' + version
         if not valid:
             raise ValueError('Executable version does not match Cargo metadata: ' + name)
         entries.append((binary, binary.stat().st_size, digest))

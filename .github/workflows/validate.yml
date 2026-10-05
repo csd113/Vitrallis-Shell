@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        rust: ["1.91.0", "1.99.0", "stable"]
+        rust: ["1.99.0", "stable"]
     env:
       RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
     steps:

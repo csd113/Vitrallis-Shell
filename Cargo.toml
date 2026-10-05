@@ -20,9 +20,9 @@ default-members = ["."]
 resolver = "3"
 
 [workspace.package]
-version = "1.0.2"
+version = "1.0.3"
 edition = "2024"
-rust-version = "1.91"
+rust-version = "1.99"
 
 [dependencies]
 vitrallis-native.workspace = true
@@ -36,7 +36,7 @@ toml.workspace = true
 
 [workspace.dependencies]
 vitrallis-native = { path = "crates/vitrallis-native" }
-libc = "0.2.189"
+libc = "0.2.190"
 vt100 = "0.16.2"
 sdl2 = { version = "0.38.0", features = ["use-pkgconfig"] }
 font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }

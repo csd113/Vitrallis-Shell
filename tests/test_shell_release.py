@@ -37,7 +37,7 @@ class ShellRelease(unittest.TestCase):
             (self.binaries / name).write_bytes(self.data)
 
     def version(self, version):
-        self.check.side_effect = [json.dumps({'packages': [{'name': 'vitrallis-shell', 'version': version}]}).encode()] + [('Arti 2.6.0' if name == 'arti' else name + ' ' + version) + '\n' for name in RELEASE.BINARIES]
+        self.check.side_effect = [json.dumps({'packages': [{'name': 'vitrallis-shell', 'version': version}]}).encode()] + [('Arti 2.7.0' if name == 'arti' else name + ' ' + version) + '\n' for name in RELEASE.BINARIES]
 
     def package(self, target='x86_64-unknown-linux-gnu', tag='v1.2.3', runner=None):
         RELEASE.package(self.binaries, target, self.output, tag, runner)
@@ -97,7 +97,7 @@ class ShellRelease(unittest.TestCase):
             if command[0] == 'cargo':
                 return json.dumps({'packages': [{'name': 'vitrallis-shell', 'version': '1.2.3'}]}).encode()
             binary = Path(command[-2]).name
-            return ('Arti 2.6.0' if binary == 'arti' else binary + ' 1.2.3') + '\n'
+            return ('Arti 2.7.0' if binary == 'arti' else binary + ' 1.2.3') + '\n'
 
         self.check.side_effect = check
         arm = self.root / 'arm'

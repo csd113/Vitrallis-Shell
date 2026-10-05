@@ -313,7 +313,7 @@ impl Installation {
 }
 fn version_matches(name: &str, version: &semver::Version, output: &str) -> bool {
     if name == "arti" {
-        output.lines().next() == Some("Arti 2.6.0")
+        output.lines().next() == Some("Arti 2.7.0")
     } else {
         output.trim() == format!("{name} {version}")
     }
