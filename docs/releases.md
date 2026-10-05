@@ -19,13 +19,20 @@ Full canonical validation passes on macOS and Linux, including strict Clippy,
 380/383 Rust tests, 181 Python cases with platform exclusions, renderer goldens,
 SDL smokes and documentation checks. The real Awesome/X11 focus regression
 passes with the refreshed dependencies. ARMv7 build and five-executable packaging
-pass. Exact tagged assets, clean public installation and final owner cold-power
-acceptance of this complete candidate remain to be recorded.
+pass. The exact tagged workflow and all four source review checks pass. All 19
+published assets and tagged helper/legal bytes verify. Fully clean public first
+and repeat installation, sustained-focus software reboot, hardware/native smokes,
+Calculator lifecycle and all 93 retained entries pass. All 15 Tor tests also pass
+against the exact public Arti binary. Final owner cold-power/input/display
+acceptance remains pending; see the [readiness report](release-readiness-2026-10-02.md).
 The process scanner also handles Linux ESRCH when a process disappears during
 inspection; permission and other I/O errors still fail closed. Its regression
 and renewed canonical validation pass. Prepared device install/reinstall retains
 all 93 saved entries and eight settings, and all 15 Tor cases pass with real
-Arti 2.7.0 bootstrap and cleanup. Public 1.0.2 and earlier release bytes remain immutable.
+Arti 2.7.0 bootstrap and cleanup. Public 1.0.2 and earlier release bytes remain immutable. Older prereleases
+expecting Arti 2.6.0 need the README setup route to replace them with the current bundle.
+The stable update endpoint has no stable release until the first full release is
+published; 1.0.3 remains a certification prerelease.
 
 ## 1.0.2 — certification prerelease
 

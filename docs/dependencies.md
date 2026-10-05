@@ -22,7 +22,7 @@ lockfile fixes the exact resolved graph for release and CI builds.
 | --- | --- | --- |
 | sdl2 | 0.38.0 | `use-pkgconfig`; no bundled SDL build |
 | font8x8 | 0.3.1 | Unicode tables only; defaults disabled |
-| libc | 0.2.190 | POSIX boundary in the shared native crate and Terminal |
+| libc | 0.2.190 | POSIX boundary in the shared native crate, Terminal and Shell |
 | vt100 | 0.16.2 | ANSI/VT terminal state |
 | serde_json | 1.0.151 | Bounded JSON input |
 | serde | 1.0.229 | Recursive duplicate-key-rejecting JSON visitor |

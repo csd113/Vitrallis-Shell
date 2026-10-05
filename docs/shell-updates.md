@@ -200,3 +200,13 @@ PocketCHIP GPU provisioning is performed by the full session installer. Binary-o
 self-update does not execute privileged platform changes. On a device not yet
 provisioned, Settings → Software Updates directs the owner to rerun the matching installer;
 a pending device-tree reboot remains visible even after a shell relaunch.
+
+## Replacing obsolete prereleases
+
+Shell 1.0.3 uses the independently pinned Arti 2.7.0 companion. Older prereleases
+that require Arti 2.6.0 cannot validate it. Save and close apps, exit Vitrallis,
+and run the current [README setup command](../README.md#installation) as the
+desktop user to replace that obsolete bundle. Saved AppData remains separate.
+Obsolete generations are not supported rollback targets. The stable update
+endpoint reports no stable release while all published builds are certification
+prereleases; the first full release makes that stable endpoint available.

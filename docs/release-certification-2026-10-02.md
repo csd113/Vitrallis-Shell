@@ -1,55 +1,90 @@
 # Public-release certification — 2026-10-02
 
-**NOT RELEASE READY. Authorized 1.0.3 preparation is underway, including the
-app-exit focus correction and requested compiler/dependency refresh. Exact
-public-candidate installation and physical acceptance remain open.** This record distinguishes
-published beta testing from development testing and will be updated as the
-remaining gates are exercised. The owner authorized preparation of Shell 1.0.0,
-Bitcoin Dashboard 1.3.1, Media Carousel 0.4.3 and PocketCHIP Places 0.11.2.
+**NOT RELEASE READY. All exact-public 1.0.3 automated/device checks pass;
+final owner physical cold-power/input/display acceptance is pending.**
+The [14-item readiness report](release-readiness-2026-10-02.md) is the current
+handoff. Earlier records below retain their original revision-qualified failures,
+repairs and qualifications; their pending/unauthorized statements are historical.
 
-The Shell baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
-`upgrade/rust-1.99.0`, initially clean. Storage, timeout, native UI,
-release-preparation, fresh root provisioning and startup focus corrections are
-reviewed in separate commits. The previous public candidate is 1.0.1 from
-`b2ff6d48be33b0a70c373d56d1a8c2f354501db2`, ARMv7 bundle
-`1ee6c8e5e4cd7184a27ce8668f252ab40ac8a339f30ba9e96e55f746910dc0e6`.
-The earlier published 1.0.0 candidate is built from
-`a57b107830b802372afe72fcb584386f1c3f6abd`, ARMv7 bundle
-`5ad2944b47f3152032c87ab87e2f4bb3466bc2bd841815a4176fdecd6938b615`.
-The earlier prepared build from that source was
-`07f299b4f3f35198f1ac556aedb476a6c5801983b4eff8253a944ef7d0f843ea`.
-The earlier native production code was `dba70dab7b4df480e398e178ab0636892cd5b306`,
-bundle `ea6fc653952fc591ff9602ee2b740a873e1c8e6d6aec94a799b862a2081013bd`.
-The test-repair commit `4878c9ec6cbf2bbeef41503808dd6225654c2039` changes only
-one isolated test and this ledger; its production code/helpers are unchanged,
-and all six remote Rust 1.91.0/1.99.0/stable jobs pass. The 380 default workspace
-tests and four explicit graphics opt-ins pass on native PocketCHIP. Candidate
-installation and actual Settings Restore/relaunch in both directions preserve
-all saved data. Earlier physical storage, utility, offline and startup evidence
-is recorded below with its corresponding revisions. The reviewed prepared
-candidate was `ed62b2cb7af23e1804abb85a65b69b1167af507a`; the owner's subsequent
-physical cold boot exposed a keyboard startup failure and supersedes that
-candidate. Three software reboot observations and the 30-minute activity soak
-completed, but those reboot checks did not inspect actual X11 keyboard focus.
-Replacement startup and renewed owner physical cold-power/input/display
-acceptance pass. Corrected public installation, repeat execution, reboot and
-native utility smoke now pass. Reinstall rollback-pointer preservation fails
-in published 1.0.0 and passes in published 1.0.1; renewed clean public
-installation and repeat execution now pass for 1.0.1. A later relaunch stress
-cycle leaves a persistent owned zombie. The prepared correction passes a real
-held-query relaunch from normal production source, but remains unpublished.
-Activation interruption and recovery pass with the source qualifications below.
-Actual low-NAND public Shell update and fixture cleanup pass with the stated
-existing-generation qualification. The authorized exact public 1.0.2 candidate
-and final physical smoke remain open. Controlled brightness persistence passes
-with the qualification below.
-The owner explicitly authorized Shell 1.0.2 on 2026-10-04. Its exact build,
-public installation and final physical acceptance remain required.
-No stable release is declared.
-[Shell review PR #5](https://github.com/csd113/Vitrallis-Shell/pull/5) is merged,
-and 1.0.0 is published as a certification prerelease.
-Raw logs, receipts, checksums and screenshots are retained locally under
-`target/release-certification/2026-10-02/`; they are not published release assets.
+The goal baseline is `08a204be025d4be7cad07f6fed443a8603441ac3` on
+`upgrade/rust-1.99.0`. The final reviewed/tagged source is
+`ed10bf0d827da1b200528fab8e07905979eb7de6` (Shell 1.0.3), merged through
+[PR #9](https://github.com/csd113/Vitrallis-Shell/pull/9) with an identical tree.
+The owner authorized this release and subsequent prerelease version changes until
+the actual full release. No additional version authorization is outstanding.
+Raw logs, receipts, checksums and screenshots remain under
+`target/release-certification/2026-10-02/`; private raw evidence is not a public
+release asset. Earlier published release binaries remain unchanged.
+
+## Final public candidate
+
+[The exact tagged workflow](https://github.com/csd113/Vitrallis-Shell/actions/runs/37250311088)
+and all four exact-source Rust 1.99.0/stable review checks pass. All 19 assets,
+eight sidecars, six tagged helpers and three legal files verify. Both targets
+contain five hash-verified ELF members; publication leaves all asset IDs, sizes
+and digests unchanged. The certification prerelease is published at
+2026-10-05T01:24:30Z. ARMv7 bundle SHA-256:
+`41daa4cdc9aafe0e7ffebafd58c79ebd08970fd347604ded28358329a000cc2f`.
+
+Normal uninstall and exact owned root-integration cleanup restore both original
+board trees and Awesome configuration. Stock boot
+`c101061b-01ad-45f7-b855-ec0c161dc4ea` reaches PocketHome in 177.709 seconds with
+no Vitrallis core, process or live GPU OPP. The anonymously fetched public README
+command is unchanged (SHA-256 `cd8e4d9be5f8ad70c7aee90ac056cc76d1569f379e957f01d4a78659f11e48ee`).
+Its completed first and repeat runs select public 1.0.3 and pass all five native
+versions/hashes/modes, five installed helpers, private runtime/receipt/lock modes,
+exact startup replacement and saved configuration. No previous pointer is
+invented by repetition. Retained App Center/Tor state is restored without
+replacing any public artifact; all 93 saved entries retain exact bytes/owners/modes.
+
+Public installed boot `227f90e4-23b1-4a22-ac93-f5b506ec8653` reaches Ready in
+186.194 seconds including OS/USB/SSH startup. The same fullscreen 480×272 Shell
+owns actual X focus at 0, 15 and 30 seconds, with no PocketHome or owned zombie.
+Mali400 graphics self-test and three utility hardware smokes pass with VSync and
+no fallback. Terminal PWD/normal keyboard exit, a private 26-byte Notepad save,
+Files folder/parent/keyboard Close, and Settings/Wi-Fi/storage/time/About pass.
+Calculator's Cancel-default uninstall declines safely; confirmed removal,
+public 0.1.1 reinstall, focused 480×272 launch, Home and normal WM exit pass.
+The normal background exit restores deliberately cleared actual X focus while
+Settings remains selected; keyboard Enter opens Display & Sound afterward.
+The PID-specific child-reaped event records normal status zero. All 93 baseline
+entries and three private test notes remain unchanged. All 15 Tor cases pass
+against the exact public Arti 2.7.0 SHA `a8553d5afa3387a729def3c46773e25e79a8621d48f01936f30fa87712c43dc6`,
+including real bootstrap and clean stop (77.960 seconds, no exclusions).
+
+The intervening stock session resets brightness again. Restoring 100% through
+actual Settings returns all eight original settings to baseline; final
+Vitrallis-only cold-power persistence remains pending. The stable release endpoint
+reports no stable release while all releases are certification prereleases; this
+clear response is expected until the first full release is published. Older
+prereleases expecting Arti 2.6.0 require the README setup route for the current
+2.7.0 bundle, and obsolete generations are not supported rollback targets.
+
+Final pre-owner log review has no unexpected panic/error/warning, fallback or
+owned zombie. The missing optional surf warning and the deliberately requested
+no-stable-release check are recorded separately. Before owner acceptance, battery
+readback is Good/Charging, 98%, 4.196 V; USB is online at 4.812 V, Wi-Fi connected,
+and free space is 1,161,629,696 bytes. UI automation is paused for the final owner
+physical test. Audible hardware availability has been requested.
+
+The first private draft-asset observer uses the public tag endpoint and receives
+404; authenticated draft-ID lookup resolves it without changing artifacts. Old
+launcher/modal header guards stop on current selection/context, and corrected
+current screenshots are inspected. Native utilities share renderer log events;
+anchoring to the current supervised-session marker retains the complete session
+and Ready checks. The first app-exit observer assumes PID/plain-status fields
+on app_exited; actual PID-specific child_reaped and the source logger's debug
+status establish normal exit. Original failed observers are retained. Repository
+assertions and visual goldens remain unchanged; no public recovery latency is
+claimed from the failed timing observer.
+
+Evidence: `v103-candidate-identity.json`, `v103-artifacts-manifest.json`,
+`v103-publication-proof.json`, `v103-stock-reboot.json`,
+`v103-public-readme-proof.json`, `v103-public-first-verification.json`,
+`v103-public-repeat-verification.json`, `v103-public-installed-reboot.json`,
+`v103-public-real-arti-device-proof.json`, `v103-calculator-exit-focus-proof.json`,
+`v103-final-health-before-owner.json`, `settings-persistence-v103-before-owner.json`
+and `retained-state-v103-before-owner.json`.
 
 ## Authorized 1.0.3 and dependency refresh
 
@@ -2091,7 +2126,10 @@ normal session processes. All 93 tracked retained entries still match.
 `reinstall-previous-device-relaunched-state.json` and
 `retained-state-after-reinstall-previous-device.json` retain the proof.
 
-## Gate ledger
+## Historical gate ledger before final 1.0.3
+
+This snapshot is superseded by the final-public-candidate section and current
+[readiness report](release-readiness-2026-10-02.md).
 
 | Gate | Current result and remaining work |
 | --- | --- |

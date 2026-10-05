@@ -19,12 +19,14 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 
 ## Installation
 
-**Vitrallis Shell 1.0.3 certification prerelease is being prepared.** Release
-certification is in progress; stable release readiness has not been declared.
-This candidate restores keyboard focus after background apps exit and updates
-the Rust requirement and dependencies. Public 1.0.2 retains the input defect.
-See the
-[certification record](docs/release-certification-2026-10-02.md#app-exit-keyboard-focus-correction).
+**[Vitrallis Shell 1.0.3 certification prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.3)
+is published and verified on PocketCHIP.** Clean public installation, repeat
+installation, software reboot, native utilities and App Center lifecycle checks
+pass. Final owner cold-power/input/display acceptance is pending; stable readiness
+is not yet declared. The release restores background-app-exit keyboard focus and
+uses Rust 1.99 with refreshed dependencies and Arti 2.7.0. See the
+[readiness report](docs/release-readiness-2026-10-02.md) and
+[certification record](docs/release-certification-2026-10-02.md#final-public-candidate).
 Install the complete bundle containing the shell, Terminal, Notepad,
 Files and the shared Arti executable.
 See [device installation and recovery](docs/devices/pocketchip.md) for supported
