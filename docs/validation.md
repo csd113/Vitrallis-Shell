@@ -119,9 +119,12 @@ is recorded.
 
 ## Visual and device scope
 
-The README image is a genuine current desktop-build SDL render at 480×272,
-exported through `--screenshot`. Preview its Markdown at desktop and narrow/mobile
-widths; the image must scale and command blocks must remain copyable.
+The README screenshot tour contains genuine 480×272 display captures from a
+physical PocketCHIP running 1.0.4. [Capture provenance](images/README.md) records
+the environment and method for each image. The bounded screenshot session does
+not extend earlier release certifications to 1.0.4. Preview the Markdown at
+desktop and narrow/mobile widths; images must scale and command blocks must
+remain copyable.
 
 The [USB hardware follow-up](devices/pocketchip/validation-usb-session.md) records
 fresh ARM installation, native app, session, control and removal tests on the device.
