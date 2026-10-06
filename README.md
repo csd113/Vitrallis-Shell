@@ -1,43 +1,85 @@
 # Vitrallis Shell
 
-**Small screens. Big possibilities.**
-
-A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot down a note, browse your files, and make a small screen feel useful again. Vitrallis runs inside your existing desktop session.
+A compact Rust + SDL2 launcher for small Linux screens, built around PocketCHIP
+and its 480×272 display. Open a terminal, take notes, browse files, and return to
+your running apps with the Home key. Vitrallis runs inside the existing desktop
+session, with controls for both keyboard and touch.
 
 [![Validate](https://github.com/csd113/Vitrallis-Shell/actions/workflows/validate.yml/badge.svg)](https://github.com/csd113/Vitrallis-Shell/actions/workflows/validate.yml) [![Releases](https://img.shields.io/github/v/release/csd113/Vitrallis-Shell?include_prereleases&label=release)](https://github.com/csd113/Vitrallis-Shell/releases)
 
-![Vitrallis at 480×272: Terminal, Notepad, Files and App Center, with Terminal selected](docs/images/shell-480x272.png)
+![Vitrallis launcher with Terminal selected, alongside Notepad, Files, System Settings and App Center](docs/images/launcher-480x272.png)
 
-*Current desktop build rendered at 480×272; hardware status is unavailable.*
+*Launcher · Vitrallis 1.0.4 on a physical PocketCHIP, 480×272; live battery and Wi-Fi status.*
 
-- **Three native essentials:** Terminal with a real PTY, a text-editing Notepad, and Files for browsing and everyday file operations. All ship with the shell and work offline.
-- **Room to explore:** App Center checks GitHub catalogs and installs selected manifest packages, with source trust, checksums, and local-edit protection.
-- **Keys or touch:** visible selection and shared activation across native controls, with confirmations for destructive actions.
-- **Optional system integration:** brightness, volume, status, Wi-Fi utility access, and a supervised session that restores the original Home binding on exit.
-- **Whole-build updates:** System Settings updates the shell and all three native utilities together when a compatible newer release is available.
-- **Compact Settings:** display and sound, clock format and time zone, wireless and Tor, background-app policy, storage, device controls, software updates and About. A verified retained build can be restored from Software Updates.
+For PocketCHIP owners and small-screen Linux tinkerers who want a readable,
+keyboard-friendly starting point for everyday tools. **The project is still
+pre-release:** check the platform and hardware-validation limits below before
+installing.
+
+## What you can do
+
+- **Use three offline native apps:** Terminal runs a real PTY with ANSI colors and scrollback; Notepad opens, edits, finds and saves plain text; Files browses, copies, moves, renames and deletes with confirmations.
+- **Keep your tools close:** return Home to background an app, then select its tile to resume it. Organize tiles in folders or add shortcuts for ordinary Linux programs and scripts.
+- **Browse App Center:** search and filter GitHub catalogs, read package details and release notes, then install, update or remove apps. Source trust checks, checksums and transaction recovery protect managed installs and local edits.
+- **Tune the session:** Settings includes display and sound, date and time, wireless and Tor, background-app policy, storage, device controls, software updates and About. Device controls depend on the supported platform and available utilities.
+- **Update the complete build:** Software Updates checks for compatible releases and updates the shell and three native apps together with the shared Arti executable. A verified retained build can be restored from the same screen.
+
+## A look inside
+
+Each image is an unaltered **480×272** display capture from a physical PocketCHIP
+running the current 1.0.4 build, with isolated sample files. This short screenshot
+session is not a full release certification. [Capture details](docs/images/README.md)
+record the build, method and limits.
+
+**Terminal** — run shell commands, with ANSI colors and bounded scrollback.
+
+![Terminal running a Bash PTY, listing sample folders and reading a to-do text file](docs/images/terminal-480x272.png)
+
+*Terminal · live Bash session, physical PocketCHIP.*
+
+**Notepad** — a small plain-text editor with save, find and unsaved-change protection.
+
+![Notepad editing a sample weekend checklist, with New, Open, Save, Save as, Find and Close controls](docs/images/notepad-480x272.png)
+
+*Notepad · sample notes, physical PocketCHIP.*
+
+**Files** — browse folders and open text in Notepad; file actions live in the menu.
+
+![Files showing sample Notes and Projects folders plus notes.txt and todo.txt](docs/images/files-480x272.png)
+
+*Files · isolated sample Documents folder, physical PocketCHIP.*
+
+**Settings** — large category buttons with visible keyboard selection.
+
+![System Settings overview with Display and Sound, Date and Time, Wireless Network, Applications, Storage, Device, Software Updates and About](docs/images/settings-480x272.png)
+
+*Settings · physical PocketCHIP; category overview.*
+
+**App Center** — search, filter and manage packages from configured sources.
+
+![App Center before its first refresh, with search, filter, sources and package controls](docs/images/app-center-480x272.png)
+
+*App Center · before first refresh in an isolated profile, physical PocketCHIP; no third-party apps shown.*
 
 ## Installation
 
-**[Vitrallis Shell 1.0.4 reliability hardening release](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.4)**
-hardens App Center updates, process cleanup, file operations and input boundaries,
-with permanent strict Rust 1.99 lint enforcement. Host and Linux simulator checks
-pass; see the [changelog](docs/releases.md#104--reliability-hardening-release)
-and [hardening report](docs/rust-lint-hardening.md). This release has no new physical
-PocketCHIP certification. The earlier 1.0.3 installation, cold-start, keyboard,
-touch and audible-audio results remain qualified to that candidate in the
-[readiness report](docs/release-readiness-2026-10-02.md) and
-[certification record](docs/release-certification-2026-10-02.md#final-public-candidate).
-Install the complete bundle containing the shell, Terminal, Notepad,
-Files and the shared Arti executable.
-See [device installation and recovery](docs/devices/pocketchip.md) for supported
-OS/runtime requirements, the single copy-and-paste setup command and hardware
-validation limits. Setup prepares missing Debian packages and installs a verified
-complete bundle with all five executables. Run it as your normal desktop user;
-sudo is used for package and platform preparation.
+The current published bundle is [Vitrallis Shell 1.0.4](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.4).
+It contains the shell, Terminal, Notepad, Files and the shared Arti executable.
+See the [changelog](docs/releases.md#104--reliability-hardening-release) for the
+reliability hardening in this release.
 
-Run this as your normal user on a supported PocketCHIP (requires `curl` and
-working HTTPS certificates):
+**PocketCHIP setup requires Debian 12 or 13 ARMv7 hard-float (`armhf`), the existing
+Awesome 4/PocketHome desktop, a systemd user session and sudo access. Original
+Jessie is unsupported.** Keep at least 128 MiB free on the system, home and
+temporary filesystems; missing packages may need more. Save your work and exit
+any running Vitrallis session before setup.
+
+Run the command below as your **normal desktop user**, in Terminal or SSH,
+with `curl`, working HTTPS certificates and access to GitHub and Debian repositories.
+It prepares missing Debian packages and platform integration with sudo, then
+verifies and installs the complete bundle as your user. Read the
+[device installation and recovery guide](docs/devices/pocketchip.md) for the
+prerequisites, system changes and recovery procedure.
 
 <!-- pocketchip-install-command -->
 ```sh
@@ -45,12 +87,12 @@ working HTTPS certificates):
 ```
 
 Setup replaces PocketHome's launch command with Vitrallis at login. PocketHome
-does not run behind the Shell. Uninstall restores its original launch command;
+does not run behind the shell. Uninstall restores its original launch command;
 SSH and serial login remain available for recovery.
 
 ## First launch and controls
 
-Reboot after setup to start Vitrallis in place of PocketHome. Vitrallis starts
+Reboot after setup to start Vitrallis in place of PocketHome. It starts
 automatically at subsequent desktop logins. For later launches within that
 session, use `~/.local/share/vitrallis/launch` or the Home key.
 
@@ -60,43 +102,63 @@ session, use `~/.local/share/vitrallis/launch` or the Home key.
 | Open or resume it | Enter, click, or tap |
 | Change page | Page Up / Page Down or header arrows |
 | Return from an app | Home in a supervised session |
-| Leave Vitrallis for Awesome | Select **Exit Vitrallis** in a supervised session |
-| Update the native build | System Settings → Software Updates → Check for Updates |
+| Manage shortcuts and folders | **Manage [F10]**; F2 adds a shortcut |
+| Navigate native dialogs | Tab or Left/Right, then Enter; Escape cancels |
+| Leave Vitrallis for Awesome | **Exit Vitrallis** in a supervised session |
+| Update or restore the native build | System Settings → Software Updates |
 
-Returning Home backgrounds an app. Apps stay open by default; Settings → Applications can set an automatic background timeout or exempt individual apps. Save and close them before stopping or removing the session. Native utility menus and dialogs have visible keyboard focus; see [Terminal, Notepad and Files controls](docs/native-apps.md). App Center has [its own navigation and package guide](docs/app-center.md).
+Returning Home backgrounds an app. Apps stay open by default; **Settings →
+Applications** can set an automatic background timeout or exempt individual apps.
+Save and close them before stopping or removing the session. Destructive dialogs
+start on Cancel. Native text entry uses a physical keyboard; these apps do not
+supply an on-screen typing keyboard.
 
-Use **Manage [F10] → Add shortcut** (F2) to launch ordinary Linux programs or scripts without an
-App Center package. See [desktop shortcuts](docs/desktop-shortcuts.md) for command
-quoting, terminal mode, icons, editing, and removal rules.
+See [Terminal, Notepad and Files controls](docs/native-apps.md),
+[App Center navigation](docs/app-center.md), and
+[desktop shortcuts](docs/desktop-shortcuts.md) for app-specific keys, command
+quoting, terminal mode, icons and editing rules.
 
-## Compatibility and beta limits
+## Platforms and current limits
 
-Linux release packaging targets x86-64 and ARMv7, with glibc 2.36+ and SDL2
-2.26.5+. macOS is a development host; Linux artifacts cannot install there.
-The shell uses SDL hardware acceleration when available, with automatic software
-fallback and a GLES2 compatibility floor. See [renderer selection and diagnostics](docs/shell.md#sdl-renderer-selection)
-for overrides and GPU validation limits. Hardware support requires a matching adapter and validation. A matching screen
-size alone is not support. See the [device guide](docs/devices/pocketchip.md) for
-recorded evidence and checks still requiring hardware.
+- **Linux builds:** release bundles target x86-64 and ARMv7, with glibc 2.36+ and SDL2 2.26.5+. The one-line installer above is specifically for the supported PocketCHIP desktop, not arbitrary Linux machines.
+- **Development hosts:** macOS can build and preview the shell and native apps; Linux artifacts cannot install there. Desktop/simulator captures establish software behavior, not device support.
+- **Rendering:** SDL hardware acceleration is used when available, with automatic software fallback and a GLES2 compatibility floor. A matching screen size or GPU API alone does not establish hardware support. See [renderer selection](docs/shell.md#sdl-renderer-selection) and [hardware acceleration evidence](docs/hardware-acceleration.md).
+- **Physical validation:** 1.0.4 has host and Linux simulator checks plus the limited physical screenshot session above, but no new full PocketCHIP certification. Earlier 1.0.3 installation, cold-start, keyboard, touch and audible-audio results apply to that candidate; see the [readiness report](docs/release-readiness-2026-10-02.md) and [certification record](docs/release-certification-2026-10-02.md#final-public-candidate). The [device guide](docs/devices/pocketchip.md) records OS/runtime boundaries and outstanding hardware checks.
+- **App and editor limits:** catalog availability and runtime dependencies belong to each publisher; disabled packages show **Unavailable** with a compatibility note. Notepad handles UTF-8 text up to 1 MiB and has no undo/redo or syntax highlighting. Bitmap fonts do not provide full Unicode shaping. Bluetooth hardware qualification, a public Python SDK and signed publisher packages remain future work.
 
-Apps run with your user's permissions: **Vitrallis is not an app sandbox**. Catalog availability and runtime dependencies belong to each publisher. Publisher-disabled packages appear as **Unavailable** with their compatibility note. Fonts do not provide full Unicode shaping; Bluetooth hardware qualification, a public Python SDK, and signed publisher packages are future work. See the [trust model](docs/security.md) and [design roadmap](docs/design.md).
+**Vitrallis is not an app sandbox.** Apps run with your user's permissions;
+checksums verify catalog content, not an independent publisher signature. Review
+sources before installing. See the [trust model](docs/security.md),
+[security reporting policy](SECURITY.md) and [design roadmap](docs/design.md).
 
 ## Documentation and development
 
-Start with the [documentation index](docs/README.md), [device guide](docs/devices/pocketchip.md), or [app developer guide](docs/app-development.md).
+Start with the [documentation index](docs/README.md),
+[device guide](docs/devices/pocketchip.md), or
+[app developer guide](docs/app-development.md).
+Report bugs and suggestions through the [issue forms](https://github.com/csd113/Vitrallis-Shell/issues/new/choose);
+use [SECURITY.md](SECURITY.md) for security concerns.
 
-Host development requires the pinned Rust 1.99.0 toolchain, SDL2 development libraries, and pkg-config. CI also validates latest stable; release pins advance after the complete validation gates pass, including ARMv7 cross-builds. See [compiler policy](docs/dependencies.md).
+Host development requires the pinned Rust 1.99.0 toolchain, SDL2 development
+libraries and pkg-config. CI also validates latest stable. See
+[contributor setup](CONTRIBUTING.md) and [compiler policy](docs/dependencies.md).
+Build the workspace so the three native apps are available beside the shell:
 
 ```sh
 cargo build --workspace --locked
-cargo run --locked
+cargo run --locked -- --size 480x272
 sh scripts/validate.sh
 cargo build --workspace --release --locked
 ```
 
-The workspace build includes all native utilities. The validation script runs formatting, strict Clippy, Rust/Python tests, release builds and SDL smoke checks; [validation guidance](docs/validation.md) covers visual checks and Linux simulators. [Contributor guidance](CONTRIBUTING.md) covers setup, focused changes, validation, and pull requests. Please use the [bug and feature forms](https://github.com/csd113/Vitrallis-Shell/issues/new/choose) for feedback and the [security reporting policy](SECURITY.md) for security concerns.
+The validation script runs formatting, strict Clippy, Rust/Python tests, release
+builds and SDL smoke checks. [Validation guidance](docs/validation.md) covers
+visual checks and Linux simulators; system controls in a desktop preview may be
+unavailable.
 
-**License:** project-owned code and documentation use [MIT](LICENSE). Third-party terms and artwork provenance are listed in [third-party notices](THIRD_PARTY_NOTICES.md); MIT does not relicense those items.
+**License:** project-owned code and documentation use [MIT](LICENSE).
+[Third-party notices](THIRD_PARTY_NOTICES.md) record dependency terms and artwork
+provenance; MIT does not relicense those items.
 
 ## Uninstall
 

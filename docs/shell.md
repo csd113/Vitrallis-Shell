@@ -22,8 +22,9 @@ SDL_VIDEODRIVER=dummy cargo run --locked -- --smoke-test
 `--app-config` accepts an explicit PocketHome JSON path, and `--assets` an explicit
 asset root. `--list-apps` prints normalized discovery diagnostics without a window.
 `--screenshot NEW.bmp` captures the initial frame and exits, refusing to overwrite
-an existing file. The README screenshot was captured from the current desktop
-release build at 480×272 through this real renderer, with no device connection.
+an existing file. The README screenshot tour instead uses live 480×272 display
+captures on a physical PocketCHIP running 1.0.4.
+[Capture provenance](images/README.md) describes the build, method and limits.
 
 The handheld backend reads stock PocketHome's `/usr/share/pocket-home/config.json`.
 `--app-config` overrides that path explicitly; no per-user launcher config is
