@@ -2074,7 +2074,9 @@ impl GateFetch {
         };
         drop(first_request);
         self.entered.send(()).map_err(|error| error.to_string())?;
-        receiver.recv().map_err(|error| error.to_string())
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .map_err(|error| format!("download gate was not released: {error}"))
     }
 }
 impl network::Fetch for GateFetch {
@@ -2221,7 +2223,9 @@ fn check_commit_fails_cleanly_if_lock_taken_mid_fetch() -> Result<(), String> {
     let (release, locked) = mpsc::channel();
     let state = loc.state.clone();
     let holder = std::thread::spawn(move || -> Result<storage::Lock, String> {
-        started.recv().map_err(|e| e.to_string())?;
+        started
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .map_err(|error| format!("catalog fetch did not start: {error}"))?;
         let lock = storage::Lock::take(&state)?;
         release.send(()).map_err(|e| e.to_string())?;
         Ok(lock)
@@ -2232,6 +2236,7 @@ fn check_commit_fails_cleanly_if_lock_taken_mid_fetch() -> Result<(), String> {
         release: std::sync::Mutex::new(Some(locked)),
     };
     let commit_messages = run_service(&loc, &next_fetch, vec![Command::Check]);
+    drop(next_fetch);
     match commit_messages.as_slice() {
         [Ok(_), Err(error)] => assert!(
             error.starts_with("Another Vitrallis storage operation is active"),
@@ -2292,7 +2297,9 @@ fn concurrent_install_between_download_and_commit_is_detected() -> Result<(), St
         let install_package = p.clone();
         let install_files = files.clone();
         std::thread::spawn(move || -> Result<(), String> {
-            started.recv().map_err(|e| e.to_string())?;
+            started
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .map_err(|error| format!("download did not start: {error}"))?;
             let prepared =
                 install::prepare(&install_locations, install_package.clone(), install_files)?;
             install::install(&install_locations, &prepared)?;
@@ -2305,9 +2312,15 @@ fn concurrent_install_between_download_and_commit_is_detected() -> Result<(), St
         release: std::sync::Mutex::new(Some(unblock)),
     };
     let next_messages = run_service(&loc, &fetch, vec![Command::Install(vec![p.key()])]);
+    // An early service error can skip fetching. Disconnect the start signal
+    // before joining so that error cannot leave the installer waiting forever.
+    drop(fetch);
     installer
         .join()
-        .map_err(|payload| format!("installer panicked: {payload:?}"))??;
+        .map_err(|payload| format!("installer panicked: {payload:?}"))?
+        .map_err(|error| {
+            format!("concurrent installer: {error}; service updates: {next_messages:?}")
+        })?;
     match next_messages.as_slice() {
         [Ok(_), Err(error)] => assert!(error.contains("No available update"), "{error}"),
         other => return Err(format!("unexpected updates: {other:?}")),
