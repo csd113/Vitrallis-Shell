@@ -1,8 +1,8 @@
 # Release validation and assets
 
-## 1.0.4 — reliability hardening prerelease
+## 1.0.4 — reliability hardening release
 
-Authorized on 2026-10-05. This release hardens the existing shell and native
+Authorized as a full release on 2026-10-05. This release hardens the existing shell and native
 utilities for continuous use on small Linux systems, preserving screen layouts,
 keyboard/touch controls and Documents-based application storage.
 

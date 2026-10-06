@@ -19,10 +19,10 @@ A compact Rust + SDL2 launcher for small Linux screens. Open a terminal, jot dow
 
 ## Installation
 
-**[Vitrallis Shell 1.0.4 reliability hardening prerelease](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.4)**
+**[Vitrallis Shell 1.0.4 reliability hardening release](https://github.com/csd113/Vitrallis-Shell/releases/tag/v1.0.4)**
 hardens App Center updates, process cleanup, file operations and input boundaries,
 with permanent strict Rust 1.99 lint enforcement. Host and Linux simulator checks
-pass; see the [changelog](docs/releases.md#104--reliability-hardening-prerelease)
+pass; see the [changelog](docs/releases.md#104--reliability-hardening-release)
 and [hardening report](docs/rust-lint-hardening.md). This release has no new physical
 PocketCHIP certification. The earlier 1.0.3 installation, cold-start, keyboard,
 touch and audible-audio results remain qualified to that candidate in the
