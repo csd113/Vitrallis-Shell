@@ -19,4 +19,14 @@ jobs:
       - name: Install selected Rust
         run: rustup toolchain install "${{ matrix.rust }}" --profile minimal --component clippy --component rustfmt
       - name: Validate owned code
-        run: sh scripts/validate.sh
+        run: |
+          # App Center fails closed when a same-user process cannot be inspected.
+          # Exclude unrelated runner processes while keeping all fixture processes
+          # visible, and run the unchanged gates as the unprivileged runner user.
+          sudo unshare --pid --fork --mount-proc --kill-child \
+            sudo --user="$(id -un)" -- \
+              env HOME="$HOME" PATH="$PATH" \
+                RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" \
+                CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" \
+                RUSTUP_TOOLCHAIN="$RUSTUP_TOOLCHAIN" \
+                sh scripts/validate.sh
